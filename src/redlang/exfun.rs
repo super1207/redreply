@@ -26,6 +26,10 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let mut easy = curl::easy::Easy::new();
         easy.url(&url)?;
         easy.ssl_verify_peer(false)?;
+        let proxy = self_t.get_exmap("代理")?;
+        if proxy != "" {
+            easy.proxy(proxy)?;
+        }
         let mut header_list = curl::easy::List::new();
         header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
         let http_header_str = self_t.get_exmap("访问头")?;
@@ -61,6 +65,10 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let mut easy = curl::easy::Easy::new();
         easy.url(&url)?;
         easy.ssl_verify_peer(false)?;
+        let proxy = self_t.get_exmap("代理")?;
+        if proxy != "" {
+            easy.proxy(proxy)?;
+        }
         let mut header_list = curl::easy::List::new();
         header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
         let http_header_str = self_t.get_exmap("访问头")?;
@@ -99,6 +107,10 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let v = self_t.get_param(params, 1)?;
         http_header_map.insert(k, v);
         self_t.set_exmap("访问头", &self_t.build_obj(http_header_map))?;
+        return Ok(Some("".to_string()));
+    }else if cmd == "设置代理"{
+        let k = self_t.get_param(params, 0)?;
+        self_t.set_exmap("代理", &k)?;
         return Ok(Some("".to_string()));
     }else if cmd == "编码" {
         let urlcode = self_t.get_param(params, 0)?;

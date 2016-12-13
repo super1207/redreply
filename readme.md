@@ -280,6 +280,17 @@ POST访问网页，访问体必须是字节集或文本，返回字节集。
 
 在使用<font color="red">访问</font>、<font color="red">POST访问</font>命令之前使用。
 
+### 设置代理
+
+【设置代理@<font color="red">key</font>@<font color="red">value</font>】<br />
+例子：
+
+```
+【设置代理@http://127.0.0.1:10809】
+```
+
+在使用<font color="red">访问</font>、<font color="red">POST访问</font>命令之前使用。
+
 ### 编码
 
 【编码@<font color="red">要编码的内容</font>】<br />
