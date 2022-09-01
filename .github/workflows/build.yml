@@ -17,4 +17,6 @@ jobs:
     steps:
     - uses: actions/checkout@v3
     - name: Build
-      run: cargo build --release
+      run: |
+        $ENV:RUSTFLAGS='-C target-feature=+crt-static'
+        cargo build --target=i686-pc-windows-msvc --release
