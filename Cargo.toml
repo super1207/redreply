@@ -1,0 +1,27 @@
+[package]
+name = "redlang"
+version = "0.2.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+curl = "*"
+fancy-regex = "*"
+encoding = "*"
+rand = "*"
+hlua = "*"
+sciter-rs = "*"
+libloading = "*"
+urlencoding = "*"
+getrandom = "*"
+base64 = "*"
+serde_json = "*"
+uuid = {version = "*",features = ["v4","fast-rng"]}
+lazy_static = "*"
+chrono = "*"
+
+[lib]
+name = "redlang" #生成dll的文件名
+crate-type = ["dylib"]
+

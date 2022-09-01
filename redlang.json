@@ -1,0 +1,31 @@
+{
+    "ret":1,					
+    "apiver":9,					
+    "name":"红色问答",	
+    "version":"0.0.1",			
+    "version_id":1,				
+    "author":"super1207",			
+    "description":"-- 此插件只能在MiraiCQ中加载！\n ",
+    "event":[					
+		{
+            "id":1207,
+            "type":1207,
+            "name":"onebot11原始事件",
+            "priority":30000,
+            "function":"_event1207"
+        },
+        {
+            "id":1003,
+            "type":1003,
+            "name":"应用已被启用",
+            "priority":30000,
+            "function":"_eventEnable"
+        }
+    ],
+    "menu":[		
+        {
+            "name":"设置",			
+            "function":"_menuA"		
+        }
+    ]
+}

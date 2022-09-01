@@ -1,0 +1,162 @@
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>红色问答v0.0.4 super1207</title>
+    <style>
+        td,th { border:1dip solid #BBB;height:28dip; }
+
+        tr:hover {
+            background: rgb(224, 224, 217);
+        }
+
+        button {
+            background: white;
+        }
+        button:hover {
+            background: rgb(224, 224, 217);
+        }
+        button:active {
+            background: white;
+        }
+        .tableclass {
+            background: url(1111.png) no-repeat;
+            background-size: cover;
+            position: relative;
+        }
+    </style>
+    <script>
+        function get_codes(){
+            let s = Window.this.xcall("read_code");
+            return JSON.parse(s);
+        }
+        function save_codes(){
+            let s = JSON.stringify(Window.share.codes);
+            let isok = Window.this.xcall("save_code",s);
+            if(!isok){
+                Window.this.modal(<info>保存失败</info>);
+            }else{
+                Window.this.modal(<info>保存成功</info>);
+            }
+        }
+        function show_code_list(select_index,codes)
+        {
+            code_list = []
+            for(let i = 0;i < codes.length;++i){
+                if(i != select_index){
+                    code_list.push(<tr><td style="width:3*;overflow:hidden;" id={"iname," + i}>{codes[i]["name"]}</td><td  style="width:7*;overflow:hidden;" id={"ides," + i}>{codes[i]["description"]}</td></tr>);
+                }else{
+                    code_list.push(<tr><td style="background-color:#BBB;width:3*;overflow:hidden;" id={"iname," + i}>{codes[i]["name"]}</td><td style="background-color:#BBB;width:7*;overflow:hidden;" id={"ides," + i}>{codes[i]["description"]}</td></tr>);
+                }
+            }
+            document.$("tbody").patch(code_list);
+        }
+        function print_log(s)
+        {
+            try{
+                Window.this.xcall("print_log",s);
+            }catch(err){
+                Window.this.modal(<info>{err}</info>);
+            } 
+        }
+        Window.share.mainthis = Window.this
+        Window.share.select_index = -1;
+        document.onready = function() {
+            Window.share.codes = get_codes();
+            document.on("click", "tbody>tr>td", function(evt) {
+                Window.share.select_index = parseInt(evt.target.id.split(",")[1]);
+                show_code_list(Window.share.select_index,Window.share.codes);
+            });
+            document.on("click", "#add_btn", function(evt) {
+                print_log("add_btn")
+                var windowParams = { 
+                    width : 640,
+                    height  : 400,
+                    url   : __DIR__ + "edit_view.htm",
+                    state : Window.WINDOW_SHOW,
+                };
+                Window.share.is_edit = false
+                Window.this.modal(windowParams);
+                // print_log("hello")
+                show_code_list(Window.share.select_index,Window.share.codes);
+            });
+            document.on("click", "#earse_btn", function(evt) {
+                print_log("earse_btn")
+                if(Window.share.select_index < Window.share.codes.length && Window.share.select_index >= 0){
+                    var r = Window.this.modal(
+                        <question>
+                        <content>是否真的要删除此项目?</content>
+                        <buttons>
+                            <button id="yes" role="cancel-button">是的</button>
+                            <button id="no" role="default-button">我点错了</button>
+                        </buttons>
+                        </question>);
+                    if(r == "yes"){
+                        Window.share.codes.splice(Window.share.select_index,1);
+                    }
+                }else{
+                    Window.this.modal(<info>请选择一个项目</info>);
+                }
+                show_code_list(Window.share.select_index,Window.share.codes);
+            });
+            document.on("click", "#edit_btn", function(evt) {
+                if(!(Window.share.select_index < Window.share.codes.length && Window.share.select_index >= 0)){
+                    Window.this.modal(<info>请选择一个项目</info>);
+                    return
+                }
+                print_log("edit_btn")
+                var windowParams = { 
+                    width : 640,
+                    height  : 400,
+                    url   : __DIR__ + "edit_view.htm",
+                    state : Window.WINDOW_SHOW,
+                };
+                Window.share.is_edit = true
+                Window.this.modal(windowParams);
+                // print_log("hello")
+                show_code_list(Window.share.select_index,Window.share.codes);
+            });
+            document.on("click", "#save_btn", function(evt) {
+                print_log("save_btn")
+                save_codes();
+            });
+            let code_list = []
+            for(let i = 0;i < Window.share.codes.length;++i){
+                if(i != Window.share.select_index){
+                    code_list.push(<tr><td style="width:10dip" id={"iname," + i}>{Window.share.codes[i]["name"]}</td><td id={"ides," + i}>{Window.share.codes[i]["description"]}</td></tr>);
+                }else{
+                    code_list.push(<tr style="background-color:#BBB;"><td style="width:10dip" id={"iname," + i}>{Window.share.codes[i]["name"]}</td><td id={"ides," + i}>{Window.share.codes[i]["description"]}</td></tr>);
+                }
+            }
+            show_code_list(Window.share.select_index,Window.share.codes);
+        }
+        
+    </script>
+</head>
+
+<body  style="height:1*;width:1*;">
+    <div style="flow:horizontal;width:1*;horizontal-align: center;">
+        <span style="color: red;font-size: 30dip;margin-top: 10dip;margin-bottom: 10dip;">
+            红色问答~~
+        </span>
+    </div>
+    <div class="tableclass" style="height:1*;overflow-y:auto;">
+        <table style="width: 1*;margin-left: 1dip;">
+            <thead style="background-color: antiquewhite; font-size:larger;font-weight: 900;text-align: center;">
+                <tr>
+                    <th style="width: 3*;">名字</th>
+                    <th style="width: 7*;">说明</th>
+                </tr>
+            </thead>
+            <tbody style="background:rgba(255,255,255,0.9);">
+            </tbody>
+        </table>
+    </div>
+    <div style="flow:horizontal;height: 40dip;background-color:rgb(255, 240, 250);">
+        <button id = "add_btn" style="line-height:40dip;width:1*;height: 100%;">新增</button>
+        <button id = "earse_btn" style="line-height:40dip;width:1*;height: 100%;">删除</button>
+        <button id = "edit_btn" style="line-height:40dip;width:1*;height: 100%;">编辑</button>
+        <button id = "save_btn" style="line-height:40dip;width:1*;height: 100%;">保存</button>
+    </div>
+</body>
+
+</html>
