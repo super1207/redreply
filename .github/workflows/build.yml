@@ -20,3 +20,11 @@ jobs:
       run: |
         $ENV:RUSTFLAGS='-C target-feature=+crt-static'
         cargo build --target=i686-pc-windows-msvc --release
+        mkdir outdir
+        copy-item .\target\i686-pc-windows-msvc\release\*.dll -Destination .\outdir
+    - name: upload file
+      uses: actions/upload-artifact@v2
+      with:
+        name: upload files
+        path: 
+            .\outdir
