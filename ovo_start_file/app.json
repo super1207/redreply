@@ -1,11 +1,11 @@
 {
     "name" : "红色问答",
     "author" : "super1207",
-    "namespace" : "红色问答4",
+    "namespace" : "红色问答",
     "info" : "这是红色问答的OlivOS包装，只可以运行在onebot平台",
     "priority" : 30000,
-    "svn" : 3,
-    "version" : "0.0.3",
+    "svn" : 4,
+    "version" : "0.0.4",
     "compatible_svn" : 100,
     "message_mode" : "olivos_string",
     "support" : [

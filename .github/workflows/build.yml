@@ -40,11 +40,9 @@ jobs:
         copy-item .\redlang.json -Destination .\outdir\MiraiCQ\app
         copy-item .\res\* -Destination .\outdir\MiraiCQ\app\redlang
         copy-item .\ovo_start_file\* -Destination .\outdir
-        $Path = "ovo_start_file\app.json"
-        $op = Get-Content -Path $Path -Raw | ConvertFrom-Json
         Compress-Archive .\outdir\* 红色问答4.zip
-        mv 红色问答4.zip 红色问答4.opk
-        cp 红色问答4.opk outdir_t
+        mv 红色问答.zip 红色问答.opk
+        cp 红色问答.opk outdir_t
     - name: upload file
       uses: actions/upload-artifact@v2
       with:
