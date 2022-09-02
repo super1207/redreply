@@ -25,13 +25,18 @@ jobs:
         mkdir outdir\MiraiCQ\bin
         mkdir outdir\IPCTool
         mkdir outdir_t
-    - name: downloadfile
+    - uses: robinraju/release-downloader@v1.4
+    - name: download
+      with:
+        repository: "super1207/redreply"
+        tag: "CommonData"
+        fileName: "*"
+    - name: copyfile
       run: |
-        dotnet tool install -g dotnetCampus.FileDownloader.Tool
-        DownloadFile -u https://github.com/super1207/redreply/releases/download/CommonData/IPCTool.dll -o .\outdir\IPCTool\IPCTool.dll
-        DownloadFile -u https://github.com/super1207/redreply/releases/download/CommonData/IPCTool64.dll -o .\outdir\IPCTool\IPCTool64.dll
-        DownloadFile -u https://github.com/super1207/redreply/releases/download/CommonData/MiraiCQ.exe -o .\outdir\MiraiCQ\MiraiCQ.exe
-        DownloadFile -u https://github.com/super1207/redreply/releases/download/CommonData/sciter.dll -o .\outdir\MiraiCQ\bin\sciter.dll
+        cp IPCTool.dll .\outdir\IPCTool\IPCTool.dll
+        cp IPCTool64.dll .\outdir\IPCTool\IPCTool64.dll
+        cp MiraiCQ.exe .\outdir\MiraiCQ\MiraiCQ.exe
+        cp sciter.dll .\outdir\MiraiCQ\bin\sciter.dll
     - name: Build
       run: |
         $ENV:RUSTFLAGS='-C target-feature=+crt-static'
