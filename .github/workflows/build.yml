@@ -21,10 +21,30 @@ jobs:
         $ENV:RUSTFLAGS='-C target-feature=+crt-static'
         cargo build --target=i686-pc-windows-msvc --release
         mkdir outdir
-        copy-item .\target\i686-pc-windows-msvc\release\*.dll -Destination .\outdir
+        mkdir outdir\MiraiCQ
+        mkdir outdir\MiraiCQ\app
+        mkdir outdir\MiraiCQ\app\redlang
+        mkdir outdir\MiraiCQ\bin
+        mkdir outdir\IPCTool
+        copy-item .\target\i686-pc-windows-msvc\release\*.dll -Destination .\outdir\MiraiCQ\app
+        copy-item .\redlang.json -Destination .\outdir\MiraiCQ\app
+        copy-item .\res\* -Destination .\outdir\MiraiCQ\app\redlang
+        copy-item .\ovo_start_file\* -Destination .\outdir
+        curl https://github.com/super1207/redreply/releases/download/CommonData/IPCTool.dll -o .\outdir\IPCTool\IPCTool.dll
+        curl https://github.com/super1207/redreply/releases/download/CommonData/IPCTool64.dll -o .\outdir\IPCTool\IPCTool64.dll
+        curl https://github.com/super1207/redreply/releases/download/CommonData/MiraiCQ.exe -o .\outdir\MiraiCQ\MiraiCQ.exe
+        curl https://github.com/super1207/redreply/releases/download/CommonData/sciter.dll -o .\outdir\MiraiCQ\bin\sciter.dll
+        $Path = "ovo_start_file\app.json"
+        $op = Get-Content -Path $Path -Raw | ConvertFrom-Json
+        Compress-Archive .\outdir\* $op.namespace+".zip"
+        mv $op.namespace+".zip" $op.namespace+".opk"
+        mkdir outdir_t
+        cp $op.namespace+".opk" outdir_t
+        
+        
     - name: upload file
       uses: actions/upload-artifact@v2
       with:
         name: upload files
         path: 
-            .\outdir
+            .\outdir_t
