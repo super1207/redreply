@@ -16,32 +16,35 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
-    - name: Build
+    - name: mkdir
       run: |
-        $ENV:RUSTFLAGS='-C target-feature=+crt-static'
-        cargo build --target=i686-pc-windows-msvc --release
         mkdir outdir
         mkdir outdir\MiraiCQ
         mkdir outdir\MiraiCQ\app
         mkdir outdir\MiraiCQ\app\redlang
         mkdir outdir\MiraiCQ\bin
         mkdir outdir\IPCTool
+        mkdir outdir_t
+    - name: downloadfile
+      run: |
+        dotnet tool install -g dotnetCampus.FileDownloader.Tool
+        DownloadFile -u https://github.com/super1207/redreply/releases/download/CommonData/IPCTool.dll -o .\outdir\IPCTool\IPCTool.dll
+        DownloadFile -u https://github.com/super1207/redreply/releases/download/CommonData/IPCTool64.dll -o .\outdir\IPCTool\IPCTool64.dll
+        DownloadFile -u https://github.com/super1207/redreply/releases/download/CommonData/MiraiCQ.exe -o .\outdir\MiraiCQ\MiraiCQ.exe
+        DownloadFile -u https://github.com/super1207/redreply/releases/download/CommonData/sciter.dll -o .\outdir\MiraiCQ\bin\sciter.dll
+    - name: Build
+      run: |
+        $ENV:RUSTFLAGS='-C target-feature=+crt-static'
+        cargo build --target=i686-pc-windows-msvc --release
         copy-item .\target\i686-pc-windows-msvc\release\*.dll -Destination .\outdir\MiraiCQ\app
         copy-item .\redlang.json -Destination .\outdir\MiraiCQ\app
         copy-item .\res\* -Destination .\outdir\MiraiCQ\app\redlang
         copy-item .\ovo_start_file\* -Destination .\outdir
-        curl https://github.com/super1207/redreply/releases/download/CommonData/IPCTool.dll -o .\outdir\IPCTool\IPCTool.dll
-        curl https://github.com/super1207/redreply/releases/download/CommonData/IPCTool64.dll -o .\outdir\IPCTool\IPCTool64.dll
-        curl https://github.com/super1207/redreply/releases/download/CommonData/MiraiCQ.exe -o .\outdir\MiraiCQ\MiraiCQ.exe
-        curl https://github.com/super1207/redreply/releases/download/CommonData/sciter.dll -o .\outdir\MiraiCQ\bin\sciter.dll
         $Path = "ovo_start_file\app.json"
         $op = Get-Content -Path $Path -Raw | ConvertFrom-Json
         Compress-Archive .\outdir\* 红色问答4.zip
         mv 红色问答4.zip 红色问答4.opk
-        mkdir outdir_t
         cp 红色问答4.opk outdir_t
-        
-        
     - name: upload file
       uses: actions/upload-artifact@v2
       with:
