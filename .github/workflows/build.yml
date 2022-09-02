@@ -40,7 +40,7 @@ jobs:
         copy-item .\redlang.json -Destination .\outdir\MiraiCQ\app
         copy-item .\res\* -Destination .\outdir\MiraiCQ\app\redlang
         copy-item .\ovo_start_file\* -Destination .\outdir
-        Compress-Archive .\outdir\* 红色问答4.zip
+        Compress-Archive .\outdir\* 红色问答.zip
         mv 红色问答.zip 红色问答.opk
         cp 红色问答.opk outdir_t
     - name: upload file
