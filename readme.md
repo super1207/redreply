@@ -200,7 +200,11 @@ X，Y都必须为非负整数，且Y<strong>不能小于</strong>X。
 
 ### 访问
 【访问@<font color="red">网址</font>】<br />
-返回字节集。
+GET访问网页，返回字节集。
+
+### POST访问
+【POST访问@<font color="red">网址</font>@<font color="red">访问体</font>】<br />
+POST访问网页，访问体必须是字节集或文本，返回字节集。
 
 ### 设置访问头
 【设置访问头@<font color="red">key</font>@<font color="red">value</font>】<br />
@@ -208,7 +212,7 @@ X，Y都必须为非负整数，且Y<strong>不能小于</strong>X。
 ```
 【设置访问头@User-Agent@Mozilla/5.0\ (Windows\ NT\ 6.1;\ Win64;\ x64)\ AppleWebKit/537.36\ (KHTML,\ like\ Gecko)\ Chrome/89.0.4389.72\ Safari/537.36】
 ```
-在使用<font color="red">访问</font>命令之前使用。
+在使用<font color="red">访问</font>、<font color="red">POST访问</font>命令之前使用。
 
 ### 编码
 【编码@<font color="red">要编码的内容</font>】<br />
@@ -269,15 +273,18 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 
 ### 序号
 【序号】<br />
-每次触发后,【序号】的值+1 ,从0开始(此变量只在同一脚本下递增),可用【序号@x】将【序号】的值改为x。
+每次触发后,【序号】的值+1 ，从0开始（此变量只在同一脚本下递增），可用【序号@x】将【序号】的值改为x。
 
 ### 时间戳
 【时间戳】<br />
 返回10位unix时间戳
 
+【13位时间戳】<br />
+返回13位时间戳
+
 ### 时间戳转文本
 【时间戳转文本@时间戳】<br />
-参数为10位unix时间戳，返回本地时间的文本表示(年-月-日-时-分-秒)，如[2022-09-01-13-55-56]()
+参数为10位unix时间戳，返回本地时间的文本表示(年-月-日-时-分-秒)，如<font color="red">2022-09-01-13-55-56</font>
 
 ## QQ相关命令说明
 

@@ -1,4 +1,4 @@
-use std::{path::Path, time::SystemTime};
+use std::{path::Path, time::SystemTime, io::Read};
 
 use chrono::TimeZone;
 use urlencoding::encode;
@@ -31,6 +31,52 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let mut content = Vec::new();
         {
             let mut transfer = easy.transfer();
+            transfer.write_function(|data| {
+                content.extend_from_slice(data);
+                Ok(data.len())
+            }).unwrap();
+            transfer.perform()?;
+        }
+        let base64text = base64::encode(content);
+        let mut ret_str = String::new();
+        ret_str.push_str(&self_t.type_uuid);
+        ret_str.push('B');
+        ret_str.push_str(&base64text);
+        return Ok(Some(ret_str));
+    }else if cmd == "POST访问" {
+        let url = self_t.get_param(params, 0)?;
+        let data_t = self_t.get_param(params, 1)?;
+        let tp = self_t.get_type(&data_t)?;
+        let data:Vec<u8>;
+        if tp == "字节集" {
+            let b64_str = data_t.get(37..).ok_or("获取字节集失败")?;
+            data = base64::decode(b64_str)?;
+        }else if tp == "文本" {
+            data = data_t.as_bytes().to_vec();
+        }else {
+            return Err(self_t.make_err(&("不支持的post访问体类型:".to_owned()+&tp)));
+        }
+        let mut easy = curl::easy::Easy::new();
+        easy.url(&url).unwrap();
+        let mut header_list = curl::easy::List::new();
+        header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
+        let http_header_str = self_t.get_exmap("访问头")?;
+        if http_header_str != "" {
+            let http_header = self_t.parse_obj(&http_header_str)?;
+            for it in http_header {
+                header_list.append(&(it.0 + ": " + it.1))?;
+            }
+        }
+        easy.http_headers(header_list)?;
+        easy.post(true)?;
+        easy.post_field_size(data.len() as u64).unwrap();
+        let mut content = Vec::new();
+        let mut dat = data.as_slice();
+        {
+            let mut transfer = easy.transfer();
+            transfer.read_function(|buf| {
+                Ok(dat.read(buf).unwrap_or(0))
+            }).unwrap();
             transfer.write_function(|data| {
                 content.extend_from_slice(data);
                 Ok(data.len())
