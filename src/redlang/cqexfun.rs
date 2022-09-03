@@ -1,3 +1,5 @@
+use std::{fs, collections::HashMap};
+
 use crate::cqapi::{cq_call_api};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
@@ -216,6 +218,26 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         let defstr = String::new();
         let ret = mp.get(k.as_str()).unwrap_or(&defstr);
         return Ok(Some(ret.to_string()));
+    }else if cmd == "读词库文件" {
+        let path = self_t.get_param(params, 0)?;
+        let path_t = path.clone();
+        let file_dat = fs::read_to_string(path)?;
+        let file_dat_without_r = file_dat.replace('\r', "");
+        let words_list = file_dat_without_r.split("\n\n");
+        let mut dict_obj:HashMap<String,String> = HashMap::new();
+        let err = format!("词库文件格式错误:`{}`", &path_t);
+        for words in words_list {
+            let word_list = words.split('\n').collect::<Vec<&str>>();
+            let key:&str = word_list.get(0).ok_or(err.clone())?;
+            let word_list_t = word_list.get(1..).ok_or(err.clone())?;
+            let mut arr_val:Vec<String> = vec![];
+            for word in  word_list_t{
+                arr_val.push(word.to_string());
+            }
+            let arr_str = self_t.build_arr(arr_val);
+            dict_obj.insert(key.to_owned(), arr_str);
+        }
+        return Ok(Some(self_t.build_obj(dict_obj)));
     }
     return Ok(None);
 }

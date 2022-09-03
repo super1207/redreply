@@ -176,6 +176,10 @@ hellohellohellohellohello
 为文本时，下标从0开始数，返回的是UTF8字符<br />
 当下标不存在(或越界)时，返回空文本
 
+### 取对象key
+【取对象key@<font color="red">对象</font>】
+返回对象的key数组。
+
 ### 取类型
 【取类型@<font color="red">内容</font>】<br />
 返回内容的类型：数组，文本，对象，字节集，函数
@@ -243,6 +247,10 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 ### 正则
 【正则@<font color="red">文本</font>@<font color="red">正则表达式</font>】<br />
 返回正则匹配结果(一个二维数组)
+
+### 文本替换
+【文本替换@<font color="red">文本</font>@<font color="red">旧文本</font>@<font color="red">新文本</font>】<br />
+返回替换结果
 
 ### 定义常量
 【定义常量@<font color="red">常量名</font>@<font color="red">常量内容</font>】<br />
@@ -361,6 +369,27 @@ onebot事件json对应的RedLang对象。
 【OB调用@<font color="red">self_id</font>@<font color="red">onebot要求的json文本</font>】<br />
 此命令用于发送原始onebot数据，以调用框架不支持，以及尚未支持的功能。<br />
 此命令返回api调用返回的RedLang对象。
+
+### 读词库文件
+【读词库文件@<font color="red">词库路径</font>】<br />
+词库兼容铃心自定义的词库，但是文件编码需要为utf-8，文件格式如下：
+```
+114
+这是号码百事通的电话
+514
+1+1+4==6
+
+早
+早上好
+你看看现在几点了
+```
+返回一个<font color="red">RedLang对象</font>，对象的键是关键词，对象的值是关键词对应的回答数组，类似如下形式:
+```
+{
+    "114":["这是号码百事通的电话","514","1+1+4==6"],
+    "早":["早上好","你看看现在几点了"],
+}
+```
 
 ## 事件关键词
 如果触发类型为<font color="red">事件触发</font>，那么关键词应该为<font color="red">事件关键词</font>。<br />

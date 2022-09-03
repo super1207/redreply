@@ -224,7 +224,7 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let s = base64::encode(str_vec);
         temp_bytes.push_str(&s);
         return Ok(Some(temp_bytes));
-    }else if cmd == "BASE64编码"{
+    }else if cmd.to_uppercase() == "BASE64编码"{
         let text = self_t.get_param(params, 0)?;
         let tp = self_t.get_type(&text)?;
         if tp != "字节集" {
@@ -232,7 +232,7 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         }
         let b64_str = text.get(37..).ok_or("获取字节集失败")?;
         return Ok(Some(b64_str.to_string()));
-    }else if cmd == "BASE64解码"{
+    }else if cmd.to_uppercase() == "BASE64解码"{
         let b64_str = self_t.get_param(params, 0)?;
         let mut temp_bytes = String::new();
         temp_bytes.push_str(&self_t.type_uuid);

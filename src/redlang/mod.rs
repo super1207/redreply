@@ -450,6 +450,18 @@ impl RedLang<'_> {
                 }
             }
             ret_str = param_data;
+        }else if cmd.to_lowercase() == "取对象key" {
+            let param_data = self.get_param(params, 0)?;
+            let tp = self.get_type(&param_data)?;
+            if tp != "对象" {
+                return Err(self.make_err(&("对应类型不能取对象key:".to_owned()+&tp)));
+            }
+            let parse_ret = self.parse_obj(&param_data)?;
+            let mut arr:Vec<String> = vec![];
+            for key in parse_ret.keys() {
+                arr.push(key.to_string());
+            }
+            ret_str = self.build_arr(arr);
         }
         else if cmd == "取类型" {
             let param_data = self.get_param(params, 0)?;
@@ -474,6 +486,11 @@ impl RedLang<'_> {
             let num = num2 + 1 - num1;
             let ret_num = (rand_num %  num) + num1;
             ret_str = ret_num.to_string();
+        }else if cmd == "文本替换" {
+            let text = self.get_param(params, 0)?;
+            let from = self.get_param(params, 1)?;
+            let to = self.get_param(params, 2)?;
+            ret_str = text.replace(&from, &to);
         }else {
             return Err(self.make_err(&format!("未知的命令:{}", cmd)));
         }
@@ -679,6 +696,32 @@ impl RedLang<'_> {
         let ret = self.do_cmd_fun(cmd.as_str(), &params[1..])?;
 
         Ok(ret)
+    }
+
+    fn build_arr(&self,arr:Vec<String>) -> String {
+        let mut ret_str = String::new();
+        ret_str.push_str(&self.type_uuid);
+        ret_str.push('A');
+        for s in arr {
+            ret_str.push_str(&s.len().to_string());
+            ret_str.push(',');
+            ret_str.push_str(&s);
+        }
+        return ret_str;
+    }
+    fn build_obj(&self,obj:HashMap<String,String>) -> String {
+        let mut ret_str = String::new();
+        ret_str.push_str(&self.type_uuid);
+        ret_str.push('O');
+        for (k,v) in obj {
+            ret_str.push_str(&k.len().to_string());
+            ret_str.push(',');
+            ret_str.push_str(&k);
+            ret_str.push_str(&v.len().to_string());
+            ret_str.push(',');
+            ret_str.push_str(&v);
+        }
+        return ret_str;
     }
 
     pub fn parse(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
