@@ -491,6 +491,11 @@ impl RedLang<'_> {
             let from = self.get_param(params, 1)?;
             let to = self.get_param(params, 2)?;
             ret_str = text.replace(&from, &to);
+        }else if cmd == "运行脚本" {
+            let mut rl = RedLang::new();
+            rl.exmap = self.exmap.clone(); // 获得一些拓展相关的变量
+            let code = self.get_param(params, 0)?;
+            ret_str = rl.parse(&code)?;
         }else {
             return Err(self.make_err(&format!("未知的命令:{}", cmd)));
         }

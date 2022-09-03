@@ -294,6 +294,12 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 【时间戳转文本@时间戳】<br />
 参数为10位unix时间戳，返回本地时间的文本表示(年-月-日-时-分-秒)，如<font color="red">2022-09-01-13-55-56</font>
 
+### 运行脚本
+【运行脚本@<font color="red">脚本内容</font>】<br />
+在一个新的环境中运行RedLang脚本，返回脚本执行结果。<br />
+QQ相关的命令依赖的数据，会复制到新的脚本中；而普通变量、序号等信息不会保留。
+
+
 ## QQ相关命令说明
 
 ### 发送者QQ
