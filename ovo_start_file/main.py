@@ -222,23 +222,23 @@ class Event(object):
         if plugin_event.data.namespace == g_plus_name:
                 call_cq_menu(plugin_event.data.event)
 
-    # def save(plugin_event:OlivOS.API.Event, Proc:OlivOS.pluginAPI.shallow):
-    #     printLog("结束进程。。。")
-    #     # 发送cq的框架退出事件
-    #     g_my_ipc_ser.send_event(client_uid,b'{"event_type":"exit"}')
-    #     tm = time.time()
-    #     while True:
-    #         if time.time() - tm > 5: # 最多等待插件5秒钟
-    #             printLog("强制结束进程。。。",level=3)
-    #             break
-    #         apiret = g_my_ipc_ser.call_api(client_uid,b'{"action":"is_load"}',500)
-    #         # 返回''说明插件未启动
-    #         if apiret == b'':
-    #             printLog("进程已经结束。。。")
-    #             break
-    #         time.sleep(0.5)
-    #     # 无论插件反馈如何，都杀死进程，即使没杀死也无所谓，MiraiCQ进程本身也会自己结束自己
-    #     g_miraicq.terminate()
+    def save(plugin_event:OlivOS.API.Event, Proc:OlivOS.pluginAPI.shallow):
+        # printLog("结束进程。。。")
+        # # 发送cq的框架退出事件
+        # g_my_ipc_ser.send_event(client_uid,b'{"event_type":"exit"}')
+        # tm = time.time()
+        # while True:
+        #     if time.time() - tm > 5: # 最多等待插件5秒钟
+        #         printLog("强制结束进程。。。",level=3)
+        #         break
+        #     apiret = g_my_ipc_ser.call_api(client_uid,b'{"action":"is_load"}',500)
+        #     # 返回''说明插件未启动
+        #     if apiret == b'':
+        #         printLog("进程已经结束。。。")
+        #         break
+        #     time.sleep(0.5)
+        # # 无论插件反馈如何，都杀死进程，即使没杀死也无所谓，MiraiCQ进程本身也会自己结束自己
+        g_miraicq.terminate()
 
 
 

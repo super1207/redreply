@@ -83,6 +83,7 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             }
         });
         cq_call_api(&send_json.to_string())?;
+        return Ok(Some("".to_string()));
     }else if cmd == "输出流" {
         let user_id_str = self_t.get_exmap("发送者ID")?.to_string();
         let group_id_str = self_t.get_exmap("群ID")?.to_string();
@@ -168,15 +169,8 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         let data_str = self_t.get_param(params, 0)?;
         let pos1 = data_str.find(",").ok_or("CQ码解析失败")?;
         let tp = data_str.get(4..pos1).ok_or("CQ码解析失败")?;
-        let mut sub_key_obj = String::new();
-        sub_key_obj.push_str(&self_t.type_uuid);
-        sub_key_obj.push('O');
-        sub_key_obj.push('4');
-        sub_key_obj.push(',');
-        sub_key_obj.push_str("type");
-        sub_key_obj.push_str(&tp.len().to_string());
-        sub_key_obj.push(',');
-        sub_key_obj.push_str(tp);
+        let mut sub_key_obj:HashMap<String,String> = HashMap::new();
+        sub_key_obj.insert("type".to_string(), tp.to_string());
         let re = fancy_regex::Regex::new("[:,]([^\\[\\],]+?)=([^\\[\\],]*?)(?=[\\],])")?;
         if let Some(cap) = re.captures(&data_str)? {
             let len = cap.len();
@@ -191,15 +185,10 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
                 let val = val.replace("&#93;", "]");
                 let val = val.replace("&#44;", ",");
                 let val = val.replace("&amp;", "&");
-                sub_key_obj.push_str(&key.len().to_string());
-                sub_key_obj.push(',');
-                sub_key_obj.push_str(&key);
-                sub_key_obj.push_str(&val.len().to_string());
-                sub_key_obj.push(',');
-                sub_key_obj.push_str(&val);
+                sub_key_obj.insert(key, val);
             }
         }
-        return Ok(Some(sub_key_obj));
+        return Ok(Some(self_t.build_obj(sub_key_obj)));
     }else if cmd == "CQ反转义" {
         let content = self_t.get_param(params, 0)?;
         let content = content.replace("&#91;", "[");

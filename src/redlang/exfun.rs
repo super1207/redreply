@@ -1,4 +1,4 @@
-use std::{path::Path, time::SystemTime, io::Read};
+use std::{path::Path, io::Read, time::SystemTime, collections::HashMap};
 
 use chrono::TimeZone;
 use urlencoding::encode;
@@ -37,20 +37,14 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             }).unwrap();
             transfer.perform()?;
         }
-        let base64text = base64::encode(content);
-        let mut ret_str = String::new();
-        ret_str.push_str(&self_t.type_uuid);
-        ret_str.push('B');
-        ret_str.push_str(&base64text);
-        return Ok(Some(ret_str));
+        return Ok(Some(self_t.build_bin(content)));
     }else if cmd == "POST访问" {
         let url = self_t.get_param(params, 0)?;
         let data_t = self_t.get_param(params, 1)?;
         let tp = self_t.get_type(&data_t)?;
         let data:Vec<u8>;
         if tp == "字节集" {
-            let b64_str = data_t.get(37..).ok_or("获取字节集失败")?;
-            data = base64::decode(b64_str)?;
+            data = self_t.parse_bin(&data_t)?;
         }else if tp == "文本" {
             data = data_t.as_bytes().to_vec();
         }else {
@@ -83,27 +77,19 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             }).unwrap();
             transfer.perform()?;
         }
-        let base64text = base64::encode(content);
-        let mut ret_str = String::new();
-        ret_str.push_str(&self_t.type_uuid);
-        ret_str.push('B');
-        ret_str.push_str(&base64text);
-        return Ok(Some(ret_str));
+        return Ok(Some(self_t.build_bin(content)));
     }else if cmd == "设置访问头"{
-        let mut http_header = self_t.get_exmap("访问头")?.to_string();
-        if http_header == "" {
-            http_header.push_str(&self_t.type_uuid);
-            http_header.push('O');
+        let http_header = self_t.get_exmap("访问头")?.to_string();
+        let mut http_header_map:HashMap<String, String> = HashMap::new();
+        if http_header != "" {
+            for (k,v) in self_t.parse_obj(&http_header)?{
+                http_header_map.insert(k, v.to_string());
+            }
         }
         let k = self_t.get_param(params, 0)?;
         let v = self_t.get_param(params, 1)?;
-        http_header.push_str(&k.len().to_string());
-        http_header.push(',');
-        http_header.push_str(&k);
-        http_header.push_str(&v.len().to_string());
-        http_header.push(',');
-        http_header.push_str(&v);
-        self_t.set_exmap("访问头", &http_header)?;
+        http_header_map.insert(k, v);
+        self_t.set_exmap("访问头", &self_t.build_obj(http_header_map))?;
         return Ok(Some("".to_string()));
     }else if cmd == "编码" {
         let urlcode = self_t.get_param(params, 0)?;
@@ -123,15 +109,11 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let sub_begin = self_t.get_param(params, 1)?;
         let sub_end = self_t.get_param(params, 2)?;
         let ret_vec = get_mid(&s, &sub_begin, &sub_end)?;
-        let mut ret_str = String::new();
-        ret_str.push_str(&self_t.type_uuid);
-        ret_str.push('A');
+        let mut ret_str:Vec<String> = vec![];
         for it in ret_vec {
-            ret_str.push_str(&it.len().to_string());
-            ret_str.push(',');
-            ret_str.push_str(it);
+            ret_str.push(it.to_string());
         }
-        return Ok(Some(ret_str))
+        return Ok(Some(self_t.build_arr(ret_str)))
     }else if cmd == "Json解析"{
         let json_str = self_t.get_param(params, 0)?;
         let json_data_ret:serde_json::Value = serde_json::from_str(&json_str)?;
@@ -141,9 +123,7 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let file_path = self_t.get_param(params, 0)?;
         let path = Path::new(&file_path);
         let content = std::fs::read(path)?;
-        let mut ret_str = format!("{}B",self_t.type_uuid);
-        ret_str.push_str(&base64::encode(content));
-        return Ok(Some(ret_str));
+        return Ok(Some(self_t.build_bin(content)));
     }else if cmd == "分割"{
         let data_str = self_t.get_param(params, 0)?;
         let sub_str = self_t.get_param(params, 1)?;
@@ -182,26 +162,18 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let data_str = self_t.get_param(params, 0)?;
         let sub_str = self_t.get_param(params, 1)?;
         let re = fancy_regex::Regex::new(&sub_str)?;
-        let mut sub_key_vec = String::new();
-        sub_key_vec.push_str(&self_t.type_uuid);
-        sub_key_vec.push('A');
+        let mut sub_key_vec:Vec<String> = vec![];
         for cap_iter in re.captures_iter(&data_str) {
             let cap = cap_iter?;
             let len = cap.len();
-            let mut temp_vec = String::new();
-            temp_vec.push_str(&self_t.type_uuid);
-            temp_vec.push('A');
+            let mut temp_vec:Vec<String> = vec![];
             for i in 0..len {
                 let s = cap.get(i).ok_or("regex cap访问越界")?.as_str();
-                temp_vec.push_str(&s.len().to_string());
-                temp_vec.push(',');
-                temp_vec.push_str(s);
+                temp_vec.push(s.to_string());
             }
-            sub_key_vec.push_str(&temp_vec.len().to_string());
-            sub_key_vec.push(',');
-            sub_key_vec.push_str(&temp_vec);
+            sub_key_vec.push(self_t.build_arr(temp_vec));
         }
-        return Ok(Some(sub_key_vec));
+        return Ok(Some(self_t.build_arr(sub_key_vec)));
     }else if cmd == "转字节集"{
         let text = self_t.get_param(params, 0)?;
         let tp = self_t.get_type(&text)?;
@@ -218,27 +190,16 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         }else{
             return Err(self_t.make_err(&("不支持的编码:".to_owned()+&code_t)));
         }
-        let mut temp_bytes = String::new();
-        temp_bytes.push_str(&self_t.type_uuid);
-        temp_bytes.push('B');
-        let s = base64::encode(str_vec);
-        temp_bytes.push_str(&s);
-        return Ok(Some(temp_bytes));
+        return Ok(Some(self_t.build_bin(str_vec)));
     }else if cmd.to_uppercase() == "BASE64编码"{
         let text = self_t.get_param(params, 0)?;
-        let tp = self_t.get_type(&text)?;
-        if tp != "字节集" {
-            return Err(self_t.make_err(&("BASE64编码不支持的类型:".to_owned()+&tp)));
-        }
-        let b64_str = text.get(37..).ok_or("获取字节集失败")?;
-        return Ok(Some(b64_str.to_string()));
+        let bin = self_t.parse_bin(&text)?;
+        let b64_str = base64::encode(bin);
+        return Ok(Some(b64_str));
     }else if cmd.to_uppercase() == "BASE64解码"{
         let b64_str = self_t.get_param(params, 0)?;
-        let mut temp_bytes = String::new();
-        temp_bytes.push_str(&self_t.type_uuid);
-        temp_bytes.push('B');
-        temp_bytes.push_str(&b64_str);
-        return Ok(Some(temp_bytes));
+        let content = base64::decode(b64_str)?;
+        return Ok(Some(self_t.build_bin(content)));
     }else if cmd == "延时"{
         let mill = self_t.get_param(params, 0)?.parse::<u64>()?;
         let time_struct = core::time::Duration::from_millis(mill);
@@ -317,15 +278,10 @@ fn do_json_number(root:&serde_json::Value) -> Result<String, Box<dyn std::error:
 
 fn do_json_obj(self_uid:&str,root:&serde_json::Value) -> Result<String, Box<dyn std::error::Error>> {
     let err = "Json对象解析失败";
-    let mut ret_str = String::new();
-    ret_str.push_str(self_uid);
-    ret_str.push('O');
+    let mut ret_str:HashMap<String,String> = HashMap::new();
     for it in root.as_object().ok_or(err)? {
         let k = it.0;
         let v = it.1;
-        ret_str.push_str(&k.len().to_string());
-        ret_str.push(',');
-        ret_str.push_str(&k);
         let v_ret:String;
         if v.is_string() {
             v_ret = do_json_string(v)?;
@@ -342,18 +298,14 @@ fn do_json_obj(self_uid:&str,root:&serde_json::Value) -> Result<String, Box<dyn 
         }else{
             return None.ok_or("不支持的Json类型")?;
         }
-        ret_str.push_str(&v_ret.len().to_string());
-        ret_str.push(',');
-        ret_str.push_str(&v_ret);
+        ret_str.insert(k.to_string(), v_ret);
     }
-    Ok(ret_str)
+    Ok(RedLang::build_obj_with_uid(self_uid, ret_str))
 }
 
 fn do_json_arr(self_uid: &str, root: &serde_json::Value) -> Result<String, Box<dyn std::error::Error>> {
     let err = "Json数组解析失败";
-    let mut ret_str = String::new();
-    ret_str.push_str(self_uid);
-    ret_str.push('A');
+    let mut ret_str:Vec<String> = vec![];
     for v in root.as_array().ok_or(err)? {
         let v_ret:String;
         if v.is_string() {
@@ -371,11 +323,9 @@ fn do_json_arr(self_uid: &str, root: &serde_json::Value) -> Result<String, Box<d
         }else{
             return None.ok_or("不支持的Json类型")?;
         }
-        ret_str.push_str(&v_ret.len().to_string());
-        ret_str.push(',');
-        ret_str.push_str(&v_ret);
+        ret_str.push(v_ret);
     }
-    Ok(ret_str)
+    Ok(RedLang::build_arr_with_uid(self_uid, ret_str))
 }
 
 fn get_mid<'a>(s:&'a str,sub_begin:&str,sub_end:&str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {

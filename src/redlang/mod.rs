@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, error};
+use std::{collections::HashMap, fmt, error, vec};
 use encoding::Encoding;
 extern crate rand;
 extern crate hlua;
@@ -232,37 +232,25 @@ impl RedLang<'_> {
             }
         }else if cmd == "数组" {
             let arr_len = params.len();
-            let mut temp_ret = String::new();
-            temp_ret.push_str(&self.type_uuid);
-            temp_ret.push('A');
+            let mut temp_ret:Vec<String> = vec![];
             for i in 0..arr_len {
                 let s = self.get_param(params, i)?;
-                let s_len_str = s.len().to_string();
-                temp_ret.push_str(&s_len_str);
-                temp_ret.push(',');
-                temp_ret.push_str(&s);
+                temp_ret.push(s);
             }
-            ret_str = temp_ret;
+            ret_str = self.build_arr(temp_ret);
         }
         else if cmd == "对象" {
             let params_len = params.len();
             if params_len % 2 != 0 {
                 return Err(self.make_err("请保证对象参数为偶数个"));
             }
-            let mut temp_ret = String::new();
-            temp_ret.push_str(&self.type_uuid);
-            temp_ret.push('O');
+            let mut temp_ret:HashMap<String,String> = HashMap::new();
             for i in 0..(params_len/2) {
                 let k = self.get_param(params, i*2)?;
                 let v = self.get_param(params, i*2 + 1)?;
-                temp_ret.push_str(&k.len().to_string());
-                temp_ret.push(',');
-                temp_ret.push_str(&k);
-                temp_ret.push_str(&v.len().to_string());
-                temp_ret.push(',');
-                temp_ret.push_str(&v);
+                temp_ret.insert(k, v);
             }
-            ret_str = temp_ret;
+            ret_str = self.build_obj(temp_ret);
         } 
         else if cmd == "取长度" {
             let data = self.get_param(params, 0)?;
@@ -276,6 +264,9 @@ impl RedLang<'_> {
             }else if tp == "文本" {
                 let v_chs =data.chars().collect::<Vec<char>>();
                 ret_str = v_chs.len().to_string();
+            }else if tp == "字节集" {
+                let l = (data.len() - 37) / 2;
+                ret_str = l.to_string();
             }else{
                 return Err(self.make_err(&("对应类型不能获取长度:".to_owned()+&tp)));
             }
@@ -351,8 +342,7 @@ impl RedLang<'_> {
                 let ret_str:String;
                 let code_t = self_t.get_param(params, 1)?;
                 let code = code_t.to_lowercase();
-                let b64_str = data.get(37..).ok_or("获取字节集失败")?;
-                let u8_vec = base64::decode(b64_str)?;
+                let u8_vec = self_t.parse_bin(data)?;
                 if code == "" || code == "utf8" {
                     ret_str = String::from_utf8(u8_vec)?;
                 }else if code == "gbk" {
@@ -405,6 +395,8 @@ impl RedLang<'_> {
                 data.push_str(&v);
             }else if tp == "文本" { 
                 data.push_str(&el);
+            }else if tp == "字节集" {
+                data.push_str(el.get(37..).ok_or("unkow err in add el")?);
             }else{
                 return Err(self.make_err(&("对应类型不能增加元素:".to_owned()+&tp)));
             }
@@ -522,7 +514,39 @@ impl RedLang<'_> {
         }
         Ok(ret_str)
     }
-    
+    fn parse_bin(&self,bin_data: & str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let err_str = "不能获得字节集类型";
+        if !bin_data.starts_with(&self.type_uuid) {
+            return Err(self.make_err(err_str));
+        }
+        let tp = bin_data.get(36..37).ok_or(err_str)?;
+        if tp != "B" {
+            return Err(self.make_err(err_str));
+        }
+        let content_text = bin_data.get(37..).ok_or(err_str)?.as_bytes();
+        if content_text.len() % 2 != 0 {
+            return Err(self.make_err(err_str));
+        }
+        let mut content2:Vec<u8> = vec![];
+        for pos in 0..(content_text.len() / 2) {
+            let mut ch1 = content_text[pos * 2];
+            let mut ch2 = content_text[pos * 2 + 1];
+            if ch1 < 0x3A {
+                ch1 -= 0x30;
+            }else{
+                ch1 -= 0x41;
+                ch1 += 10;
+            }
+            if ch2 < 0x3A {
+                ch2 -= 0x30;
+            }else{
+                ch2 -= 0x41;
+                ch2 += 10;
+            }
+            content2.push((ch1 << 4) + ch2);
+        }
+        return Ok(content2);
+    }
     fn parse_arr<'a>(&self, arr_data: &'a str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {
         let err_str = "不能获得数组类型";
         if !arr_data.starts_with(&self.type_uuid) {
@@ -703,9 +727,26 @@ impl RedLang<'_> {
         Ok(ret)
     }
 
-    fn build_arr(&self,arr:Vec<String>) -> String {
+    fn build_bin(&self,bin:Vec<u8>) ->String {
+        return Self::build_bin_with_uid(&self.type_uuid,bin);
+    }
+    fn build_bin_with_uid(uid:&str,bin:Vec<u8>) -> String {
         let mut ret_str = String::new();
-        ret_str.push_str(&self.type_uuid);
+        ret_str.push_str(uid);
+        ret_str.push('B');
+        let mut content = String::new();
+        for ch in bin {
+            content.push_str(&format!("{:02X}",ch));
+        }
+        ret_str.push_str(&content);
+        return ret_str;
+    }
+    fn build_arr(&self,arr:Vec<String>) -> String {
+        return Self::build_arr_with_uid(&self.type_uuid,arr);
+    }
+    fn build_arr_with_uid(uid:&str,arr:Vec<String>) -> String {
+        let mut ret_str = String::new();
+        ret_str.push_str(uid);
         ret_str.push('A');
         for s in arr {
             ret_str.push_str(&s.len().to_string());
@@ -714,9 +755,9 @@ impl RedLang<'_> {
         }
         return ret_str;
     }
-    fn build_obj(&self,obj:HashMap<String,String>) -> String {
+    fn build_obj_with_uid(uid:&str,obj:HashMap<String,String>) -> String {
         let mut ret_str = String::new();
-        ret_str.push_str(&self.type_uuid);
+        ret_str.push_str(uid);
         ret_str.push('O');
         for (k,v) in obj {
             ret_str.push_str(&k.len().to_string());
@@ -727,6 +768,9 @@ impl RedLang<'_> {
             ret_str.push_str(&v);
         }
         return ret_str;
+    }
+    fn build_obj(&self,obj:HashMap<String,String>) -> String {
+        return Self::build_obj_with_uid(&self.type_uuid,obj);
     }
 
     pub fn parse(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {

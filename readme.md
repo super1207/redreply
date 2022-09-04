@@ -154,7 +154,7 @@ hellohellohellohellohello
 
 ### 取长度
 【取长度@<font color="red">内容</font>】<br />
-对于数组，返回元素个数；对于对象，返回key的个数；对于文本，返回utf8字符个数；暂时不支持字节集。
+对于数组，返回元素个数；对于对象，返回key的个数；对于文本，返回utf8字符个数，对于字节集，返回字节个数。
 
 ### 转文本
 【转文本@<font color="red">内容</font>@<font color="red">字节集的编码</font>】<br />
@@ -164,7 +164,7 @@ hellohellohellohellohello
 
 ### 增加元素
 【增加元素@<font color="red">变量名</font>@<font color="red">元素</font>】<br />
-变量支持对象，文本，数组。<br />
+变量支持对象，文本，数组，字节集。<br />
 若为对象，则需写成：<br />
 【增加元素@<font color="red">变量名</font>@<font color="red">key</font>@<font color="red">value</font>】
 
