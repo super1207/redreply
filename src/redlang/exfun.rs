@@ -1,6 +1,7 @@
 use std::{path::Path, io::Read, time::SystemTime, collections::HashMap};
 
 use chrono::TimeZone;
+use md5::{Md5, Digest};
 use urlencoding::encode;
 use base64;
 use super::RedLang;
@@ -226,6 +227,22 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let datetime = chrono::prelude::Local.timestamp(num, 0);
         let newdate = datetime.format("%Y-%m-%d-%H-%M-%S");
         return Ok(Some(format!("{}",newdate)));
+    }else if cmd.to_uppercase() == "MD5编码"{
+        let text = self_t.get_param(params, 0)?;
+        let bin = self_t.parse_bin(&text)?;
+        let mut hasher = Md5::new();
+        hasher.update(bin);
+        let result = hasher.finalize();
+        let mut content = String::new();
+        for ch in result {
+            content.push_str(&format!("{:02x}",ch));
+        }
+        return Ok(Some(content));
+    }else if cmd.to_uppercase() == "RCNB编码"{
+        let text = self_t.get_param(params, 0)?;
+        let bin = self_t.parse_bin(&text)?;
+        let content = rcnb_rs::encode(bin);
+        return Ok(Some(content));
     }
     return Ok(None);
 }

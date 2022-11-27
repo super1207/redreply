@@ -20,6 +20,8 @@ serde_json = "*"
 uuid = {version = "*",features = ["v4","fast-rng"]}
 lazy_static = "*"
 chrono = "*"
+md-5 = "*"
+rcnb-rs = "*"
 
 [lib]
 name = "redlang" #生成dll的文件名

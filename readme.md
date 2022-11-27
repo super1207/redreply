@@ -1,4 +1,4 @@
-# RedLang v0.0.4 pre 语法简述
+# RedLang v0.0.5 语法简述
 注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br />
 作者qq：1875159423<br />
 qq群号：920220179 (目前使用MiraiCQ的群)
@@ -298,6 +298,16 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 【运行脚本@<font color="red">脚本内容</font>】<br />
 在一个新的环境中运行RedLang脚本，返回脚本执行结果。<br />
 QQ相关的命令依赖的数据，会复制到新的脚本中；而普通变量、序号等信息不会保留。
+
+### MD5编码
+【MD5编码@<font color="red">字节集</font>】<br />
+将字节集转为md5编码的文本，全小写<br />
+注意，只有字节集才能进行md5编码。
+
+### RCNB编码
+【RCNB编码@<font color="red">字节集</font>】<br />
+将字节集转为[rcnb](https://github.com/rcnbapp)编码的文本。<br />
+注意，只有字节集才能进行rcnb编码。
 
 
 ## QQ相关命令说明
