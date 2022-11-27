@@ -31,6 +31,12 @@ jobs:
         repository: "super1207/redreply"
         tag: "CommonData"
         fileName: "*"
+    - name: downloadmiraicq
+      uses: robinraju/release-downloader@v1.4
+      with:
+        repository: "super1207/MiraiCQ"
+        latest: true
+        fileName: "MiraiCQ.exe"
     - name: copyfile
       run: |
         cp IPCTool.dll .\outdir\IPCTool\IPCTool.dll
