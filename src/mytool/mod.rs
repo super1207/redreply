@@ -19,6 +19,9 @@ fn cq_text_encode(data:&str) -> String {
 
 pub fn read_json_str(root:&serde_json::Value,key:&str) -> String {
     if let Some(js_v) = root.get(key) {
+        if js_v.is_u64() {
+            return js_v.as_u64().unwrap().to_string();
+        }
         if js_v.is_i64() {
             return js_v.as_i64().unwrap().to_string();
         }else if js_v.is_string() {

@@ -36,6 +36,8 @@ fn get_evt_flag(root: &serde_json::Value) -> Result<Vec<&str>, Box<dyn std::erro
 fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Error>>{
     let user_id_str = rl.get_exmap("发送者ID")?.to_string();
     let group_id_str = rl.get_exmap("群ID")?.to_string();
+    let guild_id_str = rl.get_exmap("频道ID")?.to_string();
+    let channel_id_str = rl.get_exmap("子频道ID")?.to_string();
     if group_id_str != "" {
         let out_str = rl.parse(code)?;
         if out_str != "" {
@@ -43,6 +45,19 @@ fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Error>
                 "action":"send_group_msg",
                 "params":{
                     "group_id": group_id_str.parse::<i32>()?,
+                    "message":out_str
+                }
+            });
+            cq_call_api(&send_json.to_string())?;
+        }
+    }else if channel_id_str != "" && guild_id_str != "" {
+        let out_str = rl.parse(code)?;
+        if out_str != "" {
+            let send_json = serde_json::json!({
+                "action":"send_guild_channel_msg",
+                "params":{
+                    "guild_id": guild_id_str,
+                    "channel_id": channel_id_str,
                     "message":out_str
                 }
             });

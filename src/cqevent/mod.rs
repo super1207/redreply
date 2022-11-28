@@ -1,5 +1,6 @@
 mod do_group_msg;
 mod do_private_msg;
+mod do_guild_msg;
 mod do_other_evt;
 extern crate sciter;
 
@@ -14,6 +15,8 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
             do_group_msg::do_group_msg(&root)?;
         }else if message_type == "private"{
             do_private_msg::do_private_msg(&root)?;
+        }else if message_type == "guild"{
+            do_guild_msg::do_guild_msg(&root)?;
         }
     }
     do_other_evt::do_other_evt(&root)?;
@@ -71,13 +74,14 @@ fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Bo
     rl.set_exmap("群ID", &read_json_str(root,"group_id"))?;
     rl.set_exmap("机器人名字", "露娜sama")?;
     rl.set_exmap("原始事件", &root.to_string())?;
+    rl.set_exmap("频道ID", &read_json_str(root,"guild_id"))?;
+    rl.set_exmap("子频道ID", &read_json_str(root,"channel_id"))?;
+    rl.set_exmap("机器人频道ID", &read_json_str(root,"self_tiny_id"))?;
     Ok(())
 }
 
 fn set_normal_message_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
-    let msg_id = root.get("message_id").ok_or("can't get message_id")?.as_i64().ok_or("message_id not i64")?;
-    rl.set_exmap("消息ID", &msg_id.to_string())?;
-    rl.set_exmap("消息类型", "group")?;
+    rl.set_exmap("消息ID", &read_json_str(root,"message_id"))?;
     {
         let sender = root.get("sender").ok_or("sender not exists")?;
         if let Some(js_v) = sender.get("nickname") {

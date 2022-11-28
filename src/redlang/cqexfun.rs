@@ -1,6 +1,6 @@
 use std::{fs, collections::HashMap};
 
-use crate::cqapi::{cq_call_api};
+use crate::{cqapi::{cq_call_api}, mytool::read_json_str};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 
@@ -39,17 +39,25 @@ fn cq_encode_t(cq_code:&str) -> String {
 }
 
 pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    if cmd == "发送者QQ" || cmd == "发送者ID" {
+    if cmd.to_uppercase() == "发送者QQ" || cmd.to_uppercase() == "发送者ID" {
         let qq = self_t.get_exmap("发送者ID")?;
         return Ok(Some(qq.to_string()));
-    }else if cmd == "当前群号" || cmd == "群号" || cmd == "群ID" {
+    }else if cmd == "当前群号" || cmd == "群号" || cmd.to_uppercase() == "群ID" {
         let group = self_t.get_exmap("群ID")?;
         return Ok(Some(group.to_string()));
     }else if cmd == "发送者昵称" {
         let nickname = self_t.get_exmap("发送者昵称")?;
         return Ok(Some(nickname.to_string()));
-    }else if cmd == "机器人QQ" || cmd == "机器人ID" {
+    }else if cmd.to_uppercase() == "机器人QQ" {
         let qq = self_t.get_exmap("机器人ID")?;
+        return Ok(Some(qq.to_string()));
+    }else if cmd.to_uppercase() == "机器人ID" {
+        let qq:&str;
+        if self_t.get_exmap("子频道ID")? != "" {
+            qq = self_t.get_exmap("机器人频道ID")?;
+        }else{
+            qq = self_t.get_exmap("机器人ID")?;
+        }
         return Ok(Some(qq.to_string()));
     }else if cmd == "机器人名字" {
         let name = self_t.get_exmap("机器人名字")?;
@@ -64,10 +72,19 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         let title = self_t.get_exmap("发送者专属头衔")?;
         return Ok(Some(title.to_string()));
     }
-    else if cmd == "消息ID" {
+    else if cmd.to_uppercase() == "消息ID" {
         let msg_id = self_t.get_exmap("消息ID")?;
         return Ok(Some(msg_id.to_string()));
-    }else if cmd == "撤回" {
+    }
+    else if cmd.to_uppercase() == "当前频道ID" {
+        let guild_id = self_t.get_exmap("频道ID")?;
+        return Ok(Some(guild_id.to_string()));
+    }
+    else if cmd.to_uppercase() == "当前子频道ID" {
+        let channel_id = self_t.get_exmap("子频道ID")?;
+        return Ok(Some(channel_id.to_string()));
+    }
+    else if cmd == "撤回" {
         let mut msg_id = self_t.get_param(params, 0)?;
         if msg_id == ""{
             msg_id = self_t.get_exmap("消息ID")?.to_string();
@@ -75,21 +92,35 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         if msg_id == "" {
             return Ok(Some("".to_string()));
         }
-        let int32_msg_id = msg_id.parse::<i32>()?;
-        let send_json = serde_json::json!({
-            "action":"delete_msg",
-            "params":{
-                "message_id":int32_msg_id
-            }
-        });
-        cq_call_api(&send_json.to_string())?;
+        if self_t.get_exmap("子频道ID")? != "" {
+            let send_json = serde_json::json!({
+                "action":"delete_msg",
+                "params":{
+                    "message_id":msg_id
+                }
+            });
+            cq_call_api(&send_json.to_string())?;
+        }else{
+            let int32_msg_id = msg_id.parse::<i32>()?;
+            let send_json = serde_json::json!({
+                "action":"delete_msg",
+                "params":{
+                    "message_id":int32_msg_id
+                }
+            });
+            cq_call_api(&send_json.to_string())?;
+        }
         return Ok(Some("".to_string()));
     }else if cmd == "输出流" {
         let user_id_str = self_t.get_exmap("发送者ID")?.to_string();
         let group_id_str = self_t.get_exmap("群ID")?.to_string();
+        let guild_id_str = self_t.get_exmap("频道ID")?.to_string();
+        let channel_id_str = self_t.get_exmap("子频道ID")?.to_string();
         let msg_type:&str;
         if group_id_str != "" {
             msg_type = "group";
+        }else if channel_id_str != "" && guild_id_str != ""{
+            msg_type = "channel";
         }else if user_id_str  != "" {
             msg_type = "private";
         }else{
@@ -104,6 +135,15 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
                 "action":"send_group_msg",
                 "params":{
                     "group_id":self_t.get_exmap("群ID")?.parse::<i64>()?,
+                    "message":self_t.get_param(params, 0)?
+                }
+            });
+        }else if msg_type == "channel" {
+            send_json = serde_json::json!( {
+                "action":"send_guild_channel_msg",
+                "params":{
+                    "guild_id": guild_id_str,
+                    "channel_id": channel_id_str,
                     "message":self_t.get_param(params, 0)?
                 }
             });
@@ -122,10 +162,10 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let err = "输出流调用失败,retcode 不为0";
         if ret_json.get("retcode").ok_or(err)?.as_i64().ok_or(err)? != 0 {
-            return Err(self_t.make_err(err));
+            return Err(self_t.make_err(&format!("{}:{}",err,cq_ret)));
         }
         let err = "输出流调用失败，获取message_id失败";
-        let msg_id = ret_json.get("data").ok_or(err)?.get("message_id").ok_or(err)?.as_i64().ok_or(err)?;
+        let msg_id = read_json_str(ret_json.get("data").ok_or(err)?,"message_id");
         return Ok(Some(msg_id.to_string()));
     }else if cmd == "艾特" {
         let mut user_id = self_t.get_param(params, 0)?;
@@ -137,11 +177,11 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         }else{
             return Ok(Some(format!("[CQ:at,qq={}]",user_id)));
         }
-    }else if cmd == "CQ码转义" {
+    }else if cmd.to_uppercase() == "CQ码转义" {
         let cq_code = self_t.get_param(params, 0)?;
         return Ok(Some(cq_encode(&cq_code)));
     }
-    else if cmd == "CQ转义" {
+    else if cmd.to_uppercase() == "CQ转义" {
         let cq_code = self_t.get_param(params, 0)?;
         return Ok(Some(cq_encode_t(&cq_code)));
     }
@@ -158,14 +198,14 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             return Ok(Some(redlang_str));
         }
         return Ok(Some(dat.to_string()));
-    }else if cmd == "OB调用" {
+    }else if cmd.to_uppercase() == "OB调用" {
         self_t.get_param(params, 0)?;
         let content = self_t.get_param(params, 1)?;
         let call_ret = cq_call_api(&content)?;
         let js_v:serde_json::Value = serde_json::from_str(&call_ret)?;
         let ret = do_json_parse(&js_v, &self_t.type_uuid)?;
         return Ok(Some(ret));
-    }else if cmd == "CQ码解析" {
+    }else if cmd.to_uppercase() == "CQ码解析" {
         let data_str = self_t.get_param(params, 0)?;
         let pos1 = data_str.find(",").ok_or("CQ码解析失败")?;
         let tp = data_str.get(4..pos1).ok_or("CQ码解析失败")?;
@@ -189,7 +229,7 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             }
         }
         return Ok(Some(self_t.build_obj(sub_key_obj)));
-    }else if cmd == "CQ反转义" {
+    }else if cmd.to_uppercase() == "CQ反转义" {
         let content = self_t.get_param(params, 0)?;
         let content = content.replace("&#91;", "[");
         let content = content.replace("&#93;", "]");
