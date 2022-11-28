@@ -2,8 +2,8 @@
     "ret":1,					
     "apiver":9,					
     "name":"红色问答",	
-    "version":"0.0.5",			
-    "version_id":5,				
+    "version":"0.0.6",			
+    "version_id":6,				
     "author":"super1207",			
     "description":"-- 此插件只能在MiraiCQ中加载！\n ",
     "event":[					
