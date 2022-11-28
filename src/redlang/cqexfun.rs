@@ -1,6 +1,6 @@
 use std::{fs, collections::HashMap};
 
-use crate::{cqapi::{cq_call_api}, mytool::read_json_str};
+use crate::{cqapi::{cq_call_api, cq_get_cookies}, mytool::read_json_str};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 
@@ -246,6 +246,15 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         let mp = crate::G_CONST_MAP.read()?;
         let defstr = String::new();
         let ret = mp.get(k.as_str()).unwrap_or(&defstr);
+        return Ok(Some(ret.to_string()));
+    }else if cmd.to_uppercase() == "进程ID" {
+        let ret = cq_get_cookies("pid")?;
+        return Ok(Some(ret.to_string()));
+    }else if cmd.to_uppercase() == "CPU使用" {
+        let ret = cq_get_cookies("cpu_usage")?;
+        return Ok(Some(ret.to_string()));
+    }else if cmd == "内存使用" {
+        let ret = cq_get_cookies("mem_usage")?;
         return Ok(Some(ret.to_string()));
     }else if cmd == "读词库文件" {
         let path = self_t.get_param(params, 0)?;

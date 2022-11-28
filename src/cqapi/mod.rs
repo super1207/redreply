@@ -13,6 +13,7 @@ extern "system" {
     pub fn CQ_callApi(ac: i32, msg: *const c_char) -> *const c_char;
     pub fn CQ_getAppDirectory(ac: i32) -> *const c_char;
     pub fn CQ_addLog(ac: i32, log_level: i32, category: *const c_char, log_msg: *const c_char) -> i32;
+    pub fn CQ_getCookiesV2(ac: i32,msg: *const c_char) -> *const c_char;
 }
 
 // 用于CQ识别插件的标记
@@ -46,6 +47,17 @@ pub fn cq_call_api(json_str: &str) -> Result<String, Box<dyn std::error::Error>>
         Ok(ret_json.to_string())
     }
 }
+
+#[allow(dead_code)]
+pub fn cq_get_cookies(msg: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let c_json_str = CString::new(msg)?;
+    unsafe {
+        let c_str = CQ_getCookiesV2(get_auth_code(), c_json_str.as_ptr());
+        let ret_json = CStr::from_ptr(c_str).to_str()?;
+        Ok(ret_json.to_string())
+    }
+}
+
 
 #[allow(dead_code)]
 fn cq_add_log_t(log_level:i32,log_msg: &str) -> Result<i32, Box<dyn std::error::Error>> {

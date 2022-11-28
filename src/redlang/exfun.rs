@@ -224,9 +224,12 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
     }else if cmd == "时间戳转文本"{
         let numstr = self_t.get_param(params, 0)?;
         let num = numstr.parse::<i64>()?;
-        let datetime = chrono::prelude::Local.timestamp(num, 0);
-        let newdate = datetime.format("%Y-%m-%d-%H-%M-%S");
-        return Ok(Some(format!("{}",newdate)));
+        let datetime_rst = chrono::prelude::Local.timestamp_opt(num, 0);
+        if let chrono::LocalResult::Single(datetime) = datetime_rst {
+            let newdate = datetime.format("%Y-%m-%d-%H-%M-%S");
+            return Ok(Some(format!("{}",newdate)));
+        }
+        return Ok(Some("".to_string()));
     }else if cmd.to_uppercase() == "MD5编码"{
         let text = self_t.get_param(params, 0)?;
         let bin = self_t.parse_bin(&text)?;
