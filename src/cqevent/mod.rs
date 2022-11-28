@@ -4,7 +4,8 @@ mod do_guild_msg;
 mod do_other_evt;
 extern crate sciter;
 
-use sciter::dispatch_script_call;
+
+use sciter::{dispatch_script_call};
 use crate::{cqapi::*, save_config, read_config, redlang::{RedLang}, mytool::read_json_str};
 
 // 处理1207号事件

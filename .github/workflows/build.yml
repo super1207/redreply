@@ -21,8 +21,6 @@ jobs:
         mkdir outdir
         mkdir outdir\MiraiCQ
         mkdir outdir\MiraiCQ\app
-        mkdir outdir\MiraiCQ\app\redlang
-        mkdir outdir\MiraiCQ\bin
         mkdir outdir\IPCTool
         mkdir outdir_t
     - name: download
@@ -42,14 +40,13 @@ jobs:
         cp IPCTool.dll .\outdir\IPCTool\IPCTool.dll
         cp IPCTool64.dll .\outdir\IPCTool\IPCTool64.dll
         cp MiraiCQ.exe .\outdir\MiraiCQ\MiraiCQ.exe
-        cp sciter.dll .\outdir\MiraiCQ\bin\sciter.dll
+        cp sciter.dll .\res\sciter.dll
     - name: Build
       run: |
         $ENV:RUSTFLAGS='-C target-feature=+crt-static'
         cargo build --target=i686-pc-windows-msvc --release
         copy-item .\target\i686-pc-windows-msvc\release\*.dll -Destination .\outdir\MiraiCQ\app
         copy-item .\redlang.json -Destination .\outdir\MiraiCQ\app
-        copy-item .\res\* -Destination .\outdir\MiraiCQ\app\redlang
         copy-item .\ovo_start_file\* -Destination .\outdir
         Compress-Archive .\outdir\* 红色问答.zip
         mv 红色问答.zip 红色问答.opk

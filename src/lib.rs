@@ -1,10 +1,12 @@
 use std::collections::HashMap;
+use std::env::current_exe;
 use std::ffi::CStr;
 use std::fs;
 use std::os::raw::c_char;
 use std::panic;
 use std::sync::RwLock;
 use serde_json;
+use rust_embed::RustEmbed;
 
 use cqapi::cq_add_log_w;
 use cqapi::cq_get_app_directory;
@@ -24,6 +26,12 @@ lazy_static! {
     pub static ref REDLANG_UUID:String = uuid::Uuid::new_v4().to_string();
     pub static ref G_CONST_MAP:RwLock<HashMap<String, String>> = RwLock::new(HashMap::new());
 }
+
+
+#[derive(RustEmbed)]
+#[folder = "res/"]
+#[prefix = "res/"]
+pub struct Asset;
 
 
 // 这是插件第一个被调用的函数，不要在这里调用任何CQ的API,也不要在此处阻塞
@@ -68,9 +76,31 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     Ok((*wk).clone())
 }
 
+pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
+    let err = "get asset err";
+    let index_html = Asset::get("res/minimal.htm").ok_or(err)?;
+    fs::write(cq_get_app_directory().unwrap() + "minimal.htm", index_html.data)?;
+    let index_html = Asset::get("res/edit_view.htm").ok_or(err)?;
+    fs::write(cq_get_app_directory().unwrap() + "edit_view.htm", index_html.data)?;
+    let index_html = Asset::get("res/help.html").ok_or(err)?;
+    fs::write(cq_get_app_directory().unwrap() + "help.html", index_html.data)?;
+    let index_html = Asset::get("res/1111.png").ok_or(err)?;
+    fs::write(cq_get_app_directory().unwrap() + "1111.png", index_html.data)?;
+    let pth = current_exe()?.parent().ok_or(err)?.join("bin").join("sciter.dll");
+    if !pth.exists() {
+        let index_html = Asset::get("res/sciter.dll").ok_or(err)?;
+        fs::write(pth, index_html.data)?;
+    }
+    
+    Ok(())
+}
+
 // 插件被MiraiCQ启用后就会调用此函数，这时，已经可以调用不需要和onebot通讯的API了
 #[no_mangle]
 pub extern "system" fn _eventEnable() -> i32{
+    if let Err(err) = release_file(){
+        cq_add_log_w(&err.to_string()).unwrap();
+    }
     if let Err(err) = init_config(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
