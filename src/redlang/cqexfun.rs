@@ -84,6 +84,20 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         let channel_id = self_t.get_exmap("子频道ID")?;
         return Ok(Some(channel_id.to_string()));
     }
+    else if cmd == "图片" {
+        let pic = self_t.get_param(params, 0)?;
+        let tp = self_t.get_type(&pic)?;
+        if tp == "字节集" {
+            let bin = self_t.parse_bin(&pic)?;
+            let b64_str = base64::encode(bin);
+            let ret = format!("[CQ:image,file=base64://{}]",b64_str);
+            return Ok(Some(ret));
+        }else if tp == "文本" {
+            let ret = format!("[CQ:image,file={}]",pic);
+        }
+        
+        return Ok(Some("".to_string()));
+    }
     else if cmd == "撤回" {
         let mut msg_id = self_t.get_param(params, 0)?;
         if msg_id == ""{

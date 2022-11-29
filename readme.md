@@ -499,6 +499,11 @@ CQ码<strong>内部</strong>中的字符需要CQ码转义
 【CQ转义@<font color="red">内容</font>】<br />
 CQ码<strong>外部</strong>的字符需要CQ转义，以上三个命令的作用可以参考：[onebot字符格式消息转义规则](https://github.com/botuniverse/onebot-11/blob/master/message/string.md#%E8%BD%AC%E4%B9%89)
 
+### 图片
+
+【图片@<font color="red">文本或字节集</font>】<br />
+支持http/https链接，绝对地址，相对地址(相对于data/image目录)，字节集
+
 ### 子关键词
 
 【子关键词】<br />
