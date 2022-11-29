@@ -1,6 +1,6 @@
-use std::{fs, collections::HashMap, path::Path};
+use std::{fs, collections::HashMap, path::Path, env::current_exe};
 
-use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str};
+use crate::{cqapi::{cq_call_api, cq_get_cookies}, mytool::read_json_str};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 
@@ -102,7 +102,7 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
                     let b64_str = base64::encode(bin);
                     ret = format!("[CQ:image,file=base64://{}]",b64_str);
                 }else{
-                    let path_str = format!("{}{}",cq_get_app_directory()?,&pic);
+                    let path_str = format!("{}\\data\\image\\{}",current_exe()?.parent().ok_or("无法获取当前exe目录")?.to_string_lossy(),&pic);
                     let path = Path::new(&path_str);
                     let bin = std::fs::read(path)?;
                     let b64_str = base64::encode(bin);
