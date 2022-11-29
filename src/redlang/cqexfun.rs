@@ -1,6 +1,6 @@
-use std::{fs, collections::HashMap};
+use std::{fs, collections::HashMap, path::Path};
 
-use crate::{cqapi::{cq_call_api, cq_get_cookies}, mytool::read_json_str};
+use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 
@@ -87,16 +87,30 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
     else if cmd == "图片" {
         let pic = self_t.get_param(params, 0)?;
         let tp = self_t.get_type(&pic)?;
+        let mut ret:String = String::new();
         if tp == "字节集" {
             let bin = self_t.parse_bin(&pic)?;
             let b64_str = base64::encode(bin);
-            let ret = format!("[CQ:image,file=base64://{}]",b64_str);
-            return Ok(Some(ret));
+            ret = format!("[CQ:image,file=base64://{}]",b64_str);
         }else if tp == "文本" {
-            let ret = format!("[CQ:image,file={}]",pic);
+            if pic.starts_with("http://") || pic.starts_with("https://"){
+                ret = format!("[CQ:image,file={}]",pic);
+            }else{
+                if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
+                    let path = Path::new(&pic);
+                    let bin = std::fs::read(path)?;
+                    let b64_str = base64::encode(bin);
+                    ret = format!("[CQ:image,file=base64://{}]",b64_str);
+                }else{
+                    let path_str = format!("{}{}",cq_get_app_directory()?,&pic);
+                    let path = Path::new(&path_str);
+                    let bin = std::fs::read(path)?;
+                    let b64_str = base64::encode(bin);
+                    ret = format!("[CQ:image,file=base64://{}]",b64_str);
+                }
+            }
         }
-        
-        return Ok(Some("".to_string()));
+        return Ok(Some(ret));
     }
     else if cmd == "撤回" {
         let mut msg_id = self_t.get_param(params, 0)?;
