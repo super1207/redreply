@@ -25,6 +25,7 @@ rcnb-rs = "*"
 rust-embed="*"
 image = "*"
 imageproc = "*"
+gif = "*"
 
 [lib]
 name = "redlang" #生成dll的文件名

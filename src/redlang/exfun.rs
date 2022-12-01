@@ -1,4 +1,4 @@
-use std::{path::Path, io::Read, time::SystemTime, collections::HashMap};
+use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::HashMap};
 
 use chrono::TimeZone;
 use md5::{Md5, Digest};
@@ -353,6 +353,50 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let y = text4.parse::<i64>()?;
         let img_out = img_paste(img_vec_big,img_vec_sub,x,y)?;
         let ret = self_t.build_bin(img_out);
+        return Ok(Some(ret));
+    }else if cmd.to_uppercase() == "GIF合成"{
+        let text1 = self_t.get_param(params, 0)?;
+        let text2 = self_t.get_param(params, 1)?;
+        let delay = text2.parse::<u64>()?;
+        let img_arr_str = self_t.parse_arr(&text1)?;
+        let mut frame_vec:Vec<image::Frame> = vec![];
+        for it in img_arr_str {
+            let img_bin = self_t.parse_bin(it)?;
+            let img = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
+            let fm = image::Frame::from_parts(img, 0, 0, image::Delay::from_saturating_duration(Duration::from_millis(delay)));
+            frame_vec.push(fm);
+        }
+        let mut v:Vec<u8> = vec![];
+        {
+            let mut encoder = image::codecs::gif::GifEncoder::new(&mut v);
+            encoder.encode_frames(frame_vec)?;
+            encoder.set_repeat(image::codecs::gif::Repeat::Infinite)?;
+        }
+        let ret = self_t.build_bin(v);
+        return Ok(Some(ret));
+    }else if cmd.to_uppercase() == "图片变圆"{
+        let text1 = self_t.get_param(params, 0)?;
+        let img_vec = self_t.parse_bin(&text1)?;
+        let mut img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let width = img.width();
+        let height = img.height();
+        let r:u32;
+        if width < height {
+            r = width / 2;
+        }else{
+            r = height / 2;
+        }
+        for x in 0..width {
+            for y in 0..height {
+                if (x - r)*(x - r) + (y - r)*(y - r) > r * r {
+                    let mut pix = img.get_pixel_mut(x, y);
+                    pix.0[3] = 0;
+                }
+            }
+        }
+        let mut bytes: Vec<u8> = Vec::new();
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     }
     return Ok(None);

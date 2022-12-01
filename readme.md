@@ -419,8 +419,18 @@ QQ相关的命令依赖的数据，会复制到新的脚本中；而普通变量
 
 ### 图片叠加
 
-【图片叠加@<font color="red">大图片字节集</font>@<font color="red">下图片字节集</font>@<font color="red">x</font>@<font color="red">y</font>】<br />
+【图片叠加@<font color="red">大图片字节集</font>@<font color="red">小图片字节集</font>@<font color="red">x</font>@<font color="red">y</font>】<br />
 将两张图片叠加起来，大图片放上面，小图片放下面，x，y为小图片的放置位置。
+
+### GIF合成
+
+【GIF合成@<font color="red">图片字节集数组</font>@<font color="red">延时</font>】<br />
+合成gif，延时的单位为毫秒，用于确定gif的播放速度。
+
+### 图片变圆
+
+【图片变圆@<font color="red">图片字节集</font>】<br />
+将图片变成圆形，通常用于头像处理。
 
 ### 应用目录
 
