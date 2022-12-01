@@ -8,6 +8,12 @@ use super::RedLang;
 
 use crate::{redlang::cqexfun::cqexfun};
 
+use image::{Rgba, ImageBuffer};
+use imageproc::geometric_transformations::{Projection, warp_with};
+use std::io::Cursor;
+use image::io::Reader as ImageReader;
+use imageproc::geometric_transformations::{Interpolation};
+
 
 pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
     
@@ -125,7 +131,13 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let path = Path::new(&file_path);
         let content = std::fs::read(path)?;
         return Ok(Some(self_t.build_bin(content)));
-    }else if cmd == "分割"{
+    }else if cmd == "运行目录"{
+        let exe_dir = std::env::current_exe()?;
+        let exe_path = exe_dir.parent().ok_or("无法获得运行目录")?;
+        let exe_path_str = exe_path.to_string_lossy().to_string() + "\\";
+        return Ok(Some(exe_path_str));
+    }
+    else if cmd == "分割"{
         let data_str = self_t.get_param(params, 0)?;
         let sub_str = self_t.get_param(params, 1)?;
         let split_ret:Vec<&str> = data_str.split(&sub_str).collect();
@@ -246,6 +258,102 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let bin = self_t.parse_bin(&text)?;
         let content = rcnb_rs::encode(bin);
         return Ok(Some(content));
+    }else if cmd == "图片信息"{
+        let text = self_t.get_param(params, 0)?;
+        let img_bin = self_t.parse_bin(&text)?;
+        let img = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
+        let mut mp = HashMap::new();
+        mp.insert("宽".to_string(), img.width().to_string());
+        mp.insert("高".to_string(), img.height().to_string());
+        let retobj = self_t.build_obj(mp);
+        return Ok(Some(retobj));
+    }else if cmd == "透视变换"{
+        let text1 = self_t.get_param(params, 0)?;
+        let text2 = self_t.get_param(params, 1)?;
+        let text3 = self_t.get_param(params, 2)?;
+        let img_bin = self_t.parse_bin(&text1)?;
+        let dst_t = self_t.parse_arr(&text2)?;
+        let src_t = self_t.parse_arr(&text3)?;
+        if dst_t.len() != 8 || src_t.len() != 8 {
+            return Err(self_t.make_err("透视变换参数错误1"));
+        }
+        fn cv(v:Vec<&str>) -> Result<[(f32,f32);4], Box<dyn std::error::Error>> {
+            let v_ret = [
+                (v[0].parse::<f32>()?,v[1].parse::<f32>()?),
+                (v[2].parse::<f32>()?,v[3].parse::<f32>()?),
+                (v[4].parse::<f32>()?,v[5].parse::<f32>()?),
+                (v[6].parse::<f32>()?,v[7].parse::<f32>()?)
+            ];
+            return Ok(v_ret);
+        }
+        let dst = cv(dst_t)?;
+        let src = cv(src_t)?;
+        let img = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
+        let p = Projection::from_control_points(src, dst).ok_or("Could not compute projection matrix")?.invert();
+        let mut img2 = warp_with(
+            &img,
+            |x, y| p * (x, y),
+            Interpolation::Bilinear,
+            Rgba([0,0,0,0]),
+        );
+        fn m_min(v:Vec<f32>) -> f32 {
+            if v.len() == 0 {
+                return 0f32;
+            }
+            let mut m = v[0];
+            for i in v {
+                if i < m {
+                    m = i;
+                }
+            }
+            m
+        }
+        fn m_max(v:Vec<f32>) -> f32 {
+            if v.len() == 0 {
+                return 0f32;
+            }
+            let mut m = v[0];
+            for i in v {
+                if i > m {
+                    m = i;
+                }
+            }
+            m
+        }
+        let x_min = m_min(vec![dst[0].0,dst[1].0,dst[2].0,dst[3].0]);
+        let x_max = m_max(vec![dst[0].0,dst[1].0,dst[2].0,dst[3].0]);
+        let y_min = m_min(vec![dst[0].1,dst[1].1,dst[2].1,dst[3].1]);
+        let y_max = m_max(vec![dst[0].1,dst[1].1,dst[2].1,dst[3].1]);
+        let img_out = image::imageops::crop(&mut img2,x_min as u32,y_min as u32,(x_max - x_min) as u32,(y_max - y_min) as u32);
+        let mm = img_out.to_image();
+        let mut bytes: Vec<u8> = Vec::new();
+        mm.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    }else if cmd == "图片叠加"{
+        fn img_paste(img_vec_big:Vec<u8>,img_vec_sub:Vec<u8>,x:i64,y:i64) -> Result<Vec<u8>, Box<dyn std::error::Error>>{
+            let img1 = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
+            let img2 = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
+            let w = img1.width();
+            let h = img1.height();
+            let mut img:ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(w, h);
+            image::imageops::overlay(&mut img, &img2, x, y);
+            image::imageops::overlay(&mut img, &img1, 0, 0);
+            let mut bytes: Vec<u8> = Vec::new();
+            img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+            Ok(bytes)
+        }
+        let text1 = self_t.get_param(params, 0)?;
+        let text2 = self_t.get_param(params, 1)?;
+        let text3 = self_t.get_param(params, 2)?;
+        let text4 = self_t.get_param(params, 3)?;
+        let img_vec_big = self_t.parse_bin(&text1)?;
+        let img_vec_sub = self_t.parse_bin(&text2)?;
+        let x = text3.parse::<i64>()?;
+        let y = text4.parse::<i64>()?;
+        let img_out = img_paste(img_vec_big,img_vec_sub,x,y)?;
+        let ret = self_t.build_bin(img_out);
+        return Ok(Some(ret));
     }
     return Ok(None);
 }

@@ -45,6 +45,15 @@ jobs:
       run: |
         $ENV:RUSTFLAGS='-C target-feature=+crt-static'
         cargo build --target=i686-pc-windows-msvc --release
+    - name: UPXDeal
+      uses: crazy-max/ghaction-upx@v2
+      with:
+          version: latest
+          files: |
+            .\target\i686-pc-windows-msvc\release\*.dll
+          args: -fq
+    - name: Deal
+      run: |
         copy-item .\target\i686-pc-windows-msvc\release\*.dll -Destination .\outdir\MiraiCQ\app
         copy-item .\redlang.json -Destination .\outdir\MiraiCQ\app
         copy-item .\ovo_start_file\* -Destination .\outdir

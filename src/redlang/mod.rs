@@ -165,7 +165,7 @@ impl RedLang<'_> {
             let fun = self.parse_fun(&func)?;
             let func_t = format!("{}F{}",self.type_uuid,fun);
             ret_str = func_t;
-        } else if cmd == "函数调用" {
+        } else if cmd == "函数调用" || cmd == "调用函数" {
             // 获得函数
             let func = self.get_param(params, 0)?;
 

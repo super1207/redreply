@@ -23,6 +23,8 @@ chrono = "*"
 md-5 = "*"
 rcnb-rs = "*"
 rust-embed="*"
+image = "*"
+imageproc = "*"
 
 [lib]
 name = "redlang" #生成dll的文件名

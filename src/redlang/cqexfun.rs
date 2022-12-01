@@ -1,6 +1,6 @@
 use std::{fs, collections::HashMap, path::Path, env::current_exe};
 
-use crate::{cqapi::{cq_call_api, cq_get_cookies}, mytool::read_json_str};
+use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 
@@ -304,6 +304,9 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             dict_obj.insert(key.to_owned(), arr_str);
         }
         return Ok(Some(self_t.build_obj(dict_obj)));
+    }else if cmd == "应用目录" {
+        let app_dir = cq_get_app_directory()?;
+        return Ok(Some(app_dir));
     }
     return Ok(None);
 }
