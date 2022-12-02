@@ -273,7 +273,15 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let text3 = self_t.get_param(params, 2)?;
         let img_bin = self_t.parse_bin(&text1)?;
         let dst_t = self_t.parse_arr(&text2)?;
-        let src_t = self_t.parse_arr(&text3)?;
+        let img = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
+        let img_width_str = img.width().to_string();
+        let img_height_str = img.height().to_string();
+        let src_t:Vec<&str>;
+        if text3 == "" {
+            src_t = vec!["0","0",&img_width_str,"0",&img_width_str,&img_height_str,"0",&img_width_str];
+        }else{
+            src_t = self_t.parse_arr(&text3)?;
+        }
         if dst_t.len() != 8 || src_t.len() != 8 {
             return Err(self_t.make_err("透视变换参数错误1"));
         }
@@ -288,7 +296,6 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         }
         let dst = cv(dst_t)?;
         let src = cv(src_t)?;
-        let img = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
         let p = Projection::from_control_points(src, dst).ok_or("Could not compute projection matrix")?.invert();
         let mut img2 = warp_with(
             &img,
