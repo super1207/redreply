@@ -1,4 +1,4 @@
-use std::{fs, collections::HashMap, path::Path, env::current_exe};
+use std::{fs, collections::HashMap, path::Path, env::current_exe, vec};
 
 use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str};
 use serde_json;
@@ -307,6 +307,21 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
     }else if cmd == "应用目录" {
         let app_dir = cq_get_app_directory()?;
         return Ok(Some(app_dir));
+    }else if cmd == "取艾特" {
+        let raw_data = self_t.get_exmap("原始事件")?;
+        let raw_json:serde_json::Value = serde_json::from_str(raw_data)?;
+        let err = "获取message失败";
+        let message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?;
+        let mut ret_vec:Vec<String> = vec![];
+        for it in message {
+            let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
+            if tp == "at" {
+                let qq = it.get("data").ok_or(err)?.get("qq").ok_or(err)?.as_str().ok_or(err)?;
+                ret_vec.push(qq.to_string());
+            }
+        }
+        let ret = self_t.build_arr(ret_vec);
+        return Ok(Some(ret));
     }
     return Ok(None);
 }

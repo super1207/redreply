@@ -554,6 +554,11 @@ CQ码<strong>外部</strong>的字符需要CQ转义，以上三个命令的作�
 【事件内容】<br />
 onebot事件json对应的RedLang对象。
 
+### 事件内容
+
+【取艾特】<br />
+取出消息事件中被艾特的人，返回一个数组。
+
 ### OB调用
 
 【OB调用@<font color="red">self_id</font>@<font color="red">onebot要求的json文本</font>】<br />
