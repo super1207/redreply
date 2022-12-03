@@ -7,15 +7,6 @@ use std::os::raw::c_char;
 use encoding::all::GBK;
 use encoding::{DecoderTrap, EncoderTrap, Encoding};
 
-// 在这里链接CQ的函数
-#[link(name = "CQP")]
-extern "system" {
-    pub fn CQ_callApi(ac: i32, msg: *const c_char) -> *const c_char;
-    pub fn CQ_getAppDirectory(ac: i32) -> *const c_char;
-    pub fn CQ_addLog(ac: i32, log_level: i32, category: *const c_char, log_msg: *const c_char) -> i32;
-    pub fn CQ_getCookiesV2(ac: i32,msg: *const c_char) -> *const c_char;
-}
-
 // 用于CQ识别插件的标记
 static AUTH_CODE: AtomicI32 = AtomicI32::new(0);
 
@@ -31,7 +22,9 @@ pub fn set_auth_code(auth_code:i32) {
 #[allow(dead_code)]
 pub fn cq_get_app_directory() -> Result<String, Box<dyn std::error::Error>> {
     unsafe {
-        let c_str = CQ_getAppDirectory(get_auth_code());
+        let lib = libloading::Library::new("CQP.dll")?;
+        let cq_get_app_directory_t: libloading::Symbol<unsafe extern "system" fn(ac: i32) -> *const c_char> = lib.get(b"CQ_getAppDirectory")?;
+        let c_str = cq_get_app_directory_t(get_auth_code());
         let u8_str = GBK.decode(CStr::from_ptr(c_str).to_bytes(), DecoderTrap::Ignore)?;
         Ok(u8_str)
     }
@@ -42,7 +35,9 @@ pub fn cq_get_app_directory() -> Result<String, Box<dyn std::error::Error>> {
 pub fn cq_call_api(json_str: &str) -> Result<String, Box<dyn std::error::Error>> {
     let c_json_str = CString::new(json_str)?;
     unsafe {
-        let c_str = CQ_callApi(get_auth_code(), c_json_str.as_ptr());
+        let lib = libloading::Library::new("CQP.dll")?;
+        let cq_call_api_t: libloading::Symbol<unsafe extern "system" fn(ac: i32, msg: *const c_char) -> *const c_char> = lib.get(b"CQ_callApi")?;
+        let c_str = cq_call_api_t(get_auth_code(), c_json_str.as_ptr());
         let ret_json = CStr::from_ptr(c_str).to_str()?;
         Ok(ret_json.to_string())
     }
@@ -52,7 +47,9 @@ pub fn cq_call_api(json_str: &str) -> Result<String, Box<dyn std::error::Error>>
 pub fn cq_get_cookies(msg: &str) -> Result<String, Box<dyn std::error::Error>> {
     let c_json_str = CString::new(msg)?;
     unsafe {
-        let c_str = CQ_getCookiesV2(get_auth_code(), c_json_str.as_ptr());
+        let lib = libloading::Library::new("CQP.dll")?;
+        let cq_get_cookies_t: libloading::Symbol<unsafe extern "system" fn(ac: i32,msg: *const c_char) -> *const c_char> = lib.get(b"CQ_getCookiesV2")?;
+        let c_str = cq_get_cookies_t(get_auth_code(), c_json_str.as_ptr());
         let ret_json = CStr::from_ptr(c_str).to_str()?;
         Ok(ret_json.to_string())
     }
@@ -65,7 +62,9 @@ fn cq_add_log_t(log_level:i32,log_msg: &str) -> Result<i32, Box<dyn std::error::
     let gbk_vec = GBK.encode(log_msg, EncoderTrap::Ignore)?;
     let c_log_msg = CString::new(gbk_vec)?;
     unsafe {
-        let ret = CQ_addLog(
+        let lib = libloading::Library::new("CQP.dll")?;
+        let cq_add_log_t_t: libloading::Symbol<unsafe extern "system" fn(ac: i32, log_level: i32, category: *const c_char, log_msg: *const c_char) -> i32> = lib.get(b"CQ_addLog")?;
+        let ret = cq_add_log_t_t(
             get_auth_code(),
             log_level,
             c_category.as_ptr(),
