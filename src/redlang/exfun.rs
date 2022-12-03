@@ -9,7 +9,7 @@ use super::RedLang;
 use crate::{redlang::cqexfun::cqexfun};
 
 use image::{Rgba, ImageBuffer};
-use imageproc::geometric_transformations::{Projection, warp_with};
+use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
 use std::io::Cursor;
 use image::io::Reader as ImageReader;
 use imageproc::geometric_transformations::{Interpolation};
@@ -403,6 +403,46 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         }
         let mut bytes: Vec<u8> = Vec::new();
         img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    }else if cmd.to_uppercase() == "水平翻转"{
+        let text1 = self_t.get_param(params, 0)?;
+        let img_vec = self_t.parse_bin(&text1)?;
+        let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let img_out = image::imageops::flip_horizontal(&img);
+        let mut bytes: Vec<u8> = Vec::new();
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    }else if cmd.to_uppercase() == "垂直翻转"{
+        let text1 = self_t.get_param(params, 0)?;
+        let img_vec = self_t.parse_bin(&text1)?;
+        let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let img_out = image::imageops::flip_vertical(&img);
+        let mut bytes: Vec<u8> = Vec::new();
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    }else if cmd.to_uppercase() == "图像旋转"{
+        let text1 = self_t.get_param(params, 0)?;
+        let text2 = self_t.get_param(params, 1)?;
+        let img_vec = self_t.parse_bin(&text1)?;
+        let theta = text2.parse::<f32>()? / 360.0 * (2.0 * std::f32::consts::PI);
+        let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let img_out = rotate_about_center(&img,theta,Interpolation::Bilinear,Rgba([0,0,0,0]));
+        let mut bytes: Vec<u8> = Vec::new();
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    }else if cmd.to_uppercase() == "图像大小调整"{
+        let text1 = self_t.get_param(params, 0)?;
+        let text2 = self_t.get_param(params, 1)?;
+        let text3 = self_t.get_param(params, 2)?;
+        let img_vec = self_t.parse_bin(&text1)?;
+        let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let img_out = image::imageops::resize(&img, text2.parse::<u32>()?, text3.parse::<u32>()?, image::imageops::FilterType::Nearest);
+        let mut bytes: Vec<u8> = Vec::new();
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     }

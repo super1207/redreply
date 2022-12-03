@@ -322,6 +322,21 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         }
         let ret = self_t.build_arr(ret_vec);
         return Ok(Some(ret));
+    }else if cmd == "取图片" {
+        let raw_data = self_t.get_exmap("原始事件")?;
+        let raw_json:serde_json::Value = serde_json::from_str(raw_data)?;
+        let err = "获取message失败";
+        let message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?;
+        let mut ret_vec:Vec<String> = vec![];
+        for it in message {
+            let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
+            if tp == "image" {
+                let url = it.get("data").ok_or(err)?.get("url").ok_or(err)?.as_str().ok_or(err)?;
+                ret_vec.push(url.to_string());
+            }
+        }
+        let ret = self_t.build_arr(ret_vec);
+        return Ok(Some(ret));
     }
     return Ok(None);
 }
