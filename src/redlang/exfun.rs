@@ -258,7 +258,7 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let bin = self_t.parse_bin(&text)?;
         let content = rcnb_rs::encode(bin);
         return Ok(Some(content));
-    }else if cmd == "图片信息"{
+    }else if cmd == "图片信息" || cmd == "图像信息"{
         let text = self_t.get_param(params, 0)?;
         let img_bin = self_t.parse_bin(&text)?;
         let img = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
@@ -337,7 +337,7 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         mm.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
-    }else if cmd == "图片叠加"{
+    }else if cmd == "图片叠加" || cmd == "图像叠加"{
         fn img_paste(img_vec_big:Vec<u8>,img_vec_sub:Vec<u8>,x:i64,y:i64) -> Result<Vec<u8>, Box<dyn std::error::Error>>{
             let img1 = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
             let img2 = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
@@ -381,7 +381,7 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         }
         let ret = self_t.build_bin(v);
         return Ok(Some(ret));
-    }else if cmd.to_uppercase() == "图片变圆"{
+    }else if cmd == "图片变圆" || cmd == "图像变圆" {
         let text1 = self_t.get_param(params, 0)?;
         let img_vec = self_t.parse_bin(&text1)?;
         let mut img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
@@ -399,6 +399,28 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
                     let mut pix = img.get_pixel_mut(x, y);
                     pix.0[3] = 0;
                 }
+            }
+        }
+        let mut bytes: Vec<u8> = Vec::new();
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    }else if cmd == "图片变灰" || cmd == "图像变灰"{
+        let text1 = self_t.get_param(params, 0)?;
+        let img_vec = self_t.parse_bin(&text1)?;
+        let mut img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let width = img.width();
+        let height = img.height();
+        for x in 0..width {
+            for y in 0..height {
+                let mut pix = img.get_pixel_mut(x, y);
+                let red = pix.0[0] as f32  * 0.3;
+                let green = pix.0[1] as f32  * 0.589;
+                let blue = pix.0[2] as f32  * 0.11;
+                let color = (red + green + blue) as u8;
+                pix.0[0] = color;
+                pix.0[1] = color;
+                pix.0[2] = color;
             }
         }
         let mut bytes: Vec<u8> = Vec::new();
@@ -423,7 +445,7 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
-    }else if cmd.to_uppercase() == "图像旋转"{
+    }else if cmd == "图像旋转" || cmd == "图片旋转"{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
         let img_vec = self_t.parse_bin(&text1)?;
@@ -434,7 +456,7 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
-    }else if cmd.to_uppercase() == "图像大小调整"{
+    }else if cmd == "图像大小调整" || cmd == "图片大小调整"{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
         let text3 = self_t.get_param(params, 2)?;
