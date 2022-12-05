@@ -94,7 +94,7 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             ret = format!("[CQ:image,file=base64://{}]",b64_str);
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
-                ret = format!("[CQ:image,file={}]",pic);
+                ret = format!("[CQ:image,file={}]",cq_encode(&pic));
             }else{
                 if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
                     let path = Path::new(&pic);
@@ -107,6 +107,33 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
                     let bin = std::fs::read(path)?;
                     let b64_str = base64::encode(bin);
                     ret = format!("[CQ:image,file=base64://{}]",b64_str);
+                }
+            }
+        }
+        return Ok(Some(ret));
+    }else if cmd == "语音" {
+        let pic = self_t.get_param(params, 0)?;
+        let tp = self_t.get_type(&pic)?;
+        let mut ret:String = String::new();
+        if tp == "字节集" {
+            let bin = self_t.parse_bin(&pic)?;
+            let b64_str = base64::encode(bin);
+            ret = format!("[CQ:record,file=base64://{}]",b64_str);
+        }else if tp == "文本" {
+            if pic.starts_with("http://") || pic.starts_with("https://"){
+                ret = format!("[CQ:record,file={}]",cq_encode(&pic));
+            }else{
+                if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
+                    let path = Path::new(&pic);
+                    let bin = std::fs::read(path)?;
+                    let b64_str = base64::encode(bin);
+                    ret = format!("[CQ:record,file=base64://{}]",b64_str);
+                }else{
+                    let path_str = format!("{}\\data\\record\\{}",current_exe()?.parent().ok_or("无法获取当前exe目录")?.to_string_lossy(),&pic);
+                    let path = Path::new(&path_str);
+                    let bin = std::fs::read(path)?;
+                    let b64_str = base64::encode(bin);
+                    ret = format!("[CQ:record,file=base64://{}]",b64_str);
                 }
             }
         }
