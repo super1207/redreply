@@ -423,6 +423,11 @@ QQ相关的命令依赖的数据，会复制到新的脚本中；而普通变量
 【图片叠加@<font color="red">大图片字节集</font>@<font color="red">小图片字节集</font>@<font color="red">x</font>@<font color="red">y</font>】<br />
 将两张图片叠加起来，大图片放上面，小图片放下面，x，y为小图片的放置位置。
 
+### 图片上叠加
+
+【图片叠加@<font color="red">大图片字节集</font>@<font color="red">小图片字节集</font>@<font color="red">x</font>@<font color="red">y</font>】<br />
+将两张图片叠加起来，大图片放下面，小图片放上面，x，y为小图片的放置位置。
+
 ### 水平翻转
 
 【水平翻转@<font color="red">图片字节集</font>】<br />

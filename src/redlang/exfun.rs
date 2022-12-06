@@ -361,6 +361,22 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let img_out = img_paste(img_vec_big,img_vec_sub,x,y)?;
         let ret = self_t.build_bin(img_out);
         return Ok(Some(ret));
+    }else if cmd == "图片上叠加" || cmd == "图像上叠加"{
+        let text1 = self_t.get_param(params, 0)?;
+        let text2 = self_t.get_param(params, 1)?;
+        let text3 = self_t.get_param(params, 2)?;
+        let text4 = self_t.get_param(params, 3)?;
+        let img_vec_big = self_t.parse_bin(&text1)?;
+        let img_vec_sub = self_t.parse_bin(&text2)?;
+        let x = text3.parse::<i64>()?;
+        let y = text4.parse::<i64>()?;
+        let mut img_big = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
+        let img_sub = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
+        image::imageops::overlay(&mut img_big, &img_sub, x, y);
+        let mut bytes: Vec<u8> = Vec::new();
+        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
     }else if cmd.to_uppercase() == "GIF合成"{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
