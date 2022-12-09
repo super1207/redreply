@@ -24,7 +24,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
     if cmd == "访问" {
         let url = self_t.get_param(params, 0)?;
         let mut easy = curl::easy::Easy::new();
-        easy.url(&url).unwrap();
+        easy.url(&url)?;
+        easy.ssl_verify_peer(false)?;
         let mut header_list = curl::easy::List::new();
         header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
         let http_header_str = self_t.get_exmap("访问头")?;
@@ -58,7 +59,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             return Err(self_t.make_err(&("不支持的post访问体类型:".to_owned()+&tp)));
         }
         let mut easy = curl::easy::Easy::new();
-        easy.url(&url).unwrap();
+        easy.url(&url)?;
+        easy.ssl_verify_peer(false)?;
         let mut header_list = curl::easy::List::new();
         header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
         let http_header_str = self_t.get_exmap("访问头")?;
