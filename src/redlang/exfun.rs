@@ -123,7 +123,32 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             ret_str.push(it.to_string());
         }
         return Ok(Some(self_t.build_arr(ret_str)))
-    }else if cmd == "Json解析"{
+    }else if cmd == "截取"{
+        let content = self_t.get_param(params, 0)?;
+        let begin = self_t.get_param(params, 1)?;
+        let len = self_t.get_param(params, 2)?;
+        let tp = self_t.get_type(&content)?;
+        if tp != "文本" {
+            return Err(self_t.make_err("截取命令目前仅支持文本"));
+        }
+        let chs = content.chars().collect::<Vec<char>>();
+        let begen_pos = begin.parse::<usize>()?;
+        let sub_len:usize;
+        if len == "" {
+            sub_len = chs.len() - begen_pos;
+        }else{
+            sub_len = len.parse::<usize>()?;
+        }
+        let mut end_pos = begen_pos+sub_len;
+        if end_pos > chs.len() {
+            end_pos = chs.len();
+        }
+        let ret = match chs.get(begen_pos..end_pos) {
+            Some(value) => value.iter().collect::<String>(),
+            None => "".to_string()
+        };
+        return Ok(Some(ret))
+    }else if cmd.to_uppercase() == "JSON解析"{
         let json_str = self_t.get_param(params, 0)?;
         let json_data_ret:serde_json::Value = serde_json::from_str(&json_str)?;
         let json_parse_out = do_json_parse(&json_data_ret,&self_t.type_uuid)?;

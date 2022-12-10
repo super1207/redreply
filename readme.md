@@ -253,6 +253,12 @@ X，Y都必须为非负整数，且Y<strong>不能小于</strong>X。
 【取中间@<font color="red">文本内容</font>@<font color="red">文本开始</font>@<font color="red">文本结束</font>】<br />
 返回一个数组。
 
+### 截取
+
+【截取@<font color="red">内容</font>@<font color="red">开始位置</font>@<font color="red">要截取的长度</font>】<br />
+暂时只能截取文本<br />
+返回截取后的文本。若长度越界则截取到文本末尾，若开始位置越界则返回空文本。
+
 ### 访问
 
 【访问@<font color="red">网址</font>】<br />
@@ -425,7 +431,7 @@ QQ相关的命令依赖的数据，会复制到新的脚本中；而普通变量
 
 ### 图片上叠加
 
-【图片叠加@<font color="red">大图片字节集</font>@<font color="red">小图片字节集</font>@<font color="red">x</font>@<font color="red">y</font>】<br />
+【图片上叠加@<font color="red">大图片字节集</font>@<font color="red">小图片字节集</font>@<font color="red">x</font>@<font color="red">y</font>】<br />
 将两张图片叠加起来，大图片放下面，小图片放上面，x，y为小图片的放置位置。
 
 ### 水平翻转
