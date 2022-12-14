@@ -78,20 +78,21 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
 
 pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
     let err = "get asset err";
-    let index_html = Asset::get("res/minimal.htm").ok_or(err)?;
-    fs::write(cq_get_app_directory().unwrap() + "minimal.htm", index_html.data)?;
-    let index_html = Asset::get("res/edit_view.htm").ok_or(err)?;
-    fs::write(cq_get_app_directory().unwrap() + "edit_view.htm", index_html.data)?;
-    let index_html = Asset::get("res/help.html").ok_or(err)?;
-    fs::write(cq_get_app_directory().unwrap() + "help.html", index_html.data)?;
-    let index_html = Asset::get("res/1111.png").ok_or(err)?;
-    fs::write(cq_get_app_directory().unwrap() + "1111.png", index_html.data)?;
-    let pth = current_exe()?.parent().ok_or(err)?.join("bin").join("sciter.dll");
-    if !pth.exists() {
-        let index_html = Asset::get("res/sciter.dll").ok_or(err)?;
-        fs::write(pth, index_html.data)?;
-    }
-    
+    fs::create_dir_all(cq_get_app_directory().unwrap() + "toc\\css\\zTreeStyle\\img\\diy")?;
+    fs::create_dir_all(cq_get_app_directory().unwrap() + "toc\\js")?;
+    fs::create_dir_all(cq_get_app_directory().unwrap() + "toc\\style")?;
+    for it in Asset::iter() {
+        if it.to_string() == "res/sciter.dll" {
+            let pth = current_exe()?.parent().ok_or(err)?.join("bin").join("sciter.dll");
+            if !pth.exists() {
+                let index_html = Asset::get("res/sciter.dll").ok_or(err)?;
+                fs::write(pth, index_html.data)?;
+            }
+        }else {
+            let file = Asset::get(&it.to_string()).ok_or(err)?;
+            fs::write(cq_get_app_directory().unwrap() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
+        }
+    } 
     Ok(())
 }
 
