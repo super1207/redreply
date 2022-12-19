@@ -48,13 +48,15 @@ fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Error>
 fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>>{
     let msg = json_to_cq_str(&root)?;
     let script_json = read_config()?;
+    let mut is_set_msg_id_map = false;
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
         let (keyword,cffs,code,ppfs) = get_script_info(&script_json[i])?;
         let mut rl = RedLang::new();
         if cffs == "群聊触发" || cffs == "群、私聊触发"{
             rl.set_exmap("内容", &msg)?;
             set_normal_message_info(&mut rl, root)?;
-            {
+            if is_set_msg_id_map == false {
+                is_set_msg_id_map = true;
                 let user_id = rl.get_exmap("发送者ID")?;
                 let group_id = rl.get_exmap("群ID")?;
                 let message_id = rl.get_exmap("消息ID")?;
