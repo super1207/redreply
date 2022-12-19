@@ -73,8 +73,21 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         return Ok(Some(title.to_string()));
     }
     else if cmd.to_uppercase() == "消息ID" {
-        let msg_id = self_t.get_exmap("消息ID")?;
-        return Ok(Some(msg_id.to_string()));
+        let qq = self_t.get_param(params, 0)?;
+        let ret:String;
+        if qq == "" {
+            let msg_id = self_t.get_exmap("消息ID")?;
+            ret = msg_id.to_string();
+        }else {
+            let mp = crate::G_MSG_ID_MAP.read()?;
+            let group_id = self_t.get_exmap("群ID")?.parse::<i32>()?;
+            let flag = qq + &group_id.to_string();
+            ret = match mp.get(&flag) {
+                Some(v) => self_t.build_arr(v.to_vec()),
+                None => self_t.build_arr(vec![])
+            };
+        }
+        return Ok(Some(ret));
     }
     else if cmd.to_uppercase() == "当前频道ID" {
         let guild_id = self_t.get_exmap("频道ID")?;
@@ -140,31 +153,36 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         return Ok(Some(ret));
     }
     else if cmd == "撤回" {
-        let mut msg_id = self_t.get_param(params, 0)?;
-        if msg_id == ""{
-            msg_id = self_t.get_exmap("消息ID")?.to_string();
+        let mut msg_id_str = self_t.get_param(params, 0)?;
+        if msg_id_str == "" {
+            msg_id_str = self_t.get_exmap("消息ID")?.to_string();
         }
-        if msg_id == "" {
-            return Ok(Some("".to_string()));
-        }
-        if self_t.get_exmap("子频道ID")? != "" {
-            let send_json = serde_json::json!({
-                "action":"delete_msg",
-                "params":{
-                    "message_id":msg_id
-                }
-            });
-            cq_call_api(&send_json.to_string())?;
-        }else{
-            let int32_msg_id = msg_id.parse::<i32>()?;
-            let send_json = serde_json::json!({
-                "action":"delete_msg",
-                "params":{
-                    "message_id":int32_msg_id
-                }
-            });
-            cq_call_api(&send_json.to_string())?;
-        }
+        let tp = self_t.get_type(&msg_id_str)?;
+        let msg_id_vec:Vec<&str> = match tp.as_str() {
+            "文本" => vec![&msg_id_str],
+            "数组" => self_t.parse_arr(&msg_id_str)?,
+            _ => vec![]
+        };
+        for it in msg_id_vec {
+            if self_t.get_exmap("子频道ID")? != "" {
+                let send_json = serde_json::json!({
+                    "action":"delete_msg",
+                    "params":{
+                        "message_id":it
+                    }
+                });
+                cq_call_api(&send_json.to_string())?;
+            }else{
+                let int32_msg_id = it.parse::<i32>()?;
+                let send_json = serde_json::json!({
+                    "action":"delete_msg",
+                    "params":{
+                        "message_id":int32_msg_id
+                    }
+                });
+                cq_call_api(&send_json.to_string())?;
+            }
+        }  
         return Ok(Some("".to_string()));
     }else if cmd == "输出流" {
         let user_id_str = self_t.get_exmap("发送者ID")?.to_string();

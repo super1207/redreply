@@ -301,8 +301,8 @@ X，Y都必须为非负整数，且Y<strong>不能小于</strong>X。
 <p>返回一个数组。</p>
 <h3 id="-">截取</h3>
 <p>【截取@<font color="red">内容</font>@<font color="red">开始位置</font>@<font color="red">要截取的长度</font>】<br /></p>
-<p>暂时只能截取文本<br /></p>
-<p>返回截取后的文本。若长度越界则截取到文本末尾，若开始位置越界则返回空文本。</p>
+<p>暂时只能截取文本或数组<br /></p>
+<p>返回截取后的文本(或数组)。若长度越界则截取到文本(或数组)末尾，若开始位置越界则返回空文本(或空数组)。</p>
 <h3 id="-">访问</h3>
 <p>【访问@<font color="red">网址</font>】<br /></p>
 <p>GET访问网页，返回字节集。</p>
@@ -480,9 +480,13 @@ https://image.baidu.com/search/index?tn=baiduimage&amp;word=【编码@樱小路�
 <p>【发送者专属头衔】<br /></p>
 <p>只能在群聊中使用</p>
 <h3 id="-id">消息ID</h3>
-<p>【消息ID】</p>
+<p>【消息ID】<br />
+【消息ID@<font color="red">目标QQ</font>】<br />
+这个命令有两种形式：<br />
+第一种返回当前消息的消息ID<br />
+第二种返回目标QQ在当前群聊的历史消息ID数组。</p>
 <h3 id="-">撤回</h3>
-<p>【撤回@<font color="red">消息ID</font>】</p>
+<p>【撤回@<font color="red">消息ID</font>或<font color="red">消息ID数组</font>】</p>
 <h3 id="-">输出流</h3>
 <p>【输出流@<font color="red">内容</font>】<br /></p>
 <p>发送一条消息，然后返回消息ID</p>
