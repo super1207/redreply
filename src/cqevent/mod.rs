@@ -38,6 +38,9 @@ impl Handler {
             cq_add_log_w(&format!("can't save_config:{}",err)).unwrap();
             return false;
         }
+        if let Err(err) = crate::initevent::do_init_event(){
+            cq_add_log_w(&format!("can't call init evt:{}",err)).unwrap();
+        }
         return true;
     }
     pub fn read_code(&self) -> String {
