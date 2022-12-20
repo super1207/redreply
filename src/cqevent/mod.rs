@@ -1,4 +1,4 @@
-mod do_group_msg;
+pub(crate) mod do_group_msg;
 mod do_private_msg;
 mod do_guild_msg;
 mod do_other_evt;

@@ -239,7 +239,11 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         }
         let err = "输出流调用失败，获取message_id失败";
         let msg_id = read_json_str(ret_json.get("data").ok_or(err)?,"message_id");
-        return Ok(Some(msg_id.to_string()));
+        if msg_type == "group" {
+            let self_id = self_t.get_exmap("机器人ID")?;
+            crate::cqevent::do_group_msg::msg_id_map_insert(self_id.to_string(),group_id_str,msg_id.clone())?;
+        }
+        return Ok(Some(msg_id));
     }else if cmd == "艾特" {
         let mut user_id = self_t.get_param(params, 0)?;
         if user_id == ""{
