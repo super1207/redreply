@@ -549,6 +549,12 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
+    }else if cmd == "转大写" {
+        let text1 = self_t.get_param(params, 0)?;
+        return Ok(Some(text1.to_uppercase()));
+    }else if cmd == "转小写" {
+        let text1 = self_t.get_param(params, 0)?;
+        return Ok(Some(text1.to_lowercase()));
     }
     return Ok(None);
 }
