@@ -75,47 +75,26 @@
 <p>一个简单但强大的文本生成规则，由各种命令组成，<strong>将会</strong>支持读写文件，网络访问等一切和文本处理相关的事情。</p>
 <h2 id="-">代码一览</h2>
 <p>生成五个hello：</p>
-<pre><code>
-【循环@5@hello】
-
+<pre><code>【循环@5@hello】
 </code></pre><p>输出：</p>
-<pre><code>
-hellohellohellohellohello
-
+<pre><code>hellohellohellohellohello
 </code></pre><p>当然，也可以很复杂，如：</p>
-<pre><code>
-【赋值变量@n@20】
-
+<pre><code>【赋值变量@n@20】
 递归计算斐波那契数列第【变量@n】项：
-
 【定义变量@斐波那契数列函数@
-
   【函数定义@
-
 ​    【判断@【计算@【参数@1】==1】@假@1【返回】】
-
 ​    【判断@【计算@【参数@1】==2】@假@1【返回】】
-
 ​    【计算@
-
 ​      【函数调用@【变量@斐波那契数列函数】@【计算@【参数@1】-1】】
-
 ​              +
-
 ​      【函数调用@【变量@斐波那契数列函数】@【计算@【参数@1】-2】】
-
 ​    】
-
   】
-
 】
-
 【函数调用@【变量@斐波那契数列函数】@【变量@n】】
-
 </code></pre><p>输出：</p>
-<pre><code>
-递归计算斐波那契数列第20项：6765
-
+<pre><code>递归计算斐波那契数列第20项：6765
 </code></pre><h2 id="-">支持数据类型</h2>
 <p>文本、对象、数组、字节集、函数。文本是唯一可见(可输出)的数据类型。RedLang不直接支持数值、布尔、空等类型，主要原因是数值、布尔都是可见的，容易与文本混淆，而空类型容易与空文本混淆。</p>
 <h3 id="-">文本</h3>
@@ -270,8 +249,8 @@ https://image.baidu.com/search/index?tn=baiduimage&amp;word=【编码@樱小路�
 
 </code></pre><h3 id="json-">Json解析</h3>
 <p>【Json解析@<font color="red">Json内容</font>】<br /></p>
-<p>返回RedLang对应的对象。</p>
-<p><br />注意，json中的数值，将会转化成文本；json中的布尔型，将会转化成<font color="red">真</font>或<font color="red">假</font>；json中的null，将会转化成空文本。</p>
+<p>返回RedLang对应的对象。<br /></p>
+<p>注意，json中的数值，将会转化成文本；json中的布尔型，将会转化成<font color="red">真</font>或<font color="red">假</font>；json中的null，将会转化成空文本。</p>
 <h3 id="-">读文件</h3>
 <p>【读文件@<font color="red">文件路径</font>】<br /></p>
 <p>返回文件内容(字节集)。</p>
@@ -432,6 +411,9 @@ https://image.baidu.com/search/index?tn=baiduimage&amp;word=【编码@樱小路�
 <h3 id="-">艾特</h3>
 <p>【艾特】<br /></p>
 <p>at发送者，如果要at其它人，可以这么写：【艾特@<font color="red">其它人的ID</font>】</p>
+<h3 id="-">分页</h3>
+<p>【分页】<br /></p>
+<p>将一条消息分成两条消息发送。</p>
 <h3 id="cq-">CQ码解析</h3>
 <p>【CQ码解析@<font color="red">CQ码文本</font>】<br /></p>
 <p>返回一个RedLang对象。类似这样:<font color="red">{&quot;type&quot;:&quot;at&quot;,&quot;qq&quot;:&quot;1875159423&quot;}</font></p>
@@ -472,71 +454,38 @@ https://image.baidu.com/search/index?tn=baiduimage&amp;word=【编码@樱小路�
 <h3 id="-">读词库文件</h3>
 <p>【读词库文件@<font color="red">词库路径</font>】<br /></p>
 <p>词库兼容铃心自定义的词库，但是文件编码需要为utf-8，文件格式如下：</p>
-<pre><code>
-114
-
+<pre><code>114
 这是号码百事通的电话
-
 514
 
 1+1+4==6
-
-
-
 早
-
 早上好
-
 你看看现在几点了
-
 </code></pre><p>返回一个<font color="red">RedLang对象</font>，对象的键是关键词，对象的值是关键词对应的回答数组，类似如下形式:</p>
-<pre><code>
-{
-
+<pre><code>{
   &quot;114&quot;:[&quot;这是号码百事通的电话&quot;,&quot;514&quot;,&quot;1+1+4==6&quot;],
-
   &quot;早&quot;:[&quot;早上好&quot;,&quot;你看看现在几点了&quot;],
-
 }
-
 </code></pre><p>下面是一个使用词库的例子:</p>
-<pre><code>
-【定义变量@我的词库@【读词库文件@C:\\Users\\63443\\Desktop\\re-maj.txt】】
-
+<pre><code>【定义变量@我的词库@【读词库文件@C:\\Users\\63443\\Desktop\\re-maj.txt】】
 【定义变量@正则匹配词库函数@
-
   【函数定义@
-
 ​    【定义变量@keys@【取对象Key【参数@1】】】
-
 ​    【定义变量@keys_len@【取长度【变量@keys】】】
-
 ​    【定义变量@i@0】
-
 ​    【循环【变量@keys_len】@
-
 ​      【隐藏【正则@【参数@2】@【取元素@【变量@keys】@【变量@i】】】】
-
 ​      【判断@【计算@【取长度【传递】】==0】@真@
-
 ​        【隐藏【取元素@【参数@1】@【取元素@【变量@keys】@【变量@i】】】】
-
 ​        【运行脚本【随机取@【传递】】】
-
 ​        【返回】
-
 ​      】
-
 ​      【赋值变量@i@【计算@【变量@i】+1】】
-
 ​    】
-
   】
-
 】
-
 【函数调用@【变量@正则匹配词库函数】@【变量@我的词库】@【子关键词】】
-
 </code></pre><p>实际使用的时候，建议把读词库文件和函数定义放到初始化事件中，更合理些。</p>
 <h2 id="-">事件关键词</h2>
 <p>如果触发类型为<font color="red">事件触发</font>，那么关键词应该为<font color="red">事件关键词</font>。<br /></p>

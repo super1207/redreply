@@ -24,6 +24,7 @@ extern crate lazy_static;
 lazy_static! {
     pub static ref G_SCRIPT:RwLock<serde_json::Value> = RwLock::new(serde_json::json!([]));
     pub static ref REDLANG_UUID:String = uuid::Uuid::new_v4().to_string();
+    pub static ref PAGING_UUID:String = uuid::Uuid::new_v4().to_string();
     pub static ref G_CONST_MAP:RwLock<HashMap<String, String>> = RwLock::new(HashMap::new());
     pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,Vec<String>>> = RwLock::new(HashMap::new());
 }

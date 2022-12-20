@@ -3,17 +3,20 @@ use crate::{cqapi::*, redlang::{RedLang}, mytool::json_to_cq_str, read_config};
 use super::{is_key_match, get_script_info};
 
 fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Error>>{
-    let out_str = rl.parse(code)?;
-    if out_str != "" {
-        let send_json = serde_json::json!({
-            "action":"send_guild_channel_msg",
-            "params":{
-                "guild_id": rl.get_exmap("频道ID")?,
-                "channel_id": rl.get_exmap("子频道ID")?,
-                "message":out_str
-            }
-        });
-        cq_call_api(&send_json.to_string())?;
+    let out_str_t = rl.parse(code)?;
+    let out_str_vec = super::do_paging(&out_str_t)?;
+    for out_str in out_str_vec {
+        if out_str != "" {
+            let send_json = serde_json::json!({
+                "action":"send_guild_channel_msg",
+                "params":{
+                    "guild_id": rl.get_exmap("频道ID")?,
+                    "channel_id": rl.get_exmap("子频道ID")?,
+                    "message":out_str
+                }
+            });
+            cq_call_api(&send_json.to_string())?;
+        }
     }
     Ok(())
 }

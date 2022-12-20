@@ -6,7 +6,7 @@ extern crate sciter;
 
 
 use sciter::{dispatch_script_call};
-use crate::{cqapi::*, save_config, read_config, redlang::{RedLang}, mytool::read_json_str};
+use crate::{cqapi::*, save_config, read_config, redlang::{RedLang}, mytool::read_json_str, PAGING_UUID};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -22,6 +22,12 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
     }
     do_other_evt::do_other_evt(&root)?;
     Ok(0)
+}
+
+pub fn do_paging(outstr:&str) -> Result<Vec<&str>, Box<dyn std::error::Error>> {
+    let out = outstr.split(PAGING_UUID.as_str());
+    let outvec = out.collect::<Vec<&str>>();
+    return Ok(outvec);
 }
 
 struct Handler;

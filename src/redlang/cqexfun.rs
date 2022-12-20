@@ -1,6 +1,6 @@
 use std::{fs, collections::HashMap, path::Path, env::current_exe, vec};
 
-use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str};
+use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str, PAGING_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 
@@ -386,6 +386,8 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         }
         let ret = self_t.build_arr(ret_vec);
         return Ok(Some(ret));
+    }else if cmd == "分页" {
+        return Ok(Some(PAGING_UUID.to_string()));
     }
     return Ok(None);
 }
