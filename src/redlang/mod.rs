@@ -16,6 +16,7 @@ pub struct RedLang<'a> {
     fun_ret_vec: Vec<bool>,                // 记录函数是否返回的栈
     lua : Lua<'a>,
     exmap:HashMap<String, String>,
+    coremap:HashMap<String, String>,
     pub type_uuid:String,
     xuhao: usize
 }
@@ -65,6 +66,25 @@ impl RedLang<'_> {
         self.exmap.insert(key.to_owned(), val.to_owned());
         Ok(())
     }
+    pub fn get_coremap(
+        &self,
+        key: &str,
+    ) -> Result<&str, Box<dyn std::error::Error>> {
+        let ret = self.coremap.get(key);
+        if let Some(v) = ret{
+            return Ok(v);
+        }
+        return Ok("");
+    }
+    #[allow(dead_code)]
+    pub fn set_coremap(
+        &mut self,
+        key: &str,
+        val: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        self.coremap.insert(key.to_owned(), val.to_owned());
+        Ok(())
+    }
     fn do_cmd_fun(
         &mut self,
         cmd: &str,
@@ -80,9 +100,9 @@ impl RedLang<'_> {
             ret_str = String::from(" ");
         } else if cmd == "隐藏" {
             let out = self.get_param(params, 0)?;
-            self.set_exmap("隐藏", &out)?;
+            self.set_coremap("隐藏", &out)?;
         } else if cmd == "传递" {
-            ret_str = self.get_exmap("隐藏")?.to_string();
+            ret_str = self.get_coremap("隐藏")?.to_string();
         } else if cmd == "定义变量" {
             let k = self.get_param(params, 0)?;
             let v = self.get_param(params, 1)?;
@@ -627,6 +647,7 @@ impl RedLang<'_> {
             fun_ret_vec: v3,
             lua:Lua::new(),
             exmap: HashMap::new(),
+            coremap: HashMap::new(),
             type_uuid:crate::REDLANG_UUID.to_string(),
             xuhao:0usize
         }
