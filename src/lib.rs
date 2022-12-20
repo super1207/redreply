@@ -16,6 +16,7 @@ mod cqevent;
 mod redlang;
 mod mytool;
 mod initevent;
+mod cronevent;
 
 
 #[macro_use]
@@ -108,6 +109,9 @@ pub extern "system" fn _eventEnable() -> i32{
         cq_add_log_w(&err.to_string()).unwrap();
     }
     if let Err(err) = initevent::do_init_event(){
+        cq_add_log_w(&err.to_string()).unwrap();
+    }
+    if let Err(err) = cronevent::do_cron_event(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
     return 0;

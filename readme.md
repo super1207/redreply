@@ -575,6 +575,13 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 
 如【延时@<font color="red">1000</font>】表示延时1秒
 
+### 打印日志
+
+
+【打印日志@<font color="red">文本</font>】<br />
+
+打印debug日志到控制台。
+
 
 ### 序号
 
@@ -1065,6 +1072,12 @@ onebot事件json对应的RedLang对象。
 群消息撤回事件的关键词为<font color="red">notice:group_recall</font><br />
 
 支持的事件关键词可以参考[onebot文档](https://github.com/botuniverse/onebot-11)中有关事件的描述。
+
+## CRON表达式
+
+如果触发类型为<font color="red">CRON定时器</font>，那么关键词应该为<font color="red">CRON表达式</font>。<br />
+
+您可以在此处查看cron表达式的写法：[cron_百度百科](https://baike.baidu.com/item/cron/10952601)
 
 
 ## 框架初始化事件

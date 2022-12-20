@@ -1,4 +1,4 @@
-use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::HashMap};
+use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::HashMap, vec};
 
 use chrono::TimeZone;
 use md5::{Md5, Digest};
@@ -6,7 +6,7 @@ use urlencoding::encode;
 use base64;
 use super::RedLang;
 
-use crate::{redlang::cqexfun::cqexfun};
+use crate::{redlang::cqexfun::cqexfun, cqapi::cq_add_log};
 
 use image::{Rgba, ImageBuffer};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -555,6 +555,10 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
     }else if cmd == "转小写" {
         let text1 = self_t.get_param(params, 0)?;
         return Ok(Some(text1.to_lowercase()));
+    }else if cmd.to_uppercase() == "打印日志" {
+        let text = self_t.get_param(params, 0)?;
+        cq_add_log(&text).unwrap();
+        return Ok(Some("".to_string()));
     }
     return Ok(None);
 }

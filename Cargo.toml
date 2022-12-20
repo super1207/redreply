@@ -26,6 +26,7 @@ rust-embed="*"
 image = "*"
 imageproc = "*"
 gif = "*"
+cron = "*"
 
 [lib]
 name = "redlang" #生成dll的文件名
