@@ -10,7 +10,6 @@ curl = { version = "*",features = ['rustls'] }
 fancy-regex = "*"
 encoding = "*"
 rand = "*"
-hlua = "*"
 sciter-rs = "*"
 libloading = "*"
 urlencoding = "*"
@@ -27,6 +26,7 @@ image = "*"
 imageproc = "*"
 gif = "*"
 cron = "*"
+rlua = {version = "*",features = ["lua-no-oslib","builtin-lua54"]}
 
 [lib]
 name = "redlang" #生成dll的文件名

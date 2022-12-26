@@ -1,20 +1,18 @@
 use std::{collections::HashMap, fmt, error, vec};
 use encoding::Encoding;
 extern crate rand;
-extern crate hlua;
-use hlua::Lua;
 
 pub mod exfun;
 mod cqexfun;
-use crate::redlang::exfun::exfun;
+use crate::{redlang::exfun::exfun};
 
 
-pub struct RedLang<'a> {
+pub struct RedLang {
     var_vec: Vec<HashMap<String, String>>, //变量栈
     xh_vec: Vec<[bool; 2]>,                // 循环控制栈
     params_vec: Vec<Vec<String>>,          // 函数参数栈
     fun_ret_vec: Vec<bool>,                // 记录函数是否返回的栈
-    lua : Lua<'a>,
+    lua : rlua::Lua,
     exmap:HashMap<String, String>,
     coremap:HashMap<String, String>,
     pub type_uuid:String,
@@ -46,7 +44,7 @@ impl error::Error for MyStrError {
     }
 }
 
-impl RedLang<'_> {
+impl RedLang {
     pub fn get_exmap(
         &self,
         key: &str,
@@ -187,8 +185,19 @@ impl RedLang<'_> {
             ret_str = func_t;
         } else if cmd == "函数调用" || cmd == "调用函数" {
             // 获得函数
-            let func = self.get_param(params, 0)?;
+            let func_t = self.get_param(params, 0)?;
 
+            let tp = self.get_type(&func_t)?;
+            let func:String;
+
+            // 尝试通过文本来在常量中获得函数
+            if tp == "文本" {
+                let err = "无法在常量中找到对应函数";
+                let mp = crate::G_CONST_MAP.read()?;
+                func = mp.get(func_t.as_str()).ok_or(err)?.to_string();
+            }else {
+                func = func_t;
+            }
             let tp = self.get_type(&func)?;
             if tp != "函数"{
                 return Err(self.make_err(&format!("函数调用命令不能对{}类型进行操作",tp)));
@@ -230,26 +239,30 @@ impl RedLang<'_> {
             let fun_ret_vec_len = self.fun_ret_vec.len();
             self.fun_ret_vec[fun_ret_vec_len - 1] = true;
         } else if cmd == "计算" {
-            let mut k1 = self.get_param(params, 0)?;
-            // format!("x = ({}) return ({})",k1)
-            if k1.contains("=") || k1.contains(">") || k1.contains("<") {
-                k1 = k1.replace("!", "~");
-                let ret: bool = match self.lua.execute(&format!("return ({})", k1)) {
-                    Ok(it) => it,
-                    Err(_) => return Err(self.make_err("计算失败")),
-                };
-                if ret {
-                    ret_str = "真".to_string();
-                } else {
-                    ret_str = "假".to_string();
+                let mut k1 = self.get_param(params, 0)?;
+                if k1.contains("=") || k1.contains(">") || k1.contains("<") {
+                    k1 = k1.replace("!", "~");
                 }
-            } else {
-                let ret: String = match self.lua.execute(&format!("return ({})", k1)) {
-                    Ok(it) => it,
-                    Err(_) => return Err(self.make_err("计算失败")),
-                };
-                ret_str = ret;
-            }
+                let r = self.lua.context(|lua_ctx| -> Result<String, Box<dyn std::error::Error>> {
+                    let v = lua_ctx.load(&k1).eval::<rlua::Value>()?;
+                    let ret:String = match v {
+                        rlua::Value::Integer(val) => val.to_string(),
+                        rlua::Value::Number(val) => val.to_string(),
+                        rlua::Value::Boolean(val) => {
+                            if val {
+                                "真".to_string()
+                            }else {
+                                "假".to_string()
+                            }
+                        },
+                        _ => "".to_string()
+                    };
+                    if ret == "" {
+                        self.make_err("计算出错");
+                    }
+                    Ok(ret)
+                })?;
+                ret_str = r;
         }else if cmd == "数组" {
             let arr_len = params.len();
             let mut temp_ret:Vec<String> = vec![];
@@ -629,8 +642,8 @@ impl RedLang<'_> {
 
 }
 
-impl RedLang<'_> {
-    pub fn new() -> RedLang<'static> {
+impl RedLang {
+    pub fn new() -> RedLang {
         // 第一个元素用于保持全局变量
         let v: Vec<HashMap<String, String>> = vec![HashMap::new()];
 
@@ -645,7 +658,7 @@ impl RedLang<'_> {
             xh_vec: vec![],
             params_vec: v2,
             fun_ret_vec: v3,
-            lua:Lua::new(),
+            lua : rlua::Lua::new(),
             exmap: HashMap::new(),
             coremap: HashMap::new(),
             type_uuid:crate::REDLANG_UUID.to_string(),
@@ -989,5 +1002,11 @@ impl RedLang<'_> {
             }
         }
         Ok(chs_out.iter().collect::<String>())
+    }
+}
+
+impl Default for RedLang {
+    fn default() -> Self {
+        Self::new()
     }
 }
