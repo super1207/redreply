@@ -89,6 +89,49 @@ impl RedLang {
         params: &[String],
     ) -> Result<String, Box<dyn std::error::Error>> {
         let mut ret_str: String = String::new();
+        let mut is_cmd_ret = false;
+        {
+            let fun;
+            {
+                let r = crate::G_CMD_MAP.read()?;
+                fun = match r.get(cmd){
+                    Some(f) => Some(f.clone()),
+                    None =>  None
+                }
+            }
+            match fun {
+                Some(fun) => {
+                    // 获得命令
+                    let func = fun;
+
+                    // 获得命令参数
+                    let fun_params = &params[0..];
+                    let mut fun_params_t: Vec<String> = vec![];
+                    for i in fun_params {
+                        let p = self.parse(i)?;
+                        fun_params_t.push(p);
+                    }
+
+                    // 修改参数栈
+                    self.params_vec.push(fun_params_t);
+
+                    // 调用命令
+                    ret_str = self.parse(&func)?;
+
+                    // 参数栈退栈
+                    self.params_vec.pop();
+
+                    // 指明命令已经执行
+                    is_cmd_ret = true;
+                }
+                _ => {
+
+                }
+            }
+        }
+        if is_cmd_ret {
+            return Ok(ret_str);
+        }
         let exret = exfun(self,cmd, params)?;
         if let Some(v) = exret{
             ret_str = v;
@@ -183,6 +226,12 @@ impl RedLang {
             let fun = self.parse_fun(&func)?;
             let func_t = format!("{}F{}",self.type_uuid,fun);
             ret_str = func_t;
+        }else if cmd == "定义命令" {
+            let func_name = self.get_param(params, 0)?;
+            let func = params.get(1).ok_or("定义命令:读取参数失败")?;
+            let fun = self.parse_fun(&func)?;
+            let mut w = crate::G_CMD_MAP.write()?;
+            w.insert(func_name, fun);
         } else if cmd == "函数调用" || cmd == "调用函数" {
             // 获得函数
             let func_t = self.get_param(params, 0)?;

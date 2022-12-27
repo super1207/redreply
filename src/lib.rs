@@ -28,6 +28,7 @@ lazy_static! {
     pub static ref PAGING_UUID:String = uuid::Uuid::new_v4().to_string();
     pub static ref G_CONST_MAP:RwLock<HashMap<String, String>> = RwLock::new(HashMap::new());
     pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,Vec<String>>> = RwLock::new(HashMap::new());
+    pub static ref G_CMD_MAP:RwLock<HashMap<String, String>> = RwLock::new(HashMap::new());
 }
 
 
