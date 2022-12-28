@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, error, vec};
+use std::{collections::HashMap, fmt, error, vec, rc::Rc, cell::RefCell};
 use encoding::Encoding;
 extern crate rand;
 
@@ -8,7 +8,7 @@ use crate::{redlang::exfun::exfun};
 
 
 pub struct RedLang {
-    var_vec: Vec<HashMap<String, String>>, //变量栈
+    var_vec: Vec<HashMap<String,  Rc<RefCell<String>>>>, //变量栈
     xh_vec: Vec<[bool; 2]>,                // 循环控制栈
     params_vec: Vec<Vec<String>>,          // 函数参数栈
     fun_ret_vec: Vec<bool>,                // 记录函数是否返回的栈
@@ -149,12 +149,12 @@ impl RedLang {
             let v = self.get_param(params, 1)?;
             let var_vec_len = self.var_vec.len();
             let mp = &mut self.var_vec[var_vec_len - 1];
-            mp.insert(k, v);
+            mp.insert(k, Rc::new(RefCell::new(v)));
         } else if cmd == "变量" {
             let k = self.get_param(params, 0)?;
             let var_ref = self.get_var_ref(&k);
             if let Some(v) = var_ref {
-                ret_str = v.to_string();
+                ret_str = v.borrow().clone();
             }else {
                 return Err(self.make_err(&format!("变量`{}`不存在",k)));
             }
@@ -163,11 +163,12 @@ impl RedLang {
             let var_vec_len = self.var_vec.len();
             let mut is_set = false;
             let vvv = self.get_param(params, 1)?;
+            let vvv_rc =Rc::new(RefCell::new(vvv));
             for i in 0..var_vec_len {
                 let mp = &mut self.var_vec[var_vec_len - i - 1];
                 let v_opt = mp.get_mut(&k);
                 if let Some(val) = v_opt {
-                    val.clone_from(&vvv);
+                    val.clone_from(&vvv_rc);
                     is_set = true;
                     break;
                 }
@@ -175,7 +176,7 @@ impl RedLang {
             if is_set == false {
                 let var_vec_len = self.var_vec.len();
                 let mp = &mut self.var_vec[var_vec_len - 1];
-                mp.insert(k, vvv);
+                mp.insert(k, vvv_rc);
             }
         } else if cmd == "判断" {
             let k1 = self.get_param(params, 0)?;
@@ -451,39 +452,38 @@ impl RedLang {
             let var_name = self.get_param(params, 0)?;
             let el = self.get_param(params, 1)?;
             let tp:String;
-            let data:&mut String;
+            let data:Rc<RefCell<String>>;
             if let Some(v) = self.get_var_ref(&var_name) {
-                let b = v as *mut String;
-                unsafe{
-                    data = &mut (*b);
-                }
-                
+                data = v;
             }else {
                 return Err(self.make_err(&format!("变量`{}`不存在",var_name)));
             }
-            tp = self.get_type(data)?; 
+            tp = self.get_type(data.borrow().as_str())?; 
             if tp == "数组" {
-                data.push_str(&el.len().to_string());
-                data.push(',');
-                data.push_str(&el);
+                let mut d = data.borrow_mut();
+                d.push_str(&el.len().to_string());
+                d.push(',');
+                d.push_str(&el);
             }else if tp == "对象" {
-                data.push_str(&el.len().to_string());
-                data.push(',');
-                data.push_str(&el);
+                let mut d = data.borrow_mut();
+                d.push_str(&el.len().to_string());
+                d.push(',');
+                d.push_str(&el);
 
                 let v = self.get_param(params, 2)?;
-                data.push_str(&v.len().to_string());
-                data.push(',');
-                data.push_str(&v);
+                d.push_str(&v.len().to_string());
+                d.push(',');
+                d.push_str(&v);
             }else if tp == "文本" { 
-                data.push_str(&el);
+                let mut d = data.borrow_mut();
+                d.push_str(&el);
             }else if tp == "字节集" {
-                data.push_str(el.get(37..).ok_or("unkow err in add el")?);
+                let mut d = data.borrow_mut();
+                d.push_str(el.get(37..).ok_or("unkow err in add el")?);
             }else{
                 return Err(self.make_err(&("对应类型不能增加元素:".to_owned()+&tp)));
             }
-        }
-        else if cmd == "取元素" {
+        }else if cmd == "取元素" {
             let nums = params.len();
             let df = String::new();
             let mut param_data = self.get_param(params, 0)?;
@@ -693,8 +693,9 @@ impl RedLang {
 
 impl RedLang {
     pub fn new() -> RedLang {
+
         // 第一个元素用于保持全局变量
-        let v: Vec<HashMap<String, String>> = vec![HashMap::new()];
+        let v: Vec<HashMap<String, Rc<RefCell<String>>>> = vec![HashMap::new()];
 
         // 第一个元素用于全局参数
         let v2: Vec<Vec<String>> = vec![vec![]];
@@ -958,16 +959,13 @@ impl RedLang {
         }
         Ok(ret)
     }
-    fn get_var_ref(&mut self,var_name:&str) -> Option<&mut String> {
+    fn get_var_ref(&mut self,var_name:&str) -> Option<Rc<RefCell<String>>> {
         let var_vec_len = self.var_vec.len();
         for i in 0..var_vec_len {
-            let mp = & mut self.var_vec[var_vec_len - i - 1];
-            let v_opt = mp.get_mut(var_name);
+            let mp = &self.var_vec[var_vec_len - i - 1];
+            let v_opt = mp.get(var_name);
             if let Some(v) = v_opt {
-                let p =  v as *mut String;
-                unsafe{
-                    return Some(&mut *p);
-                };
+                return Some(v.clone());
                 
             }
         }
