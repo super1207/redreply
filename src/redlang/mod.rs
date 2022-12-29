@@ -3,8 +3,7 @@ use encoding::Encoding;
 extern crate rand;
 
 pub mod exfun;
-mod cqexfun;
-use crate::{redlang::exfun::exfun};
+pub(crate) mod cqexfun;
 
 
 pub struct RedLang {
@@ -90,6 +89,8 @@ impl RedLang {
     ) -> Result<String, Box<dyn std::error::Error>> {
         let mut ret_str: String = String::new();
         let mut is_cmd_ret = false;
+
+        // 执行自定义命令
         {
             let fun;
             {
@@ -132,7 +133,18 @@ impl RedLang {
         if is_cmd_ret {
             return Ok(ret_str);
         }
-        let exret = exfun(self,cmd, params)?;
+
+        // 执行拓展命令
+        let exret;
+        {
+            let cmd_t = cmd.to_uppercase();
+            let r = crate::G_CMD_FUN_MAP.read()?;
+            exret = match r.get(&cmd_t) {
+                Some(fun) => fun(self,params)?,
+                None => None,
+            };
+        }
+
         if let Some(v) = exret{
             ret_str = v;
         } else if cmd == "换行" {

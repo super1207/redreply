@@ -5,6 +5,7 @@ use std::fs;
 use std::os::raw::c_char;
 use std::panic;
 use std::sync::RwLock;
+use redlang::RedLang;
 use serde_json;
 use rust_embed::RustEmbed;
 
@@ -23,12 +24,20 @@ mod cronevent;
 extern crate lazy_static; 
 
 lazy_static! {
+    // 用于记录加载的脚本
     pub static ref G_SCRIPT:RwLock<serde_json::Value> = RwLock::new(serde_json::json!([]));
+    // 用于类型UUID
     pub static ref REDLANG_UUID:String = uuid::Uuid::new_v4().to_string();
+    // 用于分页命令
     pub static ref PAGING_UUID:String = uuid::Uuid::new_v4().to_string();
+    // 用于记录常量
     pub static ref G_CONST_MAP:RwLock<HashMap<String, String>> = RwLock::new(HashMap::new());
+    // 用于撤回消息
     pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,Vec<String>>> = RwLock::new(HashMap::new());
+    // 用于记录自定义的命令
     pub static ref G_CMD_MAP:RwLock<HashMap<String, String>> = RwLock::new(HashMap::new());
+    // 用于记录命令
+    pub static ref G_CMD_FUN_MAP:RwLock<HashMap<String, fn(&mut RedLang,&[String]) -> Result<Option<String>, Box<dyn std::error::Error>>>> = RwLock::new(HashMap::new());
 }
 
 
@@ -45,6 +54,8 @@ pub extern "system" fn Initialize(ac: i32) -> i32 {
     panic::set_hook(Box::new(|e| {
         cq_add_log_w(e.to_string().as_str()).unwrap();
     }));
+    redlang::cqexfun::init_cq_ex_fun_map();
+    redlang::exfun::init_ex_fun_map();
     // 要使CQ正常启动，请一定返回0
     return 0;
 }

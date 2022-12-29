@@ -38,20 +38,35 @@ fn cq_encode_t(cq_code:&str) -> String {
     return ret_str;
 }
 
-pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    if cmd.to_uppercase() == "发送者QQ" || cmd.to_uppercase() == "发送者ID" {
+pub fn init_cq_ex_fun_map() {
+    fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
+        let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
+        for it in k_vec {
+            let k = it.to_string();
+            if w.contains_key(&k) {
+                let err_opt:Option<String> = None;
+                err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
+            }
+            w.insert(k, fun);
+        }
+    }
+    add_fun(vec!["发送者ID","发送者QQ"],|self_t,_params|{
         let qq = self_t.get_exmap("发送者ID")?;
         return Ok(Some(qq.to_string()));
-    }else if cmd == "当前群号" || cmd == "群号" || cmd.to_uppercase() == "群ID" {
+    });
+    add_fun(vec!["当前群号","群号","群ID"],|self_t,_params|{
         let group = self_t.get_exmap("群ID")?;
         return Ok(Some(group.to_string()));
-    }else if cmd == "发送者昵称" {
+    });
+    add_fun(vec!["发送者昵称"],|self_t,_params|{
         let nickname = self_t.get_exmap("发送者昵称")?;
         return Ok(Some(nickname.to_string()));
-    }else if cmd.to_uppercase() == "机器人QQ" {
+    });
+    add_fun(vec!["机器人QQ"],|self_t,_params|{
         let qq = self_t.get_exmap("机器人ID")?;
         return Ok(Some(qq.to_string()));
-    }else if cmd.to_uppercase() == "机器人ID" {
+    });
+    add_fun(vec!["机器人ID"],|self_t,_params|{
         let qq:&str;
         if self_t.get_exmap("子频道ID")? != "" {
             qq = self_t.get_exmap("机器人频道ID")?;
@@ -59,20 +74,24 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             qq = self_t.get_exmap("机器人ID")?;
         }
         return Ok(Some(qq.to_string()));
-    }else if cmd == "机器人名字" {
+    });
+    add_fun(vec!["机器人名字"],|self_t,_params|{
         let name = self_t.get_exmap("机器人名字")?;
         return Ok(Some(name.to_string()));
-    }else if cmd == "权限" || cmd == "发送者权限" {
+    });
+    add_fun(vec!["权限","发送者权限"],|self_t,_params|{
         let role = self_t.get_exmap("发送者权限")?;
         return Ok(Some(role.to_string()));
-    }else if cmd == "发送者名片" {
+    });
+    add_fun(vec!["发送者名片"],|self_t,_params|{
         let card = self_t.get_exmap("发送者名片")?;
         return Ok(Some(card.to_string()));
-    }else if cmd == "发送者专属头衔" {
+    });
+    add_fun(vec!["发送者专属头衔"],|self_t,_params|{
         let title = self_t.get_exmap("发送者专属头衔")?;
         return Ok(Some(title.to_string()));
-    }
-    else if cmd.to_uppercase() == "消息ID" {
+    });
+    add_fun(vec!["消息ID"],|self_t,params|{
         let qq = self_t.get_param(params, 0)?;
         let ret:String;
         if qq == "" {
@@ -88,17 +107,17 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             };
         }
         return Ok(Some(ret));
-    }
-    else if cmd.to_uppercase() == "当前频道ID" {
+    });
+    add_fun(vec!["当前频道ID"],|self_t,_params|{
         let guild_id = self_t.get_exmap("频道ID")?;
         return Ok(Some(guild_id.to_string()));
-    }
-    else if cmd.to_uppercase() == "当前子频道ID" {
+    });
+    add_fun(vec!["当前子频道ID"],|self_t,_params|{
         let channel_id = self_t.get_exmap("子频道ID")?;
         return Ok(Some(channel_id.to_string()));
-    }
-    else if cmd == "图片" {
-        let pic = self_t.get_param(params, 0)?;
+    });
+    add_fun(vec!["图片"],|self_t,_params|{
+        let pic = self_t.get_param(_params, 0)?;
         let tp = self_t.get_type(&pic)?;
         let mut ret:String = String::new();
         if tp == "字节集" {
@@ -124,7 +143,8 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             }
         }
         return Ok(Some(ret));
-    }else if cmd == "语音" {
+    });
+    add_fun(vec!["语音"],|self_t,params|{
         let pic = self_t.get_param(params, 0)?;
         let tp = self_t.get_type(&pic)?;
         let mut ret:String = String::new();
@@ -151,8 +171,8 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             }
         }
         return Ok(Some(ret));
-    }
-    else if cmd == "撤回" {
+    });
+    add_fun(vec!["撤回"],|self_t,params|{
         let mut msg_id_str = self_t.get_param(params, 0)?;
         if msg_id_str == "" {
             msg_id_str = self_t.get_exmap("消息ID")?.to_string();
@@ -184,7 +204,8 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             }
         }  
         return Ok(Some("".to_string()));
-    }else if cmd == "输出流" {
+    });
+    add_fun(vec!["输出流"],|self_t,params|{
         let user_id_str = self_t.get_exmap("发送者ID")?.to_string();
         let group_id_str = self_t.get_exmap("群ID")?.to_string();
         let guild_id_str = self_t.get_exmap("频道ID")?.to_string();
@@ -244,7 +265,8 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             crate::cqevent::do_group_msg::msg_id_map_insert(self_id.to_string(),group_id_str,msg_id.clone())?;
         }
         return Ok(Some(msg_id));
-    }else if cmd == "艾特" {
+    });
+    add_fun(vec!["艾特"],|self_t,params|{
         let mut user_id = self_t.get_param(params, 0)?;
         if user_id == ""{
             user_id = self_t.get_exmap("发送者ID")?.to_string();
@@ -254,18 +276,20 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         }else{
             return Ok(Some(format!("[CQ:at,qq={}]",user_id)));
         }
-    }else if cmd.to_uppercase() == "CQ码转义" {
+    });
+    add_fun(vec!["CQ码转义"],|self_t,params|{
         let cq_code = self_t.get_param(params, 0)?;
         return Ok(Some(cq_encode(&cq_code)));
-    }
-    else if cmd.to_uppercase() == "CQ转义" {
+    });
+    add_fun(vec!["CQ转义"],|self_t,params|{
         let cq_code = self_t.get_param(params, 0)?;
         return Ok(Some(cq_encode_t(&cq_code)));
-    }
-    else if cmd == "子关键词" {
+    });
+    add_fun(vec!["子关键词"],|self_t,_params|{
         let key = self_t.get_exmap("子关键词")?.to_string();
         return Ok(Some(key));
-    }else if cmd == "事件内容" {
+    });
+    add_fun(vec!["事件内容"],|self_t,_params|{
         let dat = self_t.get_exmap("事件内容")?;
         if dat == "" {
             let raw_data = self_t.get_exmap("原始事件")?;
@@ -275,14 +299,16 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             return Ok(Some(redlang_str));
         }
         return Ok(Some(dat.to_string()));
-    }else if cmd.to_uppercase() == "OB调用" {
+    });
+    add_fun(vec!["OB调用"],|self_t,params|{
         self_t.get_param(params, 0)?;
         let content = self_t.get_param(params, 1)?;
         let call_ret = cq_call_api(&content)?;
         let js_v:serde_json::Value = serde_json::from_str(&call_ret)?;
         let ret = do_json_parse(&js_v, &self_t.type_uuid)?;
         return Ok(Some(ret));
-    }else if cmd.to_uppercase() == "CQ码解析" {
+    });
+    add_fun(vec!["CQ码解析"],|self_t,params|{
         let data_str = self_t.get_param(params, 0)?;
         let pos1 = data_str.find(",").ok_or("CQ码解析失败")?;
         let tp = data_str.get(4..pos1).ok_or("CQ码解析失败")?;
@@ -306,34 +332,41 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             }
         }
         return Ok(Some(self_t.build_obj(sub_key_obj)));
-    }else if cmd.to_uppercase() == "CQ反转义" {
+    });
+    add_fun(vec!["CQ反转义"],|self_t,params|{
         let content = self_t.get_param(params, 0)?;
         let content = content.replace("&#91;", "[");
         let content = content.replace("&#93;", "]");
         let content = content.replace("&amp;", "&");
         return Ok(Some(content));
-    }else if cmd == "定义常量" {
+    });
+    add_fun(vec!["定义常量"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
         let v = self_t.get_param(params, 1)?;
         let mut mp = crate::G_CONST_MAP.write()?;
         mp.insert(k, v);
         return Ok(Some("".to_string()));
-    }else if cmd == "常量" {
+    });
+    add_fun(vec!["常量"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
         let mp = crate::G_CONST_MAP.read()?;
         let defstr = String::new();
         let ret = mp.get(k.as_str()).unwrap_or(&defstr);
         return Ok(Some(ret.to_string()));
-    }else if cmd.to_uppercase() == "进程ID" {
+    });
+    add_fun(vec!["进程ID"],|_self_t,_params|{
         let ret = cq_get_cookies("pid")?;
         return Ok(Some(ret.to_string()));
-    }else if cmd.to_uppercase() == "CPU使用" {
+    });
+    add_fun(vec!["CPU使用"],|_self_t,_params|{
         let ret = cq_get_cookies("cpu_usage")?;
         return Ok(Some(ret.to_string()));
-    }else if cmd == "内存使用" {
+    });
+    add_fun(vec!["内存使用"],|_self_t,_params|{
         let ret = cq_get_cookies("mem_usage")?;
         return Ok(Some(ret.to_string()));
-    }else if cmd == "读词库文件" {
+    });
+    add_fun(vec!["读词库文件"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
         let path_t = path.clone();
         let file_dat = fs::read_to_string(path)?;
@@ -353,10 +386,12 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
             dict_obj.insert(key.to_owned(), arr_str);
         }
         return Ok(Some(self_t.build_obj(dict_obj)));
-    }else if cmd == "应用目录" {
+    });
+    add_fun(vec!["应用目录"],|_self_t,_params|{
         let app_dir = cq_get_app_directory()?;
         return Ok(Some(app_dir));
-    }else if cmd == "取艾特" {
+    });
+    add_fun(vec!["取艾特"],|self_t,_params|{
         let raw_data = self_t.get_exmap("原始事件")?;
         let raw_json:serde_json::Value = serde_json::from_str(raw_data)?;
         let err = "获取message失败";
@@ -371,7 +406,8 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         }
         let ret = self_t.build_arr(ret_vec);
         return Ok(Some(ret));
-    }else if cmd == "取图片" {
+    });
+    add_fun(vec!["取图片"],|self_t,_params|{
         let raw_data = self_t.get_exmap("原始事件")?;
         let raw_json:serde_json::Value = serde_json::from_str(raw_data)?;
         let err = "获取message失败";
@@ -386,8 +422,8 @@ pub fn cqexfun(self_t:&mut RedLang,cmd: &str,params: &[String],) -> Result<Optio
         }
         let ret = self_t.build_arr(ret_vec);
         return Ok(Some(ret));
-    }else if cmd == "分页" {
+    });
+    add_fun(vec!["分页"],|_self_t,_params|{
         return Ok(Some(PAGING_UUID.to_string()));
-    }
-    return Ok(None);
+    });
 }

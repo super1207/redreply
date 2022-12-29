@@ -6,7 +6,7 @@ use urlencoding::encode;
 use base64;
 use super::RedLang;
 
-use crate::{redlang::cqexfun::cqexfun, cqapi::cq_add_log};
+use crate::cqapi::cq_add_log;
 
 use image::{Rgba, ImageBuffer};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -14,14 +14,19 @@ use std::io::Cursor;
 use image::io::Reader as ImageReader;
 use imageproc::geometric_transformations::{Interpolation};
 
-
-pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    
-    let exret = cqexfun(self_t,cmd, params)?;
-    if let Some(v) = exret{
-        return Ok(Some(v));
+pub fn init_ex_fun_map() {
+    fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
+        let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
+        for it in k_vec {
+            let k = it.to_string();
+            if w.contains_key(&k) {
+                let err_opt:Option<String> = None;
+                err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
+            }
+            w.insert(k, fun);
+        }
     }
-    if cmd == "访问" {
+    add_fun(vec!["访问"],|self_t,params|{
         let url = self_t.get_param(params, 0)?;
         let mut easy = curl::easy::Easy::new();
         easy.url(&url)?;
@@ -50,7 +55,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             transfer.perform()?;
         }
         return Ok(Some(self_t.build_bin(content)));
-    }else if cmd == "POST访问" {
+    });
+    add_fun(vec!["POST访问"],|self_t,params|{
         let url = self_t.get_param(params, 0)?;
         let data_t = self_t.get_param(params, 1)?;
         let tp = self_t.get_type(&data_t)?;
@@ -95,7 +101,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             transfer.perform()?;
         }
         return Ok(Some(self_t.build_bin(content)));
-    }else if cmd == "设置访问头"{
+    });
+    add_fun(vec!["设置访问头"],|self_t,params|{
         let http_header = self_t.get_coremap("访问头")?.to_string();
         let mut http_header_map:HashMap<String, String> = HashMap::new();
         if http_header != "" {
@@ -108,15 +115,18 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         http_header_map.insert(k, v);
         self_t.set_coremap("访问头", &self_t.build_obj(http_header_map))?;
         return Ok(Some("".to_string()));
-    }else if cmd == "设置代理"{
+    });
+    add_fun(vec!["设置代理"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
         self_t.set_coremap("代理", &k)?;
         return Ok(Some("".to_string()));
-    }else if cmd == "编码" {
+    });
+    add_fun(vec!["编码"],|self_t,params|{
         let urlcode = self_t.get_param(params, 0)?;
         let encoded = encode(&urlcode);
         return Ok(Some(encoded.to_string()));
-    }else if cmd == "随机取"{
+    });
+    add_fun(vec!["随机取"],|self_t,params|{
         let arr_data = self_t.get_param(params, 0)?;
         let arr = self_t.parse_arr(&arr_data)?;
         if arr.len() == 0 {
@@ -125,7 +135,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let index = self_t.parse(&format!("【取随机数@0@{}】",arr.len() - 1))?.parse::<usize>()?;
         let ret = arr.get(index).ok_or("数组下标越界")?;
         return Ok(Some(ret.to_string()))
-    }else if cmd == "取中间"{
+    });
+    add_fun(vec!["取中间"],|self_t,params|{
         let s = self_t.get_param(params, 0)?;
         let sub_begin = self_t.get_param(params, 1)?;
         let sub_end = self_t.get_param(params, 2)?;
@@ -135,7 +146,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             ret_str.push(it.to_string());
         }
         return Ok(Some(self_t.build_arr(ret_str)))
-    }else if cmd == "截取"{
+    });
+    add_fun(vec!["截取"],|self_t,params|{
         let content = self_t.get_param(params, 0)?;
         let begin = self_t.get_param(params, 1)?;
         let len = self_t.get_param(params, 2)?;
@@ -187,23 +199,26 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         }
         
         return Ok(Some(ret))
-    }else if cmd.to_uppercase() == "JSON解析"{
+    });
+    add_fun(vec!["JSON解析"],|self_t,params|{
         let json_str = self_t.get_param(params, 0)?;
         let json_data_ret:serde_json::Value = serde_json::from_str(&json_str)?;
         let json_parse_out = do_json_parse(&json_data_ret,&self_t.type_uuid)?;
         return Ok(Some(json_parse_out));
-    }else if cmd == "读文件"{
+    });
+    add_fun(vec!["读文件"],|self_t,params|{
         let file_path = self_t.get_param(params, 0)?;
         let path = Path::new(&file_path);
         let content = std::fs::read(path)?;
         return Ok(Some(self_t.build_bin(content)));
-    }else if cmd == "运行目录"{
+    });
+    add_fun(vec!["运行目录"],|_self_t,_params|{
         let exe_dir = std::env::current_exe()?;
         let exe_path = exe_dir.parent().ok_or("无法获得运行目录")?;
         let exe_path_str = exe_path.to_string_lossy().to_string() + "\\";
         return Ok(Some(exe_path_str));
-    }
-    else if cmd == "分割"{
+    });
+    add_fun(vec!["分割"],|self_t,params|{
         let data_str = self_t.get_param(params, 0)?;
         let sub_str = self_t.get_param(params, 1)?;
         let split_ret:Vec<&str> = data_str.split(&sub_str).collect();
@@ -214,7 +229,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             ret_str.push_str(it);
         }
         return Ok(Some(ret_str));
-    }else if cmd == "判含"{
+    });
+    add_fun(vec!["判含"],|self_t,params|{
         let data_str = self_t.get_param(params, 0)?;
         let sub_str = self_t.get_param(params, 1)?;
         let tp = self_t.get_type(&data_str)?;
@@ -237,7 +253,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         }else{
             return Err(self_t.make_err(&("对应类型不能使用判含:".to_owned()+&tp)));
         }
-    }else if cmd == "正则"{
+    });
+    add_fun(vec!["正则"],|self_t,params|{
         let data_str = self_t.get_param(params, 0)?;
         let sub_str = self_t.get_param(params, 1)?;
         let re = fancy_regex::Regex::new(&sub_str)?;
@@ -253,7 +270,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             sub_key_vec.push(self_t.build_arr(temp_vec));
         }
         return Ok(Some(self_t.build_arr(sub_key_vec)));
-    }else if cmd == "转字节集"{
+    });
+    add_fun(vec!["转字节集"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
         let tp = self_t.get_type(&text)?;
         if tp != "文本" {
@@ -270,21 +288,25 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             return Err(self_t.make_err(&("不支持的编码:".to_owned()+&code_t)));
         }
         return Ok(Some(self_t.build_bin(str_vec)));
-    }else if cmd.to_uppercase() == "BASE64编码"{
+    });
+    add_fun(vec!["BASE64编码"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
         let bin = self_t.parse_bin(&text)?;
         let b64_str = base64::encode(bin);
         return Ok(Some(b64_str));
-    }else if cmd.to_uppercase() == "BASE64解码"{
+    });
+    add_fun(vec!["BASE64解码"],|self_t,params|{
         let b64_str = self_t.get_param(params, 0)?;
         let content = base64::decode(b64_str)?;
         return Ok(Some(self_t.build_bin(content)));
-    }else if cmd == "延时"{
+    });
+    add_fun(vec!["延时"],|self_t,params|{
         let mill = self_t.get_param(params, 0)?.parse::<u64>()?;
         let time_struct = core::time::Duration::from_millis(mill);
         std::thread::sleep(time_struct);
         return Ok(Some("".to_string()));
-    }else if cmd == "序号"{
+    });
+    add_fun(vec!["序号"],|self_t,params|{
         if params.len() == 0 {
             let retnum = self_t.xuhao;
             self_t.xuhao += 1;
@@ -293,13 +315,16 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let num = self_t.get_param(params, 0)?.parse::<usize>()?;
         self_t.xuhao = num;
         return Ok(Some(num.to_string()));
-    }else if cmd == "时间戳" || cmd == "10位时间戳"{
+    });
+    add_fun(vec!["时间戳","10位时间戳"],|_self_t,_params|{
         let tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
         return Ok(Some(tm.as_secs().to_string()));
-    }else if cmd == "13位时间戳"{
+    });
+    add_fun(vec!["13位时间戳"],|_self_t,_params|{
         let tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
         return Ok(Some(tm.as_millis().to_string()));
-    }else if cmd == "时间戳转文本"{
+    });
+    add_fun(vec!["时间戳转文本"],|self_t,params|{
         let numstr = self_t.get_param(params, 0)?;
         let num = numstr.parse::<i64>()?;
         let datetime_rst = chrono::prelude::Local.timestamp_opt(num, 0);
@@ -308,7 +333,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             return Ok(Some(format!("{}",newdate)));
         }
         return Ok(Some("".to_string()));
-    }else if cmd.to_uppercase() == "MD5编码"{
+    });
+    add_fun(vec!["MD5编码"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
         let bin = self_t.parse_bin(&text)?;
         let mut hasher = Md5::new();
@@ -319,12 +345,14 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
             content.push_str(&format!("{:02x}",ch));
         }
         return Ok(Some(content));
-    }else if cmd.to_uppercase() == "RCNB编码"{
+    });
+    add_fun(vec!["RCNB编码"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
         let bin = self_t.parse_bin(&text)?;
         let content = rcnb_rs::encode(bin);
         return Ok(Some(content));
-    }else if cmd == "图片信息" || cmd == "图像信息"{
+    });
+    add_fun(vec!["图片信息","图像信息"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
         let img_bin = self_t.parse_bin(&text)?;
         let img = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
@@ -333,7 +361,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         mp.insert("高".to_string(), img.height().to_string());
         let retobj = self_t.build_obj(mp);
         return Ok(Some(retobj));
-    }else if cmd == "透视变换"{
+    });
+    add_fun(vec!["透视变换"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
         let text3 = self_t.get_param(params, 2)?;
@@ -403,7 +432,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         mm.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
-    }else if cmd == "图片叠加" || cmd == "图像叠加"{
+    });
+    add_fun(vec!["图片叠加","图像叠加"],|self_t,params|{
         fn img_paste(img_vec_big:Vec<u8>,img_vec_sub:Vec<u8>,x:i64,y:i64) -> Result<Vec<u8>, Box<dyn std::error::Error>>{
             let img1 = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
             let img2 = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
@@ -427,7 +457,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         let img_out = img_paste(img_vec_big,img_vec_sub,x,y)?;
         let ret = self_t.build_bin(img_out);
         return Ok(Some(ret));
-    }else if cmd == "图片上叠加" || cmd == "图像上叠加"{
+    });
+    add_fun(vec!["图片上叠加","图像上叠加"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
         let text3 = self_t.get_param(params, 2)?;
@@ -443,7 +474,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
-    }else if cmd.to_uppercase() == "GIF合成"{
+    });
+    add_fun(vec!["GIF合成"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
         let delay = text2.parse::<u64>()?;
@@ -463,7 +495,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         }
         let ret = self_t.build_bin(v);
         return Ok(Some(ret));
-    }else if cmd == "图片变圆" || cmd == "图像变圆" {
+    });
+    add_fun(vec!["图片变圆","图像变圆"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let img_vec = self_t.parse_bin(&text1)?;
         let mut img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
@@ -487,7 +520,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
-    }else if cmd == "图片变灰" || cmd == "图像变灰"{
+    });
+    add_fun(vec!["图片变灰","图像变灰"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let img_vec = self_t.parse_bin(&text1)?;
         let mut img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
@@ -509,7 +543,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
-    }else if cmd.to_uppercase() == "水平翻转"{
+    });
+    add_fun(vec!["水平翻转"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let img_vec = self_t.parse_bin(&text1)?;
         let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
@@ -518,7 +553,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
-    }else if cmd.to_uppercase() == "垂直翻转"{
+    });
+    add_fun(vec!["垂直翻转"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let img_vec = self_t.parse_bin(&text1)?;
         let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
@@ -527,7 +563,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
-    }else if cmd == "图像旋转" || cmd == "图片旋转"{
+    });
+    add_fun(vec!["图像旋转","图片旋转"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
         let img_vec = self_t.parse_bin(&text1)?;
@@ -538,7 +575,8 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
-    }else if cmd == "图像大小调整" || cmd == "图片大小调整"{
+    });
+    add_fun(vec!["图像大小调整","图片大小调整"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
         let text3 = self_t.get_param(params, 2)?;
@@ -549,20 +587,21 @@ pub fn exfun(self_t:&mut RedLang,cmd: &str,params: &[String]) -> Result<Option<S
         img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
-    }else if cmd == "转大写" {
+    });
+    add_fun(vec!["转大写"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         return Ok(Some(text1.to_uppercase()));
-    }else if cmd == "转小写" {
+    });
+    add_fun(vec!["转小写"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         return Ok(Some(text1.to_lowercase()));
-    }else if cmd.to_uppercase() == "打印日志" {
+    });
+    add_fun(vec!["打印日志"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
         cq_add_log(&text).unwrap();
         return Ok(Some("".to_string()));
-    }
-    return Ok(None);
+    });
 }
-
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {
     let err_str = "Json解析失败";
