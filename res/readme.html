@@ -262,9 +262,29 @@
 <h3 id="-">读文件</h3>
 <p>【读文件@<font color="red">文件路径</font>】<br /></p>
 <p>返回文件内容(字节集)。</p>
+<h3 id="-">目录分隔符</h3>
+<p>【目录分隔符】<br /></p>
+<p>返回路径分隔符，windows下为\，linux下为/</p>
+<h3 id="-">读目录</h3>
+<p>【读目录@<font color="red">路径</font>】<br /></p>
+<p>返回一个数组，数组中包含目录下的文件和目录(末尾有分隔符)。<br />
+返回的文件和目录均为绝对路径。</p>
+<h3 id="-">读目录文件</h3>
+<p>【读目录文件@<font color="red">路径</font>】<br /></p>
+<p>返回一个数组，数组中包含目录下的文件。<br />
+返回的文件为绝对路径。</p>
 <h3 id="-">分割</h3>
 <p>【分割@<font color="red">要分割的文本</font>@<font color="red">分割符号</font>】<br /></p>
 <p>返回文本数组。</p>
+<h3 id="-">去除开始空白</h3>
+<p>【去除开始空白@<font color="red">文本</font>】</p>
+<h3 id="-">去除结尾空白</h3>
+<p>【去除结尾空白@<font color="red">文本</font>】</p>
+<h3 id="-">去除两边空白</h3>
+<p>【去除两边空白@<font color="red">文本</font>】</p>
+<h3 id="-">数字转字符</h3>
+<p>【数字转字符@<font color="red">数字</font>】<br /></p>
+<p>将1到127(包括1和127)之间的数字转为ascii字符。例如【数字转字符@64】将返回A</p>
 <h3 id="-">判含</h3>
 <p>【判含@<font color="red">被判断文本</font>@<font color="red">被包含文本</font>@<font color="red">不包含返回</font>@<font color="red">包含返回</font>】<br /></p>
 <p>【判含@<font color="red">被判断数组</font>@<font color="red">被包含文本</font>】<br /></p>
@@ -508,7 +528,7 @@
 <p>如果触发类型为<font color="red">CRON定时器</font>，那么关键词应该为<font color="red">CRON表达式</font>。<br /></p>
 <p>您可以在此处查看cron表达式的写法：<a href="https://baike.baidu.com/item/cron/10952601">cron_百度百科</a></p>
 <h2 id="-">框架初始化事件</h2>
-<p>如果触发类型是<font color="red">框架初始化</font>，那么，脚本内容会在框架启动的时候执行一次。<br /></p>
+<p>如果触发类型是<font color="red">框架初始化</font>，那么，脚本内容会在框架启动或点击保存按钮的时候执行一次。<br /></p>
 <p>此时可能还未连接onebot实现端，不一定能正常调用bot的各个接口。一般用于定义一些常量。</p>
 
           	</article>
