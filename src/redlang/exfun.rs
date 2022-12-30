@@ -1,4 +1,4 @@
-use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::HashMap, vec};
+use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::HashMap, vec, fs};
 
 use chrono::TimeZone;
 use md5::{Md5, Digest};
@@ -600,6 +600,52 @@ pub fn init_ex_fun_map() {
         let text = self_t.get_param(params, 0)?;
         cq_add_log(&text).unwrap();
         return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["读目录"],|self_t,params|{
+        let dir_name = self_t.get_param(params, 0)?;
+        let dirs = fs::read_dir(dir_name)?;
+        let mut ret_vec:Vec<String> = vec![];
+        for dir in dirs {
+            let path = dir?.path();
+            let file_name = path.to_str().ok_or("获取目录文件异常")?;
+            if path.is_dir() {
+                ret_vec.push(format!("{}{}",file_name,std::path::MAIN_SEPARATOR));
+            }else{
+                ret_vec.push(file_name.to_string());
+            }
+            
+        }
+        let ret = self_t.build_arr(ret_vec);
+        return Ok(Some(ret));
+    });
+    add_fun(vec!["读目录文件"],|self_t,params|{
+        let dir_name = self_t.get_param(params, 0)?;
+        let dirs = fs::read_dir(dir_name)?;
+        let mut ret_vec:Vec<String> = vec![];
+        for dir in dirs {
+            let path = dir?.path();
+            if path.is_file() {
+                let file_name = path.to_str().ok_or("获取目录文件异常")?;
+                ret_vec.push(file_name.to_string());
+            }
+        }
+        let ret = self_t.build_arr(ret_vec);
+        return Ok(Some(ret));
+    });
+    add_fun(vec!["目录分隔符"],|_self_t,_params|{
+        return Ok(Some(std::path::MAIN_SEPARATOR.to_string()));
+    });
+    add_fun(vec!["去除开始空白"],|self_t,params|{
+        let text = self_t.get_param(params, 0)?;
+        return Ok(Some(text.trim_start().to_string()));
+    });
+    add_fun(vec!["去除结尾空白"],|self_t,params|{
+        let text = self_t.get_param(params, 0)?;
+        return Ok(Some(text.trim_end().to_string()));
+    });
+    add_fun(vec!["去除两边空白"],|self_t,params|{
+        let text = self_t.get_param(params, 0)?;
+        return Ok(Some(text.trim().to_string()));
     });
 }
 

@@ -495,6 +495,31 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 
 返回文件内容(字节集)。
 
+### 目录分隔符 
+
+
+【目录分隔符】<br />
+
+返回路径分隔符，windows下为\，linux下为/
+
+
+### 读目录 
+
+
+【读目录@<font color="red">路径</font>】<br />
+
+返回一个数组，数组中包含目录下的文件和目录(末尾有分隔符)。<br />
+返回的文件和目录均为绝对路径。
+
+
+### 读目录文件
+
+
+【读目录文件@<font color="red">路径</font>】<br />
+
+返回一个数组，数组中包含目录下的文件。<br />
+返回的文件为绝对路径。
+
 
 ### 分割 
 
@@ -502,6 +527,23 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 【分割@<font color="red">要分割的文本</font>@<font color="red">分割符号</font>】<br />
 
 返回文本数组。
+
+### 去除开始空白
+
+
+【去除开始空白@<font color="red">文本</font>】
+
+
+### 去除结尾空白
+
+
+【去除结尾空白@<font color="red">文本</font>】
+
+### 去除两边空白
+
+
+【去除两边空白@<font color="red">文本</font>】
+
 
 
 ### 判含 
