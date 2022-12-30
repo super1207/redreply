@@ -647,6 +647,15 @@ pub fn init_ex_fun_map() {
         let text = self_t.get_param(params, 0)?;
         return Ok(Some(text.trim().to_string()));
     });
+    add_fun(vec!["数字转字符"],|self_t,params|{
+        let text = self_t.get_param(params, 0)?;
+        let num = text.parse::<u8>()?;
+        if num > 127 || num < 1 {
+            return Err(self_t.make_err("在数字转字符中发生越界"));
+        }
+        return Ok(Some((num as char).to_string()));
+    });
+
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {

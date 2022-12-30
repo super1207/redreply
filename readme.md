@@ -544,6 +544,11 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 
 【去除两边空白@<font color="red">文本</font>】
 
+### 数字转字符
+
+【数字转字符@<font color="red">数字</font>】<br />
+
+将1到127(包括1和127)之间的数字转为ascii字符。例如【数字转字符@64】将返回A
 
 
 ### 判含 
