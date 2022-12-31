@@ -8,7 +8,7 @@ use super::RedLang;
 
 use crate::cqapi::cq_add_log;
 
-use image::{Rgba, ImageBuffer};
+use image::{Rgba, ImageBuffer, EncodableLayout};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
 use std::io::Cursor;
 use image::io::Reader as ImageReader;
@@ -654,6 +654,36 @@ pub fn init_ex_fun_map() {
             return Err(self_t.make_err("在数字转字符中发生越界"));
         }
         return Ok(Some((num as char).to_string()));
+    });
+    add_fun(vec!["创建目录"],|self_t,params|{
+        let path = self_t.get_param(params, 0)?;
+        fs::create_dir_all(path)?;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["写文件"],|self_t,params|{
+        let path = self_t.get_param(params, 0)?;
+        let bin_data = self_t.get_param(params, 1)?;
+        let parent_path = Path::new(&path).parent().ok_or("写文件：无法创建目录或文件")?;
+        fs::create_dir_all(parent_path)?;
+        let mut f = fs::File::create(path)?;
+        let bin = self_t.parse_bin(&bin_data)?;
+        std::io::Write::write_all(&mut f, bin.as_bytes())?;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["追加文件"],|self_t,params|{
+        let path = self_t.get_param(params, 0)?;
+        let bin_data = self_t.get_param(params, 1)?;
+        let parent_path = Path::new(&path).parent().ok_or("写文件：无法创建目录或文件")?;
+        fs::create_dir_all(parent_path)?;
+        let mut f;
+        if Path::new(&path).exists() {
+            f = fs::OpenOptions::new().append(true).open(path)?
+        }else {
+            f = fs::File::create(path)?;
+        }
+        let bin = self_t.parse_bin(&bin_data)?;
+        std::io::Write::write_all(&mut f, bin.as_bytes())?;
+        return Ok(Some("".to_string()));
     });
 
 }

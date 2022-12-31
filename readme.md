@@ -495,6 +495,20 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 
 返回文件内容(字节集)。
 
+### 写文件 
+
+
+【写文件@<font color="red">文件路径</font>@<font color="red">字节集</font>】<br />
+
+创建文件，并写文件。若路径不存在，会自动创建路径。若文件存在，则会先清空文件，再写文件。
+
+### 追加文件 
+
+
+【追加文件@<font color="red">文件路径</font>@<font color="red">字节集</font>】<br />
+
+在文件后面追加内容。若路径不存在，会自动创建路径。若文件不存在，则会先创建文件。
+
 ### 目录分隔符 
 
 
@@ -520,6 +534,13 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 返回一个数组，数组中包含目录下的文件。<br />
 返回的文件为绝对路径。
 
+
+### 创建目录 
+
+
+【创建目录@<font color="red">路径</font>】<br />
+
+创建目录，可以一次性创建多级目录。
 
 ### 分割 
 
