@@ -149,6 +149,8 @@ impl RedLang {
             ret_str = v;
         } else if cmd == "换行" {
             ret_str = String::from("\n");
+        } else if cmd == "回车" {
+            ret_str = String::from("\r");
         } else if cmd == "空格" {
             ret_str = String::from(" ");
         } else if cmd == "隐藏" {

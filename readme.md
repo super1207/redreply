@@ -134,6 +134,11 @@ hellohellohellohellohello
 
 【换行】<br />用来代替字面量的\\n
 
+### 回车
+
+
+【回车】<br />用来代替字面量的\\r
+
 
 ### 空格
 
