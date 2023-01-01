@@ -298,7 +298,10 @@ impl RedLang {
             let params_vec_len = self.params_vec.len();
             ret_str = self.params_vec[params_vec_len - 1]
                 .get(tms).unwrap_or(&"".to_string()).to_string();
-        } else if cmd == "返回" {
+        } else if cmd == "参数个数" {
+            let params_vec_len = self.params_vec.len();
+            ret_str = self.params_vec[params_vec_len - 1].len().to_string();
+        }else if cmd == "返回" {
             let fun_ret_vec_len = self.fun_ret_vec.len();
             self.fun_ret_vec[fun_ret_vec_len - 1] = true;
         } else if cmd == "计算" {

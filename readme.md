@@ -263,9 +263,16 @@ hellohellohellohellohello
 
 【参数@<font color="red">第几个参数</font>】<br />
 
-参数个数从1开始数，如【参数@1】代表第一个参数，此命令只能在函数中使用。<br />
+参数个数从1开始数，如【参数@1】代表第一个参数，此命令只能在函数或命令中使用。<br />
 
 若参数越界，返回空文本。
+
+### 参数个数
+
+
+【参数个数】<br />
+
+返回参数的个数，此命令只能在函数或命令中使用。<br />
 
 
 ### 返回
@@ -1059,7 +1066,7 @@ CQ码<strong>外部</strong>的字符需要CQ转义，以上三个命令的作�
 
 【设置来源@<font color="red">键</font>@<font color="red">值</font>】<br />
 
-红色问答中脚本的执行输入，会自动根据来源发送到指定群、频道、用户。<br />
+红色问答中脚本的执行输出，会自动根据来源发送到指定群、频道、用户。<br />
 
 支持的键包括：<font color="red">机器人ID</font>、<font color="red">机器人频道ID</font>、<font color="red">频道ID</font>、<font color="red">子频道ID</font>、<font color="red">群ID</font>、<font color="red">发送者ID</font>。
 
