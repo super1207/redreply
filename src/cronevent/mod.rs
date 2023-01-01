@@ -37,8 +37,11 @@ fn do_cron_event_t() -> Result<i32, Box<dyn std::error::Error>> {
                     thread::spawn(move ||{
                         let mut rl = crate::redlang::RedLang::new();
                         match rl.parse(&code_t) {
-                            Ok(_) => {
-                                
+                            Ok(out) => {
+                                let ret = crate::cqevent::do_script(&mut rl,&out);
+                                if let Err(err) = ret{
+                                    cq_add_log_w(&format!("{}",err)).unwrap();
+                                }
                             },
                             Err(err) => {
                                 cq_add_log_w(&format!("{}",err)).unwrap();

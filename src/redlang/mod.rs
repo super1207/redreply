@@ -12,7 +12,7 @@ pub struct RedLang {
     params_vec: Vec<Vec<String>>,          // 函数参数栈
     fun_ret_vec: Vec<bool>,                // 记录函数是否返回的栈
     lua : rlua::Lua,
-    exmap:HashMap<String, String>,
+    exmap:Rc<RefCell<HashMap<String, Rc<String>>>>,
     coremap:HashMap<String, String>,
     pub type_uuid:String,
     xuhao: usize
@@ -47,12 +47,13 @@ impl RedLang {
     pub fn get_exmap(
         &self,
         key: &str,
-    ) -> Result<&str, Box<dyn std::error::Error>> {
-        let ret = self.exmap.get(key);
+    ) -> Rc<String>{
+        let v = self.exmap.borrow();
+        let ret = v.get(key);
         if let Some(v) = ret{
-            return Ok(v);
+            return v.to_owned();
         }
-        return Ok("");
+        return Rc::new("".to_string());
     }
     #[allow(dead_code)]
     pub fn set_exmap(
@@ -60,7 +61,7 @@ impl RedLang {
         key: &str,
         val: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.exmap.insert(key.to_owned(), val.to_owned());
+        self.exmap.borrow_mut().insert(key.to_owned(), Rc::new(val.to_string()));
         Ok(())
     }
     pub fn get_coremap(
@@ -170,7 +171,7 @@ impl RedLang {
             if let Some(v) = var_ref {
                 ret_str = v.borrow().clone();
             }else {
-                return Err(self.make_err(&format!("变量`{}`不存在",k)));
+                ret_str = "".to_string();
             }
         } else if cmd == "赋值变量" {
             let k = self.get_param(params, 0)?;
@@ -296,9 +297,7 @@ impl RedLang {
             let tms = k1.parse::<usize>()? - 1;
             let params_vec_len = self.params_vec.len();
             ret_str = self.params_vec[params_vec_len - 1]
-                .get(tms)
-                .ok_or("获取函数参数失败，越界")?
-                .to_string();
+                .get(tms).unwrap_or(&"".to_string()).to_string();
         } else if cmd == "返回" {
             let fun_ret_vec_len = self.fun_ret_vec.len();
             self.fun_ret_vec[fun_ret_vec_len - 1] = true;
@@ -723,14 +722,14 @@ impl RedLang {
             params_vec: v2,
             fun_ret_vec: v3,
             lua : rlua::Lua::new(),
-            exmap: HashMap::new(),
+            exmap: Rc::new(RefCell::new(HashMap::new())),
             coremap: HashMap::new(),
             type_uuid:crate::REDLANG_UUID.to_string(),
             xuhao:0usize
         }
     }
 
-    fn make_err(&self, err_str: &str) -> Box<dyn std::error::Error> {
+    pub fn make_err(&self, err_str: &str) -> Box<dyn std::error::Error> {
         Box::new(MyStrError::new(err_str.to_owned()))
     }
     fn make_err_push(&self, e:Box<dyn std::error::Error> ,err_str: &str) -> Box<dyn std::error::Error> {

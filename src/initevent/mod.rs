@@ -1,4 +1,4 @@
-use crate::read_config;
+use crate::{read_config, cqapi::cq_add_log_w};
 
 
 fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str), Box<dyn std::error::Error>>{
@@ -15,7 +15,11 @@ pub fn do_init_event() -> Result<i32, Box<dyn std::error::Error>> {
         let (cffs,code) = get_script_info(&script_json[i])?;
         let mut rl = crate::redlang::RedLang::new();
         if cffs == "框架初始化" {
-            rl.parse(code)?;
+            let out = rl.parse(code)?;
+            let ret = crate::cqevent::do_script(&mut rl,&out);
+            if let Err(err) = ret{
+                cq_add_log_w(&format!("{}",err)).unwrap();
+            }
         }
     }
     Ok(0)

@@ -1,4 +1,4 @@
-use crate::{cqapi::*, redlang::{RedLang}, mytool::json_to_cq_str, read_config};
+use crate::{cqapi::*, redlang::RedLang, mytool::json_to_cq_str, read_config};
 
 use super::{is_key_match, get_script_info, set_normal_message_info};
 
@@ -18,36 +18,6 @@ pub fn msg_id_map_insert(user_id:String,group_id:String,message_id:String) ->Res
     Ok(())
 }
 
-fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Error>>{
-    let out_str_t = rl.parse(code)?;
-    let out_str_vec = super::do_paging(&out_str_t)?;
-    let group_id = rl.get_exmap("群ID")?.parse::<i32>()?;
-    for out_str in out_str_vec {
-        if out_str != "" {
-            let send_json = serde_json::json!({
-                "action":"send_group_msg",
-                "params":{
-                    "group_id": group_id,
-                    "message":out_str
-                }
-            });
-            let ret_str = cq_call_api(&send_json.to_string())?;
-            let ret_json:serde_json::Value = serde_json::from_str(&ret_str)?;
-            let retcode = ret_json.get("retcode").ok_or("retcode not found")?.as_i64().ok_or("retcode not int")?;
-            if retcode != 0 {
-                cq_add_log_w(&ret_str).unwrap();
-            }else {
-                let data = ret_json.get("data").ok_or("data not found")?;
-                let message_id = data.get("message_id").ok_or("message_id not found")?.as_i64().ok_or("retcode not int")?;
-                let group_id_str = group_id.to_string();
-                let self_id = rl.get_exmap("机器人ID")?;
-                msg_id_map_insert(self_id.to_string(),group_id_str,message_id.to_string())?;
-            }
-        }
-    }
-    Ok(())
-}
-
 fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>>{
     let msg = json_to_cq_str(&root)?;
     let script_json = read_config()?;
@@ -60,9 +30,9 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
             set_normal_message_info(&mut rl, root)?;
             if is_set_msg_id_map == false {
                 is_set_msg_id_map = true;
-                let user_id = rl.get_exmap("发送者ID")?;
-                let group_id = rl.get_exmap("群ID")?;
-                let message_id = rl.get_exmap("消息ID")?;
+                let user_id = rl.get_exmap("发送者ID");
+                let group_id = rl.get_exmap("群ID");
+                let message_id = rl.get_exmap("消息ID");
                 msg_id_map_insert(user_id.to_string(),group_id.to_string(),message_id.to_string())?;
             }
             {
@@ -85,7 +55,7 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
                 }
             }
             if is_key_match(&mut rl,&ppfs,keyword,&msg)? {
-                do_script(&mut rl,code)?;
+                super::do_script(&mut rl,code)?;
             }    
         }
     }

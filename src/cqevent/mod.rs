@@ -30,6 +30,33 @@ pub fn do_paging(outstr:&str) -> Result<Vec<&str>, Box<dyn std::error::Error>> {
     return Ok(outvec);
 }
 
+pub fn get_msg_type(rl:& RedLang) -> &'static str {
+    let user_id_str = rl.get_exmap("发送者ID").to_string();
+    let group_id_str = rl.get_exmap("群ID").to_string();
+    let guild_id_str = rl.get_exmap("频道ID").to_string();
+    let channel_id_str = rl.get_exmap("子频道ID").to_string();
+    let msg_type:&str;
+    if group_id_str != "" {
+        msg_type = "group";
+    }else if channel_id_str != "" && guild_id_str != ""{
+        msg_type = "channel";
+    }else if user_id_str  != "" {
+        msg_type = "private";
+    }else{
+        msg_type = "";
+    }
+    return msg_type;
+}
+
+pub fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Error>>{
+    let out_str_t = rl.parse(code)?;
+    let out_str_vec = do_paging(&out_str_t)?;
+    for out_str in out_str_vec {
+        crate::redlang::cqexfun::send_one_msg(rl, out_str)?;
+    }
+    Ok(())
+}
+
 struct Handler;
 
 impl Handler {
