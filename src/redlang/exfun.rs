@@ -31,18 +31,25 @@ pub fn init_ex_fun_map() {
         let mut easy = curl::easy::Easy::new();
         easy.url(&url)?;
         easy.ssl_verify_peer(false)?;
+        easy.follow_location(true)?;
         let proxy = self_t.get_coremap("代理")?;
         if proxy != "" {
             easy.proxy(proxy)?;
         }
         let mut header_list = curl::easy::List::new();
-        header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
         let http_header_str = self_t.get_coremap("访问头")?;
         if http_header_str != "" {
-            let http_header = self_t.parse_obj(&http_header_str)?;
-            for it in http_header {
-                header_list.append(&(it.0 + ": " + it.1))?;
+            let mut http_header = self_t.parse_obj(&http_header_str)?;
+            if !http_header.contains_key("User-Agent"){
+                http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36");
             }
+            for it in http_header {
+                if it.1 != "" {
+                    header_list.append(&(it.0 + ": " + it.1))?;
+                }
+            }
+        }else {
+            header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
         }
         easy.http_headers(header_list)?;
         let mut content = Vec::new();
@@ -51,7 +58,7 @@ pub fn init_ex_fun_map() {
             transfer.write_function(|data| {
                 content.extend_from_slice(data);
                 Ok(data.len())
-            }).unwrap();
+            })?;
             transfer.perform()?;
         }
         return Ok(Some(self_t.build_bin(content)));
@@ -71,18 +78,25 @@ pub fn init_ex_fun_map() {
         let mut easy = curl::easy::Easy::new();
         easy.url(&url)?;
         easy.ssl_verify_peer(false)?;
+        easy.follow_location(true)?;
         let proxy = self_t.get_coremap("代理")?;
         if proxy != "" {
             easy.proxy(proxy)?;
         }
         let mut header_list = curl::easy::List::new();
-        header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
         let http_header_str = self_t.get_coremap("访问头")?;
         if http_header_str != "" {
-            let http_header = self_t.parse_obj(&http_header_str)?;
-            for it in http_header {
-                header_list.append(&(it.0 + ": " + it.1))?;
+            let mut http_header = self_t.parse_obj(&http_header_str)?;
+            if !http_header.contains_key("User-Agent"){
+                http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36");
             }
+            for it in http_header {
+                if it.1 != "" {
+                    header_list.append(&(it.0 + ": " + it.1))?;
+                }
+            }
+        }else {
+            header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
         }
         easy.http_headers(header_list)?;
         easy.post(true)?;
@@ -93,11 +107,11 @@ pub fn init_ex_fun_map() {
             let mut transfer = easy.transfer();
             transfer.read_function(|buf| {
                 Ok(dat.read(buf).unwrap_or(0))
-            }).unwrap();
+            })?;
             transfer.write_function(|data| {
                 content.extend_from_slice(data);
                 Ok(data.len())
-            }).unwrap();
+            })?;
             transfer.perform()?;
         }
         return Ok(Some(self_t.build_bin(content)));
