@@ -1068,7 +1068,9 @@ CQ码<strong>外部</strong>的字符需要CQ转义，以上三个命令的作�
 
 红色问答中脚本的执行输出，会自动根据来源发送到指定群、频道、用户。<br />
 
-支持的键包括：<font color="red">机器人ID</font>、<font color="red">机器人频道ID</font>、<font color="red">频道ID</font>、<font color="red">子频道ID</font>、<font color="red">群ID</font>、<font color="red">发送者ID</font>。
+支持的键包括：<font color="red">机器人ID</font>、<font color="red">机器人频道ID</font>、<font color="red">频道ID</font>、<font color="red">子频道ID</font>、<font color="red">群ID</font>、<font color="red">发送者ID</font>。<br />
+
+受此命令影响的命令有：【发送者QQ】【发送者ID】【当前群号】【当前频道ID】【当前子频道ID】【机器人QQ】【机器人ID】【OB调用】【输出流】
 
 
 ### 事件内容
@@ -1098,7 +1100,7 @@ onebot事件json对应的RedLang对象。
 ### OB调用
 
 
-【OB调用@<font color="red">self_id</font>@<font color="red">onebot要求的json文本</font>】<br />
+【OB调用@<font color="red">onebot要求的json文本</font>】<br />
 
 此命令用于发送原始onebot数据，以调用框架不支持，以及尚未支持的功能。<br />
 
@@ -1117,8 +1119,8 @@ onebot事件json对应的RedLang对象。
 114
 这是号码百事通的电话
 514
-
 1+1+4==6
+
 早
 早上好
 你看看现在几点了
