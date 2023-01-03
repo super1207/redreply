@@ -103,6 +103,58 @@ impl RedLang {
         }
         return Ok(ret);
     }
+    fn call_fun(&mut self,params: &[String],is_xh:bool) -> Result<String, Box<dyn std::error::Error>> {
+        // 获得函数
+        let func_t= self.get_param(params, 0)?;
+
+        let tp = self.get_type(&func_t)?;
+        let func:String;
+
+        // 尝试通过文本来在常量中获得函数
+        if tp == "文本" {
+            let err = "无法在常量中找到对应函数";
+            let mp = crate::G_CONST_MAP.read()?;
+            func = mp.get(func_t.as_str()).ok_or(err)?.to_string();
+        }else {
+            func = func_t;
+        }
+        let tp = self.get_type(&func)?;
+        if tp != "函数"{
+            return Err(self.make_err(&format!("函数调用命令不能对{}类型进行操作",tp)));
+        }
+        let func = func.get(37..).ok_or("在函数调用命令中获取函数失败")?;
+
+        // 获得函数参数
+        let fun_params = &params[1..];
+        let mut fun_params_t: Vec<String> = vec![];
+        for i in fun_params {
+            if is_xh {
+                // 来自循环的函数调用参数，无需再次解析
+                fun_params_t.push(i.to_string());
+            }else{
+                let p = self.parse(i)?;
+                fun_params_t.push(p);
+            }
+        }
+
+        // 修改参数栈
+        self.params_vec.push(fun_params_t);
+
+        // 修改变量栈
+        self.var_vec.push(std::collections::HashMap::new());
+
+        self.fun_ret_vec.push(false);
+
+        // 调用函数
+        let ret_str = self.parse(&func)?;
+
+        // 变量栈和参数栈退栈
+        self.var_vec.pop();
+        self.params_vec.pop();
+        self.fun_ret_vec.pop();
+
+        return Ok(ret_str);
+    }
     fn do_cmd_fun(
         &mut self,
         cmd: &str,
@@ -231,16 +283,40 @@ impl RedLang {
             }
         }else if cmd == "循环" {
             let k1 = self.get_param(params, 0)?;
-            let tms = k1.parse::<usize>()?;
-            self.xh_vec.push([false, false]);
-            for _i in 0..tms {
-                let v = self.get_param(params, 1)?;
-                ret_str.push_str(&v);
-                if self.xh_vec[self.xh_vec.len() - 1][1] == true {
-                    break;
+            let k1_tp = self.get_type(&k1)?;
+            if k1_tp == "文本"{
+                let k1 = self.get_param(params, 0)?;
+                let tms = k1.parse::<usize>()?;
+                self.xh_vec.push([false, false]);
+                for _i in 0..tms {
+                    let v = self.get_param(params, 1)?;
+                    ret_str.push_str(&v);
+                    if self.xh_vec[self.xh_vec.len() - 1][1] == true {
+                        break;
+                    }
                 }
+                self.xh_vec.pop();
             }
-            self.xh_vec.pop();
+            else if k1_tp == "数组" {
+                let arr_str = k1;
+                let fun = params.get(1).ok_or("数组循环中参数函数获取失败")?.to_string();
+                let arr = self.parse_arr(&arr_str)?;
+                let tms = arr.len();
+                self.xh_vec.push([false, false]);
+                let mut fun_params:Vec<String> = vec!["".to_string(),"".to_string(),"".to_string()];
+                fun_params[0] = fun;
+                for i in 0..tms {
+                    fun_params[1] = i.to_string();
+                    fun_params[2] = arr[i].to_owned();
+                    let fun_ret = self.call_fun(&fun_params,true)?;
+                    ret_str.push_str(&fun_ret);
+                    if self.xh_vec[self.xh_vec.len() - 1][1] == true {
+                        break;
+                    }
+                }
+                self.xh_vec.pop();
+            }
+            
         } else if cmd == "判循" {
             self.xh_vec.push([false, false]);
             while self.get_param(params, 0)? == "真" {
@@ -269,50 +345,8 @@ impl RedLang {
             let fun = self.parse_fun(&func)?;
             let mut w = crate::G_CMD_MAP.write()?;
             w.insert(func_name, fun);
-        } else if cmd == "函数调用" || cmd == "调用函数" {
-            // 获得函数
-            let func_t = self.get_param(params, 0)?;
-
-            let tp = self.get_type(&func_t)?;
-            let func:String;
-
-            // 尝试通过文本来在常量中获得函数
-            if tp == "文本" {
-                let err = "无法在常量中找到对应函数";
-                let mp = crate::G_CONST_MAP.read()?;
-                func = mp.get(func_t.as_str()).ok_or(err)?.to_string();
-            }else {
-                func = func_t;
-            }
-            let tp = self.get_type(&func)?;
-            if tp != "函数"{
-                return Err(self.make_err(&format!("函数调用命令不能对{}类型进行操作",tp)));
-            }
-            let func = func.get(37..).ok_or("在函数调用命令中获取函数失败")?;
-
-            // 获得函数参数
-            let fun_params = &params[1..];
-            let mut fun_params_t: Vec<String> = vec![];
-            for i in fun_params {
-                let p = self.parse(i)?;
-                fun_params_t.push(p);
-            }
-
-            // 修改参数栈
-            self.params_vec.push(fun_params_t);
-
-            // 修改变量栈
-            self.var_vec.push(std::collections::HashMap::new());
-
-            self.fun_ret_vec.push(false);
-
-            // 调用函数
-            ret_str = self.parse(&func)?;
-
-            // 变量栈和参数栈退栈
-            self.var_vec.pop();
-            self.params_vec.pop();
-            self.fun_ret_vec.pop();
+        }else if cmd == "函数调用" || cmd == "调用函数" {
+            ret_str = self.call_fun(params,false)?;
         } else if cmd == "参数" {
             let k1 = self.get_param(params, 0)?;
             let tms = k1.parse::<usize>()? - 1;

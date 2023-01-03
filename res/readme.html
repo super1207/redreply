@@ -142,7 +142,9 @@
 <p>【判断@<font color="red">文本1</font>@<font color="red">文本2</font>@<font color="red">不同执行</font>@<font color="red">相同执行</font>】<br /></p>
 <p>其中<font color="red">相同执行</font>可以省略。</p>
 <h3 id="-">循环</h3>
-<p>【循环@<font color="red">循环次数</font>@<font color="red">循环语句</font>】</p>
+<p>【循环@<font color="red">循环次数</font>@<font color="red">循环语句</font>】<br />
+【循环@<font color="red">数组</font>@<font color="red">处理函数</font>】</p>
+<p>此命令有两种形式，第二种形式中：<font color="red">处理函数</font>是一个回调函数，它有两个参数，第一个参数表示数组下标，第二个参数表示数组元素。如<code>【循环@【数组@a@b@c】@【函数定义【参数@1】【参数@2】】】</code>将会输出<code>0a1b2c</code>。</p>
 <h3 id="-">判循</h3>
 <p>【判循@<font color="red">循环条件</font>@<font color="red">循环语句</font>】<br /></p>
 <p>循环条件为<font color="red">真</font>，则循环。</p>

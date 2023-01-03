@@ -197,7 +197,10 @@ hellohellohellohellohello
 ### 循环
 
 
-【循环@<font color="red">循环次数</font>@<font color="red">循环语句</font>】
+【循环@<font color="red">循环次数</font>@<font color="red">循环语句</font>】<br />
+【循环@<font color="red">数组</font>@<font color="red">处理函数</font>】
+
+此命令有两种形式，第二种形式中：<font color="red">处理函数</font>是一个回调函数，它有两个参数，第一个参数表示数组下标，第二个参数表示数组元素。如`【循环@【数组@a@b@c】@【函数定义【参数@1】【参数@2】】】`将会输出`0a1b2c`。
 
 
 ### 判循
