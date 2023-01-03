@@ -679,10 +679,12 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 
 ### 序号
 
+【序号@<font color="red">key</font>】<br />
+【序号@<font color="red">key</font>@<font color="red">value</font>】<br />
 
-【序号】<br />
-
-每次触发后,【序号】的值+1 ，从0开始（此变量只在同一脚本下递增），可用【序号@x】将【序号】的值改为x。
+此命令有两种形式：<br />
+第一种形式，返回序号<font color="red">key</font>的当前值(默认从0开始)，并将序号<font color="red">key</font>的值+1。<br />
+第二种形式，设置序号<font color="red">key</font>的值为<font color="red">value</font>，返回空文本。
 
 
 ### 时间戳

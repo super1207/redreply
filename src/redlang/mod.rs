@@ -15,7 +15,7 @@ pub struct RedLang {
     exmap:Rc<RefCell<HashMap<String, Rc<String>>>>,
     coremap:HashMap<String, String>,
     pub type_uuid:String,
-    xuhao: usize
+    xuhao: HashMap<String, usize>,
 }
 
 #[derive(Debug, Clone)]
@@ -749,7 +749,7 @@ impl RedLang {
             exmap: Rc::new(RefCell::new(HashMap::new())),
             coremap: HashMap::new(),
             type_uuid:crate::REDLANG_UUID.to_string(),
-            xuhao:0usize
+            xuhao:HashMap::new()
         }
     }
 

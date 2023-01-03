@@ -337,8 +337,11 @@
 <p>【打印日志@<font color="red">文本</font>】<br /></p>
 <p>打印debug日志到控制台。</p>
 <h3 id="-">序号</h3>
-<p>【序号】<br /></p>
-<p>每次触发后,【序号】的值+1 ，从0开始（此变量只在同一脚本下递增），可用【序号@x】将【序号】的值改为x。</p>
+<p>【序号@<font color="red">key</font>】<br />
+【序号@<font color="red">key</font>@<font color="red">value</font>】<br /></p>
+<p>此命令有两种形式：<br />
+第一种形式，返回序号<font color="red">key</font>的当前值(默认从0开始)，并将序号<font color="red">key</font>的值+1。<br />
+第二种形式，设置序号<font color="red">key</font>的值为<font color="red">value</font>，返回空文本。</p>
 <h3 id="-">时间戳</h3>
 <p>【时间戳】<br /></p>
 <p>返回10位unix时间戳</p>

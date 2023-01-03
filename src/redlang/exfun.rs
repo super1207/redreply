@@ -325,14 +325,25 @@ pub fn init_ex_fun_map() {
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["序号"],|self_t,params|{
-        if params.len() == 0 {
-            let retnum = self_t.xuhao;
-            self_t.xuhao += 1;
-            return Ok(Some(retnum.to_string()));
+        let k = self_t.get_param(params, 0)?;
+        let v = self_t.get_param(params, 1)?;
+        if v != "" {
+            // 说明是设置序号
+            self_t.xuhao.insert(k.to_owned(), v.parse::<usize>()?);
+            return Ok(Some("".to_string()));
+        }else {
+            // 说明是取序号
+            let ret:usize;
+            if self_t.xuhao.contains_key(&k) {
+                let x = self_t.xuhao.get_mut(&k).unwrap();
+                ret = *x;
+                *x += 1;
+            }else {
+                self_t.xuhao.insert(k.to_owned(), 1);
+                ret = 0;
+            }
+            return Ok(Some(ret.to_string()));
         }
-        let num = self_t.get_param(params, 0)?.parse::<usize>()?;
-        self_t.xuhao = num;
-        return Ok(Some(num.to_string()));
     });
     add_fun(vec!["时间戳","10位时间戳"],|_self_t,_params|{
         let tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
