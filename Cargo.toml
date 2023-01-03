@@ -27,6 +27,7 @@ imageproc = "*"
 gif = "*"
 cron = "*"
 rlua = {version = "*",features = ["lua-no-oslib","builtin-lua54"]}
+headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}
 
 [lib]
 name = "redlang" #生成dll的文件名

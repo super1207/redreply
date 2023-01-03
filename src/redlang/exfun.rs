@@ -1,6 +1,7 @@
 use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::HashMap, vec, fs};
 
 use chrono::TimeZone;
+use headless_chrome::Browser;
 use md5::{Md5, Digest};
 use urlencoding::encode;
 use base64;
@@ -699,7 +700,31 @@ pub fn init_ex_fun_map() {
         std::io::Write::write_all(&mut f, bin.as_bytes())?;
         return Ok(Some("".to_string()));
     });
-
+    add_fun(vec!["网页截图"],|self_t,params|{
+        let path = self_t.get_param(params, 0)?;
+        let sec = self_t.get_param(params, 1)?;
+        let png_data;
+        let options = headless_chrome::LaunchOptions::default_builder()
+            .window_size(Some((1920, 1080)))
+            .build()?;
+            let browser = Browser::new(options)?;
+            let tab = browser.wait_for_initial_tab()?;
+        if sec == "" {
+            png_data = tab
+                .navigate_to(&path)?
+                .wait_until_navigated()?
+                .capture_screenshot(headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png, Some(75), None, true)?;
+        } else {
+            tab
+            .navigate_to(&path)?
+            .wait_until_navigated()?;
+            png_data = tab
+            .wait_for_element(&sec)?
+            .capture_screenshot(headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png)?;
+        }
+        
+        return Ok(Some(self_t.build_bin(png_data)));
+    });
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {
