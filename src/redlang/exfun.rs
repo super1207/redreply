@@ -1,4 +1,4 @@
-use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::HashMap, vec, fs};
+use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::BTreeMap, vec, fs};
 
 use chrono::TimeZone;
 use headless_chrome::Browser;
@@ -13,7 +13,7 @@ use image::{Rgba, ImageBuffer, EncodableLayout};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
 use std::io::Cursor;
 use image::io::Reader as ImageReader;
-use imageproc::geometric_transformations::{Interpolation};
+use imageproc::geometric_transformations::Interpolation;
 
 pub fn init_ex_fun_map() {
     fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
@@ -42,11 +42,11 @@ pub fn init_ex_fun_map() {
         if http_header_str != "" {
             let mut http_header = self_t.parse_obj(&http_header_str)?;
             if !http_header.contains_key("User-Agent"){
-                http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36");
+                http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
             }
             for it in http_header {
                 if it.1 != "" {
-                    header_list.append(&(it.0 + ": " + it.1))?;
+                    header_list.append(&(it.0 + ": " + &it.1))?;
                 }
             }
         }else {
@@ -89,11 +89,11 @@ pub fn init_ex_fun_map() {
         if http_header_str != "" {
             let mut http_header = self_t.parse_obj(&http_header_str)?;
             if !http_header.contains_key("User-Agent"){
-                http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36");
+                http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
             }
             for it in http_header {
                 if it.1 != "" {
-                    header_list.append(&(it.0 + ": " + it.1))?;
+                    header_list.append(&(it.0 + ": " + &it.1))?;
                 }
             }
         }else {
@@ -119,7 +119,7 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["设置访问头"],|self_t,params|{
         let http_header = self_t.get_coremap("访问头")?.to_string();
-        let mut http_header_map:HashMap<String, String> = HashMap::new();
+        let mut http_header_map:BTreeMap<String, String> = BTreeMap::new();
         if http_header != "" {
             for (k,v) in self_t.parse_obj(&http_header)?{
                 http_header_map.insert(k, v.to_string());
@@ -374,7 +374,7 @@ pub fn init_ex_fun_map() {
         let text = self_t.get_param(params, 0)?;
         let img_bin = self_t.parse_bin(&text)?;
         let img = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
-        let mut mp = HashMap::new();
+        let mut mp = BTreeMap::new();
         mp.insert("宽".to_string(), img.width().to_string());
         mp.insert("高".to_string(), img.height().to_string());
         let retobj = self_t.build_obj(mp);
@@ -777,7 +777,7 @@ fn do_json_number(root:&serde_json::Value) -> Result<String, Box<dyn std::error:
 
 fn do_json_obj(self_uid:&str,root:&serde_json::Value) -> Result<String, Box<dyn std::error::Error>> {
     let err = "Json对象解析失败";
-    let mut ret_str:HashMap<String,String> = HashMap::new();
+    let mut ret_str:BTreeMap<String,String> = BTreeMap::new();
     for it in root.as_object().ok_or(err)? {
         let k = it.0;
         let v = it.1;

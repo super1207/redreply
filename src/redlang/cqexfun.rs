@@ -1,4 +1,4 @@
-use std::{fs, collections::HashMap, path::Path, env::current_exe, vec};
+use std::{fs, collections::BTreeMap, path::Path, env::current_exe, vec};
 
 use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str, PAGING_UUID};
 use serde_json;
@@ -311,7 +311,7 @@ pub fn init_cq_ex_fun_map() {
         let data_str = self_t.get_param(params, 0)?;
         let pos1 = data_str.find(",").ok_or("CQ码解析失败")?;
         let tp = data_str.get(4..pos1).ok_or("CQ码解析失败")?;
-        let mut sub_key_obj:HashMap<String,String> = HashMap::new();
+        let mut sub_key_obj:BTreeMap<String,String> = BTreeMap::new();
         sub_key_obj.insert("type".to_string(), tp.to_string());
         let re = fancy_regex::Regex::new("[:,]([^\\[\\],]+?)=([^\\[\\],]*?)(?=[\\],])")?;
         if let Some(cap) = re.captures(&data_str)? {
@@ -371,7 +371,7 @@ pub fn init_cq_ex_fun_map() {
         let file_dat = fs::read_to_string(path)?;
         let file_dat_without_r = file_dat.replace('\r', "");
         let words_list = file_dat_without_r.split("\n\n");
-        let mut dict_obj:HashMap<String,String> = HashMap::new();
+        let mut dict_obj:BTreeMap<String,String> = BTreeMap::new();
         let err = format!("词库文件格式错误:`{}`", &path_t);
         for words in words_list {
             let word_list = words.split('\n').collect::<Vec<&str>>();

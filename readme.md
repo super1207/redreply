@@ -334,13 +334,13 @@ hellohellohellohellohello
 
 ### 增加元素
 
-【增加元素@<font color="red">变量名</font>@<font color="red">元素</font>】<br />
+【增加元素@<font color="red">变量名</font>@<font color="red">元素</font>@<font color="red">元素</font>......】<br />
 
 变量支持对象，文本，数组，字节集。<br />
 
 若为对象，则需写成：<br />
 
-【增加元素@<font color="red">变量名</font>@<font color="red">key</font>@<font color="red">value</font>】
+【增加元素@<font color="red">变量名</font>@<font color="red">key</font>@<font color="red">value</font>......】
 
 ### 取元素
 

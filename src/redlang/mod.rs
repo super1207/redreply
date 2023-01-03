@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt, error, vec, rc::Rc, cell::RefCell};
+use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell};
 use encoding::Encoding;
 extern crate rand;
 
@@ -364,7 +364,7 @@ impl RedLang {
             if params_len % 2 != 0 {
                 return Err(self.make_err("请保证对象参数为偶数个"));
             }
-            let mut temp_ret:HashMap<String,String> = HashMap::new();
+            let mut temp_ret:BTreeMap<String,String> = BTreeMap::new();
             for i in 0..(params_len/2) {
                 let k = self.get_param(params, i*2)?;
                 let v = self.get_param(params, i*2 + 1)?;
@@ -472,8 +472,8 @@ impl RedLang {
             }
         }
         else if cmd == "增加元素" {
+            // 获得变量
             let var_name = self.get_param(params, 0)?;
-            let el = self.get_param(params, 1)?;
             let tp:String;
             let data:Rc<RefCell<String>>;
             if let Some(v) = self.get_var_ref(&var_name) {
@@ -481,30 +481,44 @@ impl RedLang {
             }else {
                 return Err(self.make_err(&format!("变量`{}`不存在",var_name)));
             }
+            // 获得变量类型
             tp = self.get_type(data.borrow().as_str())?; 
-            if tp == "数组" {
-                let mut d = data.borrow_mut();
-                d.push_str(&el.len().to_string());
-                d.push(',');
-                d.push_str(&el);
-            }else if tp == "对象" {
-                let mut d = data.borrow_mut();
-                d.push_str(&el.len().to_string());
-                d.push(',');
-                d.push_str(&el);
+            //  增加元素
+            let el_len;
+            if tp == "对象" {
+                el_len = (params.len() -1) / 2;
+            }else {
+                el_len = params.len() -1;
+            }
+            for i in 0..el_len {
+                if tp == "数组" {
+                    let el = self.get_param(params, i + 1)?;
+                    let mut d = data.borrow_mut();
+                    d.push_str(&el.len().to_string());
+                    d.push(',');
+                    d.push_str(&el);
+                }else if tp == "对象" {
+                    let elk = self.get_param(params, i * 2 + 1)?;
+                    let elv = self.get_param(params, i * 2 + 2)?;
 
-                let v = self.get_param(params, 2)?;
-                d.push_str(&v.len().to_string());
-                d.push(',');
-                d.push_str(&v);
-            }else if tp == "文本" { 
-                let mut d = data.borrow_mut();
-                d.push_str(&el);
-            }else if tp == "字节集" {
-                let mut d = data.borrow_mut();
-                d.push_str(el.get(37..).ok_or("unkow err in add el")?);
-            }else{
-                return Err(self.make_err(&("对应类型不能增加元素:".to_owned()+&tp)));
+                    let mut obj_data = data.borrow_mut();
+                    let mut obj = self.parse_obj(&obj_data)?;
+
+                    obj.insert(elk, elv);
+                    obj_data.clear();
+                    obj_data.push_str(&self.build_obj(obj));
+                    
+                }else if tp == "文本" { 
+                    let el = self.get_param(params, i + 1)?;
+                    let mut d = data.borrow_mut();
+                    d.push_str(&el);
+                }else if tp == "字节集" {
+                    let el = self.get_param(params, i + 1)?;
+                    let mut d = data.borrow_mut();
+                    d.push_str(el.get(37..).ok_or("unkow err in add el")?);
+                }else{
+                    return Err(self.make_err(&("对应类型不能增加元素:".to_owned()+&tp)));
+                }
             }
         }else if cmd == "取元素" {
             let nums = params.len();
@@ -678,7 +692,7 @@ impl RedLang {
         }
         return Ok(ret_arr);
     }
-    fn parse_obj<'a>(&self, obj_data: &'a str) -> Result<HashMap<String,&'a str>, Box<dyn std::error::Error>> {
+    fn parse_obj(&self, obj_data: &str) -> Result<BTreeMap<String,String>, Box<dyn std::error::Error>> {
         let err_str = "不能获得对象类型";
         if !obj_data.starts_with(&self.type_uuid) {
             return Err(self.make_err(err_str));
@@ -705,9 +719,9 @@ impl RedLang {
         if ret_arr.len() % 2 != 0 { 
             return Err(self.make_err(err_str));
         }
-        let mut ret_map:HashMap<String,&str> = HashMap::new();
+        let mut ret_map:BTreeMap<String,String> = BTreeMap::new();
         for i in 0..(ret_arr.len()/2) {
-            ret_map.insert(ret_arr[i*2].to_string(), ret_arr[i*2 + 1]);
+            ret_map.insert(ret_arr[i*2].to_string(), ret_arr[i*2 + 1].to_owned());
         }
         return Ok(ret_map);
     }
@@ -862,7 +876,7 @@ impl RedLang {
         }
         return ret_str;
     }
-    fn build_obj_with_uid(uid:&str,obj:HashMap<String,String>) -> String {
+    fn build_obj_with_uid(uid:&str,obj:BTreeMap<String,String>) -> String {
         let mut ret_str = String::new();
         ret_str.push_str(uid);
         ret_str.push('O');
@@ -876,7 +890,7 @@ impl RedLang {
         }
         return ret_str;
     }
-    fn build_obj(&self,obj:HashMap<String,String>) -> String {
+    fn build_obj(&self,obj:BTreeMap<String,String>) -> String {
         return Self::build_obj_with_uid(&self.type_uuid,obj);
     }
 
