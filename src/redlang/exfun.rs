@@ -224,6 +224,9 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["读文件"],|self_t,params|{
         let file_path = self_t.get_param(params, 0)?;
         let path = Path::new(&file_path);
+        if !path.exists() {
+            return Ok(Some(self_t.build_bin(vec![])));
+        }
         let content = std::fs::read(path)?;
         return Ok(Some(self_t.build_bin(content)));
     });

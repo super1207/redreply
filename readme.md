@@ -211,9 +211,9 @@ hellohellohellohellohello
 ### 判空
 
 
-【判空@<font color="red">被判断文本</font>@<font color="red">为空替换</font>】<br />
+【判空@<font color="red">被判断内容</font>@<font color="red">为空替换</font>】<br />
 
-如果<font color="red">被判断文本</font>为空文本，则此变量表示的值为<font color="red">为空替换</font>，否则为<font color="red">被判断文本</font>
+如果<font color="red">被判断内容</font>长度为0，则此变量表示的值为<font color="red">为空替换</font>，否则为<font color="red">被判断内容</font>
 
 
 ### 跳出
@@ -507,7 +507,7 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 
 【读文件@<font color="red">文件路径</font>】<br />
 
-返回文件内容(字节集)。
+返回文件内容(字节集)。若文件不存在，返回空字节集。
 
 ### 写文件 
 

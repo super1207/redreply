@@ -83,6 +83,26 @@ impl RedLang {
         self.coremap.insert(key.to_owned(), val.to_owned());
         Ok(())
     }
+    fn get_len(&self,data:&str) -> Result<usize, Box<dyn std::error::Error>> {
+        let tp = self.get_type(&data)?;
+        let ret;
+        if tp == "数组" {
+            let arr_parse_out = self.parse_arr(&data)?;
+            ret = arr_parse_out.len();
+        } else if tp == "对象" {
+            let map_parse_out = self.parse_obj(&data)?;
+            ret = map_parse_out.len();
+        }else if tp == "文本" {
+            let v_chs =data.chars().collect::<Vec<char>>();
+            ret = v_chs.len();
+        }else if tp == "字节集" {
+            let l = (data.len() - 37) / 2;
+            ret = l;
+        }else{
+            return Err(self.make_err(&("对应类型不能获取长度:".to_owned()+&tp)));
+        }
+        return Ok(ret);
+    }
     fn do_cmd_fun(
         &mut self,
         cmd: &str,
@@ -202,11 +222,12 @@ impl RedLang {
                 ret_str = self.get_param(params, 3)?;
             }
         } else if cmd == "判空" {
-            let k1 = self.get_param(params, 0)?;
-            if k1 == "" {
+            let data = self.get_param(params, 0)?;
+            let len = self.get_len(&data)?;
+            if len == 0 {
                 ret_str = self.get_param(params, 1)?
             }else{
-                ret_str = k1;
+                ret_str = data;
             }
         }else if cmd == "循环" {
             let k1 = self.get_param(params, 0)?;
@@ -353,23 +374,9 @@ impl RedLang {
         } 
         else if cmd == "取长度" {
             let data = self.get_param(params, 0)?;
-            let tp = self.get_type(&data)?;
-            if tp == "数组" {
-                let arr_parse_out = self.parse_arr(&data)?;
-                ret_str = arr_parse_out.len().to_string();
-            } else if tp == "对象" {
-                let map_parse_out = self.parse_obj(&data)?;
-                ret_str = map_parse_out.len().to_string();
-            }else if tp == "文本" {
-                let v_chs =data.chars().collect::<Vec<char>>();
-                ret_str = v_chs.len().to_string();
-            }else if tp == "字节集" {
-                let l = (data.len() - 37) / 2;
-                ret_str = l.to_string();
-            }else{
-                return Err(self.make_err(&("对应类型不能获取长度:".to_owned()+&tp)));
-            }
-        }else if cmd == "转文本" {
+            ret_str = self.get_len(&data)?.to_string(); 
+        }
+        else if cmd == "转文本" {
             let data = self.get_param(params, 0)?;
             let tp = self.get_type(&data)?;
             fn obj_to_text(self_t:&mut RedLang,data:& str,params:&[String]) -> Result<String, Box<dyn std::error::Error>>{
