@@ -717,26 +717,29 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["网页截图"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
         let sec = self_t.get_param(params, 1)?;
-        let png_data;
         let options = headless_chrome::LaunchOptions::default_builder()
             .window_size(Some((1920, 1080)))
             .build()?;
             let browser = Browser::new(options)?;
             let tab = browser.wait_for_initial_tab()?;
-        if sec == "" {
-            png_data = tab
-                .navigate_to(&path)?
-                .wait_until_navigated()?
-                .capture_screenshot(headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png, Some(75), None, true)?;
-        } else {
-            tab
-            .navigate_to(&path)?
-            .wait_until_navigated()?;
-            png_data = tab
-            .wait_for_element(&sec)?
-            .capture_screenshot(headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png)?;
+            tab.navigate_to(&path)?.wait_until_navigated()?;
+        let el_path;
+        if sec == ""{
+            el_path = "html"
+        }else {
+            el_path = &sec;
         }
-        
+        let el = tab.wait_for_element(el_path)?;
+        let el_model = el.get_box_model()?;
+        let el_border = el_model.border_viewport();
+        let body_height = el_model.height + el_border.y;
+        let body_width = el_model.width + el_border.x;
+        tab.set_bounds(headless_chrome::types::Bounds::Normal { left: Some(0), top: Some(0), width:Some(body_width), height: Some(body_height) })?;
+        let png_data = tab.capture_screenshot(headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+            None,
+            Some(el_border),
+            true)?;
+            
         return Ok(Some(self_t.build_bin(png_data)));
     });
 }
