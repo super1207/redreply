@@ -147,8 +147,8 @@
 <p>【判循@<font color="red">循环条件</font>@<font color="red">循环语句</font>】<br /></p>
 <p>循环条件为<font color="red">真</font>，则循环。</p>
 <h3 id="-">判空</h3>
-<p>【判空@<font color="red">被判断文本</font>@<font color="red">为空替换</font>】<br /></p>
-<p>如果<font color="red">被判断文本</font>为空文本，则此变量表示的值为<font color="red">为空替换</font>，否则为<font color="red">被判断文本</font></p>
+<p>【判空@<font color="red">被判断内容</font>@<font color="red">为空替换</font>】<br /></p>
+<p>如果<font color="red">被判断内容</font>长度为0，则此变量表示的值为<font color="red">为空替换</font>，否则为<font color="red">被判断内容</font></p>
 <h3 id="-">跳出</h3>
 <p>【跳出】<br /></p>
 <p>用来跳出当前循环，注意必须在循环体中使用，等效于其它语言中的break语句。</p>
@@ -267,7 +267,7 @@
 <p>注意，json中的数值，将会转化成文本；json中的布尔型，将会转化成<font color="red">真</font>或<font color="red">假</font>；json中的null，将会转化成空文本。</p>
 <h3 id="-">读文件</h3>
 <p>【读文件@<font color="red">文件路径</font>】<br /></p>
-<p>返回文件内容(字节集)。</p>
+<p>返回文件内容(字节集)。若文件不存在，返回空字节集。</p>
 <h3 id="-">写文件</h3>
 <p>【写文件@<font color="red">文件路径</font>@<font color="red">字节集</font>】<br /></p>
 <p>创建文件，并写文件。若路径不存在，会自动创建路径。若文件存在，则会先清空文件，再写文件。</p>
