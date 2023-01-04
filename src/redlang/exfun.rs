@@ -723,23 +723,18 @@ pub fn init_ex_fun_map() {
             let browser = Browser::new(options)?;
             let tab = browser.wait_for_initial_tab()?;
             tab.navigate_to(&path)?.wait_until_navigated()?;
-        let el_path;
-        if sec == ""{
-            el_path = "html"
-        }else {
-            el_path = &sec;
-        }
-        let el = tab.wait_for_element(el_path)?;
-        let el_model = el.get_box_model()?;
-        let el_border = el_model.border_viewport();
-        let body_height = el_model.height + el_border.y;
-        let body_width = el_model.width + el_border.x;
+        let el_html= tab.wait_for_element("html")?;
+        let body_height = el_html.get_box_model()?.height;
+        let body_width = el_html.get_box_model()?.width;
         tab.set_bounds(headless_chrome::types::Bounds::Normal { left: Some(0), top: Some(0), width:Some(body_width), height: Some(body_height) })?;
+        let mut el = el_html;
+        if sec != ""{
+            el = tab.wait_for_element(&sec)?;
+        }
         let png_data = tab.capture_screenshot(headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
             None,
-            Some(el_border),
+            Some(el.get_box_model()?.content_viewport()),
             true)?;
-            
         return Ok(Some(self_t.build_bin(png_data)));
     });
 }
