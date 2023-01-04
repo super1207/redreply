@@ -1,13 +1,136 @@
-use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell};
+use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any};
 use encoding::Encoding;
-extern crate rand;
-
 pub mod exfun;
 pub(crate) mod cqexfun;
 
+struct RedLangVarType {
+    show_str:Rc<RefCell<String>>,
+    dat:Box<dyn Any>
+}
+
+impl RedLangVarType {
+    pub fn new() -> RedLangVarType {
+        RedLangVarType {
+            show_str:Rc::new(RefCell::new(String::new())),
+            dat:Box::new(RefCell::new(String::new()))
+        }
+    }
+    pub fn get_string(
+        &mut self,
+    ) -> Rc<RefCell<String>> {
+        if (*self.show_str).borrow().is_empty() {
+            if self.dat.is::<Rc<RefCell<String>>>() {
+                let dat_ref = self.dat.downcast_ref::<Rc<RefCell<String>>>().unwrap();
+                self.show_str = dat_ref.clone();
+            }else if self.dat.is::<Vec<String>>() {
+                let dat_ref = self.dat.downcast_ref::<Vec<String>>().unwrap();
+                self.show_str = Rc::new(RefCell::new(RedLang::build_arr_with_uid(&crate::REDLANG_UUID.to_string(),dat_ref.to_owned())));
+            }
+            else if self.dat.is::<BTreeMap<String,String>>() {
+                let dat_ref = self.dat.downcast_ref::<BTreeMap<String,String>>().unwrap();
+                self.show_str = Rc::new(RefCell::new(RedLang::build_obj_with_uid(&crate::REDLANG_UUID.to_string(),dat_ref.to_owned())));
+            }else if self.dat.is::<Vec<u8>>() {
+                let dat_ref = self.dat.downcast_ref::<Vec<u8>>().unwrap();
+                self.show_str = Rc::new(RefCell::new(RedLang::build_bin_with_uid(&crate::REDLANG_UUID.to_string(),dat_ref.to_owned())));
+            }else {
+                let k:Option<i32> = None;
+                k.ok_or("RedLangVarType:get_string中发发生未知错误").unwrap();
+            }
+        }
+        return self.show_str.clone();
+    }
+    pub fn set_string(&mut self,dat_str:String) -> Result<(), Box<dyn std::error::Error>>{
+        let uid = crate::REDLANG_UUID.to_string();
+        if dat_str.starts_with(&(uid.clone() + "A")) {
+            let t = RedLang::parse_arr(&dat_str)?;
+            let mut v:Vec<String> = vec![];
+            for it in t {
+                v.push(it.to_owned());
+            }
+            self.dat = Box::new(v);
+            self.show_str = Rc::new(RefCell::new(dat_str));
+            
+        }else if dat_str.starts_with(&(uid.clone() + "O")) {
+            self.dat = Box::new(RedLang::parse_obj(&dat_str)?);
+            self.show_str = Rc::new(RefCell::new(dat_str));
+        }else if dat_str.starts_with(&(uid + "B")) {
+            self.dat = Box::new(RedLang::parse_bin(&dat_str)?);
+            self.show_str = Rc::new(RefCell::new(dat_str));
+        }else {
+            let rc_str = Rc::new(RefCell::new(dat_str));
+            self.dat = Box::new(rc_str.clone());
+            self.show_str = rc_str;
+        }
+        Ok(())
+    }
+    // pub fn set_dat(&mut self,dat:Box<dyn Any>){
+    //     let v = &*self.show_str;
+    //     v.borrow_mut().clear();
+    //     self.dat = Box::new(dat);
+    // }
+    pub fn get_type(&self) -> &'static str {
+        if self.dat.is::<Rc<RefCell<String>>>() {
+            let s = self.dat.downcast_ref::<Rc<RefCell<String>>>().unwrap();
+            if (**s).borrow().starts_with(&(crate::REDLANG_UUID.to_string() + "F")) {
+                return "函数";
+            }
+            return "文本";
+        }else if self.dat.is::<Vec<String>>() {
+            return "数组";
+        }
+        else if self.dat.is::<BTreeMap<String,String>>() {
+            return "对象";
+        }else if self.dat.is::<Vec<u8>>() {
+            return "字节集";
+        }else {
+            let k:Option<i32> = None;
+            k.ok_or("RedLangVarType:get_type中发发生未知错误").unwrap();
+            return "";
+        }
+    }
+    pub fn add_str(&mut self,s:&str) -> Result<(), Box<dyn std::error::Error>> {
+        if self.get_type() == "文本" {
+            let v = self.dat.downcast_ref::<Rc<RefCell<String>>>().unwrap();
+            let mut vv = (**v).borrow_mut();
+            vv.push_str(s);
+            return Ok(())
+        }
+        Err(RedLang::make_err("文本增加元素失败,类型不是文本"))
+    }
+    pub fn add_bin(&mut self,s:Vec<u8>) -> Result<(), Box<dyn std::error::Error>> {
+        if self.get_type() == "字节集" {
+            let v = self.dat.downcast_mut::<Vec<u8>>().unwrap();
+            for it in s {
+                v.push(it);
+            }
+            (*self.show_str).borrow_mut().clear();
+            return Ok(())
+        }
+        Err(RedLang::make_err("字节集增加元素失败,类型不是字节集"))
+    }
+    pub fn add_arr(&mut self,s:&str) -> Result<(), Box<dyn std::error::Error>> {
+        if self.get_type() == "数组" {
+            let v = self.dat.downcast_mut::<Vec<String>>().unwrap();
+            v.push(s.to_owned());
+            (*self.show_str).borrow_mut().clear();
+            return Ok(())
+        }
+        Err(RedLang::make_err("数组增加元素失败,类型不是数组"))
+    }
+    pub fn add_obj(&mut self,key:String,val:String) -> Result<(), Box<dyn std::error::Error>> {
+        if self.get_type() == "对象" {
+            let v = self.dat.downcast_mut::<BTreeMap<String,String>>().unwrap();
+            v.insert(key, val);
+            (*self.show_str).borrow_mut().clear();
+            return Ok(())
+        }
+        Err(RedLang::make_err("对象增加元素失败,类型不是对象"))
+    }
+
+}
 
 pub struct RedLang {
-    var_vec: Vec<HashMap<String,  Rc<RefCell<String>>>>, //变量栈
+    var_vec: Vec<HashMap<String,  Rc<RefCell<RedLangVarType>>>>, //变量栈
     xh_vec: Vec<[bool; 2]>,                // 循环控制栈
     params_vec: Vec<Vec<String>>,          // 函数参数栈
     fun_ret_vec: Vec<bool>,                // 记录函数是否返回的栈
@@ -48,7 +171,7 @@ impl RedLang {
         &self,
         key: &str,
     ) -> Rc<String>{
-        let v = self.exmap.borrow();
+        let v = (*self.exmap).borrow();
         let ret = v.get(key);
         if let Some(v) = ret{
             return v.to_owned();
@@ -61,7 +184,8 @@ impl RedLang {
         key: &str,
         val: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.exmap.borrow_mut().insert(key.to_owned(), Rc::new(val.to_string()));
+        let k = &*self.exmap;
+        k.borrow_mut().insert(key.to_owned(), Rc::new(val.to_string()));
         Ok(())
     }
     pub fn get_coremap(
@@ -87,10 +211,10 @@ impl RedLang {
         let tp = self.get_type(&data)?;
         let ret;
         if tp == "数组" {
-            let arr_parse_out = self.parse_arr(&data)?;
+            let arr_parse_out = RedLang::parse_arr(&data)?;
             ret = arr_parse_out.len();
         } else if tp == "对象" {
-            let map_parse_out = self.parse_obj(&data)?;
+            let map_parse_out = RedLang::parse_obj(&data)?;
             ret = map_parse_out.len();
         }else if tp == "文本" {
             let v_chs =data.chars().collect::<Vec<char>>();
@@ -99,7 +223,7 @@ impl RedLang {
             let l = (data.len() - 37) / 2;
             ret = l;
         }else{
-            return Err(self.make_err(&("对应类型不能获取长度:".to_owned()+&tp)));
+            return Err(RedLang::make_err(&("对应类型不能获取长度:".to_owned()+&tp)));
         }
         return Ok(ret);
     }
@@ -120,7 +244,7 @@ impl RedLang {
         }
         let tp = self.get_type(&func)?;
         if tp != "函数"{
-            return Err(self.make_err(&format!("函数调用命令不能对{}类型进行操作",tp)));
+            return Err(RedLang::make_err(&format!("函数调用命令不能对{}类型进行操作",tp)));
         }
         let func = func.get(37..).ok_or("在函数调用命令中获取函数失败")?;
 
@@ -236,12 +360,15 @@ impl RedLang {
             let v = self.get_param(params, 1)?;
             let var_vec_len = self.var_vec.len();
             let mp = &mut self.var_vec[var_vec_len - 1];
-            mp.insert(k, Rc::new(RefCell::new(v)));
+            let mut var = RedLangVarType::new();
+            var.set_string(v)?;
+            mp.insert(k, Rc::new(RefCell::new(var)));
         } else if cmd == "变量" {
             let k = self.get_param(params, 0)?;
             let var_ref = self.get_var_ref(&k);
             if let Some(v) = var_ref {
-                ret_str = v.borrow().clone();
+                let mut k = (*v).borrow_mut();
+                ret_str = (*k.get_string()).borrow().clone();
             }else {
                 ret_str = "".to_string();
             }
@@ -255,7 +382,7 @@ impl RedLang {
                 let mp = &mut self.var_vec[var_vec_len - i - 1];
                 let v_opt = mp.get_mut(&k);
                 if let Some(val) = v_opt {
-                    val.clone_from(&vvv_rc);
+                    (**val).borrow_mut().set_string((*vvv_rc).borrow().to_owned())?;
                     is_set = true;
                     break;
                 }
@@ -263,7 +390,9 @@ impl RedLang {
             if is_set == false {
                 let var_vec_len = self.var_vec.len();
                 let mp = &mut self.var_vec[var_vec_len - 1];
-                mp.insert(k, vvv_rc);
+                let mut var = RedLangVarType::new();
+                var.set_string((*vvv_rc).borrow().to_owned())?;
+                mp.insert(k, Rc::new(RefCell::new(var)));
             }
         } else if cmd == "判断" {
             let k1 = self.get_param(params, 0)?;
@@ -300,7 +429,7 @@ impl RedLang {
             else if k1_tp == "数组" {
                 let arr_str = k1;
                 let fun = params.get(1).ok_or("数组循环中参数函数获取失败")?.to_string();
-                let arr = self.parse_arr(&arr_str)?;
+                let arr = RedLang::parse_arr(&arr_str)?;
                 let tms = arr.len();
                 self.xh_vec.push([false, false]);
                 let mut fun_params:Vec<String> = vec!["".to_string(),"".to_string(),"".to_string()];
@@ -379,7 +508,7 @@ impl RedLang {
                         _ => "".to_string()
                     };
                     if ret == "" {
-                        self.make_err("计算出错");
+                        RedLang::make_err("计算出错");
                     }
                     Ok(ret)
                 })?;
@@ -396,7 +525,7 @@ impl RedLang {
         else if cmd == "对象" {
             let params_len = params.len();
             if params_len % 2 != 0 {
-                return Err(self.make_err("请保证对象参数为偶数个"));
+                return Err(RedLang::make_err("请保证对象参数为偶数个"));
             }
             let mut temp_ret:BTreeMap<String,String> = BTreeMap::new();
             for i in 0..(params_len/2) {
@@ -417,11 +546,11 @@ impl RedLang {
                 let mut ret_str = String::new();
                 ret_str.push('{');
                 let mut vec_t:Vec<String>  = vec![];
-                let obj = self_t.parse_obj(&data)?;
+                let obj = RedLang::parse_obj(&data)?;
                 for (k,v) in obj{
                     let tp_k = self_t.get_type(&k)?;
                     if tp_k != "文本" {
-                        return Err(self_t.make_err(&("对象的键不支持的类型:".to_owned()+&tp_k)));
+                        return Err(RedLang::make_err(&("对象的键不支持的类型:".to_owned()+&tp_k)));
                     }
                     let mut temp_str = String::new();
                     temp_str.push_str(&str_to_text(&k)?);
@@ -440,7 +569,7 @@ impl RedLang {
                         temp_str.push_str(&obj_to_text(self_t,&v,params)?);
                     }
                     else {
-                        return Err(self_t.make_err(&("对象的值不支持的类型:".to_owned()+&tp_v)));
+                        return Err(RedLang::make_err(&("对象的值不支持的类型:".to_owned()+&tp_v)));
                     }
                     vec_t.push(temp_str);
                 }
@@ -456,7 +585,7 @@ impl RedLang {
             }
             fn arr_to_text(self_t:&mut RedLang,data:& str,params:&[String]) -> Result<String, Box<dyn std::error::Error>>{
                 let mut vec_t:Vec<String>  = vec![];
-                let arr = self_t.parse_arr(&data)?;
+                let arr = RedLang::parse_arr(&data)?;
                 for v in arr {
                     let tp_v = self_t.get_type(&v)?;
                     if tp_v == "文本" {
@@ -472,7 +601,7 @@ impl RedLang {
                         vec_t.push(obj_to_text(self_t,&v,params)?);
                     }
                     else {
-                        return Err(self_t.make_err(&("数组的元素不支持的类型:".to_owned()+&tp_v)));
+                        return Err(RedLang::make_err(&("数组的元素不支持的类型:".to_owned()+&tp_v)));
                     }
                 }
                 return Ok(format!("[{}]",vec_t.join(",")));
@@ -482,13 +611,13 @@ impl RedLang {
                 let ret_str:String;
                 let code_t = self_t.get_param(params, 1)?;
                 let code = code_t.to_lowercase();
-                let u8_vec = self_t.parse_bin(data)?;
+                let u8_vec = RedLang::parse_bin(data)?;
                 if code == "" || code == "utf8" {
                     ret_str = String::from_utf8(u8_vec)?;
                 }else if code == "gbk" {
                     ret_str = encoding::all::GBK.decode(&u8_vec, encoding::DecoderTrap::Ignore)?;
                 }else{
-                    return Err(self_t.make_err(&("不支持的编码:".to_owned()+&code_t)));
+                    return Err(RedLang::make_err(&("不支持的编码:".to_owned()+&code_t)));
                 }
                 Ok(ret_str)
             }
@@ -502,59 +631,55 @@ impl RedLang {
                 ret_str = obj_to_text(self,&data,params)?;
             }
             else{
-                return Err(self.make_err(&("对应类型不能转文本:".to_owned()+&tp)));
+                return Err(RedLang::make_err(&("对应类型不能转文本:".to_owned()+&tp)));
             }
         }
         else if cmd == "增加元素" {
             // 获得变量
             let var_name = self.get_param(params, 0)?;
-            let tp:String;
-            let data:Rc<RefCell<String>>;
+            let data:Rc<RefCell<RedLangVarType>>;
             if let Some(v) = self.get_var_ref(&var_name) {
                 data = v;
             }else {
-                return Err(self.make_err(&format!("变量`{}`不存在",var_name)));
+                return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
             }
             // 获得变量类型
-            tp = self.get_type(data.borrow().as_str())?; 
-            //  增加元素
+            let tp =(*data).borrow().get_type();
             let el_len;
             if tp == "对象" {
                 el_len = (params.len() -1) / 2;
             }else {
                 el_len = params.len() -1;
             }
+            //  增加元素
             for i in 0..el_len {
                 if tp == "数组" {
                     let el = self.get_param(params, i + 1)?;
-                    let mut d = data.borrow_mut();
-                    d.push_str(&el.len().to_string());
-                    d.push(',');
-                    d.push_str(&el);
+                    let mut v = (*data).borrow_mut();
+                    v.add_arr(&el)?;
                 }else if tp == "对象" {
                     let elk = self.get_param(params, i * 2 + 1)?;
                     let elv = self.get_param(params, i * 2 + 2)?;
 
-                    let mut obj_data = data.borrow_mut();
-                    let mut obj = self.parse_obj(&obj_data)?;
-
-                    obj.insert(elk, elv);
-                    obj_data.clear();
-                    obj_data.push_str(&self.build_obj(obj));
+                    let mut v = (*data).borrow_mut();
+                    v.add_obj(elk,elv)?;
                     
                 }else if tp == "文本" { 
                     let el = self.get_param(params, i + 1)?;
-                    let mut d = data.borrow_mut();
-                    d.push_str(&el);
+                    let mut v = (*data).borrow_mut();
+                    v.add_str(&el)?;
+
                 }else if tp == "字节集" {
-                    let el = self.get_param(params, i + 1)?;
-                    let mut d = data.borrow_mut();
-                    d.push_str(el.get(37..).ok_or("unkow err in add el")?);
+                    let el_t = self.get_param(params, i + 1)?;
+                    let el = RedLang::parse_bin(&el_t)?;
+                    let mut  v = (*data).borrow_mut();
+                    v.add_bin(el)?;
                 }else{
-                    return Err(self.make_err(&("对应类型不能增加元素:".to_owned()+&tp)));
+                    return Err(RedLang::make_err(&("对应类型不能增加元素:".to_owned()+&tp)));
                 }
             }
-        }else if cmd == "取元素" {
+        }
+        else if cmd == "取元素" {
             let nums = params.len();
             let df = String::new();
             let mut param_data = self.get_param(params, 0)?;
@@ -562,7 +687,7 @@ impl RedLang {
                 let tp = self.get_type(&param_data)?;
                 if tp == "数组" {
                     let index = self.get_param(params, i)?.parse::<usize>()?;
-                    let mp = self.parse_arr(&param_data)?;
+                    let mp = RedLang::parse_arr(&param_data)?;
                     let v_opt = mp.get(index);
                     if let Some(v) = v_opt {
                         param_data = v.to_string();
@@ -572,7 +697,7 @@ impl RedLang {
                     }
                 }else if tp == "对象" { 
                     let index = self.get_param(params, i)?;
-                    let mp = self.parse_obj(&param_data)?;
+                    let mp = RedLang::parse_obj(&param_data)?;
                     let v_opt = mp.get(&index);
                     if let Some(v) = v_opt {
                         param_data = v.to_string();
@@ -591,7 +716,7 @@ impl RedLang {
                         break;
                     }
                 }else{
-                    return Err(self.make_err(&("对应类型不能取元素:".to_owned()+&tp)));
+                    return Err(RedLang::make_err(&("对应类型不能取元素:".to_owned()+&tp)));
                 }
             }
             ret_str = param_data;
@@ -599,9 +724,9 @@ impl RedLang {
             let param_data = self.get_param(params, 0)?;
             let tp = self.get_type(&param_data)?;
             if tp != "对象" {
-                return Err(self.make_err(&("对应类型不能取对象key:".to_owned()+&tp)));
+                return Err(RedLang::make_err(&("对应类型不能取对象key:".to_owned()+&tp)));
             }
-            let parse_ret = self.parse_obj(&param_data)?;
+            let parse_ret = RedLang::parse_obj(&param_data)?;
             let mut arr:Vec<String> = vec![];
             for key in parse_ret.keys() {
                 arr.push(key.to_string());
@@ -625,7 +750,7 @@ impl RedLang {
             let num1 = self.get_param(params, 0)?.parse::<usize>()?;
             let num2 = self.get_param(params, 1)?.parse::<usize>()?;
             if num1 > num2 {
-                return Err(self.make_err("生成随机数失败,请保证第一个数不大于第二个数，且都为非负数"));
+                return Err(RedLang::make_err("生成随机数失败,请保证第一个数不大于第二个数，且都为非负数"));
             }
             let rand_num = get_random()?;
             let num = num2 + 1 - num1;
@@ -642,7 +767,7 @@ impl RedLang {
             let code = self.get_param(params, 0)?;
             ret_str = rl.parse(&code)?;
         }else {
-            return Err(self.make_err(&format!("未知的命令:{}", cmd)));
+            return Err(RedLang::make_err(&format!("未知的命令:{}", cmd)));
         }
         Ok(ret_str)
     }
@@ -662,23 +787,23 @@ impl RedLang {
             }else if tp == "F" {
                 ret_str = "函数".to_string();
             }else {
-                return Err(self.make_err(&format!("错误的类型标识:`{}`",tp)));
+                return Err(RedLang::make_err(&format!("错误的类型标识:`{}`",tp)));
             }
         }
         Ok(ret_str)
     }
-    fn parse_bin(&self,bin_data: & str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    fn parse_bin(bin_data: & str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let err_str = "不能获得字节集类型";
-        if !bin_data.starts_with(&self.type_uuid) {
-            return Err(self.make_err(err_str));
+        if !bin_data.starts_with(&crate::REDLANG_UUID.to_string()) {
+            return Err(RedLang::make_err(err_str));
         }
         let tp = bin_data.get(36..37).ok_or(err_str)?;
         if tp != "B" {
-            return Err(self.make_err(err_str));
+            return Err(RedLang::make_err(err_str));
         }
         let content_text = bin_data.get(37..).ok_or(err_str)?.as_bytes();
         if content_text.len() % 2 != 0 {
-            return Err(self.make_err(err_str));
+            return Err(RedLang::make_err(err_str));
         }
         let mut content2:Vec<u8> = vec![];
         for pos in 0..(content_text.len() / 2) {
@@ -700,14 +825,14 @@ impl RedLang {
         }
         return Ok(content2);
     }
-    fn parse_arr<'a>(&self, arr_data: &'a str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {
+    fn parse_arr<'a>(arr_data: &'a str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {
         let err_str = "不能获得数组类型";
-        if !arr_data.starts_with(&self.type_uuid) {
-            return Err(self.make_err(err_str));
+        if !arr_data.starts_with(&crate::REDLANG_UUID.to_string()) {
+            return Err(RedLang::make_err(err_str));
         }
         let tp = arr_data.get(36..37).ok_or(err_str)?;
         if tp != "A" {
-            return Err(self.make_err(err_str));
+            return Err(RedLang::make_err(err_str));
         }
         let mut ret_arr:Vec<&str> = vec![];
         let mut arr = arr_data.get(37..).ok_or(err_str)?;
@@ -726,14 +851,14 @@ impl RedLang {
         }
         return Ok(ret_arr);
     }
-    fn parse_obj(&self, obj_data: &str) -> Result<BTreeMap<String,String>, Box<dyn std::error::Error>> {
+    fn parse_obj(obj_data: &str) -> Result<BTreeMap<String,String>, Box<dyn std::error::Error>> {
         let err_str = "不能获得对象类型";
-        if !obj_data.starts_with(&self.type_uuid) {
-            return Err(self.make_err(err_str));
+        if !obj_data.starts_with(&crate::REDLANG_UUID.to_string()) {
+            return Err(RedLang::make_err(err_str));
         }
         let tp = obj_data.get(36..37).ok_or(err_str)?;
         if tp != "O" {
-            return Err(self.make_err(err_str));
+            return Err(RedLang::make_err(err_str));
         }
         let mut ret_arr:Vec<&str> = vec![];
         let mut arr = obj_data.get(37..).ok_or(err_str)?;
@@ -751,7 +876,7 @@ impl RedLang {
             arr = arr.get(spos_num + 1 + num..).ok_or(err_str)?;
         }
         if ret_arr.len() % 2 != 0 { 
-            return Err(self.make_err(err_str));
+            return Err(RedLang::make_err(err_str));
         }
         let mut ret_map:BTreeMap<String,String> = BTreeMap::new();
         for i in 0..(ret_arr.len()/2) {
@@ -766,7 +891,7 @@ impl RedLang {
     pub fn new() -> RedLang {
 
         // 第一个元素用于保持全局变量
-        let v: Vec<HashMap<String, Rc<RefCell<String>>>> = vec![HashMap::new()];
+        let v: Vec<HashMap<String, Rc<RefCell<RedLangVarType>>>> = vec![HashMap::new()];
 
         // 第一个元素用于全局参数
         let v2: Vec<Vec<String>> = vec![vec![]];
@@ -787,7 +912,7 @@ impl RedLang {
         }
     }
 
-    pub fn make_err(&self, err_str: &str) -> Box<dyn std::error::Error> {
+    pub fn make_err(err_str: &str) -> Box<dyn std::error::Error> {
         Box::new(MyStrError::new(err_str.to_owned()))
     }
     fn make_err_push(&self, e:Box<dyn std::error::Error> ,err_str: &str) -> Box<dyn std::error::Error> {
@@ -849,7 +974,7 @@ impl RedLang {
                 cq_n += 1;
             } else if ch == '】' {
                 if cq_n == 0 {
-                    return Err(self.make_err("too much 】 in code"));
+                    return Err(RedLang::make_err("too much 】 in code"));
                 }
                 cq_code.push(ch);
                 cq_n -= 1;
@@ -865,7 +990,7 @@ impl RedLang {
             }
         }
         if cq_n != 0 {
-            return Err(self.make_err("too much 【 in code"));
+            return Err(RedLang::make_err("too much 【 in code"));
         }
         params.push(cq_code.iter().collect::<String>());
         Ok(params)
@@ -1030,7 +1155,7 @@ impl RedLang {
         }
         Ok(ret)
     }
-    fn get_var_ref(&mut self,var_name:&str) -> Option<Rc<RefCell<String>>> {
+    fn get_var_ref(&mut self,var_name:&str) -> Option<Rc<RefCell<RedLangVarType>>> {
         let var_vec_len = self.var_vec.len();
         for i in 0..var_vec_len {
             let mp = &self.var_vec[var_vec_len - i - 1];

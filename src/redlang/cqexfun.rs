@@ -77,13 +77,13 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
             }
         });
     }else{
-        return Err(rl.make_err(&("不支持的输出流:".to_string() + msg_type)));
+        return Err(RedLang::make_err(&("不支持的输出流:".to_string() + msg_type)));
     }
     let cq_ret = cq_call_api(send_json.to_string().as_str())?;
     let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
     let err = "输出流调用失败,retcode 不为0";
     if ret_json.get("retcode").ok_or(err)?.as_i64().ok_or(err)? != 0 {
-        return Err(rl.make_err(&format!("{}:{}",err,cq_ret)));
+        return Err(RedLang::make_err(&format!("{}:{}",err,cq_ret)));
     }
     let err = "输出流调用失败，获取message_id失败";
     let msg_id = read_json_str(ret_json.get("data").ok_or(err)?,"message_id");
@@ -177,7 +177,7 @@ pub fn init_cq_ex_fun_map() {
         let tp = self_t.get_type(&pic)?;
         let mut ret:String = String::new();
         if tp == "字节集" {
-            let bin = self_t.parse_bin(&pic)?;
+            let bin = RedLang::parse_bin(&pic)?;
             let b64_str = base64::encode(bin);
             ret = format!("[CQ:image,file=base64://{}]",b64_str);
         }else if tp == "文本" {
@@ -205,7 +205,7 @@ pub fn init_cq_ex_fun_map() {
         let tp = self_t.get_type(&pic)?;
         let mut ret:String = String::new();
         if tp == "字节集" {
-            let bin = self_t.parse_bin(&pic)?;
+            let bin = RedLang::parse_bin(&pic)?;
             let b64_str = base64::encode(bin);
             ret = format!("[CQ:record,file=base64://{}]",b64_str);
         }else if tp == "文本" {
@@ -236,7 +236,7 @@ pub fn init_cq_ex_fun_map() {
         let tp = self_t.get_type(&msg_id_str)?;
         let msg_id_vec:Vec<&str> = match tp.as_str() {
             "文本" => vec![&msg_id_str],
-            "数组" => self_t.parse_arr(&msg_id_str)?,
+            "数组" => RedLang::parse_arr(&msg_id_str)?,
             _ => vec![]
         };
         for it in msg_id_vec {
