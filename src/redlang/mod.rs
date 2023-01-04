@@ -69,11 +69,7 @@ impl RedLangVarType {
         }
         Ok(())
     }
-    // pub fn set_dat(&mut self,dat:Box<dyn Any>){
-    //     let v = &*self.show_str;
-    //     v.borrow_mut().clear();
-    //     self.dat = Box::new(dat);
-    // }
+
     pub fn get_type(&self) -> &'static str {
         if self.dat.is::<String>() {
             return "函数";
@@ -169,6 +165,48 @@ impl RedLangVarType {
             return Ok(())
         }
         Err(RedLang::make_err("文本替换元素失败,类型不是文本"))
+    }
+    pub fn rv_str(&mut self,index:usize) -> Result<(), Box<dyn std::error::Error>> {
+        if self.get_type() == "文本" {
+            let v = self.dat.downcast_mut::<Vec<char>>().unwrap();
+            if index < v.len() {
+                v.remove(index);
+            }
+            (*self.show_str).borrow_mut().clear();
+            return Ok(())
+        }
+        Err(RedLang::make_err("文本删除元素失败,类型不是文本"))
+    }
+    pub fn rv_bin(&mut self,index:usize) -> Result<(), Box<dyn std::error::Error>> {
+        if self.get_type() == "字节集" {
+            let v = self.dat.downcast_mut::<Vec<u8>>().unwrap();
+            if index < v.len() {
+                v.remove(index);
+            }
+            (*self.show_str).borrow_mut().clear();
+            return Ok(())
+        }
+        Err(RedLang::make_err("字节集删除元素失败,类型不是字节集"))
+    }
+    pub fn rv_arr(&mut self,index:usize) -> Result<(), Box<dyn std::error::Error>> {
+        if self.get_type() == "数组" {
+            let v = self.dat.downcast_mut::<Vec<String>>().unwrap();
+            if index < v.len() {
+                v.remove(index);
+            }
+            (*self.show_str).borrow_mut().clear();
+            return Ok(())
+        }
+        Err(RedLang::make_err("数组删除元素失败,类型不是数组"))
+    }
+    pub fn rv_obj(&mut self,key:&str) -> Result<(), Box<dyn std::error::Error>> {
+        if self.get_type() == "对象" {
+            let v = self.dat.downcast_mut::<BTreeMap<String,String>>().unwrap();
+            v.remove(key);
+            (*self.show_str).borrow_mut().clear();
+            return Ok(())
+        }
+        Err(RedLang::make_err("对象替换元素失败,类型不是对象"))
     }
 
 }
@@ -762,6 +800,38 @@ impl RedLang {
                 v.rep_bin(index, bt[0])?;
             }else{
                 return Err(RedLang::make_err(&("对应类型不能替换元素:".to_owned()+&tp)));
+            }
+        }else if cmd == "删除元素" {
+            // 获得变量
+            let var_name = self.get_param(params, 0)?;
+            let k_name = self.get_param(params, 1)?;
+            let data:Rc<RefCell<RedLangVarType>>;
+            if let Some(v) = self.get_var_ref(&var_name) {
+                data = v;
+            }else {
+                return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
+            }
+            // 获得变量类型
+            let tp =(*data).borrow().get_type();
+            if tp == "数组" {
+                let index = k_name.parse::<usize>()?;
+                let mut v = (*data).borrow_mut();
+                v.rv_arr(index)?;
+            }else if tp == "对象" {
+                let mut v = (*data).borrow_mut();
+                v.rv_obj(&k_name)?;
+                
+            }else if tp == "文本" { 
+                let index = k_name.parse::<usize>()?;
+                let mut v = (*data).borrow_mut();
+                v.rv_str(index)?;
+
+            }else if tp == "字节集" {
+                let index = k_name.parse::<usize>()?;
+                let mut v = (*data).borrow_mut();
+                v.rv_bin(index)?;
+            }else{
+                return Err(RedLang::make_err(&("对应类型不能删除元素:".to_owned()+&tp)));
             }
         }
         else if cmd == "取元素" {

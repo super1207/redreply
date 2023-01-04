@@ -345,6 +345,20 @@ hellohellohellohellohello
 
 【增加元素@<font color="red">变量名</font>@<font color="red">key</font>@<font color="red">value</font>......】
 
+### 替换元素
+
+【替换元素@<font color="red">变量名</font>@<font color="red">下标</font>@<font color="red">值</font>】<br />
+
+变量支持对象，文本，数组，字节集。<br />
+注意：如果为文本，那么值必须为单个字符；如果为字节集，值应该为单个字节集；如果为对象，与【增加元素】效果一样，但仅支持一个键值对。
+
+### 删除元素
+
+【删除元素@<font color="red">变量名</font>@<font color="red">下标</font>】<br />
+
+变量支持对象，文本，数组，字节集。<br />
+注意：下标越界或不存在**不会**报错。
+
 ### 取元素
 
 【取元素@<font color="red">内容</font>@<font color="red">下标</font>@<font color="red">下标</font>@......】<br />
