@@ -1,6 +1,6 @@
 use std::{fs, collections::BTreeMap, path::Path, env::current_exe, vec};
 
-use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str, PAGING_UUID};
+use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 
@@ -342,16 +342,12 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["定义常量"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
         let v = self_t.get_param(params, 1)?;
-        let mut mp = crate::G_CONST_MAP.write()?;
-        mp.insert(k, v);
+        set_const_val(&self_t.pkg_name, &k, v)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["常量"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
-        let mp = crate::G_CONST_MAP.read()?;
-        let defstr = String::new();
-        let ret = mp.get(k.as_str()).unwrap_or(&defstr);
-        return Ok(Some(ret.to_string()));
+        return Ok(Some(get_const_val(&self_t.pkg_name, &k)?.to_owned()));
     });
     add_fun(vec!["进程ID"],|_self_t,_params|{
         let ret = cq_get_cookies("pid")?;

@@ -1,11 +1,37 @@
 use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any};
 use encoding::Encoding;
+
+use crate::G_CONST_MAP;
 pub mod exfun;
 pub(crate) mod cqexfun;
 
 struct RedLangVarType {
     show_str:Rc<String>,
     dat:Box<dyn Any>
+}
+
+fn set_const_val(pkg_name:&str,val_name:&str,val:String) -> Result<(), Box<dyn std::error::Error>> {
+    let mut g_map = G_CONST_MAP.write()?;
+    let val_map = g_map.get_mut(pkg_name);
+    if val_map.is_none() {
+        let mut mp = HashMap::new();
+        mp.insert(val_name.to_owned(), val);
+        g_map.insert(pkg_name.to_owned(), mp);
+    }else {
+        val_map.unwrap().insert(val_name.to_owned(), val);
+    }
+    Ok(())
+}
+
+fn get_const_val(pkg_name:&str,val_name:&str) -> Result<String, Box<dyn std::error::Error>> {
+    match G_CONST_MAP.read()?.get(pkg_name) {
+        Some(var_map) => 
+            match var_map.get(val_name) {
+                Some(val) => Ok(val.to_owned()),
+                None => Ok("".to_string())
+            }
+        None => Ok("".to_string())
+    }
 }
 
 impl RedLangVarType {
@@ -221,6 +247,7 @@ pub struct RedLang {
     coremap:HashMap<String, String>,
     pub type_uuid:String,
     xuhao: HashMap<String, usize>,
+    pkg_name:String,
 }
 
 #[derive(Debug, Clone)]
@@ -319,8 +346,10 @@ impl RedLang {
         // 尝试通过文本来在常量中获得函数
         if tp == "文本" {
             let err = "无法在常量中找到对应函数";
-            let mp = crate::G_CONST_MAP.read()?;
-            func = mp.get(func_t.as_str()).ok_or(err)?.to_string();
+            func = get_const_val(&self.pkg_name, &func_t)?;
+            if func == "" {
+                return Err(RedLang::make_err(err));
+            }
         }else {
             func = func_t;
         }
@@ -1063,7 +1092,8 @@ impl RedLang {
             exmap: Rc::new(RefCell::new(HashMap::new())),
             coremap: HashMap::new(),
             type_uuid:crate::REDLANG_UUID.to_string(),
-            xuhao:HashMap::new()
+            xuhao:HashMap::new(),
+            pkg_name:String::new()
         }
     }
 

@@ -30,8 +30,8 @@ lazy_static! {
     pub static ref REDLANG_UUID:String = uuid::Uuid::new_v4().to_string();
     // 用于分页命令
     pub static ref PAGING_UUID:String = uuid::Uuid::new_v4().to_string();
-    // 用于记录常量
-    pub static ref G_CONST_MAP:RwLock<HashMap<String, String>> = RwLock::new(HashMap::new());
+    // 用于记录常量:包名-常量名-常量值
+    pub static ref G_CONST_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
     // 用于撤回消息
     pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,Vec<String>>> = RwLock::new(HashMap::new());
     // 用于记录自定义的命令
@@ -39,6 +39,7 @@ lazy_static! {
     // 用于记录命令
     pub static ref G_CMD_FUN_MAP:RwLock<HashMap<String, fn(&mut RedLang,&[String]) -> Result<Option<String>, Box<dyn std::error::Error>>>> = RwLock::new(HashMap::new());
 }
+
 
 
 #[derive(RustEmbed)]
