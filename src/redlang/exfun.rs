@@ -717,8 +717,16 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["网页截图"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
         let sec = self_t.get_param(params, 1)?;
+        let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
+        let proxy_str = self_t.get_coremap("代理")?;
+        let proxy:std::ffi::OsString;
+        if proxy_str != "" {
+            proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + proxy_str);
+            arg_vec.push(&proxy);
+        }
         let options = headless_chrome::LaunchOptions::default_builder()
             .window_size(Some((1920, 1080)))
+            .args(arg_vec)
             .build()?;
             let browser = Browser::new(options)?;
             let tab = browser.wait_for_initial_tab()?;
