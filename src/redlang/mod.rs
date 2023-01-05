@@ -4,37 +4,37 @@ pub mod exfun;
 pub(crate) mod cqexfun;
 
 struct RedLangVarType {
-    show_str:Rc<RefCell<String>>,
+    show_str:Rc<String>,
     dat:Box<dyn Any>
 }
 
 impl RedLangVarType {
     pub fn new() -> RedLangVarType {
         RedLangVarType {
-            show_str:Rc::new(RefCell::new(String::new())),
+            show_str:Rc::new(String::new()),
             dat:Box::new(RefCell::new(String::new()))
         }
     }
     pub fn get_string(
         &mut self,
-    ) -> Rc<RefCell<String>> {
-        if (*self.show_str).borrow().is_empty() {
+    ) -> Rc<String> {
+        if self.show_str.is_empty() {
             if self.dat.is::<String>() {
                 let dat_ref = self.dat.downcast_ref::<String>().unwrap();
-                self.show_str = Rc::new(RefCell::new(dat_ref.to_owned()));
+                self.show_str = Rc::new(dat_ref.to_owned());
             }else if self.dat.is::<Vec<char>>() {
                 let dat_ref = self.dat.downcast_ref::<Vec<char>>().unwrap();
-                self.show_str = Rc::new(RefCell::new(dat_ref.iter().collect::<String>()));
+                self.show_str = Rc::new(dat_ref.iter().collect::<String>());
             }else if self.dat.is::<Vec<String>>() {
                 let dat_ref = self.dat.downcast_ref::<Vec<String>>().unwrap();
-                self.show_str = Rc::new(RefCell::new(RedLang::build_arr_with_uid(&crate::REDLANG_UUID.to_string(),dat_ref.to_owned())));
+                self.show_str = Rc::new(RedLang::build_arr_with_uid(&crate::REDLANG_UUID.to_string(),dat_ref.to_owned()));
             }
             else if self.dat.is::<BTreeMap<String,String>>() {
                 let dat_ref = self.dat.downcast_ref::<BTreeMap<String,String>>().unwrap();
-                self.show_str = Rc::new(RefCell::new(RedLang::build_obj_with_uid(&crate::REDLANG_UUID.to_string(),dat_ref.to_owned())));
+                self.show_str = Rc::new(RedLang::build_obj_with_uid(&crate::REDLANG_UUID.to_string(),dat_ref.to_owned()));
             }else if self.dat.is::<Vec<u8>>() {
                 let dat_ref = self.dat.downcast_ref::<Vec<u8>>().unwrap();
-                self.show_str = Rc::new(RefCell::new(RedLang::build_bin_with_uid(&crate::REDLANG_UUID.to_string(),dat_ref.to_owned())));
+                self.show_str = Rc::new(RedLang::build_bin_with_uid(&crate::REDLANG_UUID.to_string(),dat_ref.to_owned()));
             }else {
                 let k:Option<i32> = None;
                 k.ok_or("RedLangVarType:get_string中发发生未知错误").unwrap();
@@ -51,21 +51,21 @@ impl RedLangVarType {
                 v.push(it.to_owned());
             }
             self.dat = Box::new(v);
-            self.show_str = Rc::new(RefCell::new(dat_str));
+            self.show_str = Rc::new(dat_str);
             
         }else if dat_str.starts_with(&(uid.clone() + "O")) {
             self.dat = Box::new(RedLang::parse_obj(&dat_str)?);
-            self.show_str = Rc::new(RefCell::new(dat_str));
+            self.show_str = Rc::new(dat_str);
         }else if dat_str.starts_with(&(uid.clone() + "B")) {
             self.dat = Box::new(RedLang::parse_bin(&dat_str)?);
-            self.show_str = Rc::new(RefCell::new(dat_str));
+            self.show_str = Rc::new(dat_str);
         }else if dat_str.starts_with(&(uid + "F")) {
             self.dat = Box::new(dat_str.clone());
-            self.show_str = Rc::new(RefCell::new(dat_str));
+            self.show_str = Rc::new(dat_str);
         }else {
             let chs = dat_str.chars().collect::<Vec<char>>();
             self.dat = Box::new(chs);
-            self.show_str = Rc::new(RefCell::new(dat_str));
+            self.show_str = Rc::new(dat_str);
         }
         Ok(())
     }
@@ -93,7 +93,7 @@ impl RedLangVarType {
             for it in s.chars() {
                 v.push(it);
             }
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("文本增加元素失败,类型不是文本"))
@@ -104,7 +104,7 @@ impl RedLangVarType {
             for it in s {
                 v.push(it);
             }
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("字节集增加元素失败,类型不是字节集"))
@@ -113,7 +113,7 @@ impl RedLangVarType {
         if self.get_type() == "数组" {
             let v = self.dat.downcast_mut::<Vec<String>>().unwrap();
             v.push(s.to_owned());
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("数组增加元素失败,类型不是数组"))
@@ -122,7 +122,7 @@ impl RedLangVarType {
         if self.get_type() == "对象" {
             let v = self.dat.downcast_mut::<BTreeMap<String,String>>().unwrap();
             v.insert(key, val);
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("对象增加元素失败,类型不是对象"))
@@ -131,7 +131,7 @@ impl RedLangVarType {
         if self.get_type() == "对象" {
             let v = self.dat.downcast_mut::<BTreeMap<String,String>>().unwrap();
             v.insert(key, val);
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("对象替换元素失败,类型不是对象"))
@@ -141,7 +141,7 @@ impl RedLangVarType {
             let v = self.dat.downcast_mut::<Vec<String>>().unwrap();
             let el = v.get_mut(index).ok_or("替换数组元素时越界")?;
             (*el) = s;
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("数组替换元素失败,类型不是数组"))
@@ -151,7 +151,7 @@ impl RedLangVarType {
             let v = self.dat.downcast_mut::<Vec<u8>>().unwrap();
             let el = v.get_mut(index).ok_or("替换字节集元素时越界")?;
             (*el) = s;
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("字节集替换元素失败,类型不是字节集"))
@@ -161,7 +161,7 @@ impl RedLangVarType {
             let v = self.dat.downcast_mut::<Vec<char>>().unwrap();
             let el = v.get_mut(index).ok_or("替换文本元素时越界")?;
             (*el) = s.to_owned();
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("文本替换元素失败,类型不是文本"))
@@ -172,7 +172,7 @@ impl RedLangVarType {
             if index < v.len() {
                 v.remove(index);
             }
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("文本删除元素失败,类型不是文本"))
@@ -183,7 +183,7 @@ impl RedLangVarType {
             if index < v.len() {
                 v.remove(index);
             }
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("字节集删除元素失败,类型不是字节集"))
@@ -194,7 +194,7 @@ impl RedLangVarType {
             if index < v.len() {
                 v.remove(index);
             }
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("数组删除元素失败,类型不是数组"))
@@ -203,7 +203,7 @@ impl RedLangVarType {
         if self.get_type() == "对象" {
             let v = self.dat.downcast_mut::<BTreeMap<String,String>>().unwrap();
             v.remove(key);
-            (*self.show_str).borrow_mut().clear();
+            self.show_str = Rc::new(String::new());
             return Ok(())
         }
         Err(RedLang::make_err("对象替换元素失败,类型不是对象"))
@@ -450,7 +450,7 @@ impl RedLang {
             let var_ref = self.get_var_ref(&k);
             if let Some(v) = var_ref {
                 let mut k = (*v).borrow_mut();
-                ret_str = (*k.get_string()).borrow().clone();
+                ret_str = (*k.get_string()).clone();
             }else {
                 ret_str = "".to_string();
             }
