@@ -1,7 +1,7 @@
 use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any};
 use encoding::Encoding;
 
-use crate::G_CONST_MAP;
+use crate::{G_CONST_MAP, CLEAR_UUID};
 pub mod exfun;
 pub(crate) mod cqexfun;
 
@@ -950,6 +950,10 @@ impl RedLang {
             rl.exmap = self.exmap.clone(); // 获得一些拓展相关的变量
             let code = self.get_param(params, 0)?;
             ret_str = rl.parse(&code)?;
+            // 处理清空指令
+            if let Some(pos) = ret_str.rfind(CLEAR_UUID.as_str()) {
+                ret_str = ret_str.get((pos + 36)..).unwrap().to_owned();
+            }
         }else {
             return Err(RedLang::make_err(&format!("未知的命令:{}", cmd)));
         }

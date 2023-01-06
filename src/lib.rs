@@ -35,6 +35,8 @@ lazy_static! {
     pub static ref REDLANG_UUID:String = uuid::Uuid::new_v4().to_string();
     // 用于分页命令
     pub static ref PAGING_UUID:String = uuid::Uuid::new_v4().to_string();
+    // 用于清空命令
+    pub static ref CLEAR_UUID:String = uuid::Uuid::new_v4().to_string();
     // 用于记录常量:包名-常量名-常量值
     pub static ref G_CONST_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
     // 用于撤回消息

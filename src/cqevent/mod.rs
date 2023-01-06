@@ -6,7 +6,7 @@ extern crate sciter;
 
 
 use sciter::{dispatch_script_call};
-use crate::{cqapi::*, redlang::{RedLang}, mytool::read_json_str, PAGING_UUID};
+use crate::{cqapi::*, redlang::{RedLang}, mytool::read_json_str, PAGING_UUID, CLEAR_UUID};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -50,7 +50,12 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
 
 pub fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Error>>{
     let out_str_t = rl.parse(code)?;
-    let out_str_vec = do_paging(&out_str_t)?;
+    // 处理清空指令
+    let mut after_clear:&str = &out_str_t;
+    if let Some(pos) = out_str_t.rfind(CLEAR_UUID.as_str()) {
+        after_clear = out_str_t.get((pos + 36)..).unwrap();
+    }
+    let out_str_vec = do_paging(after_clear)?;
     for out_str in out_str_vec {
         crate::redlang::cqexfun::send_one_msg(rl, out_str)?;
     }

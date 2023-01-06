@@ -1,6 +1,6 @@
 use std::{fs, collections::BTreeMap, path::Path, env::current_exe, vec};
 
-use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}};
+use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 
@@ -435,5 +435,8 @@ pub fn init_cq_ex_fun_map() {
             self_t.set_exmap(&key, &val)?;
         }
         return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["清空"],|_self_t,_params|{
+        return Ok(Some(CLEAR_UUID.to_string()));
     });
 }
