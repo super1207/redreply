@@ -6,7 +6,7 @@ extern crate sciter;
 
 
 use sciter::{dispatch_script_call};
-use crate::{cqapi::*, save_config, read_config, redlang::{RedLang}, mytool::read_json_str, PAGING_UUID};
+use crate::{cqapi::*, redlang::{RedLang}, mytool::read_json_str, PAGING_UUID};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -67,7 +67,7 @@ impl Handler {
         cq_add_log(&s).unwrap();
     }
     pub fn save_code(&self, contents: String) -> bool{
-        if let Err(err) = save_config(&contents){
+        if let Err(err) = crate::save_code(&contents){
             cq_add_log_w(&format!("can't save_config:{}",err)).unwrap();
             return false;
         }
@@ -77,7 +77,7 @@ impl Handler {
         return true;
     }
     pub fn read_code(&self) -> String {
-        let cfg = read_config();
+        let cfg = crate::read_code();
         return match cfg {
             Ok(s) => s.to_string(),
             Err(err) => {

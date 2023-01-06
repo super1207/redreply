@@ -1,10 +1,10 @@
-use crate::{cqapi::*, redlang::RedLang, mytool::json_to_cq_str, read_config};
+use crate::{cqapi::*, redlang::RedLang, mytool::json_to_cq_str, read_code};
 
 use super::{is_key_match, get_script_info, set_normal_message_info};
 
 fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>>{
     let msg = json_to_cq_str(&root)?;
-    let script_json = read_config()?;
+    let script_json = read_code()?;
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
         let (keyword,cffs,code,ppfs) = get_script_info(&script_json[i])?;
         let mut rl = RedLang::new();

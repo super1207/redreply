@@ -1,4 +1,4 @@
-use crate::{cqapi::cq_add_log_w, read_config, redlang::RedLang};
+use crate::{cqapi::cq_add_log_w, read_code, redlang::RedLang};
 
 use super::{set_normal_evt_info, get_script_info};
 
@@ -34,7 +34,7 @@ fn get_evt_flag(root: &serde_json::Value) -> Result<Vec<&str>, Box<dyn std::erro
 }
 
 fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>>{
-    let script_json = read_config()?;
+    let script_json = read_code()?;
     let evt_flag = get_evt_flag(root)?;
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
         let (keyword,cffs,code,_ppfs) = get_script_info(&script_json[i])?;

@@ -1,6 +1,6 @@
 use std::thread;
 
-use crate::{read_config, cqapi::cq_add_log_w};
+use crate::{read_code, cqapi::cq_add_log_w};
 
 fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str,&'a str), Box<dyn std::error::Error>>{
     let node = script_json.get("content").ok_or("script.json文件缺少content字段")?;
@@ -15,7 +15,7 @@ fn do_cron_event_t() -> Result<i32, Box<dyn std::error::Error>> {
     loop {
         let time_struct = core::time::Duration::from_millis(450);
         std::thread::sleep(time_struct);
-        let script_json = read_config()?;
+        let script_json = read_code()?;
         let now_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
         if now_time == last_time {
             continue;

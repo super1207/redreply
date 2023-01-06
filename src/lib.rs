@@ -4,7 +4,10 @@ use std::ffi::CStr;
 use std::fs;
 use std::os::raw::c_char;
 use std::panic;
+use std::sync::Arc;
 use std::sync::RwLock;
+use httpserver::init_http_server;
+
 use redlang::RedLang;
 use serde_json;
 use rust_embed::RustEmbed;
@@ -12,12 +15,14 @@ use rust_embed::RustEmbed;
 use cqapi::cq_add_log_w;
 use cqapi::cq_get_app_directory;
 
+
 mod cqapi;
 mod cqevent;
 mod redlang;
 mod mytool;
 mod initevent;
 mod cronevent;
+pub mod httpserver;
 
 
 #[macro_use]
@@ -38,6 +43,8 @@ lazy_static! {
     pub static ref G_CMD_MAP:RwLock<HashMap<String, String>> = RwLock::new(HashMap::new());
     // 用于记录命令
     pub static ref G_CMD_FUN_MAP:RwLock<HashMap<String, fn(&mut RedLang,&[String]) -> Result<Option<String>, Box<dyn std::error::Error>>>> = RwLock::new(HashMap::new());
+    // 异步事件循环
+    pub static ref  RT_PTR:Arc<tokio::runtime::Runtime> = Arc::new(tokio::runtime::Runtime::new().unwrap());
 }
 
 
@@ -61,7 +68,22 @@ pub extern "system" fn Initialize(ac: i32) -> i32 {
     return 0;
 }
 
-pub fn init_config() -> Result<(), Box<dyn std::error::Error>>{
+pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let script_path = cq_get_app_directory()? + "config.json";
+    let mut is_file_exists = false;
+    if fs::metadata(script_path.clone()).is_ok() {
+        if fs::metadata(script_path.clone())?.is_file(){
+            is_file_exists = true;
+        }
+    }
+    if !is_file_exists{
+        fs::write(script_path.clone(), "{\"web_port\":1207,\"web_host\":\"127.0.0.1\"}")?;
+    }
+    let script = fs::read_to_string(script_path)?;
+    Ok(serde_json::from_str(&script)?)
+}
+
+pub fn init_code() -> Result<(), Box<dyn std::error::Error>>{
     let script_path = cq_get_app_directory()? + "script.json";
     let mut is_file_exists = false;
     if fs::metadata(script_path.clone()).is_ok() {
@@ -79,7 +101,7 @@ pub fn init_config() -> Result<(), Box<dyn std::error::Error>>{
     Ok(())
 }
 
-pub fn save_config(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
     let mut wk = G_SCRIPT.write()?;
     let js = serde_json::from_str(contents)?;
     fs::write(cq_get_app_directory()? + "script.json", contents).unwrap();
@@ -87,7 +109,7 @@ pub fn save_config(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+pub fn read_code() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let wk = G_SCRIPT.read()?;
     Ok((*wk).clone())
 }
@@ -114,11 +136,14 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
 
 // 插件被MiraiCQ启用后就会调用此函数，这时，已经可以调用不需要和onebot通讯的API了
 #[no_mangle]
-pub extern "system" fn _eventEnable() -> i32{
+pub extern "system" fn _eventEnable() -> i32 {
     if let Err(err) = release_file(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
-    if let Err(err) = init_config(){
+    if let Err(err) = init_http_server(){
+        cq_add_log_w(&err.to_string()).unwrap();
+    }
+    if let Err(err) = init_code(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
     if let Err(err) = initevent::do_init_event(){
