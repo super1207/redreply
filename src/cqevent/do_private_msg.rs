@@ -6,12 +6,13 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
     let msg = json_to_cq_str(&root)?;
     let script_json = read_code()?;
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
-        let (keyword,cffs,code,ppfs) = get_script_info(&script_json[i])?;
+        let (keyword,cffs,code,ppfs,name) = get_script_info(&script_json[i])?;
         let mut rl = RedLang::new();
         if cffs == "私聊触发" || cffs == "群、私聊触发"{
             rl.set_exmap("内容", &msg)?;
             set_normal_message_info(&mut rl, root)?;
             if is_key_match(&mut rl,&ppfs,keyword,&msg)? {
+                rl.script_name = name.to_owned();
                 super::do_script(&mut rl,code)?;
             }
         }

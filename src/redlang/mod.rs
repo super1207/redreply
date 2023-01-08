@@ -248,6 +248,7 @@ pub struct RedLang {
     pub type_uuid:String,
     xuhao: HashMap<String, usize>,
     pkg_name:String,
+    pub script_name:String
 }
 
 #[derive(Debug, Clone)]
@@ -948,6 +949,8 @@ impl RedLang {
         }else if cmd == "运行脚本" {
             let mut rl = RedLang::new();
             rl.exmap = self.exmap.clone(); // 获得一些拓展相关的变量
+            rl.pkg_name = self.pkg_name.clone();
+            rl.script_name = self.script_name.clone();
             let code = self.get_param(params, 0)?;
             ret_str = rl.parse(&code)?;
             // 处理清空指令
@@ -1097,7 +1100,8 @@ impl RedLang {
             coremap: HashMap::new(),
             type_uuid:crate::REDLANG_UUID.to_string(),
             xuhao:HashMap::new(),
-            pkg_name:String::new()
+            pkg_name:String::new(),
+            script_name:String::new()
         }
     }
 

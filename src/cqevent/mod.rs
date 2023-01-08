@@ -49,7 +49,11 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
 }
 
 pub fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Error>>{
-    let out_str_t = rl.parse(code)?;
+    let out_str_t_rst = rl.parse(code);
+    if let Err(err) = out_str_t_rst {
+        return Err(RedLang::make_err(&format!("在脚本`{}`中发送错误:{}",rl.script_name,err)));
+    }
+    let out_str_t = out_str_t_rst.unwrap();
     // 处理清空指令
     let mut after_clear:&str = &out_str_t;
     if let Some(pos) = out_str_t.rfind(CLEAR_UUID.as_str()) {
@@ -104,7 +108,7 @@ impl sciter::EventHandler for Handler {
 
 pub fn do_menu_event() -> Result<i32, Box<dyn std::error::Error>> {
     let mut frame = sciter::Window::new();
-    frame.load_file(&(cq_get_app_directory().unwrap() + "minimal.htm"));
+    frame.load_file(&(cq_get_app_directory1().unwrap() + "minimal.htm"));
     frame.event_handler(Handler {});
     frame.run_app();
     Ok(0)
@@ -177,11 +181,13 @@ fn is_key_match(rl:&mut RedLang,ppfs:&str,keyword:&str,msg:&str) -> Result<bool,
     Ok(is_match)
 }
 
-fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str,&'a str,&'a str), Box<dyn std::error::Error>>{
+fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str,&'a str,&'a str,&'a str), Box<dyn std::error::Error>>{
+    let name = script_json.get("name").ok_or("脚本中无name")?.as_str().ok_or("脚本中name不是str")?;
     let node = script_json.get("content").ok_or("script.json文件缺少content字段")?;
     let keyword = node.get("关键词").ok_or("脚本中无关键词")?.as_str().ok_or("脚本中关键词不是str")?;
     let cffs = node.get("触发方式").ok_or("脚本中无触发方式")?.as_str().ok_or("脚本中触发方式不是str")?;
     let code = node.get("code").ok_or("脚本中无code")?.as_str().ok_or("脚本中code不是str")?;
     let ppfs = node.get("匹配方式").ok_or("脚本中无匹配方式")?.as_str().ok_or("脚本中匹配方式不是str")?;
-    return Ok((keyword,cffs,code,ppfs));
+    
+    return Ok((keyword,cffs,code,ppfs,name));
 }

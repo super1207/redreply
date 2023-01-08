@@ -37,7 +37,7 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
     let script_json = read_code()?;
     let evt_flag = get_evt_flag(root)?;
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
-        let (keyword,cffs,code,_ppfs) = get_script_info(&script_json[i])?;
+        let (keyword,cffs,code,_ppfs,name) = get_script_info(&script_json[i])?;
         let mut rl = RedLang::new();
         if cffs == "事件触发" {
             set_normal_evt_info(&mut rl, root)?;
@@ -47,6 +47,7 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
                     return Ok(());
                 }
             }
+            rl.script_name = name.to_owned();
             super::do_script(&mut rl,code)?;
         }
     }

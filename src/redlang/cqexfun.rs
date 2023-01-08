@@ -1,6 +1,6 @@
 use std::{fs, collections::BTreeMap, path::Path, env::current_exe, vec};
 
-use crate::{cqapi::{cq_call_api, cq_get_cookies, cq_get_app_directory}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID};
+use crate::{cqapi::{cq_call_api, cq_get_app_directory2}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 
@@ -79,7 +79,8 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
     }else{
         return Err(RedLang::make_err(&("不支持的输出流:".to_string() + msg_type)));
     }
-    let cq_ret = cq_call_api(send_json.to_string().as_str())?;
+    let self_id = rl.get_exmap("机器人ID");
+    let cq_ret = cq_call_api(&*self_id,send_json.to_string().as_str())?;
     let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
     let err = "输出流调用失败,retcode 不为0";
     if ret_json.get("retcode").ok_or(err)?.as_i64().ok_or(err)? != 0 {
@@ -247,7 +248,8 @@ pub fn init_cq_ex_fun_map() {
                         "message_id":it
                     }
                 });
-                cq_call_api(&send_json.to_string())?;
+                let self_id = self_t.get_exmap("机器人ID");
+                cq_call_api(&self_id,&send_json.to_string())?;
             }else{
                 let int32_msg_id = it.parse::<i32>()?;
                 let send_json = serde_json::json!({
@@ -256,7 +258,8 @@ pub fn init_cq_ex_fun_map() {
                         "message_id":int32_msg_id
                     }
                 });
-                cq_call_api(&send_json.to_string())?;
+                let self_id = self_t.get_exmap("机器人ID");
+                cq_call_api(&self_id,&send_json.to_string())?;
             }
         }  
         return Ok(Some("".to_string()));
@@ -302,7 +305,8 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["OB调用"],|self_t,params|{
         let content = self_t.get_param(params, 0)?;
-        let call_ret = cq_call_api(&content)?;
+        let self_id = self_t.get_exmap("机器人ID");
+        let call_ret = cq_call_api(&*self_id,&content)?;
         let js_v:serde_json::Value = serde_json::from_str(&call_ret)?;
         let ret = do_json_parse(&js_v, &self_t.type_uuid)?;
         return Ok(Some(ret));
@@ -350,16 +354,15 @@ pub fn init_cq_ex_fun_map() {
         return Ok(Some(get_const_val(&self_t.pkg_name, &k)?.to_owned()));
     });
     add_fun(vec!["进程ID"],|_self_t,_params|{
-        let ret = cq_get_cookies("pid")?;
-        return Ok(Some(ret.to_string()));
+        return Ok(Some(std::process::id().to_string()));
     });
     add_fun(vec!["CPU使用"],|_self_t,_params|{
-        let ret = cq_get_cookies("cpu_usage")?;
-        return Ok(Some(ret.to_string()));
+        //let ret = cq_get_cookies("cpu_usage")?;
+        return Ok(Some("0".to_string()));
     });
     add_fun(vec!["内存使用"],|_self_t,_params|{
-        let ret = cq_get_cookies("mem_usage")?;
-        return Ok(Some(ret.to_string()));
+        //let ret = cq_get_cookies("mem_usage")?;
+        return Ok(Some("0".to_string()));
     });
     add_fun(vec!["读词库文件"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
@@ -383,7 +386,7 @@ pub fn init_cq_ex_fun_map() {
         return Ok(Some(self_t.build_obj(dict_obj)));
     });
     add_fun(vec!["应用目录"],|_self_t,_params|{
-        let app_dir = cq_get_app_directory()?;
+        let app_dir = cq_get_app_directory2()?;
         return Ok(Some(app_dir));
     });
     add_fun(vec!["取艾特"],|self_t,_params|{
