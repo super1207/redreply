@@ -75,7 +75,7 @@ async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error +
     let (ws_stream, _) = connect_async(url).await?;
     let (mut write_half,mut read_halt) = ws_stream.split();
     let bot = Arc::new(tokio::sync::RwLock::new(BotConnect::new()));
-    let (tx_ay, mut rx_ay) =  tokio::sync::mpsc::channel::<serde_json::Value>(32);
+    let (tx_ay, mut rx_ay) =  tokio::sync::mpsc::channel::<serde_json::Value>(128);
     G_BOT_ARR.write().await.push(bot.clone());
     bot.write().await.url = url_str.to_owned();
     bot.write().await.is_connect = true;
@@ -101,25 +101,28 @@ async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error +
             if self_id != None {
                 bot.write().await.id = self_id.unwrap().to_string();
             }
-            let echo = get_str_from_json(&json_dat, "echo");
-            if echo != "" {
-                let echo_lk = G_ECHO_MAP.read().await;
-                if let Some(tx) = echo_lk.get(echo) {
-                    let tx_t = tx.clone();
-                    tokio::spawn(async move {
-                        let _foo = tx_t.send(json_dat).await;
-                    }); 
-                }
-            }else {
-                let _foo = tokio::spawn(async move {
+            let echo = get_str_from_json(&json_dat, "echo").to_owned();
+            tokio::spawn(async move {
+                if echo != "" {
+                    let tx;
+                    {
+                        let echo_lk = G_ECHO_MAP.read().await;
+                        let ttt =  echo_lk.get(&echo);
+                        if let Some(ttt) = ttt {
+                            tx = ttt.clone();
+                        }else{
+                            return ();
+                        }   
+                    }
+                    let _foo = tx.send(json_dat).await;
+                }else {
                     let _foo = tokio::task::spawn_blocking(move ||{
                         if let Err(e) = crate::cqevent::do_1207_event(&json_dat.to_string()) {
                             crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
                         }
                     });
-                });
-            }
-           
+                }
+            });
         }
         bot.write().await.is_connect = false;
         bot.write().await.tx = None;
@@ -161,14 +164,29 @@ pub async fn call_api(self_id:&str,json:&mut serde_json::Value) -> Result<serde_
             G_ECHO_MAP.write().await.remove(&echo);
         });
     });
-    if let Some(tx) = &bot_select.unwrap().read().await.tx {
-        crate::cqapi::cq_add_log(format!("发送数据:{}", json.to_string()).as_str()).unwrap();
-        tx.send((*json).clone()).await?;
-        if let Some(j) = rx_ay.recv().await {
-            return Ok(j);
+    let tx;
+    {
+        let bot = bot_select.unwrap();
+        let ttt = bot.read().await;
+        let tttt = &ttt.tx;
+        if let Some(tx_t) = tttt {
+            tx = tx_t.clone();
+        }else {
+            cq_add_log_w(&format!("无法发送数据")).unwrap();
+            return Ok(serde_json::to_value({})?);
         }
     }
-    Ok(serde_json::to_value({})?)
+    crate::cqapi::cq_add_log(format!("发送数据:{}", json.to_string()).as_str()).unwrap();
+    tx.send((*json).clone()).await?;
+    tokio::select! {
+        std::option::Option::Some(val) = rx_ay.recv() => {
+            return Ok(val);
+        },
+        _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
+            cq_add_log_w(&format!("接收api返回超时")).unwrap();
+            return Ok(serde_json::to_value({})?);
+        }
+    }
 }
 pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
     let config = crate::read_config()?;
@@ -182,7 +200,6 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                 }
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
-            
         });
     }
     
