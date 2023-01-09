@@ -1,4 +1,4 @@
-# RedLang v0.0.7 语法简述
+# RedLang v0.0.8 语法简述
 
 
 注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br />
@@ -198,9 +198,11 @@ hellohellohellohellohello
 
 
 【循环@<font color="red">循环次数</font>@<font color="red">循环语句</font>】<br />
-【循环@<font color="red">数组</font>@<font color="red">处理函数</font>】
+【循环@<font color="red">数组</font>@<font color="red">处理函数</font>】<br />
+【循环@<font color="red">对象</font>@<font color="red">处理函数</font>】<br />
 
-此命令有两种形式，第二种形式中：<font color="red">处理函数</font>是一个回调函数，它有两个参数，第一个参数表示数组下标，第二个参数表示数组元素。如`【循环@【数组@a@b@c】@【函数定义【参数@1】【参数@2】】】`将会输出`0a1b2c`。
+此命令有三种形式，第二种形式中：<font color="red">处理函数</font>是一个回调函数，它有两个参数，第一个参数表示数组下标，第二个参数表示数组元素。如`【循环@【数组@a@b@c】@【函数定义【参数@1】【参数@2】】】`将会输出`0a1b2c`。<br />
+第三种形式中：<font color="red">处理函数</font>是一个回调函数，它有两个参数，第一个参数表示对象的键，第二个参数表示对象的值。如`【循环@【对象@a@b@c@d】@【函数定义【参数@1】【参数@2】】】`将会输出`abcd`。
 
 
 ### 判循

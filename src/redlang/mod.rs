@@ -556,6 +556,23 @@ impl RedLang {
                     }
                 }
                 self.xh_vec.pop();
+            }else if k1_tp == "对象" {
+                let obj_str = k1;
+                let fun = params.get(1).ok_or("对象循环中参数函数获取失败")?.to_string();
+                let obj = RedLang::parse_obj(&obj_str)?;
+                self.xh_vec.push([false, false]);
+                let mut fun_params:Vec<String> = vec!["".to_string(),"".to_string(),"".to_string()];
+                fun_params[0] = fun;
+                for (k,v) in obj {
+                    fun_params[1] = k;
+                    fun_params[2] = v;
+                    let fun_ret = self.call_fun(&fun_params,true)?;
+                    ret_str.push_str(&fun_ret);
+                    if self.xh_vec[self.xh_vec.len() - 1][1] == true {
+                        break;
+                    }
+                }
+                self.xh_vec.pop();
             }
             
         } else if cmd == "判循" {
