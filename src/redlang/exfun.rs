@@ -28,94 +28,106 @@ pub fn init_ex_fun_map() {
         }
     }
     add_fun(vec!["访问"],|self_t,params|{
-        let url = self_t.get_param(params, 0)?;
-        let mut easy = curl::easy::Easy::new();
-        easy.url(&url)?;
-        easy.ssl_verify_peer(false)?;
-        easy.follow_location(true)?;
-        let proxy = self_t.get_coremap("代理")?;
-        if proxy != "" {
-            easy.proxy(proxy)?;
-        }
-        let mut header_list = curl::easy::List::new();
-        let http_header_str = self_t.get_coremap("访问头")?;
-        if http_header_str != "" {
-            let mut http_header = RedLang::parse_obj(&http_header_str)?;
-            if !http_header.contains_key("User-Agent"){
-                http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
+        fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
+            let url = self_t.get_param(params, 0)?;
+            let mut easy = curl::easy::Easy::new();
+            easy.url(&url)?;
+            easy.ssl_verify_peer(false)?;
+            easy.follow_location(true)?;
+            let proxy = self_t.get_coremap("代理")?;
+            if proxy != "" {
+                easy.proxy(proxy)?;
             }
-            for it in http_header {
-                if it.1 != "" {
-                    header_list.append(&(it.0 + ": " + &it.1))?;
+            let mut header_list = curl::easy::List::new();
+            let http_header_str = self_t.get_coremap("访问头")?;
+            if http_header_str != "" {
+                let mut http_header = RedLang::parse_obj(&http_header_str)?;
+                if !http_header.contains_key("User-Agent"){
+                    http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
                 }
+                for it in http_header {
+                    if it.1 != "" {
+                        header_list.append(&(it.0 + ": " + &it.1))?;
+                    }
+                }
+            }else {
+                header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
             }
-        }else {
-            header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
+            easy.http_headers(header_list)?;
+            let mut content = Vec::new();
+            {
+                let mut transfer = easy.transfer();
+                transfer.write_function(|data| {
+                    content.extend_from_slice(data);
+                    Ok(data.len())
+                })?;
+                transfer.perform()?;
+            }
+            Ok(Some(self_t.build_bin(content)))
         }
-        easy.http_headers(header_list)?;
-        let mut content = Vec::new();
-        {
-            let mut transfer = easy.transfer();
-            transfer.write_function(|data| {
-                content.extend_from_slice(data);
-                Ok(data.len())
-            })?;
-            transfer.perform()?;
+        if let Ok(ret) = access(self_t,params){
+            return Ok(ret);
         }
-        return Ok(Some(self_t.build_bin(content)));
+        return Ok(Some(self_t.build_bin(vec![])));
     });
     add_fun(vec!["POST访问"],|self_t,params|{
-        let url = self_t.get_param(params, 0)?;
-        let data_t = self_t.get_param(params, 1)?;
-        let tp = self_t.get_type(&data_t)?;
-        let data:Vec<u8>;
-        if tp == "字节集" {
-            data = RedLang::parse_bin(&data_t)?;
-        }else if tp == "文本" {
-            data = data_t.as_bytes().to_vec();
-        }else {
-            return Err(RedLang::make_err(&("不支持的post访问体类型:".to_owned()+&tp)));
-        }
-        let mut easy = curl::easy::Easy::new();
-        easy.url(&url)?;
-        easy.ssl_verify_peer(false)?;
-        easy.follow_location(true)?;
-        let proxy = self_t.get_coremap("代理")?;
-        if proxy != "" {
-            easy.proxy(proxy)?;
-        }
-        let mut header_list = curl::easy::List::new();
-        let http_header_str = self_t.get_coremap("访问头")?;
-        if http_header_str != "" {
-            let mut http_header = RedLang::parse_obj(&http_header_str)?;
-            if !http_header.contains_key("User-Agent"){
-                http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
+        fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
+            let url = self_t.get_param(params, 0)?;
+            let data_t = self_t.get_param(params, 1)?;
+            let tp = self_t.get_type(&data_t)?;
+            let data:Vec<u8>;
+            if tp == "字节集" {
+                data = RedLang::parse_bin(&data_t)?;
+            }else if tp == "文本" {
+                data = data_t.as_bytes().to_vec();
+            }else {
+                return Err(RedLang::make_err(&("不支持的post访问体类型:".to_owned()+&tp)));
             }
-            for it in http_header {
-                if it.1 != "" {
-                    header_list.append(&(it.0 + ": " + &it.1))?;
+            let mut easy = curl::easy::Easy::new();
+            easy.url(&url)?;
+            easy.ssl_verify_peer(false)?;
+            easy.follow_location(true)?;
+            let proxy = self_t.get_coremap("代理")?;
+            if proxy != "" {
+                easy.proxy(proxy)?;
+            }
+            let mut header_list = curl::easy::List::new();
+            let http_header_str = self_t.get_coremap("访问头")?;
+            if http_header_str != "" {
+                let mut http_header = RedLang::parse_obj(&http_header_str)?;
+                if !http_header.contains_key("User-Agent"){
+                    http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
                 }
+                for it in http_header {
+                    if it.1 != "" {
+                        header_list.append(&(it.0 + ": " + &it.1))?;
+                    }
+                }
+            }else {
+                header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
             }
-        }else {
-            header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
+            easy.http_headers(header_list)?;
+            easy.post(true)?;
+            easy.post_field_size(data.len() as u64).unwrap();
+            let mut content = Vec::new();
+            let mut dat = data.as_slice();
+            {
+                let mut transfer = easy.transfer();
+                transfer.read_function(|buf| {
+                    Ok(dat.read(buf).unwrap_or(0))
+                })?;
+                transfer.write_function(|data| {
+                    content.extend_from_slice(data);
+                    Ok(data.len())
+                })?;
+                transfer.perform()?;
+            }
+            Ok(Some(self_t.build_bin(content)))
         }
-        easy.http_headers(header_list)?;
-        easy.post(true)?;
-        easy.post_field_size(data.len() as u64).unwrap();
-        let mut content = Vec::new();
-        let mut dat = data.as_slice();
-        {
-            let mut transfer = easy.transfer();
-            transfer.read_function(|buf| {
-                Ok(dat.read(buf).unwrap_or(0))
-            })?;
-            transfer.write_function(|data| {
-                content.extend_from_slice(data);
-                Ok(data.len())
-            })?;
-            transfer.perform()?;
+        if let Ok(ret) = access(self_t,params){
+            return Ok(ret);
         }
-        return Ok(Some(self_t.build_bin(content)));
+        return Ok(Some(self_t.build_bin(vec![])));
     });
     add_fun(vec!["设置访问头"],|self_t,params|{
         let http_header = self_t.get_coremap("访问头")?.to_string();
