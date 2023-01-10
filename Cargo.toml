@@ -34,6 +34,9 @@ futures-util = "*"
 hyper-tungstenite = "*"
 tokio-tungstenite = "*" 
 scopeguard = "*"
+log = "*"
+tracing = "*"
+tracing-subscriber = "*"
 
 
 [profile.release]

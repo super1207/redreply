@@ -34,7 +34,11 @@ pub fn cq_call_api(self_id:&str,json_str: &str) -> Result<String, Box<dyn std::e
 
 
 fn cq_add_log_t(_log_level:i32,log_msg: &str) -> Result<i32, Box<dyn std::error::Error>> {
-    println!("{}",log_msg);
+    if _log_level == 0 {
+        log::info!("{}",log_msg);
+    }else {
+        log::warn!("{}",log_msg);
+    }
     Ok(0)
 }
 

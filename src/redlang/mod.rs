@@ -1146,7 +1146,7 @@ impl RedLang {
             Ok(s) => Ok(s),
             Err(e) => 
             {
-                Err(self.make_err_push(e,"参数解析失败"))
+                Err(self.make_err_push(e,&("参数解析失败：".to_owned() + p)))
             }
         }
     }

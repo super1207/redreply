@@ -176,7 +176,15 @@ pub async fn call_api(self_id:&str,json:&mut serde_json::Value) -> Result<serde_
             return Ok(serde_json::to_value({})?);
         }
     }
-    crate::cqapi::cq_add_log(format!("发送数据:{}", json.to_string()).as_str()).unwrap();
+    {
+        let js_str = json.to_string();
+        let out_str = js_str.get(0..2000);
+        if out_str.is_some() {
+            crate::cqapi::cq_add_log(format!("发送数据:{}...", out_str.unwrap()).as_str()).unwrap();
+        }else {
+            crate::cqapi::cq_add_log(format!("发送数据:{}", json.to_string()).as_str()).unwrap();
+        }
+    }
     tx.send((*json).clone()).await?;
     tokio::select! {
         std::option::Option::Some(val) = rx_ay.recv() => {
