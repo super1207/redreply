@@ -10,7 +10,6 @@ curl = { version = "*",features = ['rustls'] }
 fancy-regex = "*"
 encoding = "*"
 rand = "*"
-sciter-rs = "*"
 urlencoding = "*"
 getrandom = "*"
 base64 = "*"
@@ -37,6 +36,7 @@ scopeguard = "*"
 log = "*"
 tracing = "*"
 tracing-subscriber = "*"
+opener = "*"
 
 
 [profile.release]

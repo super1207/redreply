@@ -1,8 +1,6 @@
 use std::collections::HashMap;
 use std::env::current_exe; 
-use std::ffi::CStr;
 use std::fs;
-use std::os::raw::c_char;
 use std::panic;
 use std::sync::Arc;
 use std::sync::RwLock;
@@ -138,6 +136,7 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(cq_get_app_directory1().unwrap() + "toc\\css\\zTreeStyle\\img\\diy")?;
     fs::create_dir_all(cq_get_app_directory1().unwrap() + "toc\\js")?;
     fs::create_dir_all(cq_get_app_directory1().unwrap() + "toc\\style")?;
+    fs::create_dir_all(cq_get_app_directory1().unwrap() + "webui")?;
     for it in Asset::iter() {
         if it.to_string() == "res/sciter.dll" {
             let pth = current_exe()?.parent().ok_or(err)?.join("sciter.dll");
@@ -152,28 +151,3 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
     } 
     Ok(())
 }
-
-// 1207号事件，用于接收OneBotv11格式的原始数据，utf8编码
-pub fn event1207(msg: *const c_char) -> i32 {
-    let onebot_json: String = unsafe {
-        CStr::from_ptr(msg)
-            .to_str()
-            .expect("get error msg ptr from event1207")
-            .to_string()
-    };
-
-    if let Err(e) = cqevent::do_1207_event(onebot_json.as_str()) {
-        cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
-    }
-    return 0;
-}
-
-// menu事件
-#[no_mangle]
-pub fn menu_a() -> i32 {
-    if let Err(e) = cqevent::do_menu_event() {
-        cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
-    }
-    return 0;
-}
-

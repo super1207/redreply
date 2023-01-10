@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <!-- 指明页面编码为utf-8 -->
+        <meta charset="UTF-8">
+        <!-- 适应手机 -->
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <!-- 引入vue，用于前端渲染 -->
+        <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+        <!-- 引入axios，http客户端 -->
+        <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+        <!-- 网站标题 -->
+        <title>红色问答控制台</title>
+        <!-- 引入样式控制文件 -->
+        <link rel="stylesheet" type="text/css" href="style.css">
+    </head>
+    <body>
+        <div id="app">
+            <h1>红色问答 0.0.9</h1>
+            <div id="pkg_content">
+                <div>
+                    <div>名字</div>
+                    <div>
+                        <div v-for="(code,index) in codes" @click="this.save_cache(select_name_index);select_name_index_change(index,select_name_index);select_name_index=index" :class="{name_active:index==select_name_index}">
+                            {{ code["name"] }}
+                        </div>
+                    </div>
+                    
+                </div>
+                <div>
+                    <div class="input_div">脚本名：<input id="script_name" v-model="script_name"></input></div>
+                    <div class="input_div">介绍：&emsp;<input id="script_description" v-model="script_description"></input></div>
+                    <div class="input_div">关键词：<input id="script_keyword" v-model="script_keyword"></input></div>
+                    <select id="script_ppfs" v-model="script_ppfs">
+                        <option disabled value="匹配方式">匹配方式</option>
+                        <option value ="完全匹配">完全匹配</option>
+                        <option value ="正则匹配">正则匹配</option>
+                        <option value="模糊匹配">模糊匹配</option>
+                        <option value="前缀匹配">前缀匹配</option>
+                    </select>
+                    <select id="script_cffs" v-model="script_cffs">
+                        <option disabled value="触发方式">触发方式</option>
+                        <option value ="群聊触发">群聊触发</option>
+                        <option value ="私聊触发">私聊触发</option>
+                        <option value="群、私聊触发">群、私聊触发</option>
+                        <option value="事件触发">事件触发</option>
+                        <option value="框架初始化">框架初始化</option>
+                        <option value="频道触发">频道触发</option>
+                        <option value="CRON定时器">CRON定时器</option>
+                    </select>
+                    <textarea id="script_content" v-model="script_content"></textarea>
+                </div>
+            </div>
+            <div id="cmd_content">
+                <button @click="add_code()">新增</button>
+                <button @click="del_code()">删除</button>
+                <button @click="save_code()">保存</button>
+                <button @click="help_web()">帮助</button>
+            </div>
+        </div>
+        <!-- 引入js文件 -->
+        <script src="script.js"></script>
+    </body>
+</html>

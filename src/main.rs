@@ -8,5 +8,9 @@ fn main() {
     redlang::initialize();
 
     // 调用插件菜单
-    redlang::menu_a();
+    //redlang::menu_a();
+    loop {
+        let time_struct = core::time::Duration::from_secs(1);
+        std::thread::sleep(time_struct);
+    }
 }

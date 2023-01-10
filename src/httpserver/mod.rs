@@ -1,11 +1,13 @@
+use std::path::PathBuf;
+
+use crate::cqapi::cq_get_app_directory1;
 use crate::read_config;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 use hyper::http::HeaderValue;
 use hyper::service::make_service_fn;
 use serde_json::json;
 
-async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
-    // 处理HTTP协议
+async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
     let url_path = request.uri().path();
     if url_path == "/get_code" {
         match crate::read_code() {
@@ -50,7 +52,45 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
         let res = hyper::Response::new(hyper::Body::from("api not found"));
         Ok(res)
     }
-    
+}
+
+async fn deal_file(request: hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
+    let url_path = request.uri().path();
+    let app_dir = cq_get_app_directory1().unwrap();
+    let path = PathBuf::from(&app_dir);
+    let url_path_t = url_path.replace("/", &std::path::MAIN_SEPARATOR.to_string());
+    let file_path = path.join(url_path_t.get(1..).unwrap());
+    let file_buf = tokio::fs::read(&file_path).await?;
+    let mut res = hyper::Response::new(hyper::Body::from(file_buf));
+    *res.status_mut() = hyper::StatusCode::OK;
+    if url_path.ends_with(".html") {
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
+    }else if url_path.ends_with(".js") {
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/javascript; charset=utf-8"));
+    }else if url_path.ends_with(".css") {
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/css; charset=utf-8"));
+    }else if url_path.ends_with(".png") {
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("image/png"));
+    }else {
+        *res.status_mut() = hyper::StatusCode::NOT_FOUND;
+    }
+    // cq_add_log_w(&format!("{:?}",res));
+    Ok(res)
+}
+async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
+    // 处理HTTP协议
+    let url_path = request.uri().path();
+    if url_path == "/" {
+        let mut res = hyper::Response::new(hyper::Body::from(vec![]));
+        *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
+        res.headers_mut().insert("Location", HeaderValue::from_static("/index.html"));
+        return Ok(res);
+    }
+    if !url_path.contains(".") {
+        return deal_api(request).await;
+    } else {
+        return deal_file(request).await;
+    }
 }
 
 pub fn init_http_server() -> Result<(), Box<dyn std::error::Error>> {
@@ -76,5 +116,7 @@ pub fn init_http_server() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
+    opener::open(format!("http://localhost:{port}"))?;
+    
     Ok(())
 }

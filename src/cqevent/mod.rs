@@ -2,11 +2,8 @@ pub(crate) mod do_group_msg;
 mod do_private_msg;
 mod do_guild_msg;
 mod do_other_evt;
-extern crate sciter;
 
-
-use sciter::{dispatch_script_call};
-use crate::{cqapi::*, redlang::{RedLang}, mytool::read_json_str, PAGING_UUID, CLEAR_UUID};
+use crate::{redlang::RedLang, mytool::read_json_str, PAGING_UUID, CLEAR_UUID};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -64,54 +61,6 @@ pub fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Er
         crate::redlang::cqexfun::send_one_msg(rl, out_str)?;
     }
     Ok(())
-}
-
-struct Handler;
-
-impl Handler {
-    pub fn calc_sum(&self, a: i32, b: i32) -> i32 {
-      a + b
-    }
-    pub fn print_log(&self, s: String){
-        cq_add_log(&s).unwrap();
-    }
-    pub fn save_code(&self, contents: String) -> bool{
-        if let Err(err) = crate::save_code(&contents){
-            cq_add_log_w(&format!("can't save_config:{}",err)).unwrap();
-            return false;
-        }
-        if let Err(err) = crate::initevent::do_init_event(){
-            cq_add_log_w(&format!("can't call init evt:{}",err)).unwrap();
-        }
-        return true;
-    }
-    pub fn read_code(&self) -> String {
-        let cfg = crate::read_code();
-        return match cfg {
-            Ok(s) => s.to_string(),
-            Err(err) => {
-                cq_add_log_w(&format!("can't read_config:{}",err)).unwrap();
-                "".to_string()
-            }
-        }
-    }
-  }
-  
-impl sciter::EventHandler for Handler {
-    dispatch_script_call! {
-        fn calc_sum(i32, i32);
-        fn print_log(String);
-        fn save_code(String);
-        fn read_code();
-    }
-}
-
-pub fn do_menu_event() -> Result<i32, Box<dyn std::error::Error>> {
-    let mut frame = sciter::Window::new();
-    frame.load_file(&(cq_get_app_directory1().unwrap() + "minimal.htm"));
-    frame.event_handler(Handler {});
-    frame.run_app();
-    Ok(0)
 }
 
 fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {

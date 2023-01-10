@@ -1,0 +1,91 @@
+html,body{
+    width: 100%;
+    height: 100%;
+    display: flex;
+    margin: 0;
+}
+#app {
+    display: flex;
+    flex: 1 0 auto;
+    flex-direction: column;
+}
+
+#app > h1 {
+    color: red;
+    text-align: center;
+}
+
+#pkg_content{ /* 包内容 */
+    display: flex;
+    flex: 1 0 auto;
+}
+
+#pkg_content > div:nth-child(1) { /* 包内容左边 */
+    display: flex;
+    flex-direction: column;
+    text-align: center;
+    flex: 1 0 auto;
+}
+#pkg_content > div:nth-child(1) > div:nth-child(1) { /* 包内容左边-标题 */
+    border-style:solid;
+    border-spacing: 1px;
+    flex: 0 0 auto;
+}
+#pkg_content > div:nth-child(1) > div:nth-child(2) { /* 包内容左边-名字 */
+    border-style:solid;
+    padding: 2px;
+    flex: 1 0 auto;
+}
+#pkg_content > div:nth-child(1) > div:nth-child(2) > div { /* 包内容左边-单个名字 */
+    border-style:solid;
+    cursor: pointer;
+    margin-top: 1px;
+}
+#pkg_content > div:nth-child(2) { /* 包内容右边 */
+    display: flex;
+    flex-direction: column;
+    flex: 9 0 auto;
+}
+.input_div{
+    display: flex;
+}
+#script_name { /* 包内容右边 */
+    border-style:solid;
+    flex: 1 0 auto;
+    margin: 2px;
+}
+#script_description { /* 包内容右边 */
+    border-style:solid;
+    flex: 1 0 auto;
+    margin: 2px;
+}
+#script_keyword { /* 包内容右边 */
+    border-style:solid;
+    flex: 1 0 auto;
+    margin: 2px;
+}
+#script_ppfs { /* 包内容右边 */
+    border-style:solid;
+    margin: 2px;
+}
+#script_cffs { /* 包内容右边 */
+    border-style:solid;
+    margin: 2px;
+}
+#script_content { /* 包内容右边 */
+    border-style:solid;
+    flex: 1 0 auto;
+}
+
+#cmd_content{
+    display: flex;
+    flex: 0 0 3em;
+    
+}
+#cmd_content > button {
+    flex: 1 0 auto;
+}
+
+.name_active { /* 点中名字，变色属性 */
+    color: red;
+}
