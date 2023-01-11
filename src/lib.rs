@@ -119,10 +119,15 @@ pub fn init_code() -> Result<(), Box<dyn std::error::Error>>{
 }
 
 pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
-    let mut wk = G_SCRIPT.write()?;
-    let js = serde_json::from_str(contents)?;
-    fs::write(cq_get_app_directory2()? + "script.json", contents).unwrap();
-    (*wk) = js;
+    {
+        let mut wk = G_SCRIPT.write()?;
+        let js = serde_json::from_str(contents)?;
+        fs::write(cq_get_app_directory2()? + "script.json", contents).unwrap();
+        (*wk) = js;
+    }
+    if let Err(err) = crate::initevent::do_init_event(){
+        cq_add_log_w(&format!("can't call init evt:{}",err)).unwrap();
+    }
     Ok(())
 }
 
