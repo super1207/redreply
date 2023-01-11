@@ -72,6 +72,9 @@ const { createApp } = Vue
                     },
                     help_web() {
                         window.open("/readme.html", "_blank");
+                    },
+                    watch_log() {
+                        window.open("/watchlog.html", "_blank");
                     }
                 }
             }).mount('#app')

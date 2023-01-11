@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>红色问答日志</title>
+    <style>
+      html,body {
+         display: flex;
+         flex-direction: column;
+         width: 100%;
+         height: 100%;
+         margin: 0;
+         padding: 0%;
+         background-color: yellow;
+      }
+    </style>
+    <script type="text/javascript">
+        function WebSocketTest()
+        {
+           if ("WebSocket" in window)
+           {
+              var ws = new WebSocket("ws://"+window.location.host+"/watch_log")
+              ws.onmessage = function (evt) 
+              { 
+                 var received_msg = evt.data;
+                 var ele = document.getElementById("logtext");
+                 ele.value += received_msg + "\r\n\r\n";
+                 if (ele.value.length > 10000){
+                     ele.value.slice(9999);
+                 }
+                 ele.scrollTop = ele.scrollHeight;
+              };
+           }
+           else
+           {
+              alert("您的浏览器不支持 WebSocket!");
+           }
+        }
+     </script>
+</head>
+<body>
+   <h1 style="text-align: center;color: red;">红色问答日志</h1>
+   <textarea id="logtext" style="background-color: aliceblue; align-content: stretch;flex: 1 0 auto;white-space:pre-wrap;word-wrap: break-word;word-break:break-all" readonly></textarea>
+   <script type="text/javascript">WebSocketTest();</script>
+</body>
+</html>
