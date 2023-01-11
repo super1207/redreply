@@ -49,10 +49,14 @@ const { createApp } = Vue
                         this.save_cache(this.select_name_index);
                         axios
                         .post("/set_code",this.codes)
+                        .then(function (res){
+                            alert("保存成功")
+                        })
                         .catch(function (error) {
                             console.log(error);
+                            alert("保存失败")
                         });
-                        alert("保存成功")
+                        
                     },
                     add_code() {
                         this.save_cache(this.select_name_index);
