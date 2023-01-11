@@ -442,4 +442,19 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["清空"],|_self_t,_params|{
         return Ok(Some(CLEAR_UUID.to_string()));
     });
+    add_fun(vec!["获取消息"],|self_t,params|{
+        let msg_id = self_t.get_param(params, 0)?;
+        let send_json = serde_json::json!({
+            "action":"get_msg",
+            "params":{
+                "message_id":msg_id.parse::<i32>()?
+            }
+        });
+        let self_id = self_t.get_exmap("机器人ID");
+        let cq_ret = cq_call_api(&self_id,&send_json.to_string())?;
+        let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
+        let err = format!("获取消息失败:{ret_json}");
+        let raw_message = crate::mytool::json_to_cq_str(ret_json.get("data").ok_or(err)?)?;
+        return Ok(Some(raw_message));
+    });
 }
