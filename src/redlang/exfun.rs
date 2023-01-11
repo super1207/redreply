@@ -1,6 +1,7 @@
 use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::BTreeMap, vec, fs};
 
 use chrono::TimeZone;
+use encoding::Encoding;
 use headless_chrome::Browser;
 use md5::{Md5, Digest};
 use urlencoding::encode;
@@ -762,6 +763,32 @@ pub fn init_ex_fun_map() {
             return Ok(ret);
         }
         return Ok(Some(self_t.build_bin(vec![])));
+    });
+    add_fun(vec!["命令行"],|self_t,params|{
+        let cmd_str = self_t.get_param(params, 0)?;
+        let output = if cfg!(target_os = "windows") {
+            std::process::Command::new("cmd").arg("/c").arg(cmd_str).output()?
+        } else {
+            std::process::Command::new("sh").arg("-c").arg(cmd_str).output()?
+        };
+        let mut output_str = 
+        if cfg!(target_os = "windows") {
+            encoding::all::GBK.decode(&output.stdout, encoding::DecoderTrap::Ignore)?
+        }else {
+            String::from_utf8_lossy(&output.stdout).to_string()
+        };
+        let out_err = if cfg!(target_os = "windows") {
+            encoding::all::GBK.decode(&output.stderr, encoding::DecoderTrap::Ignore)?
+        }else {
+            String::from_utf8_lossy(&output.stderr).to_string()
+        };
+        output_str.push_str(&out_err);
+        return Ok(Some(output_str));
+    });
+    add_fun(vec!["启动"],|self_t,params|{
+        let cmd_str = self_t.get_param(params, 0)?;
+        opener::open(cmd_str)?;
+        return Ok(Some("".to_string()));
     });
 }
 
