@@ -94,7 +94,7 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         }
     }
     if !is_file_exists{
-        fs::write(script_path.clone(), "{\"web_port\":1207,\"web_host\":\"127.0.0.1\",\"ws_urls\":[]}")?;
+        fs::write(script_path.clone(), "{\"web_port\":1207,\"web_host\":\"127.0.0.1\",\"ws_urls\":[],\"not_open_browser\":false}")?;
     }
     let script = fs::read_to_string(script_path)?;
     Ok(serde_json::from_str(&script)?)

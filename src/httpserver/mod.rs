@@ -63,6 +63,9 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
             },
         }
         
+    }else if url_path == "/close" {
+        cq_add_log_w("收到退出指令，正在退出").unwrap();
+        std::process::exit(0);  
     }else{
         let res = hyper::Response::new(hyper::Body::from("api not found"));
         Ok(res)
@@ -175,7 +178,14 @@ pub fn init_http_server() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
-    opener::open(format!("http://localhost:{port}"))?;
+    if let Some(not_open_browser) = config.get("not_open_browser") {
+        if not_open_browser == false {
+            opener::open(format!("http://localhost:{port}"))?;
+        }
+    }else {
+        opener::open(format!("http://localhost:{port}"))?;
+    }
+    
     
     Ok(())
 }

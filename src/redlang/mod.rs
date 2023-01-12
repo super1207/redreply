@@ -1,7 +1,7 @@
 use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any};
 use encoding::Encoding;
 
-use crate::{G_CONST_MAP, CLEAR_UUID, cqapi::cq_add_log_w};
+use crate::{G_CONST_MAP, CLEAR_UUID};
 pub mod exfun;
 pub(crate) mod cqexfun;
 
