@@ -376,6 +376,12 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["文本转时间戳"],|self_t,params|{
+        let time_str = self_t.get_param(params, 0)?;
+        const FORMAT: &str = "%F-%H-%M-%S";
+        let tm = chrono::Local.datetime_from_str(&time_str, FORMAT)?.timestamp();
+        return Ok(Some(tm.to_string()));
+    });
     add_fun(vec!["MD5编码"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
         let bin = RedLang::parse_bin(&text)?;
