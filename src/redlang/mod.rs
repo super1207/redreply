@@ -1,7 +1,7 @@
 use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any};
 use encoding::Encoding;
 
-use crate::{G_CONST_MAP, CLEAR_UUID};
+use crate::{G_CONST_MAP, CLEAR_UUID, cqapi::cq_add_log_w};
 pub mod exfun;
 pub(crate) mod cqexfun;
 
@@ -529,9 +529,10 @@ impl RedLang {
                 let k1 = self.get_param(params, 0)?;
                 let tms = k1.parse::<usize>()?;
                 self.xh_vec.push([false, false]);
+                let mut last_type = 0u8;
                 for _i in 0..tms {
                     let v = self.get_param(params, 1)?;
-                    ret_str.push_str(&v);
+                    RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
                     if self.xh_vec[self.xh_vec.len() - 1][1] == true {
                         break;
                     }
@@ -546,11 +547,12 @@ impl RedLang {
                 self.xh_vec.push([false, false]);
                 let mut fun_params:Vec<String> = vec!["".to_string(),"".to_string(),"".to_string()];
                 fun_params[0] = fun;
+                let mut last_type = 0;
                 for i in 0..tms {
                     fun_params[1] = i.to_string();
                     fun_params[2] = arr[i].to_owned();
-                    let fun_ret = self.call_fun(&fun_params,true)?;
-                    ret_str.push_str(&fun_ret);
+                    let v = self.call_fun(&fun_params,true)?;
+                    RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
                     if self.xh_vec[self.xh_vec.len() - 1][1] == true {
                         break;
                     }
@@ -563,11 +565,12 @@ impl RedLang {
                 self.xh_vec.push([false, false]);
                 let mut fun_params:Vec<String> = vec!["".to_string(),"".to_string(),"".to_string()];
                 fun_params[0] = fun;
+                let mut last_type = 0;
                 for (k,v) in obj {
                     fun_params[1] = k;
                     fun_params[2] = v;
-                    let fun_ret = self.call_fun(&fun_params,true)?;
-                    ret_str.push_str(&fun_ret);
+                    let v = self.call_fun(&fun_params,true)?;
+                    RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
                     if self.xh_vec[self.xh_vec.len() - 1][1] == true {
                         break;
                     }
@@ -1262,13 +1265,35 @@ impl RedLang {
     fn build_obj(&self,obj:BTreeMap<String,String>) -> String {
         return Self::build_obj_with_uid(&self.type_uuid,obj);
     }
-
+    fn conect_arr(status:&mut u8,chs_out:&mut String,new_str:String) -> Result<(), Box<dyn std::error::Error>>{
+        if new_str.starts_with(&(crate::REDLANG_UUID.to_string() + "A")) {
+            if *status == 2 {
+                // 这里要进行数组合并，因为之前是数组
+                let arr = new_str.get(37..).ok_or("在合并数组时获取新数组失败")?;
+                chs_out.push_str(arr);
+            } else if *status == 0 { // 之前没有
+                chs_out.push_str(&new_str);
+            } else { // 之前是其它类型
+                return Err(RedLang::make_err(&format!("数组不能与其它类型`{}`直接连接",chs_out)));
+            }
+            *status = 2;
+        }else {
+            if new_str.len() != 0 {
+                if *status == 2 {
+                    return Err(RedLang::make_err(&format!("`{}`不能与数组类型直接连接",new_str)));
+                }
+                chs_out.push_str(&new_str);
+                *status = 1;
+            }
+        }
+        Ok(())
+    }
     pub fn parse(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
         // 得到utf8字符数组
         let chs = input.chars().collect::<Vec<char>>();
 
         // 输出
-        let mut chs_out: Vec<char> = vec![];
+        let mut chs_out: String = String::new();
 
         // 用于cq码解析
         let mut cq_code: Vec<char> = vec![];
@@ -1279,6 +1304,8 @@ impl RedLang {
 
         // 当前解析状态 0 normal ， 1 cqmode
         let mut status = 0;
+
+        let mut cur_type_status = 0u8; //0:None 1:text 2:arr 3:object 4:bin
 
         loop {
             let xh_vec_len = self.xh_vec.len();
@@ -1318,11 +1345,13 @@ impl RedLang {
                     if ch == '\\' {
                         let c = chs.get(i).ok_or("\\ in the last position of code")?;
                         chs_out.push(*c);
+                        cur_type_status = 1;
                         i += 1;
                     } else if self.is_black_char(ch) {
                         // do nothing
                     } else {
                         chs_out.push(ch);
+                        cur_type_status = 1;
                     }
                 }
             } else if status == 1 {
@@ -1343,16 +1372,14 @@ impl RedLang {
                 if cq_n == 0 {
                     let s = cq_code.iter().collect::<String>();
                     let cqout = self.parsecq(&s)?;
-                    for c in cqout.chars() {
-                        chs_out.push(c);
-                    }
+                    RedLang::conect_arr(&mut cur_type_status,&mut chs_out,cqout)?;
                     cq_code.clear();
                     cq_n = 0;
                     status = 0;
                 }
             }
         }
-        Ok(chs_out.iter().collect::<String>())
+        Ok(chs_out)
     }
 
     fn parse_r(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
