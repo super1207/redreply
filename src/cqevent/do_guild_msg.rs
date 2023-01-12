@@ -10,6 +10,7 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
         let mut rl = RedLang::new();
         if cffs == "频道触发"{
             rl.set_exmap("内容", &msg)?;
+            rl.set_exmap("当前消息",&msg)?;
             super::set_normal_message_info(&mut rl, root)?;
             if is_key_match(&mut rl,&ppfs,keyword,&msg)? {
                 rl.script_name = name.to_owned();

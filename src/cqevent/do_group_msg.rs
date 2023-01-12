@@ -53,6 +53,7 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
                 if let Some(js_v) = sender.get("title") {
                     rl.set_exmap("发送者专属头衔", js_v.as_str().unwrap_or(""))?;
                 }
+                rl.set_exmap("当前消息",&msg)?;
             }
             if is_key_match(&mut rl,&ppfs,keyword,&msg)? {
                 rl.script_name = name.to_owned();

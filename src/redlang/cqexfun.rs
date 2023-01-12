@@ -457,4 +457,8 @@ pub fn init_cq_ex_fun_map() {
         let raw_message = crate::mytool::json_to_cq_str(ret_json.get("data").ok_or(err)?)?;
         return Ok(Some(raw_message));
     });
+    add_fun(vec!["当前消息"],|self_t,_params|{
+        let msg = self_t.get_exmap("当前消息");
+        return Ok(Some(msg.to_string()));
+    });
 }
