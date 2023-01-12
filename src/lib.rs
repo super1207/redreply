@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::env::current_exe; 
 use std::fs;
 use std::panic;
 use std::sync::Arc;
@@ -143,16 +142,8 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(cq_get_app_directory1().unwrap() + "toc\\style")?;
     fs::create_dir_all(cq_get_app_directory1().unwrap() + "webui")?;
     for it in Asset::iter() {
-        if it.to_string() == "res/sciter.dll" {
-            let pth = current_exe()?.parent().ok_or(err)?.join("sciter.dll");
-            if !pth.exists() {
-                let index_html = Asset::get("res/sciter.dll").ok_or(err)?;
-                fs::write(pth, index_html.data)?;
-            }
-        }else {
-            let file = Asset::get(&it.to_string()).ok_or(err)?;
-            fs::write(cq_get_app_directory1().unwrap() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
-        }
+        let file = Asset::get(&it.to_string()).ok_or(err)?;
+        fs::write(cq_get_app_directory1().unwrap() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
     } 
     Ok(())
 }
