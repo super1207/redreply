@@ -1,4 +1,4 @@
-use crate::{cqapi::cq_add_log_w, read_code, redlang::RedLang};
+use crate::{cqapi::{cq_add_log_w, cq_add_log}, read_code, redlang::RedLang};
 
 use super::{set_normal_evt_info, get_script_info};
 
@@ -36,6 +36,7 @@ fn get_evt_flag(root: &serde_json::Value) -> Result<Vec<&str>, Box<dyn std::erro
 fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>>{
     let script_json = read_code()?;
     let evt_flag = get_evt_flag(root)?;
+    cq_add_log(&format!("收到事件:`{}`",evt_flag.join(":"))).unwrap();
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
         let (keyword,cffs,code,_ppfs,name) = get_script_info(&script_json[i])?;
         let mut rl = RedLang::new();
@@ -43,7 +44,7 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
             set_normal_evt_info(&mut rl, root)?;
             let key_vec = keyword.split(":").collect::<Vec<&str>>();
             for j in 0..key_vec.len() {
-                if key_vec.get(j).unwrap_or(&"") != evt_flag.get(j).unwrap_or(&""){
+                if &key_vec.get(j).unwrap_or(&"").trim() != evt_flag.get(j).unwrap_or(&""){
                     return Ok(());
                 }
             }
