@@ -15,10 +15,10 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v3
     - name: Build
-        if: matrix.os == 'ubuntu-latest'
-        run: |
-            $ENV:RUSTFLAGS='-C target-feature=+crt-static'
-            cargo build --target=i686-pc-windows-msvc --release
-        if: matrix.os == 'windows-latest'
-        run: |
-            RUSTFLAGS='-C target-feature=+crt-static' cargo build --release
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+          $ENV:RUSTFLAGS='-C target-feature=+crt-static'
+          cargo build --target=i686-pc-windows-msvc --release
+      if: matrix.os == 'windows-latest'
+      run: |
+          RUSTFLAGS='-C target-feature=+crt-static' cargo build --release
