@@ -1,4 +1,4 @@
-# RedLang v0.0.12 语法简述
+# RedLang v0.0.13 语法简述
 
 
 注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br />
@@ -633,6 +633,13 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 【文本替换@<font color="red">文本</font>@<font color="red">旧文本</font>@<font color="red">新文本</font>】<br />
 
 返回替换结果
+
+### 文本查找
+
+
+【文本查找@<font color="red">文本</font>@<font color="red">子文本</font>@<font color="red">开始位置</font>】<br />
+
+返回子文本在文本中开始的位置，若没有找到，则返回-1。若开始位置省略，则默认从0开始找。例子：`【文本查找@0123456789@5@4】`返回`5`，`【文本查找@0123456789@5@6】`返回`-1`。
 
 
 ### 定义常量

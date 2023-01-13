@@ -65,7 +65,7 @@
 				</div>
         <div id='readme' style='width:70%;margin-left:20%;'>
           	<article class='markdown-body'>
-            	<h1 id="redlang-v0-0-12-">RedLang v0.0.12 语法简述</h1>
+            	<h1 id="redlang-v0-0-13-">RedLang v0.0.13 语法简述</h1>
 <p>注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br /></p>
 <p>作者qq：1875159423<br /></p>
 <p>qq群号：920220179 (目前使用MiraiCQ的群)<br /></p>
@@ -324,6 +324,9 @@
 <h3 id="-">文本替换</h3>
 <p>【文本替换@<font color="red">文本</font>@<font color="red">旧文本</font>@<font color="red">新文本</font>】<br /></p>
 <p>返回替换结果</p>
+<h3 id="-">文本查找</h3>
+<p>【文本查找@<font color="red">文本</font>@<font color="red">子文本</font>@<font color="red">开始位置</font>】<br /></p>
+<p>返回子文本在文本中开始的位置，若没有找到，则返回-1。若开始位置省略，则默认从0开始找。例子：<code>【文本查找@0123456789@5@4】</code>返回<code>5</code>，<code>【文本查找@0123456789@5@6】</code>返回<code>-1</code>。</p>
 <h3 id="-">定义常量</h3>
 <p>【定义常量@<font color="red">常量名</font>@<font color="red">常量内容</font>】<br /></p>
 <p>定义一个常量，常量在所有脚本中可见</p>

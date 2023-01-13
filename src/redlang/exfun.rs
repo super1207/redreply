@@ -796,6 +796,28 @@ pub fn init_ex_fun_map() {
         opener::open(cmd_str)?;
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["文本查找"],|self_t,params|{ 
+        let text = self_t.get_param(params, 0)?;
+        let sub = self_t.get_param(params, 1)?;
+        let pos_str= self_t.get_param(params, 2)?;
+        let pos;
+        if pos_str == "" {
+            pos = 0;
+        }else {
+            pos = pos_str.parse::<usize>()?;
+        }
+        let text_chs = text.chars().collect::<Vec<char>>();
+        if pos >= text_chs.len() {
+            return Ok(Some("-1".to_string()));
+        }
+        let text_str = text_chs.get(pos..).unwrap().iter().collect::<String>();
+        if let Some(pos1) = text_str.find(&sub) {
+            let t = text_str.get(0..pos1).unwrap();
+            let pos2 = t.chars().collect::<Vec<char>>().len();
+            return Ok(Some((pos + pos2).to_string()));
+        }
+        return Ok(Some("-1".to_string()));
+    });
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {
