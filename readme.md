@@ -268,7 +268,7 @@ hellohellohellohellohello
 
 【参数@<font color="red">第几个参数</font>】<br />
 
-参数个数从1开始数，如【参数@1】代表第一个参数，此命令只能在函数或命令中使用。<br />
+参数个数从1开始数，如【参数@1】代表第一个参数。<br />
 
 若参数越界，返回空文本。
 
@@ -745,9 +745,9 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 ### 运行脚本
 
 
-【运行脚本@<font color="red">脚本内容</font>】<br />
+【运行脚本@<font color="red">脚本内容</font>@<font color="red">参数1</font>@<font color="red">参数2</font>...】<br />
 
-在一个新的环境中运行RedLang脚本，返回脚本执行结果。<br />
+在一个新的环境中运行RedLang脚本，返回脚本执行结果，可以带参数<br />
 
 QQ相关的命令依赖的数据，会被共享；而普通变量、序号等信息不会保留。
 

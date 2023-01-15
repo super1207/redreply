@@ -732,7 +732,7 @@ pub fn init_ex_fun_map() {
         std::io::Write::write_all(&mut f, bin.as_bytes())?;
         return Ok(Some("".to_string()));
     });
-    add_fun(vec!["网页截图"],|self_t,params|{
+    add_fun(vec!["网页截图"],|self_t,_params|{
         return Ok(Some(self_t.build_bin(vec![])));
     });
     add_fun(vec!["命令行"],|self_t,params|{
