@@ -77,8 +77,10 @@ const { createApp } = Vue
                         window.open("/watchlog.html", "_blank");
                     },
                     quit_redreply() {
+                        setTimeout(function(){
+                            location.reload();
+                        },1000);
                         axios.get("/close")
-                        location.reload()
                     }
                 }
             }).mount('#app')

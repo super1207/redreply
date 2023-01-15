@@ -38,7 +38,8 @@
               ws.onclose = function () 
               {
                   var ele = document.getElementById("connect_status");
-                 ele.innerHTML = "未连接，刷新重连"
+                  ele.innerHTML = "未连接，自动连接中..."
+                  setTimeout(WebSocketTest,1000);
               }
            }
            else
@@ -52,6 +53,8 @@
    <h1 style="text-align: center;color: red;">红色问答日志</h1>
    <span id="connect_status">正在连接...</span>
    <textarea id="logtext" style="align-content: stretch;flex: 1 0 auto;white-space:pre-wrap;word-wrap: break-word;word-break:break-all" readonly></textarea>
-   <script type="text/javascript">WebSocketTest();</script>
+   <script type="text/javascript">
+      WebSocketTest();
+   </script>
 </body>
 </html>
