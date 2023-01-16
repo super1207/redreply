@@ -28,8 +28,7 @@ pub fn init_ex_fun_map() {
         }
     }
     add_fun(vec!["访问"],|self_t,params|{
-        fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
-            let url = self_t.get_param(params, 0)?;
+        fn access(self_t:&mut RedLang,url:&str) -> Result<Option<String>, Box<dyn std::error::Error>> {
             let mut easy = curl::easy::Easy::new();
             easy.url(&url)?;
             easy.ssl_verify_peer(false)?;
@@ -65,15 +64,14 @@ pub fn init_ex_fun_map() {
             }
             Ok(Some(self_t.build_bin(content)))
         }
-        if let Ok(ret) = access(self_t,params){
+        let url = self_t.get_param(params, 0)?;
+        if let Ok(ret) = access(self_t,&url){
             return Ok(ret);
         }
         return Ok(Some(self_t.build_bin(vec![])));
     });
     add_fun(vec!["POST访问"],|self_t,params|{
-        fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
-            let url = self_t.get_param(params, 0)?;
-            let data_t = self_t.get_param(params, 1)?;
+        fn access(self_t:&mut RedLang,url:&str,data_t:&str) -> Result<Option<String>, Box<dyn std::error::Error>> {
             let tp = self_t.get_type(&data_t)?;
             let data:Vec<u8>;
             if tp == "字节集" {
@@ -124,7 +122,9 @@ pub fn init_ex_fun_map() {
             }
             Ok(Some(self_t.build_bin(content)))
         }
-        if let Ok(ret) = access(self_t,params){
+        let url = self_t.get_param(params, 0)?;
+        let data_t = self_t.get_param(params, 1)?;
+        if let Ok(ret) = access(self_t,&url,&data_t){
             return Ok(ret);
         }
         return Ok(Some(self_t.build_bin(vec![])));
@@ -229,9 +229,12 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["JSON解析"],|self_t,params|{
         let json_str = self_t.get_param(params, 0)?;
-        let json_data_ret:serde_json::Value = serde_json::from_str(&json_str)?;
-        let json_parse_out = do_json_parse(&json_data_ret,&self_t.type_uuid)?;
-        return Ok(Some(json_parse_out));
+        if let Ok(json_data_ret) = serde_json::from_str(&json_str) {
+            let json_parse_out = do_json_parse(&json_data_ret,&self_t.type_uuid)?;
+            return Ok(Some(json_parse_out));
+        }else{
+            return Ok(Some("".to_string())); 
+        }
     });
     add_fun(vec!["读文件"],|self_t,params|{
         let file_path = self_t.get_param(params, 0)?;
