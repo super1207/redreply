@@ -790,6 +790,9 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some("-1".to_string()));
     });
+    add_fun(vec!["错误信息"],|self_t,_params|{
+        return Ok(Some(self_t.get_coremap("错误信息")?.to_owned()));
+    });
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {

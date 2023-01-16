@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any};
+use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any, sync::Arc};
 use encoding::Encoding;
 
 use crate::{G_CONST_MAP, CLEAR_UUID};
@@ -243,11 +243,11 @@ pub struct RedLang {
     params_vec: Vec<Vec<String>>,          // 函数参数栈
     fun_ret_vec: Vec<bool>,                // 记录函数是否返回的栈
     lua : rlua::Lua,
-    exmap:Rc<RefCell<HashMap<String, Rc<String>>>>,
+    pub exmap:Rc<RefCell<HashMap<String, Arc<String>>>>,
     coremap:HashMap<String, String>,
     pub type_uuid:String,
     xuhao: HashMap<String, usize>,
-    pkg_name:String,
+    pub pkg_name:String,
     pub script_name:String
 }
 
@@ -280,13 +280,13 @@ impl RedLang {
     pub fn get_exmap(
         &self,
         key: &str,
-    ) -> Rc<String>{
+    ) -> Arc<String>{
         let v = (*self.exmap).borrow();
         let ret = v.get(key);
         if let Some(v) = ret{
             return v.to_owned();
         }
-        return Rc::new("".to_string());
+        return Arc::new("".to_string());
     }
     #[allow(dead_code)]
     pub fn set_exmap(
@@ -295,7 +295,7 @@ impl RedLang {
         val: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
         let k = &*self.exmap;
-        k.borrow_mut().insert(key.to_owned(), Rc::new(val.to_string()));
+        k.borrow_mut().insert(key.to_owned(), Arc::new(val.to_string()));
         Ok(())
     }
     pub fn get_coremap(

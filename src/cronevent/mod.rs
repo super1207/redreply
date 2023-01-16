@@ -36,7 +36,7 @@ fn do_cron_event_t() -> Result<i32, Box<dyn std::error::Error>> {
                 if now_time == dst_time || now_time + 1 == dst_time{
                     thread::spawn(move ||{
                         let mut rl = crate::redlang::RedLang::new();
-                        if let Err(err) = crate::cqevent::do_script(&mut rl,&code_t) {
+                        if let Err(err) = crate::cqevent::do_script(&mut rl,&code_t,true) {
                             cq_add_log_w(&format!("{}",err)).unwrap();
                         }
                     });

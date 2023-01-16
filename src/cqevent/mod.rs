@@ -3,7 +3,9 @@ mod do_private_msg;
 mod do_guild_msg;
 mod do_other_evt;
 
-use crate::{redlang::RedLang, mytool::read_json_str, PAGING_UUID, CLEAR_UUID, add_running_script_num, dec_running_script_num};
+use std::{rc::Rc, collections::HashMap, sync::Arc, cell::RefCell};
+
+use crate::{redlang::RedLang, mytool::read_json_str, PAGING_UUID, CLEAR_UUID, add_running_script_num, dec_running_script_num, cqapi::cq_add_log_w};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -45,7 +47,7 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
     return msg_type;
 }
 
-pub fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Error>>{
+pub fn do_script(rl:&mut RedLang,code:&str,deal_err:bool) -> Result<(), Box<dyn std::error::Error>>{
     if add_running_script_num() == false {
         return Ok(());
     }
@@ -55,7 +57,45 @@ pub fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Er
 
     let out_str_t_rst = rl.parse(code);
     if let Err(err) = out_str_t_rst {
-        return Err(RedLang::make_err(&format!("在脚本`{}`中发送错误:{}",rl.script_name,err)));
+        let err_str = format!("在脚本`{}`中发送错误:{}",rl.script_name,err);
+        // 如果需要处理错误
+        if deal_err == true {
+            let err_str_t = err_str.clone();
+            let exmap = (*rl.exmap).borrow().clone();
+            let script_name = rl.script_name.clone();
+            let pkg_name = rl.pkg_name.clone();
+            let _foo = std::thread::spawn(move ||{
+                
+                fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str), Box<dyn std::error::Error>>{
+                    let node = script_json.get("content").ok_or("script.json文件缺少content字段")?;
+                    let cffs = node.get("触发方式").ok_or("脚本中无触发方式")?.as_str().ok_or("脚本中触发方式不是str")?;
+                    let code = node.get("code").ok_or("脚本中无code")?.as_str().ok_or("脚本中code不是str")?;
+                    return Ok((cffs,code));
+                } 
+                fn fun(err_str:String,exmap:HashMap<String, Arc<String>>,pkg_name:String,script_name:String) -> Result<i32, Box<dyn std::error::Error>> {
+                    let script_json = crate::read_code()?;
+                    let exmap_ptr = Rc::new(RefCell::new(exmap));
+                    for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
+                        let (cffs,code) = get_script_info(&script_json[i])?;
+                        if cffs == "脚本错误" {
+                            let mut rl2 = crate::redlang::RedLang::new();
+                            rl2.exmap = exmap_ptr.clone();
+                            rl2.pkg_name = pkg_name.clone();
+                            rl2.script_name = script_name.clone();
+                            rl2.set_coremap("错误信息", &err_str)?;
+                            if let Err(err) = crate::cqevent::do_script(&mut rl2,&code,false) {
+                                cq_add_log_w(&format!("{}",err)).unwrap();
+                            }
+                        }      
+                    }
+                    Ok(0)
+                }
+                if let Err(e) = fun(err_str_t,exmap,pkg_name,script_name) {
+                    crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                }
+            });
+        }
+        return Err(RedLang::make_err(&err_str));
     }
     let out_str_t = out_str_t_rst.unwrap();
     // 处理清空指令

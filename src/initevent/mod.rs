@@ -16,7 +16,7 @@ pub fn do_init_event() -> Result<i32, Box<dyn std::error::Error>> {
         let mut rl = crate::redlang::RedLang::new();
         if cffs == "框架初始化" {
             let out = rl.parse(code)?;
-            let ret = crate::cqevent::do_script(&mut rl,&out);
+            let ret = crate::cqevent::do_script(&mut rl,&out,true);
             if let Err(err) = ret{
                 cq_add_log_w(&format!("{}",err)).unwrap();
             }
