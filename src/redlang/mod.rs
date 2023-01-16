@@ -464,9 +464,20 @@ impl RedLang {
             ret_str = String::from(" ");
         } else if cmd == "隐藏" {
             let out = self.get_param(params, 0)?;
-            self.set_coremap("隐藏", &out)?;
+            let var_vec_len = self.var_vec.len();
+            let mp = &mut self.var_vec[var_vec_len - 1];
+            let mut var = RedLangVarType::new();
+            var.set_string(out)?;
+            mp.insert("46631549-6D26-68A5-E192-5EBE9A6EBA61".to_owned(), Rc::new(RefCell::new(var)));
         } else if cmd == "传递" {
-            ret_str = self.get_coremap("隐藏")?.to_string();
+            let k = "46631549-6D26-68A5-E192-5EBE9A6EBA61";
+            let var_ref = self.get_var_ref(&k);
+            if let Some(v) = var_ref {
+                let mut k = (*v).borrow_mut();
+                ret_str = (*k.get_string()).clone();
+            }else {
+                ret_str = "".to_string();
+            }
         } else if cmd == "定义变量" {
             let k = self.get_param(params, 0)?;
             let v = self.get_param(params, 1)?;
