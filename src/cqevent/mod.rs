@@ -3,7 +3,7 @@ mod do_private_msg;
 mod do_guild_msg;
 mod do_other_evt;
 
-use crate::{redlang::RedLang, mytool::read_json_str, PAGING_UUID, CLEAR_UUID};
+use crate::{redlang::RedLang, mytool::read_json_str, PAGING_UUID, CLEAR_UUID, add_running_script_num, dec_running_script_num};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -46,6 +46,13 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
 }
 
 pub fn do_script(rl:&mut RedLang,code:&str) -> Result<(), Box<dyn std::error::Error>>{
+    if add_running_script_num() == false {
+        return Ok(());
+    }
+    let _guard = scopeguard::guard((),|_| {
+        dec_running_script_num();
+    });
+
     let out_str_t_rst = rl.parse(code);
     if let Err(err) = out_str_t_rst {
         return Err(RedLang::make_err(&format!("在脚本`{}`中发送错误:{}",rl.script_name,err)));

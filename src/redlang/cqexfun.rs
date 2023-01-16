@@ -3,6 +3,8 @@ use std::{fs, collections::BTreeMap, path::Path, env::current_exe, vec};
 use crate::{cqapi::{cq_call_api, cq_get_app_directory2}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
+use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
+const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
 fn cq_encode(cq_code:&str) -> String {
     let mut ret_str = String::new();
@@ -179,7 +181,7 @@ pub fn init_cq_ex_fun_map() {
         let mut ret:String = String::new();
         if tp == "字节集" {
             let bin = RedLang::parse_bin(&pic)?;
-            let b64_str = base64::encode(bin);
+            let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
             ret = format!("[CQ:image,file=base64://{}]",b64_str);
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
@@ -188,13 +190,13 @@ pub fn init_cq_ex_fun_map() {
                 if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
                     let path = Path::new(&pic);
                     let bin = std::fs::read(path)?;
-                    let b64_str = base64::encode(bin);
+                    let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
                     ret = format!("[CQ:image,file=base64://{}]",b64_str);
                 }else{
                     let path_str = format!("{}\\data\\image\\{}",current_exe()?.parent().ok_or("无法获取当前exe目录")?.to_string_lossy(),&pic);
                     let path = Path::new(&path_str);
                     let bin = std::fs::read(path)?;
-                    let b64_str = base64::encode(bin);
+                    let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
                     ret = format!("[CQ:image,file=base64://{}]",b64_str);
                 }
             }
@@ -207,7 +209,7 @@ pub fn init_cq_ex_fun_map() {
         let mut ret:String = String::new();
         if tp == "字节集" {
             let bin = RedLang::parse_bin(&pic)?;
-            let b64_str = base64::encode(bin);
+            let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
             ret = format!("[CQ:record,file=base64://{}]",b64_str);
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
@@ -216,13 +218,14 @@ pub fn init_cq_ex_fun_map() {
                 if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
                     let path = Path::new(&pic);
                     let bin = std::fs::read(path)?;
-                    let b64_str = base64::encode(bin);
+                    let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
                     ret = format!("[CQ:record,file=base64://{}]",b64_str);
                 }else{
                     let path_str = format!("{}\\data\\record\\{}",current_exe()?.parent().ok_or("无法获取当前exe目录")?.to_string_lossy(),&pic);
                     let path = Path::new(&path_str);
                     let bin = std::fs::read(path)?;
-                    let b64_str = base64::encode(bin);
+                    
+                    let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
                     ret = format!("[CQ:record,file=base64://{}]",b64_str);
                 }
             }

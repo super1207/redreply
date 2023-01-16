@@ -65,7 +65,7 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
         
     }else if url_path == "/close" {
         cq_add_log_w("收到退出指令，正在退出").unwrap();
-        std::process::exit(0);  
+        crate::wait_for_quit();
     }else{
         let res = hyper::Response::new(hyper::Body::from("api not found"));
         Ok(res)

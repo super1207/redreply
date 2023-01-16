@@ -4,7 +4,7 @@ use chrono::TimeZone;
 use encoding::Encoding;
 use md5::{Md5, Digest};
 use urlencoding::encode;
-use base64;
+use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 use super::RedLang;
 
 use crate::cqapi::cq_add_log;
@@ -14,6 +14,8 @@ use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_c
 use std::io::Cursor;
 use image::io::Reader as ImageReader;
 use imageproc::geometric_transformations::Interpolation;
+
+const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
 pub fn init_ex_fun_map() {
     fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
@@ -325,12 +327,14 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["BASE64编码"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
         let bin = RedLang::parse_bin(&text)?;
-        let b64_str = base64::encode(bin);
+        let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
         return Ok(Some(b64_str));
     });
     add_fun(vec!["BASE64解码"],|self_t,params|{
         let b64_str = self_t.get_param(params, 0)?;
-        let content = base64::decode(b64_str)?;
+        let content = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+            &base64::alphabet::STANDARD,
+            base64::engine::general_purpose::NO_PAD), b64_str)?;
         return Ok(Some(self_t.build_bin(content)));
     });
     add_fun(vec!["延时"],|self_t,params|{

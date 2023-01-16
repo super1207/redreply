@@ -46,6 +46,10 @@ lazy_static! {
     pub static ref G_CMD_FUN_MAP:RwLock<HashMap<String, fn(&mut RedLang,&[String]) -> Result<Option<String>, Box<dyn std::error::Error>>>> = RwLock::new(HashMap::new());
     // 异步事件循环
     pub static ref  RT_PTR:Arc<tokio::runtime::Runtime> = Arc::new(tokio::runtime::Runtime::new().unwrap());
+    // 退出标记
+    pub static ref G_QUIT_FLAG:RwLock<bool> = RwLock::new(false);
+    // 记录正在运行的脚本数量（用于退出）
+    pub static ref G_RUNNING_SCRIPT_NUM:RwLock<usize> = RwLock::new(0usize);
 }
 
 
@@ -54,6 +58,41 @@ lazy_static! {
 #[folder = "res/"]
 #[prefix = "res/"]
 pub struct Asset;
+
+pub fn wait_for_quit() -> ! {
+    (*G_QUIT_FLAG.write().unwrap()) = true;
+    let mut loop_times = 0;
+    loop {
+        {
+            if (*G_RUNNING_SCRIPT_NUM.read().unwrap()) == 0 {
+                break;
+            }
+        }
+        std::thread::sleep(core::time::Duration::from_millis(1));
+        loop_times += 1;
+        if loop_times == 5000 {
+            cq_add_log_w("退出软件超时(5s)，强制退出!").unwrap();
+            break;
+        }
+    }
+    std::process::exit(0);
+}
+
+pub fn add_running_script_num() -> bool {
+    if *G_QUIT_FLAG.read().unwrap() == true {
+        return false;
+    }
+    let mut lk = G_RUNNING_SCRIPT_NUM.write().unwrap();
+    (*lk) += 1;
+    return true;
+}
+
+pub fn dec_running_script_num() {
+    let mut lk = G_RUNNING_SCRIPT_NUM.write().unwrap();
+    if (*lk) != 0 {
+        (*lk) -= 1;
+    }
+}
 
 
 // 这是插件第一个被调用的函数，不要在这里调用任何CQ的API,也不要在此处阻塞
