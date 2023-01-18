@@ -299,8 +299,9 @@ pub fn init_ex_fun_map() {
             let len = cap.len();
             let mut temp_vec:Vec<String> = vec![];
             for i in 0..len {
-                let s = cap.get(i).ok_or("regex cap访问越界")?.as_str();
-                temp_vec.push(s.to_string());
+                if let Some(s) = cap.get(i) {
+                    temp_vec.push(s.as_str().to_owned());
+                }
             }
             sub_key_vec.push(self_t.build_arr(temp_vec));
         }

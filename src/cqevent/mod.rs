@@ -163,10 +163,11 @@ fn is_key_match(rl:&mut RedLang,ppfs:&str,keyword:&str,msg:&str) -> Result<bool,
             temp_vec.push_str(&rl.type_uuid);
             temp_vec.push('A');
             for i in 0..len {
-                let s = cap.get(i).ok_or("regex cap访问越界")?.as_str();
-                temp_vec.push_str(&s.len().to_string());
-                temp_vec.push(',');
-                temp_vec.push_str(s);
+                if let Some(s) = cap.get(i) {
+                    temp_vec.push_str(&s.as_str().len().to_string());
+                    temp_vec.push(',');
+                    temp_vec.push_str(s.as_str());
+                }
             }
             sub_key_vec.push_str(&temp_vec.len().to_string());
             sub_key_vec.push(',');
