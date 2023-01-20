@@ -794,6 +794,30 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["错误信息"],|self_t,_params|{
         return Ok(Some(self_t.get_coremap("错误信息")?.to_owned()));
     });
+    add_fun(vec!["运行SQL"],|self_t,params|{
+        let sqlfile = self_t.get_param(params, 0)?;
+        let sql = self_t.get_param(params, 1)?;
+        let sql_params_str = self_t.get_param(params, 2)?;
+        let sql_params;
+        if sql_params_str == "" {
+            sql_params = vec![];
+        }else{
+            sql_params = RedLang::parse_arr(&sql_params_str)?;
+        }
+        let conn = rusqlite::Connection::open(sqlfile)?;
+        let mut stmt = conn.prepare(&sql)?;
+        let count = stmt.column_count();
+        let mut vec:Vec<String> = vec![];
+        let mut rows = stmt.query(rusqlite::params_from_iter(sql_params.iter()))?;
+        while let Some(row) = rows.next()? {
+            let mut v:Vec<String> = vec![];
+            for i in 0..count {
+                v.push(row.get_unwrap(i));
+            }
+            vec.push(self_t.build_arr(v));
+        }
+        return Ok(Some(self_t.build_arr(vec)));
+    });
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {

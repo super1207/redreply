@@ -948,6 +948,15 @@ CSS选择器可以选择截图的元素，省略CSS选择器表示截图整个�
 用于在<font color="red">脚本错误</font>事件中获取错误信息。
 
 
+### 运行SQL
+
+
+【运行SQL@<font color="red">文件名</font>@<font color="red">sql语句</font>@<font color="red">参数数组</font>】<br />
+
+使用sqlite3引擎来执行sql语句。其中，<font color="red">参数数组</font>可以省略。命令返回的是一个二维数组。
+例子：`【转文本【运行sql@aaa.db@SELECT\ sqlite_version()】】`,返回`[["3.39.2"]]`。
+
+
 ## QQ、频道相关命令说明
 
 

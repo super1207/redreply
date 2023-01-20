@@ -36,7 +36,7 @@ log = "*"
 tracing = "*"
 tracing-subscriber = "*"
 opener = "*"
-
+rusqlite = {version = "*",features = ["bundled"]}
 
 [profile.release]
 panic = 'abort'

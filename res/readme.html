@@ -448,6 +448,10 @@
 <h3 id="-">错误信息</h3>
 <p>【错误信息】<br /></p>
 <p>用于在<font color="red">脚本错误</font>事件中获取错误信息。</p>
+<h3 id="-sql">运行SQL</h3>
+<p>【运行SQL@<font color="red">文件名</font>@<font color="red">sql语句</font>@<font color="red">参数数组</font>】<br /></p>
+<p>使用sqlite3引擎来执行sql语句。其中，<font color="red">参数数组</font>可以省略。命令返回的是一个二维数组。
+例子：<code>【转文本【运行sql@aaa.db@SELECT\ sqlite_version()】】</code>,返回<code>[[&quot;3.39.2&quot;]]</code>。</p>
 <h2 id="qq-">QQ、频道相关命令说明</h2>
 <h3 id="-qq">发送者QQ</h3>
 <p>【发送者QQ】</p>
