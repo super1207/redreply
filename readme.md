@@ -297,11 +297,15 @@ hellohellohellohellohello
 
 支持的数值运算符：<br />
 
+^(指数计算)<br />
+
 \+ - * / %(取余数) //(整除)<br />
 
 支持的逻辑运算符： <br />
 
 \==(等于) !=(不等于) > >= < <=<br />
+
+&&(与) ||(或) !(非)<br />
 
 逻辑运算表达式返回<font color="red">真</font>或<font color="red">假</font>。
 

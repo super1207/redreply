@@ -242,7 +242,6 @@ pub struct RedLang {
     xh_vec: Vec<[bool; 2]>,                // 循环控制栈
     params_vec: Vec<Vec<String>>,          // 函数参数栈
     fun_ret_vec: Vec<bool>,                // 记录函数是否返回的栈
-    lua : rlua::Lua,
     pub exmap:Rc<RefCell<HashMap<String, Arc<String>>>>,
     coremap:HashMap<String, String>,
     pub type_uuid:String,
@@ -632,30 +631,354 @@ impl RedLang {
             let fun_ret_vec_len = self.fun_ret_vec.len();
             self.fun_ret_vec[fun_ret_vec_len - 1] = true;
         } else if cmd == "计算" {
-                let mut k1 = self.get_param(params, 0)?;
-                if k1.contains("=") || k1.contains(">") || k1.contains("<") {
-                    k1 = k1.replace("!", "~");
-                }
-                let r = self.lua.context(|lua_ctx| -> Result<String, Box<dyn std::error::Error>> {
-                    let v = lua_ctx.load(&k1).eval::<rlua::Value>()?;
-                    let ret:String = match v {
-                        rlua::Value::Integer(val) => val.to_string(),
-                        rlua::Value::Number(val) => val.to_string(),
-                        rlua::Value::Boolean(val) => {
-                            if val {
-                                "真".to_string()
-                            }else {
-                                "假".to_string()
-                            }
-                        },
-                        _ => "".to_string()
-                    };
-                    if ret == "" {
-                        RedLang::make_err("计算出错");
+                let k1 = self.get_param(params, 0)?;
+                fn cala(expre:&str) -> Result<String, Box<dyn std::error::Error>> {
+                    let expres_t = expre.chars().collect::<Vec<char>>();
+                    let mut expres:Vec<char> = vec![];
+                    // 去除空白
+                    for it in expres_t {
+                        if !it.is_whitespace() {
+                            expres.push(it);
+                        }
                     }
-                    Ok(ret)
-                })?;
-                ret_str = r;
+                    fn is_num_char(s:&char) -> bool {
+                        let num_vec = ['0','1','2','3','4','5','6','7','8','9','.'];
+                        for ch in num_vec {
+                            if &ch == s {
+                                return true;
+                            }
+                        }
+                        return false;
+                    }
+                    let expre_len = expres.len();
+                    let mut token:Vec<String> = vec![];
+                    let mut temp_str = "".to_owned();
+                    let mut status = 0; //0 normal 1 num 2 fun
+                    let mut i = 0usize;
+                    // 首先要进行分词，分为数字，运算符，括号，逗号
+                    while i < expre_len {
+                        let ch = expres[i];
+                        if status == 0 { //normal
+                            if ch == ',' || ch == '+'  || ch == '*' || ch == '^' || ch == '(' || ch == ')' || ch == '%' || ch == '真' || ch == '假' {
+                                token.push(ch.to_string());
+                            }else if ch == '-' {
+                                if i == 0 || expres[i - 1] == '(' {
+                                    token.push("--".to_string());
+                                }else{
+                                    token.push(ch.to_string());
+                                }
+                            }else if ch == '/' {
+                                let ch1 = expres.get(i+1).ok_or("express error near '/'")?;
+                                if ch1 == &'/' {
+                                    token.push("//".to_string());
+                                    i += 1;
+                                }else{
+                                    token.push(ch.to_string());
+                                }
+                            }
+                            else if ch == '<' {
+                                let ch1 = expres.get(i+1).ok_or("express error near '<'")?;
+                                if ch1 == &'=' {
+                                    token.push("<=".to_string());
+                                    i += 1;
+                                }else{
+                                    token.push(ch.to_string());
+                                }
+                            }else if ch == '>' {
+                                let ch1 = expres.get(i+1).ok_or("express error near '>'")?;
+                                if ch1 == &'=' {
+                                    token.push(">=".to_string());
+                                    i += 1;
+                                }else{
+                                    token.push(ch.to_string());
+                                }
+                            }
+                            else if ch == '!' {
+                                let ch1 = expres.get(i+1).ok_or("express error near '/'")?;
+                                if ch1 == &'=' {
+                                    token.push("!=".to_string());
+                                    i += 1;
+                                }else{
+                                    token.push(ch.to_string());
+                                }
+                            }else if ch == '=' {
+                                let ch1 = expres.get(i+1).ok_or("express error near '='")?;
+                                if ch1 == &'=' {
+                                    token.push("==".to_string());
+                                    i += 1;
+                                }else{
+                                    let k:Option<char> = None;
+                                    k.ok_or(format!("出现未知字符：`{}`","="))?;
+                                }
+                            }else if ch == '|' {
+                                let ch1 = expres.get(i+1).ok_or("express error near '|'")?;
+                                if ch1 == &'|' {
+                                    token.push("||".to_string());
+                                    i += 1;
+                                }else{
+                                    let k:Option<char> = None;
+                                    k.ok_or(format!("出现未知字符：`{}`","|"))?;
+                                }
+                            }else if ch == '&' {
+                                let ch1 = expres.get(i+1).ok_or("express error near '&'")?;
+                                if ch1 == &'&' {
+                                    token.push("&&".to_string());
+                                    i += 1;
+                                }else{
+                                    let k:Option<char> = None;
+                                    k.ok_or(format!("出现未知字符：`{}`","&"))?;
+                                }
+                            }else if is_num_char(&ch) {
+                                status = 1;
+                                temp_str.push('N');
+                                temp_str.push(ch);
+                            }else {
+                                let k:Option<char> = None;
+                                k.ok_or(format!("出现未知字符：`{}`",ch))?;
+                            }
+                        }else if status == 1 { // num
+                            if is_num_char(&ch) {
+                                temp_str.push(ch);
+                            }else {
+                                token.push(temp_str.to_owned());
+                                temp_str.clear();
+                                status = 0;
+                                i -= 1
+                            }
+                        }
+                        i += 1;
+                    }
+                    if !temp_str.is_empty() {
+                        token.push(temp_str.to_owned());
+                        temp_str.clear();
+                    }
+                    // println!("{:?}",token);
+                    let mut oop_map:HashMap<String,i32> = HashMap::new();
+                    oop_map.insert("||".to_owned(), 1);
+                    oop_map.insert("&&".to_owned(), 2);
+                    oop_map.insert("==".to_owned(), 3);
+                    oop_map.insert("<".to_owned(), 3);
+                    oop_map.insert(">".to_owned(), 3);
+                    oop_map.insert(">=".to_owned(), 3);
+                    oop_map.insert("<=".to_owned(), 3);
+                    oop_map.insert("!=".to_owned(), 3);
+                    oop_map.insert("+".to_owned(), 5);
+                    oop_map.insert("-".to_owned(), 5);
+                    oop_map.insert("*".to_owned(), 6);
+                    oop_map.insert("/".to_owned(), 6);
+                    oop_map.insert("//".to_owned(), 6);
+                    oop_map.insert("%".to_owned(), 6);
+                    oop_map.insert("--".to_owned(), 7);
+                    oop_map.insert("!".to_owned(), 7);
+                    oop_map.insert("^".to_owned(), 8);
+                    let mut out_vec:Vec<String> = vec![];
+                    let mut op_stack:Vec<String> = vec![];
+                    // println!("token:{:?}",token);
+                    for it in token {
+                        if it.starts_with("N") || it == "真" || it == "假"{
+                            out_vec.push(it);
+                        }else{
+                            if it == "(" {
+                                op_stack.push(it);
+                            }else if it == ")" {
+                                loop {
+                                    let pop_it = op_stack.pop();
+                                    if pop_it == None {
+                                        let k:Option<char> = None;
+                                        k.ok_or(format!("括号没有成对出现"))?;
+                                    }
+                                    let pop_it_t = pop_it.unwrap();
+                                    if pop_it_t == "(" {
+                                        break;
+                                    }
+                                    out_vec.push(pop_it_t);
+                
+                                }
+                                
+                            }else {
+                                loop {
+                                    if op_stack.is_empty() || op_stack[op_stack.len() - 1] == "(" {
+                                        op_stack.push(it);
+                                        break;
+                                    }
+                                    let pri_it = oop_map.get(&it).ok_or(&format!("未知的运算符:`{}`",it)).unwrap();
+                                    let up = op_stack[op_stack.len() - 1].clone();
+                                    let pri_up = oop_map.get(&up).ok_or(&format!("未知的运算符:`{}`",up)).unwrap();
+                                    if pri_it > pri_up {
+                                        op_stack.push(it);
+                                        break;
+                                    }
+                                    op_stack.pop();
+                                    out_vec.push(up);
+                                }
+                            }
+                        }
+                         
+                    }
+                    
+                    while !op_stack.is_empty() {
+                        let pop_it = op_stack.pop().unwrap();
+                        out_vec.push(pop_it);
+                    }
+                    // println!("mid express:{:?}",out_vec);
+                    let mut out_vec2:Vec<String> = vec![];
+                    for it in out_vec {
+                        if it.starts_with('N') {
+                            out_vec2.push(it.get(1..).unwrap().to_string());
+                        }if it == "真" || it == "假" {
+                            out_vec2.push(it.to_owned());
+                        }else if it == "^" {
+                            let l2 = out_vec2.pop().ok_or("^ err")?;
+                            let l1 = out_vec2.pop().ok_or("^ err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            out_vec2.push((n1.powf(n2)).to_string());
+                        }else if it == "!" {
+                            let l1 = out_vec2.pop().ok_or("! err")?;
+                            if l1 == "真" {
+                                out_vec2.push("假".to_string());
+                            }else{
+                                out_vec2.push("真".to_string());
+                            }
+                        }else if it == "--" {
+                            let l1 = out_vec2.pop().ok_or("- err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            out_vec2.push((-n1).to_string());
+                        }else if it == "%" {
+                            let l2 = out_vec2.pop().ok_or("% err")?;
+                            let l1 = out_vec2.pop().ok_or("% err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            out_vec2.push((n1 % n2).to_string());
+                        }else if it == "/" {
+                            let l2 = out_vec2.pop().ok_or("/ err")?;
+                            let l1 = out_vec2.pop().ok_or("/ err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            out_vec2.push((n1 / n2).to_string());
+                        }else if it == "//" {
+                            let l2 = out_vec2.pop().ok_or("// err")?;
+                            let l1 = out_vec2.pop().ok_or("// err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            out_vec2.push(((n1 / n2) as i64).to_string());
+                        }else if it == "*" {
+                            let l2 = out_vec2.pop().ok_or("* err")?;
+                            let l1 = out_vec2.pop().ok_or("* err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            out_vec2.push((n1 * n2).to_string());
+                        }else if it == "+" {
+                            let l2 = out_vec2.pop().ok_or("+ err")?;
+                            let l1 = out_vec2.pop().ok_or("+ err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            out_vec2.push((n1 + n2).to_string());
+                        }else if it == "-" {
+                            let l2 = out_vec2.pop().ok_or("- err")?;
+                            let l1 = out_vec2.pop().ok_or("- err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            out_vec2.push((n1 - n2).to_string());
+                        }else if it == "==" {
+                            let l2 = out_vec2.pop().ok_or("== err")?;
+                            let l1 = out_vec2.pop().ok_or("== err")?;
+                            if l1 == l2{
+                                out_vec2.push("真".to_string());
+                            }else{
+                                if (l1 == "真" && l2 == "假")||(l1 == "假" && l2 == "真"){
+                                    out_vec2.push("假".to_string());
+                                }else{
+                                    let n1 = l1.parse::<f64>()?;
+                                    let n2 = l2.parse::<f64>()?;
+                                    if (n1 - n2).abs() < 0.0000001f64 {
+                                        out_vec2.push("真".to_string());
+                                    }else{
+                                        out_vec2.push("假".to_string());
+                                    }
+                                }
+                            }
+                        }else if it == "!=" {
+                            let l2 = out_vec2.pop().ok_or("!= err")?;
+                            let l1 = out_vec2.pop().ok_or("!= err")?;
+                            if l1 == l2{
+                                out_vec2.push("假".to_string());
+                            }else{
+                                if (l1 == "真" && l2 == "假")||(l1 == "假" && l2 == "真"){
+                                    out_vec2.push("真".to_string());
+                                }else{
+                                    let n1 = l1.parse::<f64>()?;
+                                    let n2 = l2.parse::<f64>()?;
+                                    if (n1 - n2).abs() < 0.0000001f64 {
+                                        out_vec2.push("假".to_string());
+                                    }else{
+                                        out_vec2.push("真".to_string());
+                                    }
+                                }
+                            }
+                        }else if it == ">" {
+                            let l2 = out_vec2.pop().ok_or("> err")?;
+                            let l1 = out_vec2.pop().ok_or("> err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            if n1 > n2 {
+                                out_vec2.push("真".to_owned());
+                            }else {
+                                out_vec2.push("假".to_owned());
+                            }
+                            
+                        }else if it == "<" {
+                            let l2 = out_vec2.pop().ok_or("< err")?;
+                            let l1 = out_vec2.pop().ok_or("< err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            if n1 < n2 {
+                                out_vec2.push("真".to_owned());
+                            }else {
+                                out_vec2.push("假".to_owned());
+                            }
+                        }else if it == ">=" {
+                            let l2 = out_vec2.pop().ok_or(">= err")?;
+                            let l1 = out_vec2.pop().ok_or(">= err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            if n1 >= n2 {
+                                out_vec2.push("真".to_owned());
+                            }else {
+                                out_vec2.push("假".to_owned());
+                            }
+                        }else if it == "<=" {
+                            let l2 = out_vec2.pop().ok_or("<= err")?;
+                            let l1 = out_vec2.pop().ok_or("<= err")?;
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            if n1 <= n2 {
+                                out_vec2.push("真".to_owned());
+                            }else {
+                                out_vec2.push("假".to_owned());
+                            }
+                        }else if it == "||" {
+                            let l2 = out_vec2.pop().ok_or("|| err")?;
+                            let l1 = out_vec2.pop().ok_or("|| err")?;
+                            if l1=="真"  || l2 == "真"{
+                                out_vec2.push("真".to_owned());
+                            }else {
+                                out_vec2.push("假".to_owned());
+                            }
+                        }else if it == "&&" {
+                            let l2 = out_vec2.pop().ok_or("&& err")?;
+                            let l1 = out_vec2.pop().ok_or("&& err")?;
+                            if l1=="真"  && l2 == "真"{
+                                out_vec2.push("真".to_owned());
+                            }else {
+                                out_vec2.push("假".to_owned());
+                            }
+                        }
+                        
+                    }
+                    return Ok(out_vec2.get(0).ok_or("计算失败")?.to_string());
+                }
+                ret_str = cala(&k1)?;
         }else if cmd == "数组" {
             let arr_len = params.len();
             let mut temp_ret:Vec<String> = vec![];
@@ -1131,7 +1454,6 @@ impl RedLang {
             xh_vec: vec![],
             params_vec: v2,
             fun_ret_vec: v3,
-            lua : rlua::Lua::new(),
             exmap: Rc::new(RefCell::new(HashMap::new())),
             coremap: HashMap::new(),
             type_uuid:crate::REDLANG_UUID.to_string(),
