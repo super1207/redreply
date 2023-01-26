@@ -16,12 +16,19 @@
     </head>
     <body>
         <div id="app">
-            <h1>红色问答 0.0.16</h1>
+            <h1>红色问答 0.0.17</h1>
+            <div id="pkg_btn_vec">
+                <div v-for="(pkg_content,pkg_name) in pkg_codes" @click="" >
+                    <button @click="if(pkg_name!=select_pkg_name){this.save_cache(select_name_index);select_name_index_change(-1);select_name_index=-1;select_pkg_name=pkg_name}" :class="{name_active:pkg_name==select_pkg_name}">
+                        {{ pkg_name }}
+                    </button>
+                </div>
+            </div>
             <div id="pkg_content">
                 <div>
                     <div>名字</div>
                     <div>
-                        <div v-for="(code,index) in codes" @click="this.save_cache(select_name_index);select_name_index_change(index,select_name_index);select_name_index=index" :class="{name_active:index==select_name_index}">
+                        <div v-for="(code,index) in pkg_codes[select_pkg_name]" @click="this.save_cache(select_name_index);select_name_index_change(index);select_name_index=index" :class="{name_active:index==select_name_index}">
                             {{ code["name"] }}
                         </div>
                     </div>

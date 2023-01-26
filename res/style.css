@@ -17,6 +17,7 @@ html,body{
 
 #pkg_content{ /* 包内容 */
     display: flex;
+    height: 0; /* 使得内容不会被子元素撑开 */
     flex: 1 0 auto;
 }
 
@@ -24,6 +25,7 @@ html,body{
     display: flex;
     flex-direction: column;
     text-align: center;
+    overflow: auto;
     flex: 1 0 auto;
 }
 #pkg_content > div:nth-child(1) > div:nth-child(1) { /* 包内容左边-标题 */
@@ -88,4 +90,8 @@ html,body{
 
 .name_active { /* 点中名字，变色属性 */
     color: red;
+}
+
+#pkg_btn_vec {
+    display: flex;
 }

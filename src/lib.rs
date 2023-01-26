@@ -43,7 +43,7 @@ lazy_static! {
     // 用于撤回消息
     pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,Vec<String>>> = RwLock::new(HashMap::new());
     // 用于记录自定义的命令
-    pub static ref G_CMD_MAP:RwLock<HashMap<String, String>> = RwLock::new(HashMap::new());
+    pub static ref G_CMD_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
     // 用于记录命令
     pub static ref G_CMD_FUN_MAP:RwLock<HashMap<String, fn(&mut RedLang,&[String]) -> Result<Option<String>, Box<dyn std::error::Error>>>> = RwLock::new(HashMap::new());
     // 异步事件循环
@@ -140,9 +140,10 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     Ok(serde_json::from_str(&script)?)
 }
 
-fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+pub fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let plus_dir_str = cq_get_app_directory1()?;
     let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
+    std::fs::create_dir_all(&pkg_dir)?;
     let dirs = fs::read_dir(&pkg_dir)?;
     let mut pkg_names:Vec<String> = vec![];
     for dir in dirs {
@@ -161,6 +162,20 @@ fn get_all_pkg_code() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Erro
     let mut arr_val:Vec<serde_json::Value> = vec![];
     for it in &pkg_names {
         let script_path = pkg_dir.join(&it).join("script.json");
+        {
+            // 判断文件是否存在
+            let mut is_file_exists = false;
+            if fs::metadata(script_path.clone()).is_ok() {
+                if fs::metadata(script_path.clone())?.is_file(){
+                    is_file_exists = true;
+                }
+            }
+            // 不存在就创建文件
+            if !is_file_exists{
+                fs::write(script_path.clone(), "[]")?;
+            }
+        }
+        
         let script = fs::read_to_string(script_path)?;
         let mut pkg_script_vec:Vec<serde_json::Value> = serde_json::from_str(&script)?;
         for js in &mut pkg_script_vec {

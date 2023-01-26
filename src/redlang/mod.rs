@@ -5,6 +5,31 @@ use crate::{G_CONST_MAP, CLEAR_UUID};
 pub mod exfun;
 pub(crate) mod cqexfun;
 
+lazy_static! {
+    static ref OOP_MAP:HashMap<String,i32> = {
+        let mut oop_map:HashMap<String,i32> = HashMap::new();    
+        oop_map.insert("||".to_owned(), 1);
+        oop_map.insert("&&".to_owned(), 2);
+        oop_map.insert("==".to_owned(), 3);
+        oop_map.insert("<".to_owned(), 3);
+        oop_map.insert(">".to_owned(), 3);
+        oop_map.insert(">=".to_owned(), 3);
+        oop_map.insert("<=".to_owned(), 3);
+        oop_map.insert("!=".to_owned(), 3);
+        oop_map.insert("+".to_owned(), 5);
+        oop_map.insert("-".to_owned(), 5);
+        oop_map.insert("*".to_owned(), 6);
+        oop_map.insert("/".to_owned(), 6);
+        oop_map.insert("//".to_owned(), 6);
+        oop_map.insert("%".to_owned(), 6);
+        oop_map.insert("--".to_owned(), 7);
+        oop_map.insert("!".to_owned(), 7);
+        oop_map.insert("^".to_owned(), 8);
+        oop_map
+    };
+    
+}
+
 struct RedLangVarType {
     show_str:Rc<String>,
     dat:Box<dyn Any>
@@ -403,9 +428,13 @@ impl RedLang {
             let fun;
             {
                 let r = crate::G_CMD_MAP.read()?;
-                fun = match r.get(cmd){
-                    Some(f) => Some(f.clone()),
-                    None =>  None
+                if let Some(m) = r.get(&self.pkg_name) {
+                    fun = match m.get(cmd){
+                        Some(f) => Some(f.clone()),
+                        None =>  None
+                    }
+                }else {
+                    fun = None;
                 }
             }
             match fun {
@@ -615,7 +644,17 @@ impl RedLang {
             let func = params.get(1).ok_or("定义命令:读取参数失败")?;
             let fun = self.parse_fun(&func)?;
             let mut w = crate::G_CMD_MAP.write()?;
-            w.insert(func_name, fun);
+            match w.get_mut(&self.pkg_name){
+                Some(r) => {
+                    r.insert(func_name, fun);
+                },
+                None => {
+                    let mut r = HashMap::new();
+                    r.insert(func_name, fun);
+                    w.insert(self.pkg_name.clone(), r);
+                },
+            };
+            ret_str = "".to_string();
         }else if cmd == "函数调用" || cmd == "调用函数" {
             ret_str = self.call_fun(params,false)?;
         } else if cmd == "参数" {
@@ -753,24 +792,6 @@ impl RedLang {
                         temp_str.clear();
                     }
                     // println!("{:?}",token);
-                    let mut oop_map:HashMap<String,i32> = HashMap::new();
-                    oop_map.insert("||".to_owned(), 1);
-                    oop_map.insert("&&".to_owned(), 2);
-                    oop_map.insert("==".to_owned(), 3);
-                    oop_map.insert("<".to_owned(), 3);
-                    oop_map.insert(">".to_owned(), 3);
-                    oop_map.insert(">=".to_owned(), 3);
-                    oop_map.insert("<=".to_owned(), 3);
-                    oop_map.insert("!=".to_owned(), 3);
-                    oop_map.insert("+".to_owned(), 5);
-                    oop_map.insert("-".to_owned(), 5);
-                    oop_map.insert("*".to_owned(), 6);
-                    oop_map.insert("/".to_owned(), 6);
-                    oop_map.insert("//".to_owned(), 6);
-                    oop_map.insert("%".to_owned(), 6);
-                    oop_map.insert("--".to_owned(), 7);
-                    oop_map.insert("!".to_owned(), 7);
-                    oop_map.insert("^".to_owned(), 8);
                     let mut out_vec:Vec<String> = vec![];
                     let mut op_stack:Vec<String> = vec![];
                     // println!("token:{:?}",token);
@@ -801,9 +822,9 @@ impl RedLang {
                                         op_stack.push(it);
                                         break;
                                     }
-                                    let pri_it = oop_map.get(&it).ok_or(&format!("未知的运算符:`{}`",it)).unwrap();
+                                    let pri_it = OOP_MAP.get(&it).ok_or(&format!("未知的运算符:`{}`",it)).unwrap();
                                     let up = op_stack[op_stack.len() - 1].clone();
-                                    let pri_up = oop_map.get(&up).ok_or(&format!("未知的运算符:`{}`",up)).unwrap();
+                                    let pri_up = OOP_MAP.get(&up).ok_or(&format!("未知的运算符:`{}`",up)).unwrap();
                                     if pri_it > pri_up {
                                         op_stack.push(it);
                                         break;

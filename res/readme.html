@@ -65,7 +65,7 @@
 				</div>
         <div id='readme' style='width:70%;margin-left:20%;'>
           	<article class='markdown-body'>
-            	<h1 id="redlang-v0-0-16-">RedLang v0.0.16 语法简述</h1>
+            	<h1 id="redlang-v0-0-17-">RedLang v0.0.17 语法简述</h1>
 <p>注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br /></p>
 <p>作者qq：1875159423<br /></p>
 <p>qq群号：920220179 (目前使用MiraiCQ的群)<br /></p>
@@ -604,6 +604,17 @@
 <h2 id="-">脚本错误事件</h2>
 <p>如果触发类型是<font color="red">脚本错误</font>，那么，脚本内容会在脚本发生错误时触发，可以通过命令【错误信息】来获取发生的错误。<br /></p>
 <p>QQ相关的信息，会复制到错误事件中；在错误事件中再次发生错误，不会再次触发错误事件。</p>
+<h2 id="-">包管理说明(未完全完成)</h2>
+<p>注意：创建或删除包后，需要重启才能生效。</p>
+<h3 id="-">默认包</h3>
+<p><code>默认包</code>目录位于<code>【运行目录】plus_dir/default_pkg_dir/</code>。红色问答始终存在唯一的默认包。</p>
+<h3 id="-">附加包</h3>
+<p><code>附加包</code>目录位于<code>【运行目录】plus_dir/pkg_dir/xxxx/</code>。红色问答可以有多个附加包，<code>xxxx为包名</code>。<br />
+要手动增加一个附加包，在<code>【运行目录】plus_dir/pkg_dir/</code>目录下建一个文件夹即可，注意，文件夹的名字<strong>不可以</strong>为<code>默认包</code>。</p>
+<h3 id="-">包资源</h3>
+<p>不同的包中：常量、自定义命令相互隔离，<strong>暂时</strong>还不能互相访问。包的【应用目录】，为各包的脚本文件<code>script.json</code>所在目录。</p>
+<h3 id="-">包描述文件(暂未实现，无视即可)</h3>
+<p>在各包的<code>script.json</code>所在的目录下，有一个名为<code>app.json</code>的包描述文件，里面包含包的基本信息:版本号、作者、描述、依赖。</p>
 
           	</article>
         </div>
