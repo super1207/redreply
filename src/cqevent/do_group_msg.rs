@@ -23,7 +23,7 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
     let script_json = read_code()?;
     let mut is_set_msg_id_map = false;
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
-        let (keyword,cffs,code,ppfs,name) = get_script_info(&script_json[i])?;
+        let (keyword,cffs,code,ppfs,name,pkg_name) = get_script_info(&script_json[i])?;
         let mut rl = RedLang::new();
         if cffs == "群聊触发" || cffs == "群、私聊触发"{
             rl.set_exmap("内容", &msg)?;
@@ -56,6 +56,7 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
                 rl.set_exmap("当前消息",&msg)?;
             }
             if is_key_match(&mut rl,&ppfs,keyword,&msg)? {
+                rl.pkg_name = pkg_name.to_owned();
                 rl.script_name = name.to_owned();
                 super::do_script(&mut rl,code,true)?;
             }    

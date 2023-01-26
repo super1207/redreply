@@ -1,6 +1,6 @@
-use std::{fs, collections::BTreeMap, path::Path, env::current_exe, vec};
+use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr};
 
-use crate::{cqapi::{cq_call_api, cq_get_app_directory2}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID};
+use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -388,8 +388,15 @@ pub fn init_cq_ex_fun_map() {
         }
         return Ok(Some(self_t.build_obj(dict_obj)));
     });
-    add_fun(vec!["应用目录"],|_self_t,_params|{
-        let app_dir = cq_get_app_directory2()?;
+    add_fun(vec!["应用目录"],|self_t,_params|{
+        let app_dir;
+        if self_t.pkg_name == "" {
+            app_dir = cq_get_app_directory2()?;
+        }else{
+            let plus_dir_str = cq_get_app_directory1()?;
+            let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
+            app_dir = pkg_dir.join(&self_t.pkg_name).to_str().ok_or("获得应用目录失败")?.to_owned() + &std::path::MAIN_SEPARATOR.to_string();
+        }
         return Ok(Some(app_dir));
     });
     add_fun(vec!["取艾特"],|self_t,_params|{

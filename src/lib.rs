@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::fs;
 use std::panic;
+use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::RwLock;
 use cqapi::cq_get_app_directory2;
@@ -138,30 +140,103 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     Ok(serde_json::from_str(&script)?)
 }
 
+fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let plus_dir_str = cq_get_app_directory1()?;
+    let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
+    let dirs = fs::read_dir(&pkg_dir)?;
+    let mut pkg_names:Vec<String> = vec![];
+    for dir in dirs {
+        let path = dir?.path();
+        if path.is_dir() {
+            pkg_names.push(format!("{}",path.file_name().unwrap().to_string_lossy()));
+        }
+    }
+    Ok(pkg_names)
+}
+
+fn get_all_pkg_code() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
+    let plus_dir_str = cq_get_app_directory1()?;
+    let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
+    let pkg_names = get_all_pkg_name()?;
+    let mut arr_val:Vec<serde_json::Value> = vec![];
+    for it in &pkg_names {
+        let script_path = pkg_dir.join(&it).join("script.json");
+        let script = fs::read_to_string(script_path)?;
+        let mut pkg_script_vec:Vec<serde_json::Value> = serde_json::from_str(&script)?;
+        for js in &mut pkg_script_vec {
+            if let Some(obj) = js.as_object_mut() {
+                obj.insert("pkg_name".to_string(),serde_json::Value::String(it.to_string()));
+                arr_val.push(serde_json::Value::Object(obj.clone()));
+            }
+        }
+    }
+    Ok(arr_val)
+}
+
 pub fn init_code() -> Result<(), Box<dyn std::error::Error>>{
     let script_path = cq_get_app_directory2()? + "script.json";
+    // 判断文件是否存在
     let mut is_file_exists = false;
     if fs::metadata(script_path.clone()).is_ok() {
         if fs::metadata(script_path.clone())?.is_file(){
             is_file_exists = true;
         }
     }
+    // 不存在就创建文件
     if !is_file_exists{
-        fs::write(script_path, "[]")?;
-        return Ok(());
+        fs::write(script_path.clone(), "[]")?;
     }
+
+    // 获取默认包代码
     let script = fs::read_to_string(script_path)?;
+    let mut arr_val:Vec<serde_json::Value> = serde_json::from_str(&script)?;
+
+    // 获取所有三方包代码
+    let pkg_codes = get_all_pkg_code()?;
+    for it in pkg_codes {
+        arr_val.push(it);
+    }
+
+    // 保存代码到内存
     let mut wk = G_SCRIPT.write()?;
-    (*wk) = serde_json::from_str(&script)?;
+    (*wk) = serde_json::Value::Array(arr_val);
     Ok(())
 }
 
 pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut code_map:HashMap<String,Vec<serde_json::Value>> = HashMap::new();
+    for it in get_all_pkg_name()? {
+        code_map.insert(it, vec![]);
+    }
+    code_map.insert("".to_string(), vec![]);
+    let js:Vec<serde_json::Value> = serde_json::from_str(contents)?;
+    for it in &js {
+        let pkg_name_opt = it.as_object().ok_or("脚本格式错误")?.get("pkg_name");
+        let mut pkg_name_str = "";
+        if let Some(pkg_name) = pkg_name_opt {
+            pkg_name_str = pkg_name.as_str().unwrap_or_default();
+        }
+        if !code_map.contains_key(pkg_name_str) {
+            code_map.insert(pkg_name_str.to_owned(), vec![]);
+        }
+        code_map.get_mut(pkg_name_str).unwrap().push(it.to_owned());
+    }
     {
+        let plus_dir_str = cq_get_app_directory1()?;
+        let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
         let mut wk = G_SCRIPT.write()?;
-        let js = serde_json::from_str(contents)?;
-        fs::write(cq_get_app_directory2()? + "script.json", contents).unwrap();
-        (*wk) = js;
+        for (pkg_name,code) in code_map {
+            let cont = serde_json::Value::Array(code).to_string();
+            if pkg_name == "" {
+                fs::write(cq_get_app_directory2()? + "script.json", cont).unwrap();
+            }else {
+                let script_path = pkg_dir.join(pkg_name).join("script.json");
+                fs::write(script_path, cont).unwrap();
+            }
+        }
+        
+        
+        (*wk) = serde_json::Value::Array(js);
     }
     if let Err(err) = crate::initevent::do_init_event(){
         cq_add_log_w(&format!("can't call init evt:{}",err)).unwrap();

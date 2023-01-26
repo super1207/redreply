@@ -57,7 +57,7 @@ pub fn do_script(rl:&mut RedLang,code:&str,deal_err:bool) -> Result<(), Box<dyn 
 
     let out_str_t_rst = rl.parse(code);
     if let Err(err) = out_str_t_rst {
-        let err_str = format!("在脚本`{}`中发送错误:{}",rl.script_name,err);
+        let err_str = format!("在包`{}`脚本`{}`中发送错误:{}",rl.pkg_name, rl.script_name,err);
         // 如果需要处理错误
         if deal_err == true {
             let err_str_t = err_str.clone();
@@ -66,18 +66,27 @@ pub fn do_script(rl:&mut RedLang,code:&str,deal_err:bool) -> Result<(), Box<dyn 
             let pkg_name = rl.pkg_name.clone();
             let _foo = std::thread::spawn(move ||{
                 
-                fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str), Box<dyn std::error::Error>>{
+                fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str,&'a str), Box<dyn std::error::Error>>{
+                    let pkg_name_opt = script_json.get("pkg_name");
+                    let mut pkg_name = "";
+                    if let Some(val) = pkg_name_opt {
+                        pkg_name = val.as_str().ok_or("pkg_name不是字符串")?;
+                    }
+                    // let name = script_json.get("name").ok_or("脚本中无name")?.as_str().ok_or("脚本中name不是str")?;
                     let node = script_json.get("content").ok_or("script.json文件缺少content字段")?;
                     let cffs = node.get("触发方式").ok_or("脚本中无触发方式")?.as_str().ok_or("脚本中触发方式不是str")?;
                     let code = node.get("code").ok_or("脚本中无code")?.as_str().ok_or("脚本中code不是str")?;
-                    return Ok((cffs,code));
+                    return Ok((cffs,code,pkg_name));
                 } 
                 fn fun(err_str:String,exmap:HashMap<String, Arc<String>>,pkg_name:String,script_name:String) -> Result<i32, Box<dyn std::error::Error>> {
                     let script_json = crate::read_code()?;
                     let exmap_ptr = Rc::new(RefCell::new(exmap));
                     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
-                        let (cffs,code) = get_script_info(&script_json[i])?;
+                        let (cffs,code,pkg_name_t) = get_script_info(&script_json[i])?;
                         if cffs == "脚本错误" {
+                            if pkg_name_t != pkg_name {
+                                continue;
+                            }
                             let mut rl2 = crate::redlang::RedLang::new();
                             rl2.exmap = exmap_ptr.clone();
                             rl2.pkg_name = pkg_name.clone();
@@ -178,7 +187,12 @@ fn is_key_match(rl:&mut RedLang,ppfs:&str,keyword:&str,msg:&str) -> Result<bool,
     Ok(is_match)
 }
 
-fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str,&'a str,&'a str,&'a str), Box<dyn std::error::Error>>{
+fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str,&'a str,&'a str,&'a str,&'a str), Box<dyn std::error::Error>>{
+    let pkg_name_opt = script_json.get("pkg_name");
+    let mut pkg_name = "";
+    if let Some(val) = pkg_name_opt {
+        pkg_name = val.as_str().ok_or("pkg_name不是字符串")?;
+    }
     let name = script_json.get("name").ok_or("脚本中无name")?.as_str().ok_or("脚本中name不是str")?;
     let node = script_json.get("content").ok_or("script.json文件缺少content字段")?;
     let keyword = node.get("关键词").ok_or("脚本中无关键词")?.as_str().ok_or("脚本中关键词不是str")?;
@@ -186,5 +200,5 @@ fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a
     let code = node.get("code").ok_or("脚本中无code")?.as_str().ok_or("脚本中code不是str")?;
     let ppfs = node.get("匹配方式").ok_or("脚本中无匹配方式")?.as_str().ok_or("脚本中匹配方式不是str")?;
     
-    return Ok((keyword,cffs,code,ppfs,name));
+    return Ok((keyword,cffs,code,ppfs,name,pkg_name));
 }
