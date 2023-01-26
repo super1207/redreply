@@ -152,6 +152,10 @@ pub fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error>> {
             pkg_names.push(format!("{}",path.file_name().unwrap().to_string_lossy()));
         }
     }
+    if pkg_names.contains(&"默认包".to_string()) {
+        // 这里强制退出程序
+        return Err(RedLang::make_err("附加包的包名不可以为`默认包`!")).unwrap();
+    }
     Ok(pkg_names)
 }
 
@@ -234,7 +238,11 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
         if !code_map.contains_key(pkg_name_str) {
             code_map.insert(pkg_name_str.to_owned(), vec![]);
         }
-        code_map.get_mut(pkg_name_str).unwrap().push(it.to_owned());
+        let mut it_t = it.to_owned();
+        if let Some(k) = it_t.as_object_mut() {
+            k.remove("pkg_name");
+        }
+        code_map.get_mut(pkg_name_str).unwrap().push(it_t);
     }
     {
         let plus_dir_str = cq_get_app_directory1()?;
