@@ -162,6 +162,14 @@ hellohellohellohellohello
 用来使用距离当前作用域最近的被【隐藏】命令隐藏的内容，若不存在，返回空文本。
 
 
+### 屏蔽
+
+
+【屏蔽@<font color="red">要屏蔽的内容</font>】<br />
+
+用来隐藏命令输出。
+
+
 ### 定义变量
 
 
@@ -1072,7 +1080,16 @@ CSS选择器可以选择截图的元素，省略CSS选择器表示截图整个�
 ### 撤回
 
 
-【撤回@<font color="red">消息ID</font>或<font color="red">消息ID数组</font>】
+【撤回@<font color="red">消息ID</font>或<font color="red">消息ID数组</font>】<br />
+
+若省略参数，则表示撤回当前消息。
+
+### 撤回
+
+
+【禁言@<font color="red">时间(秒)</font>】<br />
+
+禁言当前发消息的人，0表示解除禁言。
 
 
 ### 输出流
@@ -1177,7 +1194,7 @@ CQ码<strong>外部</strong>的字符需要CQ转义，以上三个命令的作�
 
 支持的键包括：<font color="red">机器人ID</font>、<font color="red">机器人频道ID</font>、<font color="red">频道ID</font>、<font color="red">子频道ID</font>、<font color="red">群ID</font>、<font color="red">发送者ID</font>。<br />
 
-受此命令影响的命令有：【发送者QQ】【发送者ID】【当前群号】【当前频道ID】【当前子频道ID】【机器人QQ】【机器人ID】【OB调用】【输出流】
+受此命令影响的命令有：文档待补充.jpg
 
 
 ### 事件内容

@@ -267,6 +267,22 @@ pub fn init_cq_ex_fun_map() {
         }  
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["禁言"],|self_t,params|{
+        let ban_time = self_t.get_param(params, 0)?;
+        let user_id_str = self_t.get_exmap("发送者ID").to_string();
+        let group_id_str = self_t.get_exmap("群ID").to_string();
+        let send_json = serde_json::json!({
+            "action":"set_group_ban",
+            "params":{
+                "group_id": group_id_str,
+                "user_id": user_id_str,
+                "duration":ban_time.parse::<usize>()?
+            }
+        });
+        let self_id = self_t.get_exmap("机器人ID");
+        cq_call_api(&self_id,&send_json.to_string())?;
+        return Ok(Some("".to_string()));
+    });
     add_fun(vec!["输出流"],|self_t,params|{
         let msg = self_t.get_param(params, 0)?;
         let msg_id = send_one_msg(&self_t,&msg)?;
@@ -444,6 +460,9 @@ pub fn init_cq_ex_fun_map() {
                 self_t.set_exmap("频道ID","")?;
                 self_t.set_exmap("子频道ID","")?;
             }
+            let val = self_t.get_param(params, 1)?;
+            self_t.set_exmap(&key, &val)?;
+        }else {
             let val = self_t.get_param(params, 1)?;
             self_t.set_exmap(&key, &val)?;
         }

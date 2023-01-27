@@ -523,7 +523,10 @@ impl RedLang {
             }else {
                 ret_str = "".to_string();
             }
-        } else if cmd == "赋值变量" {
+        }else if cmd == "屏蔽" {
+            let _k = self.get_param(params, 0)?;
+        }
+        else if cmd == "赋值变量" {
             let k = self.get_param(params, 0)?;
             let var_vec_len = self.var_vec.len();
             let mut is_set = false;
