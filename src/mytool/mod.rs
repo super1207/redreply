@@ -1,3 +1,7 @@
+use std::collections::HashMap;
+
+use crate::redlang::RedLang;
+
 fn cq_text_encode(data:&str) -> String {
     let mut ret_str:String = String::new();
     for ch in data.chars() {
@@ -15,6 +19,172 @@ fn cq_text_encode(data:&str) -> String {
         }
     }
     return ret_str;
+}
+
+pub fn str_msg_to_arr(js:&serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    let cqstr;
+    if let Some(val) = js.as_str() {
+        cqstr = val.chars().collect::<Vec<char>>();
+    } else {
+        return Err(RedLang::make_err("无法获得字符串消息"));
+    }
+    let mut text = "".to_owned();
+    let mut type_ = "".to_owned();
+    let mut val = "".to_owned();
+    let mut key = "".to_owned();
+    let mut jsonarr:Vec<serde_json::Value> = vec![];
+    let mut cqcode:HashMap<String,serde_json::Value> = HashMap::new();
+    let mut stat = 0;
+    let mut i = 0usize;
+    while i < cqstr.len() {
+        let cur_ch = cqstr[i];
+        if stat == 0 {
+            if cur_ch == '[' {
+                if i + 4 <= cqstr.len() {
+                    let t = &cqstr[i..i+4];
+                    if t.starts_with(&['[','C','Q',':']) {
+                        if text.len() != 0 {
+                            let mut node:HashMap<String, serde_json::Value> = HashMap::new();
+                            node.insert("type".to_string(), serde_json::json!("text"));
+                            node.insert("data".to_string(), serde_json::json!({"text": text}));
+                            jsonarr.push(serde_json::json!(node));
+                            text.clear();
+                        }
+                        stat = 1;
+                        i += 3;
+                    }else {
+                        text.push(cqstr[i]);
+                    }
+                }else{
+                    text.push(cqstr[i]);
+                }
+            }else if cur_ch == '&' {
+                if i + 5 <= cqstr.len() {
+                    let t = &cqstr[i..i+5];
+                    if t.starts_with(&['&','#','9','1',';']) {
+                        text.push('[');
+                        i += 4;
+                    }else if t.starts_with(&['&','#','9','3',';']) {
+                        text.push(']');
+                        i += 4;
+                    }else if t.starts_with(&['&','a','m','p',';']) {
+                        text.push('&');
+                        i += 4;
+                    }else {
+                        text.push(cqstr[i]);
+                    }
+                }else{
+                    text.push(cqstr[i]);
+                }
+            }else{
+                text.push(cqstr[i]);
+            }
+        }else if stat == 1 {
+            if cur_ch == ',' {
+                stat = 2;
+            }else if cur_ch == '&' {
+                if i + 5 <= cqstr.len() {
+                    let t = &cqstr[i..i+5];
+                    if t.starts_with(&['&','#','9','1',';']) {
+                        type_.push('[');
+                        i += 4;
+                    }else if t.starts_with(&['&','#','9','3',';']) {
+                        type_.push(']');
+                        i += 4;
+                    }else if t.starts_with(&['&','a','m','p',';']) {
+                        type_.push('&');
+                        i += 4;
+                    }else if t.starts_with(&['&','#','4','4',';']) {
+                        type_.push(',');
+                        i += 4;
+                    }else {
+                        type_.push(cqstr[i]);
+                    }
+                }else{
+                    type_.push(cqstr[i]);
+                }
+            }else {
+                type_.push(cqstr[i]);
+            }
+        }else if stat == 2 {
+            if cur_ch == '=' {
+                stat = 3;
+            }else if cur_ch == '&' {
+                if i + 5 <= cqstr.len() {
+                    let t = &cqstr[i..i+5];
+                    if t.starts_with(&['&','#','9','1',';']) {
+                        key.push('[');
+                        i += 4;
+                    }else if t.starts_with(&['&','#','9','3',';']) {
+                        key.push(']');
+                        i += 4;
+                    }else if t.starts_with(&['&','a','m','p',';']) {
+                        key.push('&');
+                        i += 4;
+                    }else if t.starts_with(&['&','#','4','4',';']) {
+                        key.push(',');
+                        i += 4;
+                    }else {
+                        key.push(cqstr[i]);
+                    }
+                }else{
+                    key.push(cqstr[i]);
+                }
+            }else {
+                key .push(cqstr[i]);
+            }
+        }else if stat == 3 {
+            if cur_ch == ']'{
+                let mut node:HashMap<String, serde_json::Value> = HashMap::new();
+                cqcode.insert(key.clone(), serde_json::json!(val));
+                node.insert("type".to_string(), serde_json::json!(type_));
+                node.insert("data".to_string(), serde_json::json!(cqcode));
+                jsonarr.push(serde_json::json!(node));
+                key.clear();
+                val.clear();
+                text.clear();
+                type_.clear();
+                cqcode.clear();
+                stat = 0;
+            }else if cur_ch == ',' {
+                cqcode.insert(key.clone(), serde_json::json!(val));
+                key.clear();
+                val.clear();
+                stat = 2;
+            }else if cur_ch == '&' {
+                if i + 5 <= cqstr.len() {
+                    let t = &cqstr[i..i+5];
+                    if t.starts_with(&['&','#','9','1',';']) {
+                        val.push('[');
+                        i += 4;
+                    }else if t.starts_with(&['&','#','9','3',';']) {
+                        val.push(']');
+                        i += 4;
+                    }else if t.starts_with(&['&','a','m','p',';']) {
+                        val.push('&');
+                        i += 4;
+                    }else if t.starts_with(&['&','#','4','4',';']) {
+                        val.push(',');
+                        i += 4;
+                    }else {
+                        val.push(cqstr[i]);
+                    }
+                }else{
+                    val.push(cqstr[i]);
+                }
+            }else {
+                val.push(cqstr[i]);
+            }
+        }
+         i += 1;
+    }
+    if text.len() != 0 {
+        let mut node:HashMap<String, serde_json::Value> = HashMap::new();
+        node.insert("type".to_string(), serde_json::json!("text"));
+        node.insert("data".to_string(), serde_json::json!({"text": text}));
+        jsonarr.push(serde_json::json!(node));
+    }
+    Ok(serde_json::Value::Array(jsonarr))
 }
 
 pub fn read_json_str(root:&serde_json::Value,key:&str) -> String {

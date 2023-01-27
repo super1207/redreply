@@ -9,7 +9,13 @@ use crate::{redlang::RedLang, mytool::read_json_str, PAGING_UUID, CLEAR_UUID, ad
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
-    let root:serde_json::Value = serde_json::from_str(onebot_json_str)?;
+    let mut root:serde_json::Value = serde_json::from_str(onebot_json_str)?;
+    if let Some(msg) = root.get("message") {
+        if msg.is_string() {
+            let arrmsg = crate::mytool::str_msg_to_arr(&msg)?;
+            root["message"] = arrmsg;
+        }
+    }
     if let Some(message_type) = root.get("message_type") {
         if message_type == "group" {
             do_group_msg::do_group_msg(&root)?;
