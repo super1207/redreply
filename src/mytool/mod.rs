@@ -229,6 +229,9 @@ fn cq_params_encode(data:&str) -> String {
 pub fn json_to_cq_str(js: & serde_json::Value) ->Result<String, Box<dyn std::error::Error>> {
     let msg_json = js.get("message").ok_or("json中缺少message字段")?;
     let mut ret:String = String::new();
+    if msg_json.is_string() {
+        return Ok(msg_json.as_str().unwrap().to_owned());
+    }
     for i in 0..msg_json.as_array().ok_or("message不是array")?.len() {
         let tp = msg_json[i].get("type").ok_or("消息中缺少type字段")?.as_str().ok_or("type字段不是str")?;
         let nodes = &msg_json[i].get("data").ok_or("json中缺少data字段")?;
