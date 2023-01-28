@@ -1,4 +1,4 @@
-# RedLang v0.0.18 语法简述
+# RedLang v0.0.19 语法简述
 
 
 注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br />
@@ -629,6 +629,20 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 第一种用于判断一段文本中是否包含另一段文本。<br />
 
 第二种用于从数组中找出包含某文本的元素集合，返回的是一个数组。<br />
+
+
+### 正则判含 
+
+
+【正则判含@<font color="red">被判断文本</font>@<font color="red">正则表达式</font>@<font color="red">不包含返回</font>@<font color="red">包含返回</font>】<br />
+
+【正则判含@<font color="red">被判断数组</font>@<font color="red">正则表达式</font>】<br />
+
+此命令有两种结构。<br />
+
+第一种用于判断正则表达式是否匹配被判断文本。<br />
+
+第二种用于从数组中找出可以被正则表达式匹配的元素集合，返回的是一个数组。<br />
 
 
 ### 正则

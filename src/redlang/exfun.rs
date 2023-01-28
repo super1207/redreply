@@ -289,6 +289,42 @@ pub fn init_ex_fun_map() {
             return Err(RedLang::make_err(&("对应类型不能使用判含:".to_owned()+&tp)));
         }
     });
+    add_fun(vec!["正则判含"],|self_t,params|{
+        let data_str = self_t.get_param(params, 0)?;
+        let sub_str = self_t.get_param(params, 1)?;
+        let tp = self_t.get_type(&data_str)?;
+        if tp == "文本" {
+            let re = fancy_regex::Regex::new(&sub_str)?;
+            let mut is_have = false;
+            for _cap_iter in re.captures_iter(&data_str) {
+                is_have = true;
+                break;
+            }
+            if is_have == false {
+                return Ok(Some(self_t.get_param(params, 2)?));
+            }else {
+                return Ok(Some(self_t.get_param(params, 3)?));
+            }
+        }else if tp == "数组" {
+            let mut ret_str = format!("{}A",self_t.type_uuid);
+            for it in RedLang::parse_arr(&data_str)? {
+                let re = fancy_regex::Regex::new(&sub_str)?;
+                let mut is_have = false;
+                for _cap_iter in re.captures_iter(&it) {
+                    is_have = true;
+                    break;
+                }
+                if is_have {
+                    ret_str.push_str(&it.len().to_string());
+                    ret_str.push(',');
+                    ret_str.push_str(it);
+                }
+            }
+            return Ok(Some(ret_str)); 
+        }else{
+            return Err(RedLang::make_err(&("对应类型不能使用正则判含:".to_owned()+&tp)));
+        }
+    });
     add_fun(vec!["正则"],|self_t,params|{
         let data_str = self_t.get_param(params, 0)?;
         let sub_str = self_t.get_param(params, 1)?;

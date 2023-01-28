@@ -58,6 +58,23 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
                 Ok(res)
             },
         }
+    }else if url_path == "/get_config" {
+        match crate::read_config() {
+            Ok(code) => {
+                let ret = json!({
+                    "retcode":0,
+                    "data":code
+                });
+                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+                Ok(res)
+            },
+            Err(err) => {
+                let mut res = hyper::Response::new(hyper::Body::from(err.to_string()));
+                *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
+                Ok(res)
+            },
+        }
     }else if url_path == "/set_code" {
         let body = hyper::body::to_bytes(request.into_body()).await?;
         let js:serde_json::Value = serde_json::from_slice(&body)?;
@@ -106,6 +123,8 @@ async fn deal_file(request: hyper::Request<hyper::Body>) -> Result<hyper::Respon
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/css; charset=utf-8"));
     }else if url_path.ends_with(".png") {
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("image/png"));
+    }else if url_path.ends_with(".txt") {
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/plain"));
     }else {
         *res.status_mut() = hyper::StatusCode::NOT_FOUND;
     }
