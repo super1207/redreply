@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use futures_util::{StreamExt, SinkExt};
 use tokio_tungstenite::connect_async;
 
-use crate::{RT_PTR, cqapi::cq_add_log_w};
+use crate::{RT_PTR, cqapi::cq_add_log_w, mytool::read_json_str};
 #[derive(Debug)]
 pub struct BotConnect {
     pub id:String,
@@ -58,17 +58,6 @@ fn get_str_from_json<'a>(json:&'a  serde_json::Value,key:&'a str)-> &'a str {
     }
 }
 
-fn get_int_from_json(json:&serde_json::Value,key:&str)-> Option<i64> {
-    if let Some(val) = json.get(key) {
-        if let Some(val) = val.as_i64() {
-            return Some(val);
-        }else {
-            return None;
-        }
-    }else {
-        return None;
-    }
-}
 async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     //let url = url::Url::parse("ws://220.167.103.33:10191?access_token=77156").unwrap();
     let url = url::Url::parse(url_str)?;
@@ -97,9 +86,9 @@ async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error +
                 continue;
             }
             crate::cqapi::cq_add_log(format!("收到数据:{}", json_dat.to_string()).as_str()).unwrap();
-            let self_id = get_int_from_json(&json_dat, "self_id");
-            if self_id != None {
-                bot.write().await.id = self_id.unwrap().to_string();
+            let self_id = read_json_str(&json_dat, "self_id");
+            if self_id != "" {
+                bot.write().await.id = self_id;
             }
             let echo = get_str_from_json(&json_dat, "echo").to_owned();
             tokio::spawn(async move {
