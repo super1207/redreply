@@ -493,6 +493,13 @@ pub fn init_core_fun_map() {
         self_t.xh_vec[xh_vec_len - 1][0] = true;
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["函数定义"],|self_t,params|{
+        let func = params.get(0).ok_or("函数定义:读取参数失败")?;
+        let fun = self_t.parse_fun(&func)?;
+        let func_t = format!("{}F{}",self_t.type_uuid,fun);
+        let ret_str = func_t;
+        return Ok(Some(ret_str));
+    });
     add_fun(vec!["定义命令"],|self_t,params|{
         let func_name = self_t.get_param(params, 0)?;
         let func = params.get(1).ok_or("定义命令:读取参数失败")?;
