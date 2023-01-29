@@ -59,7 +59,6 @@ fn get_str_from_json<'a>(json:&'a  serde_json::Value,key:&'a str)-> &'a str {
 }
 
 async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    //let url = url::Url::parse("ws://220.167.103.33:10191?access_token=77156").unwrap();
     let url = url::Url::parse(url_str)?;
     let (ws_stream, _) = connect_async(url).await?;
     let (mut write_half,mut read_halt) = ws_stream.split();

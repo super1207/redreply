@@ -104,6 +104,8 @@ pub fn initialize() -> i32 {
     }));
     redlang::cqexfun::init_cq_ex_fun_map();
     redlang::exfun::init_ex_fun_map();
+    redlang::init_core_fun_map();
+
     if let Err(err) = release_file(){
         cq_add_log_w(&err.to_string()).unwrap();
     }

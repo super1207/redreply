@@ -300,6 +300,944 @@ impl error::Error for MyStrError {
     }
 }
 
+
+pub fn init_core_fun_map() {
+    fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
+        let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
+        for it in k_vec {
+            let k = it.to_string();
+            if w.contains_key(&k) {
+                let err_opt:Option<String> = None;
+                err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
+            }
+            w.insert(k, fun);
+        }
+    }
+    add_fun(vec!["换行"],|_self_t,_params|{
+        return Ok(Some(String::from("\n")));
+    });
+    add_fun(vec!["回车"],|_self_t,_params|{
+        return Ok(Some(String::from("\r")));
+    });
+    add_fun(vec!["空格"],|_self_t,_params|{
+        return Ok(Some(String::from(" ")));
+    });
+    add_fun(vec!["隐藏"],|self_t,params|{
+        let out = self_t.get_param(params, 0)?;
+        let var_vec_len = self_t.var_vec.len();
+        let mp = &mut self_t.var_vec[var_vec_len - 1];
+        let mut var = RedLangVarType::new();
+        var.set_string(out)?;
+        mp.insert("46631549-6D26-68A5-E192-5EBE9A6EBA61".to_owned(), Rc::new(RefCell::new(var)));
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["传递"],|self_t,_params|{
+        let k = "46631549-6D26-68A5-E192-5EBE9A6EBA61";
+        let var_ref = self_t.get_var_ref(&k);
+        if let Some(v) = var_ref {
+            let mut k = (*v).borrow_mut();
+            return Ok(Some((*k.get_string()).clone()));
+        }else {
+            return Ok(Some("".to_string()));
+        }
+    });
+    add_fun(vec!["定义变量"],|self_t,params|{
+        let k = self_t.get_param(params, 0)?;
+        let v = self_t.get_param(params, 1)?;
+        let var_vec_len = self_t.var_vec.len();
+        let mp = &mut self_t.var_vec[var_vec_len - 1];
+        let mut var = RedLangVarType::new();
+        var.set_string(v)?;
+        mp.insert(k, Rc::new(RefCell::new(var)));
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["变量"],|self_t,params|{
+        let k = self_t.get_param(params, 0)?;
+        let var_ref = self_t.get_var_ref(&k);
+        if let Some(v) = var_ref {
+            let mut k = (*v).borrow_mut();
+            return Ok(Some((*k.get_string()).clone()));
+        }else {
+            return Ok(Some("".to_string()));
+        }
+    });
+    add_fun(vec!["屏蔽"],|self_t,params|{
+        let _k = self_t.get_param(params, 0)?;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["赋值变量"],|self_t,params|{
+        let k = self_t.get_param(params, 0)?;
+        let var_vec_len = self_t.var_vec.len();
+        let mut is_set = false;
+        let vvv = self_t.get_param(params, 1)?;
+        let vvv_rc =Rc::new(RefCell::new(vvv));
+        for i in 0..var_vec_len {
+            let mp = &mut self_t.var_vec[var_vec_len - i - 1];
+            let v_opt = mp.get_mut(&k);
+            if let Some(val) = v_opt {
+                (**val).borrow_mut().set_string((*vvv_rc).borrow().to_owned())?;
+                is_set = true;
+                break;
+            }
+        }
+        if is_set == false {
+            let var_vec_len = self_t.var_vec.len();
+            let mp = &mut self_t.var_vec[var_vec_len - 1];
+            let mut var = RedLangVarType::new();
+            var.set_string((*vvv_rc).borrow().to_owned())?;
+            mp.insert(k, Rc::new(RefCell::new(var)));
+        }
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["判断"],|self_t,params|{
+        let ret_str;
+        let k1 = self_t.get_param(params, 0)?;
+        let k2 = self_t.get_param(params, 1)?;
+        if k1 != k2 {
+            ret_str = self_t.get_param(params, 2)?;
+        } else {
+            ret_str = self_t.get_param(params, 3)?;
+        }
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["判空"],|self_t,params|{
+        let ret_str;
+        let data = self_t.get_param(params, 0)?;
+        let len = self_t.get_len(&data)?;
+        if len == 0 {
+            ret_str = self_t.get_param(params, 1)?
+        }else{
+            ret_str = data;
+        }
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["循环"],|self_t,params|{
+        let k1 = self_t.get_param(params, 0)?;
+        let k1_tp = self_t.get_type(&k1)?;
+        let mut ret_str = String::new();
+        if k1_tp == "文本"{
+            let k1 = self_t.get_param(params, 0)?;
+            let tms = k1.parse::<usize>()?;
+            self_t.xh_vec.push([false, false]);
+            let mut last_type = 0u8;
+            for _i in 0..tms {
+                let v = self_t.get_param(params, 1)?;
+                RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
+                if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
+                    break;
+                }
+            }
+            self_t.xh_vec.pop();
+        }
+        else if k1_tp == "数组" {
+            let arr_str = k1;
+            let fun = params.get(1).ok_or("数组循环中参数函数获取失败")?.to_string();
+            let arr = RedLang::parse_arr(&arr_str)?;
+            let tms = arr.len();
+            self_t.xh_vec.push([false, false]);
+            let mut fun_params:Vec<String> = vec!["".to_string(),"".to_string(),"".to_string()];
+            fun_params[0] = fun;
+            let mut last_type = 0;
+            for i in 0..tms {
+                fun_params[1] = i.to_string();
+                fun_params[2] = arr[i].to_owned();
+                let v = self_t.call_fun(&fun_params,true)?;
+                RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
+                if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
+                    break;
+                }
+            }
+            self_t.xh_vec.pop();
+        }else if k1_tp == "对象" {
+            let obj_str = k1;
+            let fun = params.get(1).ok_or("对象循环中参数函数获取失败")?.to_string();
+            let obj = RedLang::parse_obj(&obj_str)?;
+            self_t.xh_vec.push([false, false]);
+            let mut fun_params:Vec<String> = vec!["".to_string(),"".to_string(),"".to_string()];
+            fun_params[0] = fun;
+            let mut last_type = 0;
+            for (k,v) in obj {
+                fun_params[1] = k;
+                fun_params[2] = v;
+                let v = self_t.call_fun(&fun_params,true)?;
+                RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
+                if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
+                    break;
+                }
+            }
+            self_t.xh_vec.pop();
+        }
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["判循"],|self_t,params|{
+        let mut ret_str = String::new();
+        self_t.xh_vec.push([false, false]);
+        let mut last_type = 0;
+        while self_t.get_param(params, 0)? == "真" {
+            let v = self_t.get_param(params, 1)?;
+            RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
+            if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
+                break;
+            }
+        }
+        self_t.xh_vec.pop();
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["跳出"],|self_t,_params|{
+        let xh_vec_len = self_t.xh_vec.len();
+        self_t.xh_vec[xh_vec_len - 1][1] = true;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["继续"],|self_t,_params|{
+        let xh_vec_len = self_t.xh_vec.len();
+        self_t.xh_vec[xh_vec_len - 1][0] = true;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["定义命令"],|self_t,params|{
+        let func_name = self_t.get_param(params, 0)?;
+        let func = params.get(1).ok_or("定义命令:读取参数失败")?;
+        let fun = self_t.parse_fun(&func)?;
+        let mut w = crate::G_CMD_MAP.write()?;
+        match w.get_mut(&self_t.pkg_name){
+            Some(r) => {
+                r.insert(func_name, fun);
+            },
+            None => {
+                let mut r = HashMap::new();
+                r.insert(func_name, fun);
+                w.insert(self_t.pkg_name.clone(), r);
+            },
+        };
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["函数调用","调用函数"],|self_t,params|{
+        let ret_str = self_t.call_fun(params,false)?;
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["参数"],|self_t,params|{
+        let k1 = self_t.get_param(params, 0)?;
+        let tms = k1.parse::<usize>()? - 1;
+        let params_vec_len = self_t.params_vec.len();
+        let ret_str = self_t.params_vec[params_vec_len - 1].get(tms).unwrap_or(&"".to_string()).to_string();
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["参数个数"],|self_t,_params|{
+        let params_vec_len = self_t.params_vec.len();
+        let ret_str = self_t.params_vec[params_vec_len - 1].len().to_string();
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["返回"],|self_t,_params|{
+        let fun_ret_vec_len = self_t.fun_ret_vec.len();
+        self_t.fun_ret_vec[fun_ret_vec_len - 1] = true;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["计算"],|self_t,params|{
+        let k1 = self_t.get_param(params, 0)?;
+        fn cala(expre:&str) -> Result<String, Box<dyn std::error::Error>> {
+            let expres_t = expre.chars().collect::<Vec<char>>();
+            let mut expres:Vec<char> = vec![];
+            // 去除空白
+            for it in expres_t {
+                if !it.is_whitespace() {
+                    expres.push(it);
+                }
+            }
+            fn is_num_char(s:&char) -> bool {
+                let num_vec = ['0','1','2','3','4','5','6','7','8','9','.'];
+                for ch in num_vec {
+                    if &ch == s {
+                        return true;
+                    }
+                }
+                return false;
+            }
+            let expre_len = expres.len();
+            let mut token:Vec<String> = vec![];
+            let mut temp_str = "".to_owned();
+            let mut status = 0; //0 normal 1 num 2 fun
+            let mut i = 0usize;
+            // 首先要进行分词，分为数字，运算符，括号，逗号
+            while i < expre_len {
+                let ch = expres[i];
+                if status == 0 { //normal
+                    if ch == ',' || ch == '+'  || ch == '*' || ch == '^' || ch == '(' || ch == ')' || ch == '%' || ch == '真' || ch == '假' {
+                        token.push(ch.to_string());
+                    }else if ch == '-' {
+                        if i == 0 || expres[i - 1] == '(' {
+                            token.push("--".to_string());
+                        }else{
+                            token.push(ch.to_string());
+                        }
+                    }else if ch == '/' {
+                        let ch1 = expres.get(i+1).ok_or("express error near '/'")?;
+                        if ch1 == &'/' {
+                            token.push("//".to_string());
+                            i += 1;
+                        }else{
+                            token.push(ch.to_string());
+                        }
+                    }
+                    else if ch == '<' {
+                        let ch1 = expres.get(i+1).ok_or("express error near '<'")?;
+                        if ch1 == &'=' {
+                            token.push("<=".to_string());
+                            i += 1;
+                        }else{
+                            token.push(ch.to_string());
+                        }
+                    }else if ch == '>' {
+                        let ch1 = expres.get(i+1).ok_or("express error near '>'")?;
+                        if ch1 == &'=' {
+                            token.push(">=".to_string());
+                            i += 1;
+                        }else{
+                            token.push(ch.to_string());
+                        }
+                    }
+                    else if ch == '!' {
+                        let ch1 = expres.get(i+1).ok_or("express error near '/'")?;
+                        if ch1 == &'=' {
+                            token.push("!=".to_string());
+                            i += 1;
+                        }else{
+                            token.push(ch.to_string());
+                        }
+                    }else if ch == '=' {
+                        let ch1 = expres.get(i+1).ok_or("express error near '='")?;
+                        if ch1 == &'=' {
+                            token.push("==".to_string());
+                            i += 1;
+                        }else{
+                            let k:Option<char> = None;
+                            k.ok_or(format!("出现未知字符：`{}`","="))?;
+                        }
+                    }else if ch == '|' {
+                        let ch1 = expres.get(i+1).ok_or("express error near '|'")?;
+                        if ch1 == &'|' {
+                            token.push("||".to_string());
+                            i += 1;
+                        }else{
+                            let k:Option<char> = None;
+                            k.ok_or(format!("出现未知字符：`{}`","|"))?;
+                        }
+                    }else if ch == '&' {
+                        let ch1 = expres.get(i+1).ok_or("express error near '&'")?;
+                        if ch1 == &'&' {
+                            token.push("&&".to_string());
+                            i += 1;
+                        }else{
+                            let k:Option<char> = None;
+                            k.ok_or(format!("出现未知字符：`{}`","&"))?;
+                        }
+                    }else if is_num_char(&ch) {
+                        status = 1;
+                        temp_str.push('N');
+                        temp_str.push(ch);
+                    }else {
+                        let k:Option<char> = None;
+                        k.ok_or(format!("出现未知字符：`{}`",ch))?;
+                    }
+                }else if status == 1 { // num
+                    if is_num_char(&ch) {
+                        temp_str.push(ch);
+                    }else {
+                        token.push(temp_str.to_owned());
+                        temp_str.clear();
+                        status = 0;
+                        i -= 1
+                    }
+                }
+                i += 1;
+            }
+            if !temp_str.is_empty() {
+                token.push(temp_str.to_owned());
+                temp_str.clear();
+            }
+            // println!("{:?}",token);
+            let mut out_vec:Vec<String> = vec![];
+            let mut op_stack:Vec<String> = vec![];
+            // println!("token:{:?}",token);
+            for it in token {
+                if it.starts_with("N") || it == "真" || it == "假"{
+                    out_vec.push(it);
+                }else{
+                    if it == "(" {
+                        op_stack.push(it);
+                    }else if it == ")" {
+                        loop {
+                            let pop_it = op_stack.pop();
+                            if pop_it == None {
+                                let k:Option<char> = None;
+                                k.ok_or(format!("括号没有成对出现"))?;
+                            }
+                            let pop_it_t = pop_it.unwrap();
+                            if pop_it_t == "(" {
+                                break;
+                            }
+                            out_vec.push(pop_it_t);
+        
+                        }
+                        
+                    }else {
+                        loop {
+                            if op_stack.is_empty() || op_stack[op_stack.len() - 1] == "(" {
+                                op_stack.push(it);
+                                break;
+                            }
+                            let pri_it = OOP_MAP.get(&it).ok_or(&format!("未知的运算符:`{}`",it)).unwrap();
+                            let up = op_stack[op_stack.len() - 1].clone();
+                            let pri_up = OOP_MAP.get(&up).ok_or(&format!("未知的运算符:`{}`",up)).unwrap();
+                            if pri_it > pri_up {
+                                op_stack.push(it);
+                                break;
+                            }
+                            op_stack.pop();
+                            out_vec.push(up);
+                        }
+                    }
+                }
+                    
+            }
+            
+            while !op_stack.is_empty() {
+                let pop_it = op_stack.pop().unwrap();
+                out_vec.push(pop_it);
+            }
+            // println!("mid express:{:?}",out_vec);
+            let mut out_vec2:Vec<String> = vec![];
+            for it in out_vec {
+                if it.starts_with('N') {
+                    out_vec2.push(it.get(1..).unwrap().to_string());
+                }if it == "真" || it == "假" {
+                    out_vec2.push(it.to_owned());
+                }else if it == "^" {
+                    let l2 = out_vec2.pop().ok_or("^ err")?;
+                    let l1 = out_vec2.pop().ok_or("^ err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    let n2 = l2.parse::<f64>()?;
+                    out_vec2.push((n1.powf(n2)).to_string());
+                }else if it == "!" {
+                    let l1 = out_vec2.pop().ok_or("! err")?;
+                    if l1 == "真" {
+                        out_vec2.push("假".to_string());
+                    }else{
+                        out_vec2.push("真".to_string());
+                    }
+                }else if it == "--" {
+                    let l1 = out_vec2.pop().ok_or("- err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    out_vec2.push((-n1).to_string());
+                }else if it == "%" {
+                    let l2 = out_vec2.pop().ok_or("% err")?;
+                    let l1 = out_vec2.pop().ok_or("% err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    let n2 = l2.parse::<f64>()?;
+                    out_vec2.push((n1 % n2).to_string());
+                }else if it == "/" {
+                    let l2 = out_vec2.pop().ok_or("/ err")?;
+                    let l1 = out_vec2.pop().ok_or("/ err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    let n2 = l2.parse::<f64>()?;
+                    out_vec2.push((n1 / n2).to_string());
+                }else if it == "//" {
+                    let l2 = out_vec2.pop().ok_or("// err")?;
+                    let l1 = out_vec2.pop().ok_or("// err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    let n2 = l2.parse::<f64>()?;
+                    out_vec2.push(((n1 / n2) as i64).to_string());
+                }else if it == "*" {
+                    let l2 = out_vec2.pop().ok_or("* err")?;
+                    let l1 = out_vec2.pop().ok_or("* err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    let n2 = l2.parse::<f64>()?;
+                    out_vec2.push((n1 * n2).to_string());
+                }else if it == "+" {
+                    let l2 = out_vec2.pop().ok_or("+ err")?;
+                    let l1 = out_vec2.pop().ok_or("+ err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    let n2 = l2.parse::<f64>()?;
+                    out_vec2.push((n1 + n2).to_string());
+                }else if it == "-" {
+                    let l2 = out_vec2.pop().ok_or("- err")?;
+                    let l1 = out_vec2.pop().ok_or("- err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    let n2 = l2.parse::<f64>()?;
+                    out_vec2.push((n1 - n2).to_string());
+                }else if it == "==" {
+                    let l2 = out_vec2.pop().ok_or("== err")?;
+                    let l1 = out_vec2.pop().ok_or("== err")?;
+                    if l1 == l2{
+                        out_vec2.push("真".to_string());
+                    }else{
+                        if (l1 == "真" && l2 == "假")||(l1 == "假" && l2 == "真"){
+                            out_vec2.push("假".to_string());
+                        }else{
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            if (n1 - n2).abs() < 0.0000001f64 {
+                                out_vec2.push("真".to_string());
+                            }else{
+                                out_vec2.push("假".to_string());
+                            }
+                        }
+                    }
+                }else if it == "!=" {
+                    let l2 = out_vec2.pop().ok_or("!= err")?;
+                    let l1 = out_vec2.pop().ok_or("!= err")?;
+                    if l1 == l2{
+                        out_vec2.push("假".to_string());
+                    }else{
+                        if (l1 == "真" && l2 == "假")||(l1 == "假" && l2 == "真"){
+                            out_vec2.push("真".to_string());
+                        }else{
+                            let n1 = l1.parse::<f64>()?;
+                            let n2 = l2.parse::<f64>()?;
+                            if (n1 - n2).abs() < 0.0000001f64 {
+                                out_vec2.push("假".to_string());
+                            }else{
+                                out_vec2.push("真".to_string());
+                            }
+                        }
+                    }
+                }else if it == ">" {
+                    let l2 = out_vec2.pop().ok_or("> err")?;
+                    let l1 = out_vec2.pop().ok_or("> err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    let n2 = l2.parse::<f64>()?;
+                    if n1 > n2 {
+                        out_vec2.push("真".to_owned());
+                    }else {
+                        out_vec2.push("假".to_owned());
+                    }
+                    
+                }else if it == "<" {
+                    let l2 = out_vec2.pop().ok_or("< err")?;
+                    let l1 = out_vec2.pop().ok_or("< err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    let n2 = l2.parse::<f64>()?;
+                    if n1 < n2 {
+                        out_vec2.push("真".to_owned());
+                    }else {
+                        out_vec2.push("假".to_owned());
+                    }
+                }else if it == ">=" {
+                    let l2 = out_vec2.pop().ok_or(">= err")?;
+                    let l1 = out_vec2.pop().ok_or(">= err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    let n2 = l2.parse::<f64>()?;
+                    if n1 >= n2 {
+                        out_vec2.push("真".to_owned());
+                    }else {
+                        out_vec2.push("假".to_owned());
+                    }
+                }else if it == "<=" {
+                    let l2 = out_vec2.pop().ok_or("<= err")?;
+                    let l1 = out_vec2.pop().ok_or("<= err")?;
+                    let n1 = l1.parse::<f64>()?;
+                    let n2 = l2.parse::<f64>()?;
+                    if n1 <= n2 {
+                        out_vec2.push("真".to_owned());
+                    }else {
+                        out_vec2.push("假".to_owned());
+                    }
+                }else if it == "||" {
+                    let l2 = out_vec2.pop().ok_or("|| err")?;
+                    let l1 = out_vec2.pop().ok_or("|| err")?;
+                    if l1=="真"  || l2 == "真"{
+                        out_vec2.push("真".to_owned());
+                    }else {
+                        out_vec2.push("假".to_owned());
+                    }
+                }else if it == "&&" {
+                    let l2 = out_vec2.pop().ok_or("&& err")?;
+                    let l1 = out_vec2.pop().ok_or("&& err")?;
+                    if l1=="真"  && l2 == "真"{
+                        out_vec2.push("真".to_owned());
+                    }else {
+                        out_vec2.push("假".to_owned());
+                    }
+                }
+                
+            }
+            return Ok(out_vec2.get(0).ok_or("计算失败")?.to_string());
+        }
+        let ret_str = cala(&k1)?;
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["数组"],|self_t,params|{
+        let arr_len = params.len();
+        let mut temp_ret:Vec<String> = vec![];
+        for i in 0..arr_len {
+            let s = self_t.get_param(params, i)?;
+            temp_ret.push(s);
+        }
+        let ret_str = self_t.build_arr(temp_ret);
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["对象"],|self_t,params|{
+        let params_len = params.len();
+        if params_len % 2 != 0 {
+            return Err(RedLang::make_err("请保证对象参数为偶数个"));
+        }
+        let mut temp_ret:BTreeMap<String,String> = BTreeMap::new();
+        for i in 0..(params_len/2) {
+            let k = self_t.get_param(params, i*2)?;
+            let v = self_t.get_param(params, i*2 + 1)?;
+            temp_ret.insert(k, v);
+        }
+        let ret_str = self_t.build_obj(temp_ret);
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["取长度"],|self_t,params|{
+        let data = self_t.get_param(params, 0)?;
+        let ret_str = self_t.get_len(&data)?.to_string(); 
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["转文本"],|self_t,params|{
+        let data = self_t.get_param(params, 0)?;
+        let tp = self_t.get_type(&data)?;
+        fn obj_to_text(self_t:&mut RedLang,data:& str,params:&[String]) -> Result<String, Box<dyn std::error::Error>>{
+            let mut ret_str = String::new();
+            ret_str.push('{');
+            let mut vec_t:Vec<String>  = vec![];
+            let obj = RedLang::parse_obj(&data)?;
+            for (k,v) in obj{
+                let tp_k = self_t.get_type(&k)?;
+                if tp_k != "文本" {
+                    return Err(RedLang::make_err(&("对象的键不支持的类型:".to_owned()+&tp_k)));
+                }
+                let mut temp_str = String::new();
+                temp_str.push_str(&str_to_text(&k)?);
+                temp_str.push(':');
+                let tp_v = self_t.get_type(&v)?;
+                if tp_v == "文本" {
+                    temp_str.push_str(&str_to_text(&v)?);
+                }
+                else if tp_v == "数组" {
+                    temp_str.push_str(&arr_to_text(self_t,&v,params)?);
+                }
+                else if tp_v == "字节集" {
+                    temp_str.push_str(&bin_to_text(self_t,&v,params)?);
+                }
+                else if tp_v == "对象" {
+                    temp_str.push_str(&obj_to_text(self_t,&v,params)?);
+                }
+                else {
+                    return Err(RedLang::make_err(&("对象的值不支持的类型:".to_owned()+&tp_v)));
+                }
+                vec_t.push(temp_str);
+            }
+            ret_str.push_str(&vec_t.join(","));
+            ret_str.push('}');
+            Ok(ret_str)
+        }
+        fn str_to_text(data:&str) -> Result<String, Box<dyn std::error::Error>>{
+            let j:serde_json::Value = serde_json::json!(
+                data
+            );
+            return Ok(j.to_string())
+        }
+        fn arr_to_text(self_t:&mut RedLang,data:& str,params:&[String]) -> Result<String, Box<dyn std::error::Error>>{
+            let mut vec_t:Vec<String>  = vec![];
+            let arr = RedLang::parse_arr(&data)?;
+            for v in arr {
+                let tp_v = self_t.get_type(&v)?;
+                if tp_v == "文本" {
+                    vec_t.push(str_to_text(&v)?);
+                }
+                else if tp_v == "数组" {
+                    vec_t.push(arr_to_text(self_t,&v,params)?);
+                }
+                else if tp_v == "字节集" {
+                    vec_t.push(bin_to_text(self_t,&v,params)?);
+                }
+                else if tp_v == "对象" {
+                    vec_t.push(obj_to_text(self_t,&v,params)?);
+                }
+                else {
+                    return Err(RedLang::make_err(&("数组的元素不支持的类型:".to_owned()+&tp_v)));
+                }
+            }
+            return Ok(format!("[{}]",vec_t.join(",")));
+        }
+
+        fn bin_to_text(self_t:&mut RedLang,data:& str,params:&[String]) -> Result<String, Box<dyn std::error::Error>>{
+            let ret_str:String;
+            let code_t = self_t.get_param(params, 1)?;
+            let code = code_t.to_lowercase();
+            let u8_vec = RedLang::parse_bin(data)?;
+            if code == "" || code == "utf8" {
+                ret_str = String::from_utf8(u8_vec)?;
+            }else if code == "gbk" {
+                ret_str = encoding::all::GBK.decode(&u8_vec, encoding::DecoderTrap::Ignore)?;
+            }else{
+                return Err(RedLang::make_err(&("不支持的编码:".to_owned()+&code_t)));
+            }
+            Ok(ret_str)
+        }
+        let ret_str;
+        if tp == "字节集" {
+            ret_str = bin_to_text(self_t,&data,params)?;
+        }else if tp == "文本" {
+            ret_str = str_to_text(&data)?;
+        }else if tp == "数组" {
+            ret_str = arr_to_text(self_t,&data,params)?;
+        }else if tp == "对象" {
+            ret_str = obj_to_text(self_t,&data,params)?;
+        }
+        else{
+            return Err(RedLang::make_err(&("对应类型不能转文本:".to_owned()+&tp)));
+        }
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["增加元素"],|self_t,params|{
+        // 获得变量
+        let var_name = self_t.get_param(params, 0)?;
+        let data:Rc<RefCell<RedLangVarType>>;
+        if let Some(v) = self_t.get_var_ref(&var_name) {
+            data = v;
+        }else {
+            return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
+        }
+        // 获得变量类型
+        let tp =(*data).borrow().get_type();
+        let el_len;
+        if tp == "对象" {
+            el_len = (params.len() -1) / 2;
+        }else {
+            el_len = params.len() -1;
+        }
+        //  增加元素
+        for i in 0..el_len {
+            if tp == "数组" {
+                let el = self_t.get_param(params, i + 1)?;
+                let mut v = (*data).borrow_mut();
+                v.add_arr(&el)?;
+            }else if tp == "对象" {
+                let elk = self_t.get_param(params, i * 2 + 1)?;
+                let elv = self_t.get_param(params, i * 2 + 2)?;
+
+                let mut v = (*data).borrow_mut();
+                v.add_obj(elk,elv)?;
+                
+            }else if tp == "文本" { 
+                let el = self_t.get_param(params, i + 1)?;
+                let mut v = (*data).borrow_mut();
+                v.add_str(&el)?;
+
+            }else if tp == "字节集" {
+                let el_t = self_t.get_param(params, i + 1)?;
+                let el = RedLang::parse_bin(&el_t)?;
+                let mut  v = (*data).borrow_mut();
+                v.add_bin(el)?;
+            }else{
+                return Err(RedLang::make_err(&("对应类型不能增加元素:".to_owned()+&tp)));
+            }
+        }
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["替换元素"],|self_t,params|{
+        // 获得变量
+        let var_name = self_t.get_param(params, 0)?;
+        let k_name = self_t.get_param(params, 1)?;
+        let v_name = self_t.get_param(params, 2)?;
+        let data:Rc<RefCell<RedLangVarType>>;
+        if let Some(v) = self_t.get_var_ref(&var_name) {
+            data = v;
+        }else {
+            return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
+        }
+        // 获得变量类型
+        let tp =(*data).borrow().get_type();
+        if tp == "数组" {
+            let index = k_name.parse::<usize>()?;
+            let mut v = (*data).borrow_mut();
+            v.rep_arr(index, v_name)?;
+        }else if tp == "对象" {
+            let mut v = (*data).borrow_mut();
+            v.rep_obj(k_name, v_name)?;
+            
+        }else if tp == "文本" { 
+            let index = k_name.parse::<usize>()?;
+            let mut v = (*data).borrow_mut();
+            let v_chs = v_name.chars().collect::<Vec<char>>();
+            if v_chs.len() != 1 {
+                return Err(RedLang::make_err("替换文本元素时值的长度不为1"));
+            }
+            v.rep_str(index, v_chs[0])?;
+
+        }else if tp == "字节集" {
+            let index = k_name.parse::<usize>()?;
+            let mut v = (*data).borrow_mut();
+            let bt = RedLang::parse_bin(&v_name)?;
+            if bt.len() != 1 {
+                return Err(RedLang::make_err("替换字节集元素时值的长度不为1"));
+            }
+            v.rep_bin(index, bt[0])?;
+        }else{
+            return Err(RedLang::make_err(&("对应类型不能替换元素:".to_owned()+&tp)));
+        }
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["删除元素"],|self_t,params|{
+        // 获得变量
+        let var_name = self_t.get_param(params, 0)?;
+        let k_name = self_t.get_param(params, 1)?;
+        let data:Rc<RefCell<RedLangVarType>>;
+        if let Some(v) = self_t.get_var_ref(&var_name) {
+            data = v;
+        }else {
+            return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
+        }
+        // 获得变量类型
+        let tp =(*data).borrow().get_type();
+        if tp == "数组" {
+            let index = k_name.parse::<usize>()?;
+            let mut v = (*data).borrow_mut();
+            v.rv_arr(index)?;
+        }else if tp == "对象" {
+            let mut v = (*data).borrow_mut();
+            v.rv_obj(&k_name)?;
+            
+        }else if tp == "文本" { 
+            let index = k_name.parse::<usize>()?;
+            let mut v = (*data).borrow_mut();
+            v.rv_str(index)?;
+
+        }else if tp == "字节集" {
+            let index = k_name.parse::<usize>()?;
+            let mut v = (*data).borrow_mut();
+            v.rv_bin(index)?;
+        }else{
+            return Err(RedLang::make_err(&("对应类型不能删除元素:".to_owned()+&tp)));
+        }
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["取元素"],|self_t,params|{
+        let nums = params.len();
+        let df = String::new();
+        let mut param_data = self_t.get_param(params, 0)?;
+        for i in 1..nums {
+            let tp = self_t.get_type(&param_data)?;
+            if tp == "数组" {
+                let index = self_t.get_param(params, i)?.parse::<usize>()?;
+                let mp = RedLang::parse_arr(&param_data)?;
+                let v_opt = mp.get(index);
+                if let Some(v) = v_opt {
+                    param_data = v.to_string();
+                }else{
+                    param_data = df;
+                    break;
+                }
+            }else if tp == "对象" { 
+                let index = self_t.get_param(params, i)?;
+                let mp = RedLang::parse_obj(&param_data)?;
+                let v_opt = mp.get(&index);
+                if let Some(v) = v_opt {
+                    param_data = v.to_string();
+                }else{
+                    param_data = df;
+                    break;
+                }
+            }else if tp == "文本" {
+                let index = self_t.get_param(params, i)?.parse::<usize>()?;
+                let v_chs =param_data.chars().collect::<Vec<char>>();
+                let v_opt = v_chs.get(index);
+                if let Some(v) = v_opt {
+                    param_data = v.to_string();
+                }else{
+                    param_data = df;
+                    break;
+                }
+            }else{
+                return Err(RedLang::make_err(&("对应类型不能取元素:".to_owned()+&tp)));
+            }
+        }
+        let ret_str = param_data;
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["取对象KEY"],|self_t,params|{
+        let param_data = self_t.get_param(params, 0)?;
+        let tp = self_t.get_type(&param_data)?;
+        if tp != "对象" {
+            return Err(RedLang::make_err(&("对应类型不能取对象key:".to_owned()+&tp)));
+        }
+        let parse_ret = RedLang::parse_obj(&param_data)?;
+        let mut arr:Vec<String> = vec![];
+        for key in parse_ret.keys() {
+            arr.push(key.to_string());
+        }
+        let ret_str = self_t.build_arr(arr);
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["取类型"],|self_t,params|{
+        let param_data = self_t.get_param(params, 0)?;
+        let tp = self_t.get_type(&param_data)?;
+        let ret_str;
+        if tp == "文本" {
+            ret_str = "T".to_string();
+        }else if tp == "数组" {
+            ret_str = "A".to_string();
+        }else if tp == "对象" {
+            ret_str = "O".to_string();
+        }else if tp == "字节集" {
+            ret_str = "B".to_string();
+        }else if tp == "函数" {
+            ret_str = "F".to_string();
+        }else {
+            return Err(RedLang::make_err("取类型失败"));
+        }
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["取随机数"],|self_t,params|{
+        fn get_random() -> Result<usize, getrandom::Error> {
+            let mut rand_buf = [0u8; std::mem::size_of::<usize>()];
+            getrandom::getrandom(&mut rand_buf)?;
+            let mut num = 0usize;
+            for i in 0..std::mem::size_of::<usize>() {
+                num += (num << 8) + (rand_buf[i] as usize);
+            }
+            Ok(num)
+        }
+        let num1 = self_t.get_param(params, 0)?.parse::<usize>()?;
+        let num2 = self_t.get_param(params, 1)?.parse::<usize>()?;
+        if num1 > num2 {
+            return Err(RedLang::make_err("生成随机数失败,请保证第一个数不大于第二个数，且都为非负数"));
+        }
+        let rand_num = get_random()?;
+        let num = num2 + 1 - num1;
+        let ret_num = (rand_num %  num) + num1;
+        let ret_str = ret_num.to_string();
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["文本替换"],|self_t,params|{
+        let text = self_t.get_param(params, 0)?;
+        let from = self_t.get_param(params, 1)?;
+        let to = self_t.get_param(params, 2)?;
+        let ret_str = text.replace(&from, &to);
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["运行脚本"],|self_t,params|{
+        let mut rl = RedLang::new();
+        rl.exmap = self_t.exmap.clone(); // 获得一些拓展相关的变量
+        rl.pkg_name = self_t.pkg_name.clone();
+        rl.script_name = self_t.script_name.clone();
+        let code = self_t.get_param(params, 0)?;
+        // 将参数传入新脚本
+        let params_len = params.len();
+        for i in 1..params_len {
+            rl.params_vec[0].push(self_t.get_param(params, i)?);
+        }
+        let mut ret_str;
+        ret_str = rl.parse(&code)?;
+        // 处理清空指令
+        if let Some(pos) = ret_str.rfind(CLEAR_UUID.as_str()) {
+            ret_str = ret_str.get((pos + 36)..).unwrap().to_owned();
+        }
+        return Ok(Some(ret_str));
+    });
+}
+
 impl RedLang {
     pub fn get_exmap(
         &self,
@@ -471,876 +1409,20 @@ impl RedLang {
             return Ok(ret_str);
         }
 
-        // 执行拓展命令
+        // 执行核心命令与拓展命令
         let exret;
         {
-            let cmd_t = cmd.to_uppercase();
+            let cmd_t = crate::mytool::str_to_jt(&cmd.to_uppercase());
             let r = crate::G_CMD_FUN_MAP.read()?;
             exret = match r.get(&cmd_t) {
                 Some(fun) => fun(self,params)?,
                 None => None,
             };
         }
-
+        
         if let Some(v) = exret{
             ret_str = v;
-        } else if cmd == "换行" {
-            ret_str = String::from("\n");
-        } else if cmd == "回车" {
-            ret_str = String::from("\r");
-        } else if cmd == "空格" {
-            ret_str = String::from(" ");
-        } else if cmd == "隐藏" {
-            let out = self.get_param(params, 0)?;
-            let var_vec_len = self.var_vec.len();
-            let mp = &mut self.var_vec[var_vec_len - 1];
-            let mut var = RedLangVarType::new();
-            var.set_string(out)?;
-            mp.insert("46631549-6D26-68A5-E192-5EBE9A6EBA61".to_owned(), Rc::new(RefCell::new(var)));
-        } else if cmd == "传递" {
-            let k = "46631549-6D26-68A5-E192-5EBE9A6EBA61";
-            let var_ref = self.get_var_ref(&k);
-            if let Some(v) = var_ref {
-                let mut k = (*v).borrow_mut();
-                ret_str = (*k.get_string()).clone();
-            }else {
-                ret_str = "".to_string();
-            }
-        } else if cmd == "定义变量" {
-            let k = self.get_param(params, 0)?;
-            let v = self.get_param(params, 1)?;
-            let var_vec_len = self.var_vec.len();
-            let mp = &mut self.var_vec[var_vec_len - 1];
-            let mut var = RedLangVarType::new();
-            var.set_string(v)?;
-            mp.insert(k, Rc::new(RefCell::new(var)));
-        } else if cmd == "变量" {
-            let k = self.get_param(params, 0)?;
-            let var_ref = self.get_var_ref(&k);
-            if let Some(v) = var_ref {
-                let mut k = (*v).borrow_mut();
-                ret_str = (*k.get_string()).clone();
-            }else {
-                ret_str = "".to_string();
-            }
-        }else if cmd == "屏蔽" {
-            let _k = self.get_param(params, 0)?;
-        }
-        else if cmd == "赋值变量" {
-            let k = self.get_param(params, 0)?;
-            let var_vec_len = self.var_vec.len();
-            let mut is_set = false;
-            let vvv = self.get_param(params, 1)?;
-            let vvv_rc =Rc::new(RefCell::new(vvv));
-            for i in 0..var_vec_len {
-                let mp = &mut self.var_vec[var_vec_len - i - 1];
-                let v_opt = mp.get_mut(&k);
-                if let Some(val) = v_opt {
-                    (**val).borrow_mut().set_string((*vvv_rc).borrow().to_owned())?;
-                    is_set = true;
-                    break;
-                }
-            }
-            if is_set == false {
-                let var_vec_len = self.var_vec.len();
-                let mp = &mut self.var_vec[var_vec_len - 1];
-                let mut var = RedLangVarType::new();
-                var.set_string((*vvv_rc).borrow().to_owned())?;
-                mp.insert(k, Rc::new(RefCell::new(var)));
-            }
-        } else if cmd == "判断" {
-            let k1 = self.get_param(params, 0)?;
-            let k2 = self.get_param(params, 1)?;
-            if k1 != k2 {
-                ret_str = self.get_param(params, 2)?;
-            } else {
-                ret_str = self.get_param(params, 3)?;
-            }
-        } else if cmd == "判空" {
-            let data = self.get_param(params, 0)?;
-            let len = self.get_len(&data)?;
-            if len == 0 {
-                ret_str = self.get_param(params, 1)?
-            }else{
-                ret_str = data;
-            }
-        }else if cmd == "循环" {
-            let k1 = self.get_param(params, 0)?;
-            let k1_tp = self.get_type(&k1)?;
-            if k1_tp == "文本"{
-                let k1 = self.get_param(params, 0)?;
-                let tms = k1.parse::<usize>()?;
-                self.xh_vec.push([false, false]);
-                let mut last_type = 0u8;
-                for _i in 0..tms {
-                    let v = self.get_param(params, 1)?;
-                    RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
-                    if self.xh_vec[self.xh_vec.len() - 1][1] == true {
-                        break;
-                    }
-                }
-                self.xh_vec.pop();
-            }
-            else if k1_tp == "数组" {
-                let arr_str = k1;
-                let fun = params.get(1).ok_or("数组循环中参数函数获取失败")?.to_string();
-                let arr = RedLang::parse_arr(&arr_str)?;
-                let tms = arr.len();
-                self.xh_vec.push([false, false]);
-                let mut fun_params:Vec<String> = vec!["".to_string(),"".to_string(),"".to_string()];
-                fun_params[0] = fun;
-                let mut last_type = 0;
-                for i in 0..tms {
-                    fun_params[1] = i.to_string();
-                    fun_params[2] = arr[i].to_owned();
-                    let v = self.call_fun(&fun_params,true)?;
-                    RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
-                    if self.xh_vec[self.xh_vec.len() - 1][1] == true {
-                        break;
-                    }
-                }
-                self.xh_vec.pop();
-            }else if k1_tp == "对象" {
-                let obj_str = k1;
-                let fun = params.get(1).ok_or("对象循环中参数函数获取失败")?.to_string();
-                let obj = RedLang::parse_obj(&obj_str)?;
-                self.xh_vec.push([false, false]);
-                let mut fun_params:Vec<String> = vec!["".to_string(),"".to_string(),"".to_string()];
-                fun_params[0] = fun;
-                let mut last_type = 0;
-                for (k,v) in obj {
-                    fun_params[1] = k;
-                    fun_params[2] = v;
-                    let v = self.call_fun(&fun_params,true)?;
-                    RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
-                    if self.xh_vec[self.xh_vec.len() - 1][1] == true {
-                        break;
-                    }
-                }
-                self.xh_vec.pop();
-            }
-            
-        } else if cmd == "判循" {
-            self.xh_vec.push([false, false]);
-            while self.get_param(params, 0)? == "真" {
-                let v = self.get_param(params, 1)?;
-                ret_str.push_str(&v);
-                if self.xh_vec[self.xh_vec.len() - 1][1] == true {
-                    break;
-                }
-            }
-            self.xh_vec.pop();
-        } else if cmd == "跳出" {
-            // self.xh_vec[self.xh_vec.len() - 1][1] = true;
-            let xh_vec_len = self.xh_vec.len();
-            self.xh_vec[xh_vec_len - 1][1] = true;
-        } else if cmd == "继续" {
-            let xh_vec_len = self.xh_vec.len();
-            self.xh_vec[xh_vec_len - 1][0] = true;
-        } else if cmd == "函数定义" {
-            let func = params.get(0).ok_or("函数定义:读取参数失败")?;
-            let fun = self.parse_fun(&func)?;
-            let func_t = format!("{}F{}",self.type_uuid,fun);
-            ret_str = func_t;
-        }else if cmd == "定义命令" {
-            let func_name = self.get_param(params, 0)?;
-            let func = params.get(1).ok_or("定义命令:读取参数失败")?;
-            let fun = self.parse_fun(&func)?;
-            let mut w = crate::G_CMD_MAP.write()?;
-            match w.get_mut(&self.pkg_name){
-                Some(r) => {
-                    r.insert(func_name, fun);
-                },
-                None => {
-                    let mut r = HashMap::new();
-                    r.insert(func_name, fun);
-                    w.insert(self.pkg_name.clone(), r);
-                },
-            };
-            ret_str = "".to_string();
-        }else if cmd == "函数调用" || cmd == "调用函数" {
-            ret_str = self.call_fun(params,false)?;
-        } else if cmd == "参数" {
-            let k1 = self.get_param(params, 0)?;
-            let tms = k1.parse::<usize>()? - 1;
-            let params_vec_len = self.params_vec.len();
-            ret_str = self.params_vec[params_vec_len - 1]
-                .get(tms).unwrap_or(&"".to_string()).to_string();
-        } else if cmd == "参数个数" {
-            let params_vec_len = self.params_vec.len();
-            ret_str = self.params_vec[params_vec_len - 1].len().to_string();
-        }else if cmd == "返回" {
-            let fun_ret_vec_len = self.fun_ret_vec.len();
-            self.fun_ret_vec[fun_ret_vec_len - 1] = true;
-        } else if cmd == "计算" {
-                let k1 = self.get_param(params, 0)?;
-                fn cala(expre:&str) -> Result<String, Box<dyn std::error::Error>> {
-                    let expres_t = expre.chars().collect::<Vec<char>>();
-                    let mut expres:Vec<char> = vec![];
-                    // 去除空白
-                    for it in expres_t {
-                        if !it.is_whitespace() {
-                            expres.push(it);
-                        }
-                    }
-                    fn is_num_char(s:&char) -> bool {
-                        let num_vec = ['0','1','2','3','4','5','6','7','8','9','.'];
-                        for ch in num_vec {
-                            if &ch == s {
-                                return true;
-                            }
-                        }
-                        return false;
-                    }
-                    let expre_len = expres.len();
-                    let mut token:Vec<String> = vec![];
-                    let mut temp_str = "".to_owned();
-                    let mut status = 0; //0 normal 1 num 2 fun
-                    let mut i = 0usize;
-                    // 首先要进行分词，分为数字，运算符，括号，逗号
-                    while i < expre_len {
-                        let ch = expres[i];
-                        if status == 0 { //normal
-                            if ch == ',' || ch == '+'  || ch == '*' || ch == '^' || ch == '(' || ch == ')' || ch == '%' || ch == '真' || ch == '假' {
-                                token.push(ch.to_string());
-                            }else if ch == '-' {
-                                if i == 0 || expres[i - 1] == '(' {
-                                    token.push("--".to_string());
-                                }else{
-                                    token.push(ch.to_string());
-                                }
-                            }else if ch == '/' {
-                                let ch1 = expres.get(i+1).ok_or("express error near '/'")?;
-                                if ch1 == &'/' {
-                                    token.push("//".to_string());
-                                    i += 1;
-                                }else{
-                                    token.push(ch.to_string());
-                                }
-                            }
-                            else if ch == '<' {
-                                let ch1 = expres.get(i+1).ok_or("express error near '<'")?;
-                                if ch1 == &'=' {
-                                    token.push("<=".to_string());
-                                    i += 1;
-                                }else{
-                                    token.push(ch.to_string());
-                                }
-                            }else if ch == '>' {
-                                let ch1 = expres.get(i+1).ok_or("express error near '>'")?;
-                                if ch1 == &'=' {
-                                    token.push(">=".to_string());
-                                    i += 1;
-                                }else{
-                                    token.push(ch.to_string());
-                                }
-                            }
-                            else if ch == '!' {
-                                let ch1 = expres.get(i+1).ok_or("express error near '/'")?;
-                                if ch1 == &'=' {
-                                    token.push("!=".to_string());
-                                    i += 1;
-                                }else{
-                                    token.push(ch.to_string());
-                                }
-                            }else if ch == '=' {
-                                let ch1 = expres.get(i+1).ok_or("express error near '='")?;
-                                if ch1 == &'=' {
-                                    token.push("==".to_string());
-                                    i += 1;
-                                }else{
-                                    let k:Option<char> = None;
-                                    k.ok_or(format!("出现未知字符：`{}`","="))?;
-                                }
-                            }else if ch == '|' {
-                                let ch1 = expres.get(i+1).ok_or("express error near '|'")?;
-                                if ch1 == &'|' {
-                                    token.push("||".to_string());
-                                    i += 1;
-                                }else{
-                                    let k:Option<char> = None;
-                                    k.ok_or(format!("出现未知字符：`{}`","|"))?;
-                                }
-                            }else if ch == '&' {
-                                let ch1 = expres.get(i+1).ok_or("express error near '&'")?;
-                                if ch1 == &'&' {
-                                    token.push("&&".to_string());
-                                    i += 1;
-                                }else{
-                                    let k:Option<char> = None;
-                                    k.ok_or(format!("出现未知字符：`{}`","&"))?;
-                                }
-                            }else if is_num_char(&ch) {
-                                status = 1;
-                                temp_str.push('N');
-                                temp_str.push(ch);
-                            }else {
-                                let k:Option<char> = None;
-                                k.ok_or(format!("出现未知字符：`{}`",ch))?;
-                            }
-                        }else if status == 1 { // num
-                            if is_num_char(&ch) {
-                                temp_str.push(ch);
-                            }else {
-                                token.push(temp_str.to_owned());
-                                temp_str.clear();
-                                status = 0;
-                                i -= 1
-                            }
-                        }
-                        i += 1;
-                    }
-                    if !temp_str.is_empty() {
-                        token.push(temp_str.to_owned());
-                        temp_str.clear();
-                    }
-                    // println!("{:?}",token);
-                    let mut out_vec:Vec<String> = vec![];
-                    let mut op_stack:Vec<String> = vec![];
-                    // println!("token:{:?}",token);
-                    for it in token {
-                        if it.starts_with("N") || it == "真" || it == "假"{
-                            out_vec.push(it);
-                        }else{
-                            if it == "(" {
-                                op_stack.push(it);
-                            }else if it == ")" {
-                                loop {
-                                    let pop_it = op_stack.pop();
-                                    if pop_it == None {
-                                        let k:Option<char> = None;
-                                        k.ok_or(format!("括号没有成对出现"))?;
-                                    }
-                                    let pop_it_t = pop_it.unwrap();
-                                    if pop_it_t == "(" {
-                                        break;
-                                    }
-                                    out_vec.push(pop_it_t);
-                
-                                }
-                                
-                            }else {
-                                loop {
-                                    if op_stack.is_empty() || op_stack[op_stack.len() - 1] == "(" {
-                                        op_stack.push(it);
-                                        break;
-                                    }
-                                    let pri_it = OOP_MAP.get(&it).ok_or(&format!("未知的运算符:`{}`",it)).unwrap();
-                                    let up = op_stack[op_stack.len() - 1].clone();
-                                    let pri_up = OOP_MAP.get(&up).ok_or(&format!("未知的运算符:`{}`",up)).unwrap();
-                                    if pri_it > pri_up {
-                                        op_stack.push(it);
-                                        break;
-                                    }
-                                    op_stack.pop();
-                                    out_vec.push(up);
-                                }
-                            }
-                        }
-                         
-                    }
-                    
-                    while !op_stack.is_empty() {
-                        let pop_it = op_stack.pop().unwrap();
-                        out_vec.push(pop_it);
-                    }
-                    // println!("mid express:{:?}",out_vec);
-                    let mut out_vec2:Vec<String> = vec![];
-                    for it in out_vec {
-                        if it.starts_with('N') {
-                            out_vec2.push(it.get(1..).unwrap().to_string());
-                        }if it == "真" || it == "假" {
-                            out_vec2.push(it.to_owned());
-                        }else if it == "^" {
-                            let l2 = out_vec2.pop().ok_or("^ err")?;
-                            let l1 = out_vec2.pop().ok_or("^ err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            out_vec2.push((n1.powf(n2)).to_string());
-                        }else if it == "!" {
-                            let l1 = out_vec2.pop().ok_or("! err")?;
-                            if l1 == "真" {
-                                out_vec2.push("假".to_string());
-                            }else{
-                                out_vec2.push("真".to_string());
-                            }
-                        }else if it == "--" {
-                            let l1 = out_vec2.pop().ok_or("- err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            out_vec2.push((-n1).to_string());
-                        }else if it == "%" {
-                            let l2 = out_vec2.pop().ok_or("% err")?;
-                            let l1 = out_vec2.pop().ok_or("% err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            out_vec2.push((n1 % n2).to_string());
-                        }else if it == "/" {
-                            let l2 = out_vec2.pop().ok_or("/ err")?;
-                            let l1 = out_vec2.pop().ok_or("/ err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            out_vec2.push((n1 / n2).to_string());
-                        }else if it == "//" {
-                            let l2 = out_vec2.pop().ok_or("// err")?;
-                            let l1 = out_vec2.pop().ok_or("// err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            out_vec2.push(((n1 / n2) as i64).to_string());
-                        }else if it == "*" {
-                            let l2 = out_vec2.pop().ok_or("* err")?;
-                            let l1 = out_vec2.pop().ok_or("* err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            out_vec2.push((n1 * n2).to_string());
-                        }else if it == "+" {
-                            let l2 = out_vec2.pop().ok_or("+ err")?;
-                            let l1 = out_vec2.pop().ok_or("+ err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            out_vec2.push((n1 + n2).to_string());
-                        }else if it == "-" {
-                            let l2 = out_vec2.pop().ok_or("- err")?;
-                            let l1 = out_vec2.pop().ok_or("- err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            out_vec2.push((n1 - n2).to_string());
-                        }else if it == "==" {
-                            let l2 = out_vec2.pop().ok_or("== err")?;
-                            let l1 = out_vec2.pop().ok_or("== err")?;
-                            if l1 == l2{
-                                out_vec2.push("真".to_string());
-                            }else{
-                                if (l1 == "真" && l2 == "假")||(l1 == "假" && l2 == "真"){
-                                    out_vec2.push("假".to_string());
-                                }else{
-                                    let n1 = l1.parse::<f64>()?;
-                                    let n2 = l2.parse::<f64>()?;
-                                    if (n1 - n2).abs() < 0.0000001f64 {
-                                        out_vec2.push("真".to_string());
-                                    }else{
-                                        out_vec2.push("假".to_string());
-                                    }
-                                }
-                            }
-                        }else if it == "!=" {
-                            let l2 = out_vec2.pop().ok_or("!= err")?;
-                            let l1 = out_vec2.pop().ok_or("!= err")?;
-                            if l1 == l2{
-                                out_vec2.push("假".to_string());
-                            }else{
-                                if (l1 == "真" && l2 == "假")||(l1 == "假" && l2 == "真"){
-                                    out_vec2.push("真".to_string());
-                                }else{
-                                    let n1 = l1.parse::<f64>()?;
-                                    let n2 = l2.parse::<f64>()?;
-                                    if (n1 - n2).abs() < 0.0000001f64 {
-                                        out_vec2.push("假".to_string());
-                                    }else{
-                                        out_vec2.push("真".to_string());
-                                    }
-                                }
-                            }
-                        }else if it == ">" {
-                            let l2 = out_vec2.pop().ok_or("> err")?;
-                            let l1 = out_vec2.pop().ok_or("> err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            if n1 > n2 {
-                                out_vec2.push("真".to_owned());
-                            }else {
-                                out_vec2.push("假".to_owned());
-                            }
-                            
-                        }else if it == "<" {
-                            let l2 = out_vec2.pop().ok_or("< err")?;
-                            let l1 = out_vec2.pop().ok_or("< err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            if n1 < n2 {
-                                out_vec2.push("真".to_owned());
-                            }else {
-                                out_vec2.push("假".to_owned());
-                            }
-                        }else if it == ">=" {
-                            let l2 = out_vec2.pop().ok_or(">= err")?;
-                            let l1 = out_vec2.pop().ok_or(">= err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            if n1 >= n2 {
-                                out_vec2.push("真".to_owned());
-                            }else {
-                                out_vec2.push("假".to_owned());
-                            }
-                        }else if it == "<=" {
-                            let l2 = out_vec2.pop().ok_or("<= err")?;
-                            let l1 = out_vec2.pop().ok_or("<= err")?;
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            if n1 <= n2 {
-                                out_vec2.push("真".to_owned());
-                            }else {
-                                out_vec2.push("假".to_owned());
-                            }
-                        }else if it == "||" {
-                            let l2 = out_vec2.pop().ok_or("|| err")?;
-                            let l1 = out_vec2.pop().ok_or("|| err")?;
-                            if l1=="真"  || l2 == "真"{
-                                out_vec2.push("真".to_owned());
-                            }else {
-                                out_vec2.push("假".to_owned());
-                            }
-                        }else if it == "&&" {
-                            let l2 = out_vec2.pop().ok_or("&& err")?;
-                            let l1 = out_vec2.pop().ok_or("&& err")?;
-                            if l1=="真"  && l2 == "真"{
-                                out_vec2.push("真".to_owned());
-                            }else {
-                                out_vec2.push("假".to_owned());
-                            }
-                        }
-                        
-                    }
-                    return Ok(out_vec2.get(0).ok_or("计算失败")?.to_string());
-                }
-                ret_str = cala(&k1)?;
-        }else if cmd == "数组" {
-            let arr_len = params.len();
-            let mut temp_ret:Vec<String> = vec![];
-            for i in 0..arr_len {
-                let s = self.get_param(params, i)?;
-                temp_ret.push(s);
-            }
-            ret_str = self.build_arr(temp_ret);
-        }
-        else if cmd == "对象" {
-            let params_len = params.len();
-            if params_len % 2 != 0 {
-                return Err(RedLang::make_err("请保证对象参数为偶数个"));
-            }
-            let mut temp_ret:BTreeMap<String,String> = BTreeMap::new();
-            for i in 0..(params_len/2) {
-                let k = self.get_param(params, i*2)?;
-                let v = self.get_param(params, i*2 + 1)?;
-                temp_ret.insert(k, v);
-            }
-            ret_str = self.build_obj(temp_ret);
-        } 
-        else if cmd == "取长度" {
-            let data = self.get_param(params, 0)?;
-            ret_str = self.get_len(&data)?.to_string(); 
-        }
-        else if cmd == "转文本" {
-            let data = self.get_param(params, 0)?;
-            let tp = self.get_type(&data)?;
-            fn obj_to_text(self_t:&mut RedLang,data:& str,params:&[String]) -> Result<String, Box<dyn std::error::Error>>{
-                let mut ret_str = String::new();
-                ret_str.push('{');
-                let mut vec_t:Vec<String>  = vec![];
-                let obj = RedLang::parse_obj(&data)?;
-                for (k,v) in obj{
-                    let tp_k = self_t.get_type(&k)?;
-                    if tp_k != "文本" {
-                        return Err(RedLang::make_err(&("对象的键不支持的类型:".to_owned()+&tp_k)));
-                    }
-                    let mut temp_str = String::new();
-                    temp_str.push_str(&str_to_text(&k)?);
-                    temp_str.push(':');
-                    let tp_v = self_t.get_type(&v)?;
-                    if tp_v == "文本" {
-                        temp_str.push_str(&str_to_text(&v)?);
-                    }
-                    else if tp_v == "数组" {
-                        temp_str.push_str(&arr_to_text(self_t,&v,params)?);
-                    }
-                    else if tp_v == "字节集" {
-                        temp_str.push_str(&bin_to_text(self_t,&v,params)?);
-                    }
-                    else if tp_v == "对象" {
-                        temp_str.push_str(&obj_to_text(self_t,&v,params)?);
-                    }
-                    else {
-                        return Err(RedLang::make_err(&("对象的值不支持的类型:".to_owned()+&tp_v)));
-                    }
-                    vec_t.push(temp_str);
-                }
-                ret_str.push_str(&vec_t.join(","));
-                ret_str.push('}');
-                Ok(ret_str)
-            }
-            fn str_to_text(data:&str) -> Result<String, Box<dyn std::error::Error>>{
-                let j:serde_json::Value = serde_json::json!(
-                    data
-                );
-                return Ok(j.to_string())
-            }
-            fn arr_to_text(self_t:&mut RedLang,data:& str,params:&[String]) -> Result<String, Box<dyn std::error::Error>>{
-                let mut vec_t:Vec<String>  = vec![];
-                let arr = RedLang::parse_arr(&data)?;
-                for v in arr {
-                    let tp_v = self_t.get_type(&v)?;
-                    if tp_v == "文本" {
-                        vec_t.push(str_to_text(&v)?);
-                    }
-                    else if tp_v == "数组" {
-                        vec_t.push(arr_to_text(self_t,&v,params)?);
-                    }
-                    else if tp_v == "字节集" {
-                        vec_t.push(bin_to_text(self_t,&v,params)?);
-                    }
-                    else if tp_v == "对象" {
-                        vec_t.push(obj_to_text(self_t,&v,params)?);
-                    }
-                    else {
-                        return Err(RedLang::make_err(&("数组的元素不支持的类型:".to_owned()+&tp_v)));
-                    }
-                }
-                return Ok(format!("[{}]",vec_t.join(",")));
-            }
-
-            fn bin_to_text(self_t:&mut RedLang,data:& str,params:&[String]) -> Result<String, Box<dyn std::error::Error>>{
-                let ret_str:String;
-                let code_t = self_t.get_param(params, 1)?;
-                let code = code_t.to_lowercase();
-                let u8_vec = RedLang::parse_bin(data)?;
-                if code == "" || code == "utf8" {
-                    ret_str = String::from_utf8(u8_vec)?;
-                }else if code == "gbk" {
-                    ret_str = encoding::all::GBK.decode(&u8_vec, encoding::DecoderTrap::Ignore)?;
-                }else{
-                    return Err(RedLang::make_err(&("不支持的编码:".to_owned()+&code_t)));
-                }
-                Ok(ret_str)
-            }
-            if tp == "字节集" {
-                ret_str = bin_to_text(self,&data,params)?;
-            }else if tp == "文本" {
-                ret_str = str_to_text(&data)?;
-            }else if tp == "数组" {
-                ret_str = arr_to_text(self,&data,params)?;
-            }else if tp == "对象" {
-                ret_str = obj_to_text(self,&data,params)?;
-            }
-            else{
-                return Err(RedLang::make_err(&("对应类型不能转文本:".to_owned()+&tp)));
-            }
-        }
-        else if cmd == "增加元素" {
-            // 获得变量
-            let var_name = self.get_param(params, 0)?;
-            let data:Rc<RefCell<RedLangVarType>>;
-            if let Some(v) = self.get_var_ref(&var_name) {
-                data = v;
-            }else {
-                return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
-            }
-            // 获得变量类型
-            let tp =(*data).borrow().get_type();
-            let el_len;
-            if tp == "对象" {
-                el_len = (params.len() -1) / 2;
-            }else {
-                el_len = params.len() -1;
-            }
-            //  增加元素
-            for i in 0..el_len {
-                if tp == "数组" {
-                    let el = self.get_param(params, i + 1)?;
-                    let mut v = (*data).borrow_mut();
-                    v.add_arr(&el)?;
-                }else if tp == "对象" {
-                    let elk = self.get_param(params, i * 2 + 1)?;
-                    let elv = self.get_param(params, i * 2 + 2)?;
-
-                    let mut v = (*data).borrow_mut();
-                    v.add_obj(elk,elv)?;
-                    
-                }else if tp == "文本" { 
-                    let el = self.get_param(params, i + 1)?;
-                    let mut v = (*data).borrow_mut();
-                    v.add_str(&el)?;
-
-                }else if tp == "字节集" {
-                    let el_t = self.get_param(params, i + 1)?;
-                    let el = RedLang::parse_bin(&el_t)?;
-                    let mut  v = (*data).borrow_mut();
-                    v.add_bin(el)?;
-                }else{
-                    return Err(RedLang::make_err(&("对应类型不能增加元素:".to_owned()+&tp)));
-                }
-            }
-        }else if cmd == "替换元素" {
-            // 获得变量
-            let var_name = self.get_param(params, 0)?;
-            let k_name = self.get_param(params, 1)?;
-            let v_name = self.get_param(params, 2)?;
-            let data:Rc<RefCell<RedLangVarType>>;
-            if let Some(v) = self.get_var_ref(&var_name) {
-                data = v;
-            }else {
-                return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
-            }
-            // 获得变量类型
-            let tp =(*data).borrow().get_type();
-            if tp == "数组" {
-                let index = k_name.parse::<usize>()?;
-                let mut v = (*data).borrow_mut();
-                v.rep_arr(index, v_name)?;
-            }else if tp == "对象" {
-                let mut v = (*data).borrow_mut();
-                v.rep_obj(k_name, v_name)?;
-                
-            }else if tp == "文本" { 
-                let index = k_name.parse::<usize>()?;
-                let mut v = (*data).borrow_mut();
-                let v_chs = v_name.chars().collect::<Vec<char>>();
-                if v_chs.len() != 1 {
-                    return Err(RedLang::make_err("替换文本元素时值的长度不为1"));
-                }
-                v.rep_str(index, v_chs[0])?;
-
-            }else if tp == "字节集" {
-                let index = k_name.parse::<usize>()?;
-                let mut v = (*data).borrow_mut();
-                let bt = RedLang::parse_bin(&v_name)?;
-                if bt.len() != 1 {
-                    return Err(RedLang::make_err("替换字节集元素时值的长度不为1"));
-                }
-                v.rep_bin(index, bt[0])?;
-            }else{
-                return Err(RedLang::make_err(&("对应类型不能替换元素:".to_owned()+&tp)));
-            }
-        }else if cmd == "删除元素" {
-            // 获得变量
-            let var_name = self.get_param(params, 0)?;
-            let k_name = self.get_param(params, 1)?;
-            let data:Rc<RefCell<RedLangVarType>>;
-            if let Some(v) = self.get_var_ref(&var_name) {
-                data = v;
-            }else {
-                return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
-            }
-            // 获得变量类型
-            let tp =(*data).borrow().get_type();
-            if tp == "数组" {
-                let index = k_name.parse::<usize>()?;
-                let mut v = (*data).borrow_mut();
-                v.rv_arr(index)?;
-            }else if tp == "对象" {
-                let mut v = (*data).borrow_mut();
-                v.rv_obj(&k_name)?;
-                
-            }else if tp == "文本" { 
-                let index = k_name.parse::<usize>()?;
-                let mut v = (*data).borrow_mut();
-                v.rv_str(index)?;
-
-            }else if tp == "字节集" {
-                let index = k_name.parse::<usize>()?;
-                let mut v = (*data).borrow_mut();
-                v.rv_bin(index)?;
-            }else{
-                return Err(RedLang::make_err(&("对应类型不能删除元素:".to_owned()+&tp)));
-            }
-        }
-        else if cmd == "取元素" {
-            let nums = params.len();
-            let df = String::new();
-            let mut param_data = self.get_param(params, 0)?;
-            for i in 1..nums {
-                let tp = self.get_type(&param_data)?;
-                if tp == "数组" {
-                    let index = self.get_param(params, i)?.parse::<usize>()?;
-                    let mp = RedLang::parse_arr(&param_data)?;
-                    let v_opt = mp.get(index);
-                    if let Some(v) = v_opt {
-                        param_data = v.to_string();
-                    }else{
-                        param_data = df;
-                        break;
-                    }
-                }else if tp == "对象" { 
-                    let index = self.get_param(params, i)?;
-                    let mp = RedLang::parse_obj(&param_data)?;
-                    let v_opt = mp.get(&index);
-                    if let Some(v) = v_opt {
-                        param_data = v.to_string();
-                    }else{
-                        param_data = df;
-                        break;
-                    }
-                }else if tp == "文本" {
-                    let index = self.get_param(params, i)?.parse::<usize>()?;
-                    let v_chs =param_data.chars().collect::<Vec<char>>();
-                    let v_opt = v_chs.get(index);
-                    if let Some(v) = v_opt {
-                        param_data = v.to_string();
-                    }else{
-                        param_data = df;
-                        break;
-                    }
-                }else{
-                    return Err(RedLang::make_err(&("对应类型不能取元素:".to_owned()+&tp)));
-                }
-            }
-            ret_str = param_data;
-        }else if cmd.to_lowercase() == "取对象key" {
-            let param_data = self.get_param(params, 0)?;
-            let tp = self.get_type(&param_data)?;
-            if tp != "对象" {
-                return Err(RedLang::make_err(&("对应类型不能取对象key:".to_owned()+&tp)));
-            }
-            let parse_ret = RedLang::parse_obj(&param_data)?;
-            let mut arr:Vec<String> = vec![];
-            for key in parse_ret.keys() {
-                arr.push(key.to_string());
-            }
-            ret_str = self.build_arr(arr);
-        }
-        else if cmd == "取类型" {
-            let param_data = self.get_param(params, 0)?;
-            ret_str = self.get_type(&param_data)?;
-        }
-        else if cmd == "取随机数" {
-            fn get_random() -> Result<usize, getrandom::Error> {
-                let mut rand_buf = [0u8; std::mem::size_of::<usize>()];
-                getrandom::getrandom(&mut rand_buf)?;
-                let mut num = 0usize;
-                for i in 0..std::mem::size_of::<usize>() {
-                    num += (num << 8) + (rand_buf[i] as usize);
-                }
-                Ok(num)
-            }
-            let num1 = self.get_param(params, 0)?.parse::<usize>()?;
-            let num2 = self.get_param(params, 1)?.parse::<usize>()?;
-            if num1 > num2 {
-                return Err(RedLang::make_err("生成随机数失败,请保证第一个数不大于第二个数，且都为非负数"));
-            }
-            let rand_num = get_random()?;
-            let num = num2 + 1 - num1;
-            let ret_num = (rand_num %  num) + num1;
-            ret_str = ret_num.to_string();
-        }else if cmd == "文本替换" {
-            let text = self.get_param(params, 0)?;
-            let from = self.get_param(params, 1)?;
-            let to = self.get_param(params, 2)?;
-            ret_str = text.replace(&from, &to);
-        }else if cmd == "运行脚本" {
-            let mut rl = RedLang::new();
-            rl.exmap = self.exmap.clone(); // 获得一些拓展相关的变量
-            rl.pkg_name = self.pkg_name.clone();
-            rl.script_name = self.script_name.clone();
-            let code = self.get_param(params, 0)?;
-            // 将参数传入新脚本
-            let params_len = params.len();
-            for i in 1..params_len {
-                rl.params_vec[0].push(self.get_param(params, i)?);
-            }
-            ret_str = rl.parse(&code)?;
-            // 处理清空指令
-            if let Some(pos) = ret_str.rfind(CLEAR_UUID.as_str()) {
-                ret_str = ret_str.get((pos + 36)..).unwrap().to_owned();
-            }
-        }else {
+        } else {
             return Err(RedLang::make_err(&format!("未知的命令:{}", cmd)));
         }
         Ok(ret_str)
