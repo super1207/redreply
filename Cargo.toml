@@ -37,6 +37,9 @@ tracing-subscriber = "*"
 opener = "*"
 rusqlite = {version = "*",features = ["bundled"]}
 
+[target.'cfg(windows)'.dependencies]
+headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}
+
 [profile.release]
 panic = 'abort'
 
