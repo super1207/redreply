@@ -54,11 +54,13 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
 }
 
 pub fn do_script(rl:&mut RedLang,code:&str,deal_err:bool) -> Result<(), Box<dyn std::error::Error>>{
-    if add_running_script_num() == false {
+    if add_running_script_num(&rl.pkg_name,&rl.script_name) == false {
         return Ok(());
     }
+    let pkg_name = rl.pkg_name.clone();
+    let script_name = rl.script_name.clone();
     let _guard = scopeguard::guard((),|_| {
-        dec_running_script_num();
+        dec_running_script_num(&pkg_name,&script_name);
     });
 
     let out_str_t_rst = rl.parse(code);

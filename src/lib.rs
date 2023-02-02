@@ -29,6 +29,12 @@ pub mod httpserver;
 #[macro_use]
 extern crate lazy_static; 
 
+#[derive(Clone,Debug)]
+pub struct ScriptInfo {
+    pkg_name:String,
+    script_name:String
+}
+
 lazy_static! {
     // 用于记录加载的脚本
     pub static ref G_SCRIPT:RwLock<serde_json::Value> = RwLock::new(serde_json::json!([]));
@@ -52,6 +58,8 @@ lazy_static! {
     pub static ref G_QUIT_FLAG:RwLock<bool> = RwLock::new(false);
     // 记录正在运行的脚本数量（用于退出）
     pub static ref G_RUNNING_SCRIPT_NUM:RwLock<usize> = RwLock::new(0usize);
+    // 记录正在运行的脚本名字
+    pub static ref G_RUNNING_SCRIPT:RwLock<Vec<ScriptInfo>> = RwLock::new(vec![]);
 }
 
 
@@ -74,25 +82,56 @@ pub fn wait_for_quit() -> ! {
         loop_times += 1;
         if loop_times == 5000 {
             cq_add_log_w("退出软件超时(5s)，强制退出!").unwrap();
+            let running_scripts = get_running_script_info();
+            cq_add_log_w(&format!("未退出脚本:{:?}",running_scripts)).unwrap();
             break;
         }
     }
     std::process::exit(0);
 }
 
-pub fn add_running_script_num() -> bool {
+pub fn add_running_script_num(pkg_name:&str,script_name:&str) -> bool {
     if *G_QUIT_FLAG.read().unwrap() == true {
         return false;
     }
     let mut lk = G_RUNNING_SCRIPT_NUM.write().unwrap();
     (*lk) += 1;
+    let mut lk = G_RUNNING_SCRIPT.write().unwrap();
+    lk.push(ScriptInfo {
+        pkg_name: pkg_name.to_owned(),
+        script_name: script_name.to_owned()
+    });
     return true;
 }
 
-pub fn dec_running_script_num() {
+pub fn get_running_script_info() -> Vec<ScriptInfo> {
+    let lk = G_RUNNING_SCRIPT.read().unwrap();
+    let mut ret_vec:Vec<ScriptInfo> = vec![];
+    for i in 0..lk.len() {
+        let script_info = lk.get(i).unwrap();
+        ret_vec.push((*script_info).clone());
+    }
+    return ret_vec;
+}
+
+pub fn dec_running_script_num(pkg_name:&str,script_name:&str) {
     let mut lk = G_RUNNING_SCRIPT_NUM.write().unwrap();
     if (*lk) != 0 {
         (*lk) -= 1;
+    }
+    let mut lk = G_RUNNING_SCRIPT.write().unwrap();
+    let mut pos = 0;
+    let mut isfind = false;
+    for i in 0..lk.len() {
+        let script_info = lk.get(i).unwrap();
+        if script_info.script_name == script_name && pkg_name == script_info.pkg_name {
+            pos = i;
+            isfind = true;
+            break;
+        }
+    }
+    if isfind {
+        lk.remove(pos);
     }
 }
 
