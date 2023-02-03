@@ -369,8 +369,15 @@ pub fn init_cq_ex_fun_map() {
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["常量"],|self_t,params|{
-        let k = self_t.get_param(params, 0)?;
-        return Ok(Some(get_const_val(&self_t.pkg_name, &k)?.to_owned()));
+        let params_len = params.len();
+        if params_len == 1 { // 取当前包的常量
+            let k = self_t.get_param(params, 0)?;
+            return Ok(Some(get_const_val(&self_t.pkg_name, &k)?.to_owned()));
+        }else{ // 取其它包的常量
+            let pkg_name = self_t.get_param(params, 0)?;
+            let k = self_t.get_param(params, 1)?;
+            return Ok(Some(get_const_val(&pkg_name, &k)?.to_owned()));
+        }
     });
     add_fun(vec!["进程ID"],|_self_t,_params|{
         return Ok(Some(std::process::id().to_string()));
