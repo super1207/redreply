@@ -1,6 +1,6 @@
-use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr};
+use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr, sync::Arc};
 
-use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID};
+use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -496,5 +496,43 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["当前消息"],|self_t,_params|{
         let msg = self_t.get_exmap("当前消息");
         return Ok(Some(msg.to_string()));
+    });
+    add_fun(vec!["输入流"],|self_t,params|{
+        let tm = self_t.get_param(params, 0)?;
+        let d = std::time::Duration::from_millis(tm.parse::<u64>().unwrap_or(15000));
+        let echo = uuid::Uuid::new_v4().to_string();
+        let (tx, rx): (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
+        let ip = crate::InputStream {
+            group_id: self_t.get_exmap("群ID").to_string(),
+            user_id: self_t.get_exmap("发送者ID").to_string(),
+            stream_type: echo.clone(),
+            tx: Some(Arc::new(std::sync::Mutex::new(tx))),
+        };
+        {
+            let mut lk_vec = G_INPUTSTREAM_VEC.write()?;
+            lk_vec.push(ip);
+        }
+        let _guard = scopeguard::guard(echo, |echo| {
+            let mut lk_vec = G_INPUTSTREAM_VEC.write().unwrap();
+            let mut pos = 0usize;
+            let mut isfind = false;
+            for i in 0..lk_vec.len() {
+                if lk_vec[i].stream_type == echo {
+                    pos = i;
+                    isfind = true;
+                    break;
+                }
+            }
+            if isfind {
+                lk_vec.remove(pos);
+            }
+        });
+        
+        let rv = rx.recv_timeout(d);
+        let mut ret_str = String::new();
+        if let Ok(msg) = rv {
+            ret_str = msg;
+        }
+        return Ok(Some(ret_str));
     });
 }

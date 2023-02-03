@@ -4,6 +4,7 @@ use std::panic;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::RwLock;
 use cqapi::cq_get_app_directory2;
 use httpserver::init_http_server;
@@ -35,6 +36,13 @@ pub struct ScriptInfo {
     script_name:String
 }
 
+pub struct InputStream {
+    pub group_id:String,
+    pub user_id:String,
+    pub stream_type:String,
+    pub tx:Option<Arc<Mutex<std::sync::mpsc::Sender<String>>>>
+}
+
 lazy_static! {
     // 用于记录加载的脚本
     pub static ref G_SCRIPT:RwLock<serde_json::Value> = RwLock::new(serde_json::json!([]));
@@ -60,6 +68,8 @@ lazy_static! {
     pub static ref G_RUNNING_SCRIPT_NUM:RwLock<usize> = RwLock::new(0usize);
     // 记录正在运行的脚本名字
     pub static ref G_RUNNING_SCRIPT:RwLock<Vec<ScriptInfo>> = RwLock::new(vec![]);
+    // 输入流记录
+    pub static ref G_INPUTSTREAM_VEC:RwLock<Vec<InputStream>> = RwLock::new(vec![]);
 }
 
 
