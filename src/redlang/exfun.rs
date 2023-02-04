@@ -22,11 +22,25 @@ pub fn init_ex_fun_map() {
         let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
         for it in k_vec {
             let k = it.to_string();
-            if w.contains_key(&k) {
-                let err_opt:Option<String> = None;
-                err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
+            let k_t = crate::mytool::str_to_jt(&k);
+            if k == k_t {
+                if w.contains_key(&k) {
+                    let err_opt:Option<String> = None;
+                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
+                }
+                w.insert(k, fun);
+            }else {
+                if w.contains_key(&k) {
+                    let err_opt:Option<String> = None;
+                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
+                }
+                w.insert(k, fun);
+                if w.contains_key(&k_t) {
+                    let err_opt:Option<String> = None;
+                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k_t)).unwrap();
+                }
+                w.insert(k_t, fun);
             }
-            w.insert(k, fun);
         }
     }
     add_fun(vec!["访问"],|self_t,params|{
