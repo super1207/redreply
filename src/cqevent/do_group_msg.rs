@@ -18,7 +18,7 @@ pub fn msg_id_map_insert(user_id:String,group_id:String,message_id:String) ->Res
     Ok(())
 }
 
-fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>>{
+fn do_redlang(root: &serde_json::Value) -> Result< (), Box<dyn std::error::Error>>{
     let msg = json_to_cq_str(&root)?;
     // 在这里处理输入流
     {
@@ -28,9 +28,20 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
         let vec_len = vec_lk.len();
         for i in 0..vec_len {
             let st = vec_lk.get(i).unwrap();
-            if user_id == st.user_id && group_id ==st.group_id {
-                let k_arc = st.tx.clone().unwrap();
-                k_arc.lock().unwrap().send(msg.clone())?;
+            if st.stream_type == "输入流" {
+                if user_id == st.user_id && group_id ==st.group_id {
+                    let k_arc = st.tx.clone().unwrap();
+                    k_arc.lock().unwrap().send(msg.clone())?;
+                }
+            }else{
+                if group_id ==st.group_id {
+                    let k_arc = st.tx.clone().unwrap();
+                    let to_send = serde_json::json!({
+                        "发送者ID":user_id,
+                        "消息":msg
+                    });
+                    k_arc.lock().unwrap().send(to_send.to_string())?;
+                }
             }
         }
     }

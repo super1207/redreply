@@ -65,7 +65,7 @@
 				</div>
         <div id='readme' style='width:70%;margin-left:20%;'>
           	<article class='markdown-body'>
-            	<h1 id="redlang-v0-0-23-">RedLang v0.0.23 语法简述</h1>
+            	<h1 id="redlang-v0-0-24-">RedLang v0.0.24 语法简述</h1>
 <p>注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br /></p>
 <p>作者qq：1875159423<br /></p>
 <p>qq群号：920220179 (目前使用MiraiCQ的群)<br /></p>
@@ -567,9 +567,15 @@
 <p>取出消息事件中的图片url数组。</p>
 <h3 id="-">输入流</h3>
 <p>【输入流@<font color="red">超时</font>】<br /></p>
-<p>返回当前群、当前发送者的下一条消息，可以在私聊中使用，暂时不支持频道。<br />
+<p>返回当前群、当前发送者的下一条消息，可以在私聊和频道中使用。<br />
 超时参数的单位是毫秒，可以省略，默认15000。<br />
 若超时，返回空文本。</p>
+<h3 id="-">群输入流</h3>
+<p>【群输入流@<font color="red">超时</font>】<br /></p>
+<p>返回当前群的下一条消息和其发送者(一个RedLang对象)，可以在频道中使用。<br />
+返回示例:<code>{&quot;发送者ID&quot;:&quot;1875159423&quot;,&quot;消息&quot;:&quot;你好，世界&quot;}</code><br />
+超时参数的单位是毫秒，可以省略，默认15000。<br />
+若超时，返回空对象。</p>
 <h3 id="ob-">OB调用</h3>
 <p>【OB调用@<font color="red">onebot要求的json文本</font>】<br /></p>
 <p>此命令用于发送原始onebot数据，以调用框架不支持，以及尚未支持的功能。<br /></p>

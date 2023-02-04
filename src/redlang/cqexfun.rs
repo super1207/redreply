@@ -500,12 +500,19 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["输入流"],|self_t,params|{
         let tm = self_t.get_param(params, 0)?;
         let d = std::time::Duration::from_millis(tm.parse::<u64>().unwrap_or(15000));
+        let group_id = self_t.get_exmap("群ID");
+        let user_id = self_t.get_exmap("发送者ID");
+        let guild_id = self_t.get_exmap("频道ID");
+        let channel_id = self_t.get_exmap("子频道ID");
         let echo = uuid::Uuid::new_v4().to_string();
         let (tx, rx): (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
         let ip = crate::InputStream {
-            group_id: self_t.get_exmap("群ID").to_string(),
-            user_id: self_t.get_exmap("发送者ID").to_string(),
-            stream_type: echo.clone(),
+            group_id: group_id.to_string(),
+            user_id: user_id.to_string(),
+            guild_id: guild_id.to_string(),
+            channel_id: channel_id.to_string(),
+            echo: echo.clone(),
+            stream_type:"输入流".to_owned(),
             tx: Some(Arc::new(std::sync::Mutex::new(tx))),
         };
         {
@@ -517,7 +524,7 @@ pub fn init_cq_ex_fun_map() {
             let mut pos = 0usize;
             let mut isfind = false;
             for i in 0..lk_vec.len() {
-                if lk_vec[i].stream_type == echo {
+                if lk_vec[i].echo == echo {
                     pos = i;
                     isfind = true;
                     break;
@@ -532,6 +539,56 @@ pub fn init_cq_ex_fun_map() {
         let mut ret_str = String::new();
         if let Ok(msg) = rv {
             ret_str = msg;
+        }
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["群输入流"],|self_t,params|{
+        let tm = self_t.get_param(params, 0)?;
+        let d = std::time::Duration::from_millis(tm.parse::<u64>().unwrap_or(15000));
+        let group_id = self_t.get_exmap("群ID");
+        let user_id = self_t.get_exmap("发送者ID");
+        let guild_id = self_t.get_exmap("频道ID");
+        let channel_id = self_t.get_exmap("子频道ID");
+        let echo = uuid::Uuid::new_v4().to_string();
+        let (tx, rx): (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
+        let ip = crate::InputStream {
+            group_id: group_id.to_string(),
+            user_id: user_id.to_string(),
+            guild_id: guild_id.to_string(),
+            channel_id: channel_id.to_string(),
+            echo: echo.clone(),
+            stream_type:"群输入流".to_owned(),
+            tx: Some(Arc::new(std::sync::Mutex::new(tx))),
+        };
+        {
+            let mut lk_vec = G_INPUTSTREAM_VEC.write()?;
+            lk_vec.push(ip);
+        }
+        let _guard = scopeguard::guard(echo, |echo| {
+            let mut lk_vec = G_INPUTSTREAM_VEC.write().unwrap();
+            let mut pos = 0usize;
+            let mut isfind = false;
+            for i in 0..lk_vec.len() {
+                if lk_vec[i].echo == echo {
+                    pos = i;
+                    isfind = true;
+                    break;
+                }
+            }
+            if isfind {
+                lk_vec.remove(pos);
+            }
+        });
+        
+        let rv = rx.recv_timeout(d);
+        let mut ret_str = self_t.build_obj(BTreeMap::new());
+        if let Ok(msg) = rv {
+            let js:serde_json::Value = serde_json::from_str(&msg).unwrap();
+            let js_obj = js.as_object().unwrap();
+            let mut mp:BTreeMap::<String,String> = BTreeMap::new();
+            mp.insert("发送者ID".to_string(), js_obj["发送者ID"].as_str().unwrap().to_owned());
+            mp.insert("消息".to_string(), js_obj["消息"].as_str().unwrap().to_owned());
+            ret_str = self_t.build_obj(mp);
         }
         return Ok(Some(ret_str));
     });
