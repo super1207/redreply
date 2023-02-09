@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+        <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+        <!-- 引入样式 -->
+        <title>连接ONEBOT</title>
+        <style>
+            html,body{
+                width: 100%;
+                height: 100%;
+                display: flex;
+                margin: 0;
+            }
+            #app {
+                display: flex;
+                flex: 1 0 auto;
+                flex-direction: column;
+            }
+
+            #app > h1 {
+                color: red;
+                text-align: center;
+            }
+            #show{
+                display: flex;
+                flex-direction: column;
+                height: 0;
+                flex: 1 0 auto;
+            }
+            #show > div {
+                border-style:solid;
+                cursor: pointer;
+                margin-top: 1px;
+            }
+            #foot{
+                display: flex;
+                flex: 0 0 3em;
+            }
+            #foot > button {
+                flex: 1 0 auto;
+            }
+            .name_active { /* 点中名字，变色属性 */
+                color: red;
+            }
+            #favDialog {
+                margin: auto;
+                height: 5em;
+                width: 20em;
+            }
+            #dialog_set {
+                display: flex;
+                flex-direction: column;
+            }
+            #dialog_set > div{
+                display: flex;
+            }
+            #dialog_set > form {
+                display: flex;
+                justify-content: space-around;
+            }
+            #dialog_set > form > button {
+                width: 5em;
+            }
+            #foot > button {
+                flex: 1 0 auto;
+            }
+
+        </style>
+    </head>
+    <body>
+        <div id="app">
+            <dialog id = "favDialog">
+                <div id = "dialog_set">
+                  <div class = "ws_set"><span>ws_url:</span><input id = "ws_url_id" v-model = "ws_url"></input></div>
+                  <form method="dialog">
+                    <button @click="dialog_ok">确定</button>
+                    <button @click="dialog_cancel">取消</button>
+                  </form>
+                </div>
+            </dialog>
+            <h1>连接ONEBOT</h1>
+            <div id = "show">
+                <div v-for="(url,index) in ws_urls" @click="select_name_index=index" :class="{name_active:index==select_name_index}">
+                    {{ url }}
+                </div>
+            </div>
+            <div id = "foot">
+                <button id = "add" @click="add_endpoint()">新增</button>
+                <button id = "del" @click="del_endpoint()">删除</button>
+                <button id = "edit" @click="edit_endpoint()">编辑</button>
+                <button id = "save" @click="save_endpoint()">保存</button>
+            </div>
+        </div>
+        <script>
+            const { createApp } = Vue
+            createApp({
+                data() {
+                    return {
+                        select_name_index: -1,
+                        ws_urls : [],
+                    }
+                },
+                mounted () {
+                    axios
+                    .get("/get_config")
+                    .then(
+                    res => {
+                        // console.log(res)
+                        let ret = res.data["data"];
+                        this.ws_urls = ret["ws_urls"]
+                        console.log(this.ws_urls)
+                    })
+                    .catch(function (error) {
+                        console.log(error);
+                    });
+                },
+                methods: {
+                    add_endpoint(event) {
+                        // this.is_add = true;
+                        // this.ws_url = ""
+                        // document.getElementById('favDialog').showModal();
+                        alert("还没有实现")
+                    },
+                    edit_endpoint(event) {
+                        alert("还没有实现")
+                    },
+                    save_endpoint(event) {
+                        alert("还没有实现")
+                    },
+                    del_endpoint(event) {
+                        alert("还没有实现")
+                    }
+                }
+            }).mount('#app')
+        </script>
+    </body>
+</html>

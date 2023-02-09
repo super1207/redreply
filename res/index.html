@@ -16,7 +16,7 @@
     </head>
     <body>
         <div id="app">
-            <h1>红色问答 0.0.24</h1>
+            <h1>红色问答 0.0.25</h1>
             <div id="pkg_btn_vec">
                 <div v-for="(pkg_content,pkg_name) in pkg_codes" @click="" >
                     <button @click="if(pkg_name!=select_pkg_name){this.save_cache(select_name_index);select_name_index_change(-1);select_name_index=-1;select_pkg_name=pkg_name}" :class="{name_active:pkg_name==select_pkg_name}">
@@ -60,12 +60,19 @@
                 </div>
             </div>
             <div id="cmd_content">
-                <button @click="add_code()">新增</button>
-                <button @click="del_code()">删除</button>
-                <button @click="save_code()">保存</button>
-                <button @click="help_web()">帮助</button>
-                <button @click="watch_log()">日志</button>
-                <button @click="quit_redreply()">退出</button>
+                <div>
+                    <button @click="add_code()">新增</button>
+                    <button @click="del_code()">删除</button>
+                    <button @click="save_code()">保存</button>
+                </div>
+                <div>
+                    <button @click="connect_ob()">连接ONEBOT</button>
+                    <button @click="help_web()">帮助</button>
+                    <button @click="watch_log()">日志</button>
+                    <button @click="quit_redreply()">退出</button>
+                </div>
+                
+               
             </div>
         </div>
         <!-- 引入js文件 -->

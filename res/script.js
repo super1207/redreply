@@ -142,6 +142,9 @@ const { createApp } = Vue
                             location.reload();
                         },1000);
                         axios.get("/close")
+                    },
+                    connect_ob() {
+                        window.open("/obconnect.html", "_blank");
                     }
                 }
             }).mount('#app')

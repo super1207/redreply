@@ -606,4 +606,32 @@ pub fn init_cq_ex_fun_map() {
         }
         return Ok(Some(ret_str));
     });
+    add_fun(vec!["BOT权限"],|self_t,_params|{
+        let group_id = self_t.get_exmap("群ID");
+        let user_id = self_t.get_exmap("机器人ID");
+        let send_json = serde_json::json!({
+            "action":"get_group_member_info",
+            "params":{
+                "group_id":group_id.to_string(),
+                "user_id":user_id.to_string()
+            }
+        });
+        let self_id = self_t.get_exmap("机器人ID");
+        let cq_ret = cq_call_api(&self_id,&send_json.to_string())?;
+        let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
+        let err = format!("获取BOT权限失败:{ret_json}");
+        let dat_json = ret_json.get("data").ok_or(err)?;
+        let role = read_json_str(dat_json,"role");
+        let role_ret;
+        if role == "admin" {
+            role_ret = "管理"
+        }else if role == "owner" {
+            role_ret = "群主"
+        }else if role == "member" {
+            role_ret = "群员"
+        }else {
+            return Err(RedLang::make_err("获取BOT权限失败:返回的json中无role字段"));
+        }
+        return Ok(Some(role_ret.to_string()));
+    });
 }
