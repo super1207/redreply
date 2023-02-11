@@ -194,6 +194,14 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     Ok(serde_json::from_str(&script)?)
 }
 
+pub fn set_ws_urls(ws_urls:serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
+    let mut config = read_config()?;
+    config["ws_urls"] = ws_urls;
+    let script_path = cq_get_app_directory1()? + "config.json";
+    fs::write(script_path,config.to_string())?;
+    Ok(())
+}
+
 pub fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let plus_dir_str = cq_get_app_directory1()?;
     let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");

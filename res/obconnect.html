@@ -51,23 +51,24 @@
                 width: 20em;
             }
             #dialog_set {
+                width: 100%;
+                height: 100%;
                 display: flex;
                 flex-direction: column;
+                justify-content: space-around;
             }
+            
             #dialog_set > div{
                 display: flex;
             }
+            #dialog_set > div > input{
+                flex: 1 0 auto;
+            }
+            
             #dialog_set > form {
                 display: flex;
                 justify-content: space-around;
             }
-            #dialog_set > form > button {
-                width: 5em;
-            }
-            #foot > button {
-                flex: 1 0 auto;
-            }
-
         </style>
     </head>
     <body>
@@ -101,6 +102,7 @@
                     return {
                         select_name_index: -1,
                         ws_urls : [],
+                        ws_url:""
                     }
                 },
                 mounted () {
@@ -119,19 +121,42 @@
                 },
                 methods: {
                     add_endpoint(event) {
-                        // this.is_add = true;
-                        // this.ws_url = ""
-                        // document.getElementById('favDialog').showModal();
-                        alert("还没有实现")
+                        this.is_add = true;
+                        this.ws_url = ""
+                        document.getElementById('favDialog').showModal();
                     },
                     edit_endpoint(event) {
-                        alert("还没有实现")
+                        if(this.select_name_index != -1){
+                            this.is_add = false;
+                            this.ws_url = this.ws_urls[this.select_name_index]
+                            document.getElementById('favDialog').showModal();
+                        }
                     },
                     save_endpoint(event) {
-                        alert("还没有实现")
+                        axios
+                        .post("/set_ws_urls",this.ws_urls)
+                        .then(function (res){
+                            alert("保存成功")
+                        })
+                        .catch(function (error) {
+                            console.log(error);
+                            alert("保存失败")
+                        });
                     },
                     del_endpoint(event) {
-                        alert("还没有实现")
+                        if(this.select_name_index != -1){
+                            this.ws_urls.splice(this.select_name_index,1);
+                            this.select_name_index -= 1;
+                        }
+                    },
+                    dialog_ok(event) {
+                        if(this.is_add){
+                            this.ws_urls.push(this.ws_url)
+                        }else{
+                            this.ws_urls[this.select_name_index] = this.ws_url;
+                        }
+                    },
+                    dialog_cancel(event) {
                     }
                 }
             }).mount('#app')

@@ -264,7 +264,6 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                 }
                 // 连接未在bot_map中的url
                 for url in &config_urls {
-                    cq_add_log_w(&format!("{:?}",config_urls)).unwrap();
                     let is_exist;
                     if G_BOT_MAP.read().await.contains_key(url) {
                         is_exist = true;

@@ -75,6 +75,28 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
                 Ok(res)
             },
         }
+    }else if url_path == "/set_ws_urls" {
+        let body = hyper::body::to_bytes(request.into_body()).await?;
+        let js:serde_json::Value = serde_json::from_slice(&body)?;
+        match crate::set_ws_urls(js){
+            Ok(_) => {
+                let ret = json!({
+                    "retcode":0,
+                });
+                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+                Ok(res)
+            },
+            Err(_) => {
+                let ret = json!({
+                    "retcode":-1,
+                });
+                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+                Ok(res)
+            },
+        }
+        
     }else if url_path == "/set_code" {
         let body = hyper::body::to_bytes(request.into_body()).await?;
         let js:serde_json::Value = serde_json::from_slice(&body)?;
