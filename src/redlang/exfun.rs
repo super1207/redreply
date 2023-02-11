@@ -910,6 +910,51 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some(self_t.build_arr(vec)));
     });
+    add_fun(vec!["截屏"],|self_t,_params|{
+        let screens = screenshots::Screen::all()?;
+        if screens.len() > 0 {
+            let image = screens[0].capture()?;
+            let buffer = image.buffer();
+            return Ok(Some(self_t.build_bin(buffer.to_vec())));
+        }
+        return Ok(Some(self_t.build_bin(vec![])));
+    });
+    add_fun(vec!["文件信息"],|self_t,params|{
+        let file_path = self_t.get_param(params, 0)?;
+        let path = Path::new(&file_path);
+        let mut ret_obj:BTreeMap<String, String> = BTreeMap::new();
+        if !path.exists() {
+            return Ok(Some(self_t.build_obj(BTreeMap::new())));
+        }
+        let file_info = fs::metadata(path)?;
+        ret_obj.insert("大小".to_string(), file_info.len().to_string());
+        ret_obj.insert("创建时间".to_string(), file_info.created()?.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+        ret_obj.insert("修改时间".to_string(), file_info.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+        ret_obj.insert("访问时间".to_string(), file_info.accessed()?.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+        if file_info.is_dir() {
+            ret_obj.insert("类型".to_string(), "目录".to_string());
+        }else {
+            ret_obj.insert("类型".to_string(), "文件".to_string());
+        }
+        if file_info.is_symlink() {
+            ret_obj.insert("符号链接".to_string(), "真".to_string());
+        }else {
+            ret_obj.insert("符号链接".to_string(), "假".to_string());
+        }
+        return Ok(Some(self_t.build_obj(ret_obj)));
+    });
+    add_fun(vec!["删除目录"],|self_t,params|{
+        let dir_path = self_t.get_param(params, 0)?;
+        let path = Path::new(&dir_path);
+        let _foo = fs::remove_dir_all(path);
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["删除文件"],|self_t,params|{
+        let file_path = self_t.get_param(params, 0)?;
+        let path = Path::new(&file_path);
+        let _foo = fs::remove_file(path)?;
+        return Ok(Some("".to_string()));
+    });
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {

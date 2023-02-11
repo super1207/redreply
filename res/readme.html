@@ -306,6 +306,17 @@
 <h3 id="-">创建目录</h3>
 <p>【创建目录@<font color="red">路径</font>】<br /></p>
 <p>创建目录，可以一次性创建多级目录。</p>
+<h3 id="-">删除目录</h3>
+<p>【删除目录@<font color="red">路径</font>】<br /></p>
+<p>删除目录。无论成功与否，都返回空文本。</p>
+<h3 id="-">删除文件</h3>
+<p>【删除文件@<font color="red">路径</font>】<br /></p>
+<p>删除目录。无论成功与否，都返回空文本。</p>
+<h3 id="-">文件信息</h3>
+<p>【文件信息@<font color="red">路径</font>】<br /></p>
+<p>返回文件(或目录)的元数据。示例返回:</p>
+<pre><code>{&quot;修改时间&quot;:&quot;1676121266&quot;,&quot;创建时间&quot;:&quot;1675318094&quot;,&quot;大小&quot;:&quot;12176384&quot;,&quot;符号链接&quot;:&quot;假&quot;,&quot;类型&quot;:&quot;文件&quot;,&quot;访问时间&quot;:&quot;1676121283&quot;}
+</code></pre><p>返回的是一个RedLang对象。时间为10位unix时间戳，大小的单位为字节，类型为<code>文件</code>或<code>目录</code>，若文件不存在，则返回空对象。</p>
 <h3 id="-">分割</h3>
 <p>【分割@<font color="red">要分割的文本</font>@<font color="red">分割符号</font>】<br /></p>
 <p>返回文本数组。</p>
@@ -449,6 +460,10 @@
 <p>用无界面的浏览器打开网址，进行截图，返回图片字节集。若访问失败，返回空字节集。<br /></p>
 <p>CSS选择器可以选择截图的元素，省略CSS选择器表示截图整个网页<br /></p>
 <p>注意：在第一次使用此命令时，会自动下载一个140M左右的chrome浏览器，下载速度取决于你的网速，你可以在<code>C:\Users\&lt;你的用户名&gt;\AppData\Roaming\headless-chrome\data</code>查看下载进度。<br /></p>
+<p><strong>注意</strong>：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)</p>
+<h3 id="-">截屏</h3>
+<p>【截屏】<br /></p>
+<p>返回第一个显示器的屏幕截图。若没有显示器，则返回空字节集<br /></p>
 <p><strong>注意</strong>：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)</p>
 <h3 id="-">命令行</h3>
 <p>【命令行@<font color="red">文本</font>】<br /></p>
