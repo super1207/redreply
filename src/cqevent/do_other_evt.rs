@@ -45,7 +45,8 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
             let key_vec = keyword.split(":").collect::<Vec<&str>>();
             for j in 0..key_vec.len() {
                 if &key_vec.get(j).unwrap_or(&"").trim() != evt_flag.get(j).unwrap_or(&""){
-                    return Ok(());
+                    // 匹配失败，继续匹配
+                    continue;
                 }
             }
             rl.pkg_name = pkg_name.to_owned();
