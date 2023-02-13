@@ -43,15 +43,18 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
         if cffs == "事件触发" {
             set_normal_evt_info(&mut rl, root)?;
             let key_vec = keyword.split(":").collect::<Vec<&str>>();
+            let mut is_match = true;
             for j in 0..key_vec.len() {
                 if &key_vec.get(j).unwrap_or(&"").trim() != evt_flag.get(j).unwrap_or(&""){
-                    // 匹配失败，继续匹配
-                    continue;
+                    is_match = false;
+                    break;
                 }
             }
-            rl.pkg_name = pkg_name.to_owned();
-            rl.script_name = name.to_owned();
-            super::do_script(&mut rl,code,true)?;
+            if is_match {
+                rl.pkg_name = pkg_name.to_owned();
+                rl.script_name = name.to_owned();
+                super::do_script(&mut rl,code,true)?;
+            }
         }
     }
     Ok(())
