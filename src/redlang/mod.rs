@@ -266,11 +266,11 @@ pub struct RedLang {
     var_vec: Vec<HashMap<String,  Rc<RefCell<RedLangVarType>>>>, //变量栈
     xh_vec: Vec<[bool; 2]>,                // 循环控制栈
     params_vec: Vec<Vec<String>>,          // 函数参数栈
-    fun_ret_vec: Vec<bool>,                // 记录函数是否返回的栈
+    fun_ret_vec: Vec<(bool,usize)>,                // 记录函数是否返回,循环深度
     pub exmap:Rc<RefCell<HashMap<String, Arc<String>>>>,
     coremap:HashMap<String, String>,
-    pub type_uuid:String,
     xuhao: HashMap<String, usize>,
+    pub type_uuid:String,
     pub pkg_name:String,
     pub script_name:String
 }
@@ -549,7 +549,7 @@ pub fn init_core_fun_map() {
     });
     add_fun(vec!["返回"],|self_t,_params|{
         let fun_ret_vec_len = self_t.fun_ret_vec.len();
-        self_t.fun_ret_vec[fun_ret_vec_len - 1] = true;
+        self_t.fun_ret_vec[fun_ret_vec_len - 1].0 = true;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["计算"],|self_t,params|{
@@ -1362,7 +1362,7 @@ impl RedLang {
         // 修改变量栈
         self.var_vec.push(std::collections::HashMap::new());
 
-        self.fun_ret_vec.push(false);
+        self.fun_ret_vec.push((false,self.xh_vec.len()));
 
         // 调用函数
         let ret_str = self.parse(&func)?;
@@ -1573,7 +1573,7 @@ impl RedLang {
         // 第一个元素用于全局参数
         let v2: Vec<Vec<String>> = vec![vec![]];
 
-        let v3 = vec![false];
+        let v3 = vec![(false,0)];
 
         // 用于循环控制
         RedLang {
@@ -1583,8 +1583,8 @@ impl RedLang {
             fun_ret_vec: v3,
             exmap: Rc::new(RefCell::new(HashMap::new())),
             coremap: HashMap::new(),
-            type_uuid:crate::REDLANG_UUID.to_string(),
             xuhao:HashMap::new(),
+            type_uuid:crate::REDLANG_UUID.to_string(),
             pkg_name:String::new(),
             script_name:String::new()
         }
@@ -1775,10 +1775,12 @@ impl RedLang {
         loop {
             let xh_vec_len = self.xh_vec.len();
             let fun_ret_vec_len = self.fun_ret_vec.len();
-            if self.fun_ret_vec[fun_ret_vec_len - 1] == true {
-                if xh_vec_len != 0 {
-                    self.xh_vec[xh_vec_len - 1][1] = true;
+            if self.fun_ret_vec[fun_ret_vec_len - 1].0 == true {
+                // 跳出当前函数内的所有循环
+                for i in self.fun_ret_vec[fun_ret_vec_len - 1].1  .. self.xh_vec.len() {
+                    self.xh_vec[i][1] = true;
                 }
+                // 跳出当前解析
                 break;
             }
             if xh_vec_len != 0 {

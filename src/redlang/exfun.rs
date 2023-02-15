@@ -49,6 +49,11 @@ pub fn init_ex_fun_map() {
             easy.url(&url)?;
             easy.ssl_verify_peer(false)?;
             easy.follow_location(true)?;
+            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            if timeout_str == "" {
+                timeout_str = "60000";
+            }
+            easy.timeout(core::time::Duration::from_millis(timeout_str.parse::<u64>()?))?;
             let proxy = self_t.get_coremap("代理")?;
             if proxy != "" {
                 easy.proxy(proxy)?;
@@ -101,6 +106,11 @@ pub fn init_ex_fun_map() {
             easy.url(&url)?;
             easy.ssl_verify_peer(false)?;
             easy.follow_location(true)?;
+            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            if timeout_str == "" {
+                timeout_str = "60000";
+            }
+            easy.timeout(core::time::Duration::from_millis(timeout_str.parse::<u64>()?))?;
             let proxy = self_t.get_coremap("代理")?;
             if proxy != "" {
                 easy.proxy(proxy)?;
@@ -162,6 +172,12 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["设置代理"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
         self_t.set_coremap("代理", &k)?;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["设置访问超时"],|self_t,params|{
+        let k = self_t.get_param(params, 0)?;
+        k.parse::<u64>()?;
+        self_t.set_coremap("访问超时", &k)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["编码"],|self_t,params|{
