@@ -1,4 +1,4 @@
-# RedLang v0.0.29 语法简述
+# RedLang v0.0.30 语法简述
 
 
 注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br />
@@ -1032,6 +1032,24 @@ CSS选择器可以选择截图的元素，省略CSS选择器表示截图整个�
 
 使用sqlite3引擎来执行sql语句。其中，<font color="red">参数数组</font>可以省略。命令返回的是一个二维数组。
 例子：`【转文本【运行sql@aaa.db@SELECT\ sqlite_version()】】`,返回`[["3.39.2"]]`。
+
+
+### 压缩
+
+【压缩@<font color="red">目录</font>@<font color="red">压缩文件</font>】<br />
+
+将<font color="red">目录</font>里面的文件添加到<font color="red">压缩文件</font>。压缩文件目前只支持7z。<br />
+
+**注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
+
+
+### 解压
+
+【解压@<font color="red">压缩文件</font>@<font color="red">目录</font>】<br />
+
+将<font color="red">压缩文件</font>里面的文件解压到<font color="red">目录</font>。压缩文件目前只支持7z。<br />
+
+**注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
 
 
 ## QQ、频道相关命令说明

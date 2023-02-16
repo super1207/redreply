@@ -7,7 +7,7 @@ use urlencoding::encode;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 use super::RedLang;
 
-use crate::cqapi::cq_add_log;
+use crate::cqapi::{cq_add_log};
 
 use image::{Rgba, ImageBuffer, EncodableLayout};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -45,20 +45,23 @@ pub fn init_ex_fun_map() {
     }
     add_fun(vec!["访问"],|self_t,params|{
         fn access(self_t:&mut RedLang,url:&str) -> Result<Option<String>, Box<dyn std::error::Error>> {
-            let mut easy = curl::easy::Easy::new();
-            easy.url(&url)?;
-            easy.ssl_verify_peer(false)?;
-            easy.follow_location(true)?;
+            let agent;
+            let proxy = self_t.get_coremap("代理")?;
+            if proxy != "" {
+                agent = ureq::AgentBuilder::new()
+                    .proxy(ureq::Proxy::new(proxy)?)
+                    .build();
+            }else{
+                agent = ureq::AgentBuilder::new().build();
+            }
+            let mut req = agent.request_url("POST", &url.parse::<url::Url>()?);
+
             let mut timeout_str = self_t.get_coremap("访问超时")?;
             if timeout_str == "" {
                 timeout_str = "60000";
             }
-            easy.timeout(core::time::Duration::from_millis(timeout_str.parse::<u64>()?))?;
-            let proxy = self_t.get_coremap("代理")?;
-            if proxy != "" {
-                easy.proxy(proxy)?;
-            }
-            let mut header_list = curl::easy::List::new();
+            req = req.timeout(core::time::Duration::from_millis(timeout_str.parse::<u64>()?));
+
             let http_header_str = self_t.get_coremap("访问头")?;
             if http_header_str != "" {
                 let mut http_header = RedLang::parse_obj(&http_header_str)?;
@@ -67,22 +70,16 @@ pub fn init_ex_fun_map() {
                 }
                 for it in http_header {
                     if it.1 != "" {
-                        header_list.append(&(it.0 + ": " + &it.1))?;
+                        req = req.set(&it.0, &it.1);
                     }
                 }
             }else {
-                header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
+                req = req.set("User-Agent", "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36");
             }
-            easy.http_headers(header_list)?;
-            let mut content = Vec::new();
-            {
-                let mut transfer = easy.transfer();
-                transfer.write_function(|data| {
-                    content.extend_from_slice(data);
-                    Ok(data.len())
-                })?;
-                transfer.perform()?;
-            }
+            let resp = req.call()?;
+            let mut reader = resp.into_reader();
+            let mut content:Vec<u8> = vec![];
+            reader.read_to_end(&mut content)?;
             Ok(Some(self_t.build_bin(content)))
         }
         let url = self_t.get_param(params, 0)?;
@@ -102,20 +99,23 @@ pub fn init_ex_fun_map() {
             }else {
                 return Err(RedLang::make_err(&("不支持的post访问体类型:".to_owned()+&tp)));
             }
-            let mut easy = curl::easy::Easy::new();
-            easy.url(&url)?;
-            easy.ssl_verify_peer(false)?;
-            easy.follow_location(true)?;
+            let agent;
+            let proxy = self_t.get_coremap("代理")?;
+            if proxy != "" {
+                agent = ureq::AgentBuilder::new()
+                    .proxy(ureq::Proxy::new(proxy)?)
+                    .build();
+            }else{
+                agent = ureq::AgentBuilder::new().build();
+            }
+            let mut req = agent.request_url("POST", &url.parse::<url::Url>()?);
+
             let mut timeout_str = self_t.get_coremap("访问超时")?;
             if timeout_str == "" {
                 timeout_str = "60000";
             }
-            easy.timeout(core::time::Duration::from_millis(timeout_str.parse::<u64>()?))?;
-            let proxy = self_t.get_coremap("代理")?;
-            if proxy != "" {
-                easy.proxy(proxy)?;
-            }
-            let mut header_list = curl::easy::List::new();
+            req = req.timeout(core::time::Duration::from_millis(timeout_str.parse::<u64>()?));
+
             let http_header_str = self_t.get_coremap("访问头")?;
             if http_header_str != "" {
                 let mut http_header = RedLang::parse_obj(&http_header_str)?;
@@ -124,28 +124,16 @@ pub fn init_ex_fun_map() {
                 }
                 for it in http_header {
                     if it.1 != "" {
-                        header_list.append(&(it.0 + ": " + &it.1))?;
+                        req = req.set(&it.0, &it.1);
                     }
                 }
             }else {
-                header_list.append("User-Agent: Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36")?;
+                req = req.set("User-Agent", "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36");
             }
-            easy.http_headers(header_list)?;
-            easy.post(true)?;
-            easy.post_field_size(data.len() as u64).unwrap();
-            let mut content = Vec::new();
-            let mut dat = data.as_slice();
-            {
-                let mut transfer = easy.transfer();
-                transfer.read_function(|buf| {
-                    Ok(dat.read(buf).unwrap_or(0))
-                })?;
-                transfer.write_function(|data| {
-                    content.extend_from_slice(data);
-                    Ok(data.len())
-                })?;
-                transfer.perform()?;
-            }
+            let resp = req.send_bytes(&data)?;
+            let mut reader = resp.into_reader();
+            let mut content:Vec<u8> = vec![];
+            reader.read_to_end(&mut content)?;
             Ok(Some(self_t.build_bin(content)))
         }
         let url = self_t.get_param(params, 0)?;
@@ -969,6 +957,18 @@ pub fn init_ex_fun_map() {
         let file_path = self_t.get_param(params, 0)?;
         let path = Path::new(&file_path);
         let _foo = fs::remove_file(path)?;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["压缩"],|self_t,params|{
+        let src_path = self_t.get_param(params, 0)?;
+        let remote_path = self_t.get_param(params, 1)?;
+        sevenz_rust::compress_to_path(src_path, remote_path)?;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["解压"],|self_t,params|{
+        let src_path = self_t.get_param(params, 0)?;
+        let remote_path = self_t.get_param(params, 1)?;
+        sevenz_rust::decompress_file(src_path, remote_path)?;
         return Ok(Some("".to_string()));
     });
 }

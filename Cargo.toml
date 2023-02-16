@@ -6,7 +6,6 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-curl = { version = "*",features = ['rustls'] }
 fancy-regex = "*"
 encoding = "*"
 rand = "*"
@@ -37,6 +36,8 @@ tracing-subscriber = "*"
 opener = "*"
 rusqlite = {version = "*",features = ["bundled"]}
 screenshots = "*"
+sevenz-rust = "*"
+ureq = "*"
 
 [target.'cfg(windows)'.dependencies]
 headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}
