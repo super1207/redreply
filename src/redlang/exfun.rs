@@ -208,7 +208,17 @@ pub fn init_ex_fun_map() {
         let ret:String;
         if tp == "文本" {
             let chs = content.chars().collect::<Vec<char>>();
-            let begen_pos = begin.parse::<usize>()?;
+            let begen_pos;
+            if begin.starts_with("-") {
+                let pos_rev = begin.get(1..).unwrap().parse::<usize>()?;
+                if pos_rev > chs.len() {
+                    return Ok(Some("".to_string()));
+                }else {
+                    begen_pos = chs.len() - pos_rev;
+                }
+            }else {
+                begen_pos = begin.parse::<usize>()?;
+            }
             let sub_len:usize;
             if len == "" {
                 sub_len = chs.len() - begen_pos;
@@ -225,7 +235,17 @@ pub fn init_ex_fun_map() {
             };
         }else if tp == "数组" {
             let arr = RedLang::parse_arr(&content)?;
-            let begen_pos = begin.parse::<usize>()?;
+            let begen_pos;
+            if begin.starts_with("-") {
+                let pos_rev = begin.get(1..).unwrap().parse::<usize>()?;
+                if pos_rev > arr.len() {
+                    return Ok(Some(self_t.build_arr(vec![])));
+                }else {
+                    begen_pos = arr.len() - pos_rev;
+                }
+            }else {
+                begen_pos = begin.parse::<usize>()?;
+            }
             let sub_len:usize;
             if len == "" {
                 sub_len = arr.len() - begen_pos;
