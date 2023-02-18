@@ -7,7 +7,7 @@ use urlencoding::encode;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 use super::RedLang;
 
-use crate::cqapi::{cq_add_log};
+use crate::cqapi::{cq_add_log, cq_add_log_w};
 
 use image::{Rgba, ImageBuffer, EncodableLayout};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -54,7 +54,7 @@ pub fn init_ex_fun_map() {
             }else{
                 agent = ureq::AgentBuilder::new().build();
             }
-            let mut req = agent.request_url("POST", &url.parse::<url::Url>()?);
+            let mut req = agent.request_url("GET", &url.parse::<url::Url>()?);
 
             let mut timeout_str = self_t.get_coremap("访问超时")?;
             if timeout_str == "" {
@@ -83,10 +83,13 @@ pub fn init_ex_fun_map() {
             Ok(Some(self_t.build_bin(content)))
         }
         let url = self_t.get_param(params, 0)?;
-        if let Ok(ret) = access(self_t,&url){
-            return Ok(ret);
+        match access(self_t,&url) {
+            Ok(ret) => Ok(ret),
+            Err(err) => {
+                cq_add_log_w(&format!("{:?}",err)).unwrap();
+                Ok(Some(self_t.build_bin(vec![])))
+            },
         }
-        return Ok(Some(self_t.build_bin(vec![])));
     });
     add_fun(vec!["POST访问"],|self_t,params|{
         fn access(self_t:&mut RedLang,url:&str,data_t:&str) -> Result<Option<String>, Box<dyn std::error::Error>> {
@@ -138,10 +141,13 @@ pub fn init_ex_fun_map() {
         }
         let url = self_t.get_param(params, 0)?;
         let data_t = self_t.get_param(params, 1)?;
-        if let Ok(ret) = access(self_t,&url,&data_t){
-            return Ok(ret);
+        match access(self_t,&url,&data_t) {
+            Ok(ret) => Ok(ret),
+            Err(err) => {
+                cq_add_log_w(&format!("{:?}",err)).unwrap();
+                Ok(Some(self_t.build_bin(vec![])))
+            },
         }
-        return Ok(Some(self_t.build_bin(vec![])));
     });
     add_fun(vec!["设置访问头"],|self_t,params|{
         let http_header = self_t.get_coremap("访问头")?.to_string();
