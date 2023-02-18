@@ -84,7 +84,13 @@ pub struct Asset;
 
 pub fn wait_for_quit() -> ! {
     (*G_QUIT_FLAG.write().unwrap()) = true;
-    let mut loop_times = 0;
+    let _foo = std::thread::spawn(||{
+        std::thread::sleep(core::time::Duration::from_secs(5));
+        cq_add_log_w("退出软件超时(5s)，强制退出!").unwrap();
+        let running_scripts = get_running_script_info();
+        cq_add_log_w(&format!("未退出脚本:{:?}",running_scripts)).unwrap();
+        std::process::exit(-1);
+    });
     loop {
         {
             if (*G_RUNNING_SCRIPT_NUM.read().unwrap()) == 0 {
@@ -92,13 +98,6 @@ pub fn wait_for_quit() -> ! {
             }
         }
         std::thread::sleep(core::time::Duration::from_millis(1));
-        loop_times += 1;
-        if loop_times == 5000 {
-            cq_add_log_w("退出软件超时(5s)，强制退出!").unwrap();
-            let running_scripts = get_running_script_info();
-            cq_add_log_w(&format!("未退出脚本:{:?}",running_scripts)).unwrap();
-            break;
-        }
     }
     std::process::exit(0);
 }
