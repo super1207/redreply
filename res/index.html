@@ -6,9 +6,9 @@
         <!-- 适应手机 -->
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <!-- 引入vue，用于前端渲染 -->
-        <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+        <script src="vue.js"></script>
         <!-- 引入axios，http客户端 -->
-        <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+        <script src="axios.js"></script>
         <!-- 网站标题 -->
         <title>红色问答控制台</title>
         <!-- 引入样式控制文件 -->
@@ -16,7 +16,7 @@
     </head>
     <body>
         <div id="app">
-            <h1>红色问答 0.0.31</h1>
+            <h1>红色问答 0.0.32</h1>
             <div id="pkg_btn_vec">
                 <div v-for="(pkg_content,pkg_name) in pkg_codes" @click="" >
                     <button @click="if(pkg_name!=select_pkg_name){this.save_cache(select_name_index);select_name_index_change(-1);select_name_index=-1;select_pkg_name=pkg_name}" :class="{name_active:pkg_name==select_pkg_name}">
