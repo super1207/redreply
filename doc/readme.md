@@ -1,4 +1,4 @@
-# RedLang v0.0.32 语法简述
+# RedLang v0.0.33 语法简述
 
 
 注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br />
@@ -202,6 +202,14 @@ hellohellohellohellohello
 【判断@<font color="red">文本1</font>@<font color="red">文本2</font>@<font color="red">不同执行</font>@<font color="red">相同执行</font>】<br />
 
 其中<font color="red">相同执行</font>可以省略。
+
+
+### 选择
+
+
+【选择@<font color="red">数字</font>@<font color="red">内容1</font>@<font color="red">内容2</font>@...】<br />
+
+根据<font color="red">数字</font>来选择要执行的内容，从1开始数。如果越界，则返回空文本。
 
 
 ### 循环
@@ -877,7 +885,8 @@ QQ相关的命令依赖的数据，会被共享；而普通变量、序号等信
 
 【图片信息@<font color="red">图片字节集</font>】<br />
 
-返回一个表示图片信息的RedLang对象，例如`{"宽":"640","高":"320"}`
+返回一个表示图片信息的RedLang对象，例如`{"宽":"640","格式":"png","高":"320"}`<br />
+支持的格式有:png、jpg、gif、webp、bmp
 
 
 ### 透视变换
@@ -946,6 +955,14 @@ QQ相关的命令依赖的数据，会被共享；而普通变量、序号等信
 【GIF合成@<font color="red">图片字节集数组</font>@<font color="red">延时</font>】<br />
 
 合成gif，延时的单位为毫秒，用于确定gif的播放速度。
+
+
+### GIF分解
+
+
+【GIF分解@<font color="red">gif图片字节集</font>】<br />
+
+将gif分解为png图片字节集数组。
 
 
 ### 图片变圆

@@ -1257,6 +1257,17 @@ pub fn init_core_fun_map() {
         }
         return Ok(Some(ret_str));
     });
+    add_fun(vec!["选择"],|self_t,params|{
+        let select_num = self_t.get_param(params, 0)?.parse::<usize>()?;
+        let params_len = params.len();
+        let ret_str;
+        if select_num == 0 || select_num > params_len {
+            ret_str = "".to_string();
+        }else {
+            ret_str = self_t.get_param(params, select_num)?;
+        }
+        return Ok(Some(ret_str));
+    });
 }
 
 impl RedLang {

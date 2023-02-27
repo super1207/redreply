@@ -9,7 +9,7 @@ use super::RedLang;
 
 use crate::cqapi::{cq_add_log, cq_add_log_w};
 
-use image::{Rgba, ImageBuffer, EncodableLayout};
+use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
 use std::io::Cursor;
 use image::io::Reader as ImageReader;
@@ -490,13 +490,30 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["图片信息","图像信息"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
         let img_bin = RedLang::parse_bin(&text)?;
-        let img = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
+        let img_t = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?;
+        let img_fmt  = img_t.format().ok_or("不能识别的图片格式")?;
+        let img = img_t.decode()?.to_rgba8();
         let mut mp = BTreeMap::new();
         mp.insert("宽".to_string(), img.width().to_string());
         mp.insert("高".to_string(), img.height().to_string());
+        let img_fmt_str = match img_fmt {
+            image::ImageFormat::Png => "png",
+            image::ImageFormat::Jpeg => "jpg",
+            image::ImageFormat::Gif => "gif",
+            image::ImageFormat::WebP => "webp",
+            image::ImageFormat::Bmp => "bmp",
+            image::ImageFormat::Ico => "",
+            _ => ""
+        };
+        if img_fmt_str == "" {
+            return Err(RedLang::make_err("不能识别的图片格式"));
+        }else {
+            mp.insert("格式".to_string(), img_fmt_str.to_string());
+        }
         let retobj = self_t.build_obj(mp);
         return Ok(Some(retobj));
     });
+
     add_fun(vec!["透视变换"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
@@ -631,6 +648,24 @@ pub fn init_ex_fun_map() {
         let ret = self_t.build_bin(v);
         return Ok(Some(ret));
     });
+
+    add_fun(vec!["GIF分解"],|self_t,params|{
+        let gif_str = self_t.get_param(params, 0)?;
+        let gif_bin = RedLang::parse_bin(&gif_str)?;
+        let gif = image::codecs::gif::GifDecoder::new(Cursor::new(gif_bin))?;
+        let gif_frames = gif.into_frames();
+        let mut ret_vec:Vec<String> = vec![];
+        for frame_rst in gif_frames {
+            let frame = frame_rst?;
+            let img_buf = frame.into_buffer();
+            let mut bytes: Vec<u8> = Vec::new();
+            img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+            ret_vec.push(self_t.build_bin(bytes));
+        }
+        let ret = self_t.build_arr(ret_vec);
+        return Ok(Some(ret));
+    });
+
     add_fun(vec!["图片变圆","图像变圆"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let img_vec = RedLang::parse_bin(&text1)?;

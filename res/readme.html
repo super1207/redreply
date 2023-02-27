@@ -65,7 +65,7 @@
 				</div>
         <div id='readme' style='width:70%;margin-left:20%;'>
           	<article class='markdown-body'>
-            	<h1 id="redlang-v0-0-32-">RedLang v0.0.32 语法简述</h1>
+            	<h1 id="redlang-v0-0-33-">RedLang v0.0.33 语法简述</h1>
 <p>注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br /></p>
 <p>作者qq：1875159423<br /></p>
 <p>qq群号：920220179 (目前使用MiraiCQ的群)<br /></p>
@@ -145,6 +145,9 @@
 <h3 id="-">判断</h3>
 <p>【判断@<font color="red">文本1</font>@<font color="red">文本2</font>@<font color="red">不同执行</font>@<font color="red">相同执行</font>】<br /></p>
 <p>其中<font color="red">相同执行</font>可以省略。</p>
+<h3 id="-">选择</h3>
+<p>【选择@<font color="red">数字</font>@<font color="red">内容1</font>@<font color="red">内容2</font>@...】<br /></p>
+<p>根据<font color="red">数字</font>来选择要执行的内容，从1开始数。如果越界，则返回空文本。</p>
 <h3 id="-">循环</h3>
 <p>【循环@<font color="red">循环次数</font>@<font color="red">循环语句</font>】<br />
 【循环@<font color="red">数组</font>@<font color="red">处理函数</font>】<br />
@@ -422,7 +425,8 @@
 <p>返回主进程对应的可执行文件所在目录，末尾有分隔符</p>
 <h3 id="-">图片信息</h3>
 <p>【图片信息@<font color="red">图片字节集</font>】<br /></p>
-<p>返回一个表示图片信息的RedLang对象，例如<code>{&quot;宽&quot;:&quot;640&quot;,&quot;高&quot;:&quot;320&quot;}</code></p>
+<p>返回一个表示图片信息的RedLang对象，例如<code>{&quot;宽&quot;:&quot;640&quot;,&quot;格式&quot;:&quot;png&quot;,&quot;高&quot;:&quot;320&quot;}</code><br />
+支持的格式有:png、jpg、gif、webp、bmp</p>
 <h3 id="-">透视变换</h3>
 <p>【透视变换@<font color="red">图片字节集</font>@<font color="red">目标点</font>@<font color="red">原点</font>】<br /></p>
 <p>例子：<code>【透视变换@【变量@img】@【数组@0@0@330@0@330@330@0@330】@【数组@0@0@640@0@640@640@0@640】】</code><br /></p>
@@ -449,6 +453,9 @@
 <h3 id="gif-">GIF合成</h3>
 <p>【GIF合成@<font color="red">图片字节集数组</font>@<font color="red">延时</font>】<br /></p>
 <p>合成gif，延时的单位为毫秒，用于确定gif的播放速度。</p>
+<h3 id="gif-">GIF分解</h3>
+<p>【GIF分解@<font color="red">gif图片字节集</font>】<br /></p>
+<p>将gif分解为png图片字节集数组。</p>
 <h3 id="-">图片变圆</h3>
 <p>【图片变圆@<font color="red">图片字节集</font>】<br /></p>
 <p>将图片变成圆形，通常用于头像处理。</p>
