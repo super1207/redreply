@@ -76,10 +76,20 @@ pub fn init_ex_fun_map() {
             }else {
                 req = req.set("User-Agent", "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36");
             }
-            let resp = req.call()?;
-            let mut reader = resp.into_reader();
             let mut content:Vec<u8> = vec![];
-            reader.read_to_end(&mut content)?;
+            match req.call() {
+                Ok(resp) => {
+                    let mut reader = resp.into_reader();
+                    reader.read_to_end(&mut content)?;
+                },
+                Err(ureq::Error::Status(_code, resp)) => {
+                    let mut reader = resp.into_reader();
+                    reader.read_to_end(&mut content)?;
+                },
+                Err(err) => {
+                    return Err(Box::new(err));
+                }
+            };
             Ok(Some(self_t.build_bin(content)))
         }
         let url = self_t.get_param(params, 0)?;
@@ -133,10 +143,20 @@ pub fn init_ex_fun_map() {
             }else {
                 req = req.set("User-Agent", "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36");
             }
-            let resp = req.send_bytes(&data)?;
-            let mut reader = resp.into_reader();
             let mut content:Vec<u8> = vec![];
-            reader.read_to_end(&mut content)?;
+            match req.send_bytes(&data) {
+                Ok(resp) => {
+                    let mut reader = resp.into_reader();
+                    reader.read_to_end(&mut content)?;
+                },
+                Err(ureq::Error::Status(_code, resp)) => {
+                    let mut reader = resp.into_reader();
+                    reader.read_to_end(&mut content)?;
+                },
+                Err(err) => {
+                    return Err(Box::new(err));
+                }
+            };
             Ok(Some(self_t.build_bin(content)))
         }
         let url = self_t.get_param(params, 0)?;
