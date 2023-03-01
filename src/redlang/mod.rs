@@ -257,7 +257,47 @@ impl RedLangVarType {
             self.show_str = Rc::new(String::new());
             return Ok(())
         }
-        Err(RedLang::make_err("对象替换元素失败,类型不是对象"))
+        Err(RedLang::make_err("对象删除元素失败,类型不是对象"))
+    }
+    pub fn get_obj(&mut self,key:&str) -> String {
+        if self.get_type() == "对象" {
+            let v = self.dat.downcast_mut::<BTreeMap<String,String>>().unwrap();
+            match v.get(key){
+                Some(s) => return s.to_owned(),
+                None => return "".to_string(),
+            }
+        }
+        return "".to_string()
+    }
+    pub fn get_arr(&mut self,index:usize) -> String {
+        if self.get_type() == "数组" {
+            let v = self.dat.downcast_mut::<Vec<String>>().unwrap();
+            match v.get(index){
+                Some(s) => return s.to_owned(),
+                None => return "".to_string(),
+            }
+        }
+        return "".to_string()
+    }
+    pub fn get_str(&mut self,index:usize) -> String {
+        if self.get_type() == "文本" {
+            let v = self.dat.downcast_mut::<Vec<char>>().unwrap();
+            match v.get(index){
+                Some(s) => return s.to_string(),
+                None => return "".to_string(),
+            }
+        }
+        return "".to_string()
+    }
+    pub fn get_bin(&mut self,index:usize) -> String {
+        if self.get_type() == "字节集" {
+            let v = self.dat.downcast_mut::<Vec<u8>>().unwrap();
+            match v.get(index){
+                Some(s) => return RedLang::build_bin_with_uid(&crate::REDLANG_UUID, vec![*s]),
+                None => return RedLang::build_bin_with_uid(&crate::REDLANG_UUID, vec![]),
+            }
+        }
+        return RedLang::build_bin_with_uid(&crate::REDLANG_UUID, vec![]);
     }
 
 }
@@ -1175,6 +1215,40 @@ pub fn init_core_fun_map() {
             }
         }
         let ret_str = param_data;
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["取变量元素"],|self_t,params|{
+        // 获得变量
+        let var_name = self_t.get_param(params, 0)?;
+        let k_name = self_t.get_param(params, 1)?;
+        
+        let data:Rc<RefCell<RedLangVarType>>;
+        if let Some(v) = self_t.get_var_ref(&var_name) {
+            data = v;
+        }else {
+            return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
+        }
+        let ret_str;
+        // 获得变量类型
+        let tp =(*data).borrow().get_type();
+        if tp == "数组" {
+            let index = k_name.parse::<usize>()?;
+            let mut v = (*data).borrow_mut();
+            ret_str = v.get_arr(index);
+        }else if tp == "对象" {
+            let mut v = (*data).borrow_mut();
+            ret_str = v.get_obj(&k_name);
+        }else if tp == "文本" { 
+            let index = k_name.parse::<usize>()?;
+            let mut v = (*data).borrow_mut();
+            ret_str = v.get_str(index);
+        }else if tp == "字节集" {
+            let index = k_name.parse::<usize>()?;
+            let mut v = (*data).borrow_mut();
+            ret_str = v.get_bin(index);
+        }else{
+            return Err(RedLang::make_err(&("对应类型不能替换元素:".to_owned()+&tp)));
+        }
         return Ok(Some(ret_str));
     });
     add_fun(vec!["取对象KEY"],|self_t,params|{
