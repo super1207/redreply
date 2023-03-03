@@ -189,8 +189,8 @@ pub fn init_cq_ex_fun_map() {
         let channel_id = self_t.get_exmap("子频道ID");
         return Ok(Some(channel_id.to_string()));
     });
-    add_fun(vec!["图片"],|self_t,_params|{
-        let pic = self_t.get_param(_params, 0)?;
+    add_fun(vec!["图片"],|self_t,params|{
+        let pic = self_t.get_param(params, 0)?;
         let tp = self_t.get_type(&pic)?;
         let mut ret:String = String::new();
         if tp == "字节集" {
@@ -199,7 +199,12 @@ pub fn init_cq_ex_fun_map() {
             ret = format!("[CQ:image,file=base64://{}]",b64_str);
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
-                ret = format!("[CQ:image,file={}]",cq_encode(&pic));
+                let not_use_cache = self_t.get_param(params, 1)?;
+                if  not_use_cache == "真" {
+                    ret = format!("[CQ:image,file={},cache=0]",cq_encode(&pic));
+                }else {
+                    ret = format!("[CQ:image,file={}]",cq_encode(&pic));
+                }
             }else{
                 if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
                     let path = Path::new(&pic);
@@ -227,7 +232,12 @@ pub fn init_cq_ex_fun_map() {
             ret = format!("[CQ:record,file=base64://{}]",b64_str);
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
-                ret = format!("[CQ:record,file={}]",cq_encode(&pic));
+                let not_use_cache = self_t.get_param(params, 1)?;
+                if  not_use_cache == "真" {
+                    ret = format!("[CQ:record,file={},cache=0]",cq_encode(&pic));
+                }else {
+                    ret = format!("[CQ:record,file={}]",cq_encode(&pic));
+                }
             }else{
                 if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
                     let path = Path::new(&pic);

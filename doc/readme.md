@@ -1,4 +1,4 @@
-# RedLang v0.0.34 语法简述
+# RedLang v0.0.35 语法简述
 
 
 注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br />
@@ -1273,17 +1273,21 @@ CQ码<strong>外部</strong>的字符需要CQ转义，以上三个命令的作�
 ### 图片
 
 
-【图片@<font color="red">文本或字节集</font>】<br />
+【图片@<font color="red">文本或字节集</font>@<font color="red">不使用缓存</font>】<br />
 
-支持http/https链接，绝对地址，相对地址(相对于data/image目录)，字节集
+支持http/https链接，绝对地址，相对地址(相对于data/image目录)，字节集。<br />
+
+当为http/https连接时，如果第二个参数为`真`，则不使用缓存，否则使用缓存。
 
 
 ### 语音
 
 
-【语音@<font color="red">文本或字节集</font>】<br />
+【语音@<font color="red">文本或字节集</font>@<font color="red">不使用缓存</font>】<br />
 
 支持http/https链接，绝对地址，相对地址(相对于data/image目录)，字节集<br />
+
+当为http/https连接时，如果第二个参数为`真`，则不使用缓存，否则使用缓存。<br />
 
 注意，可能需要安装ffmpeg，才能正常使用此功能。
 

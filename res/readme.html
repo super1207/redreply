@@ -65,7 +65,7 @@
 				</div>
         <div id='readme' style='width:70%;margin-left:20%;'>
           	<article class='markdown-body'>
-            	<h1 id="redlang-v0-0-34-">RedLang v0.0.34 语法简述</h1>
+            	<h1 id="redlang-v0-0-35-">RedLang v0.0.35 语法简述</h1>
 <p>注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br /></p>
 <p>作者qq：1875159423<br /></p>
 <p>qq群号：920220179 (目前使用MiraiCQ的群)<br /></p>
@@ -580,11 +580,13 @@
 <p>【CQ转义@<font color="red">内容</font>】<br /></p>
 <p>CQ码<strong>外部</strong>的字符需要CQ转义，以上三个命令的作用可以参考：<a href="https://github.com/botuniverse/onebot-11/blob/master/message/string.md#%E8%BD%AC%E4%B9%89">onebot字符格式消息转义规则</a></p>
 <h3 id="-">图片</h3>
-<p>【图片@<font color="red">文本或字节集</font>】<br /></p>
-<p>支持http/https链接，绝对地址，相对地址(相对于data/image目录)，字节集</p>
+<p>【图片@<font color="red">文本或字节集</font>@<font color="red">不使用缓存</font>】<br /></p>
+<p>支持http/https链接，绝对地址，相对地址(相对于data/image目录)，字节集。<br /></p>
+<p>当为http/https连接时，如果第二个参数为<code>真</code>，则不使用缓存，否则使用缓存。</p>
 <h3 id="-">语音</h3>
-<p>【语音@<font color="red">文本或字节集</font>】<br /></p>
+<p>【语音@<font color="red">文本或字节集</font>@<font color="red">不使用缓存</font>】<br /></p>
 <p>支持http/https链接，绝对地址，相对地址(相对于data/image目录)，字节集<br /></p>
+<p>当为http/https连接时，如果第二个参数为<code>真</code>，则不使用缓存，否则使用缓存。<br /></p>
 <p>注意，可能需要安装ffmpeg，才能正常使用此功能。</p>
 <h3 id="-">子关键词</h3>
 <p>【子关键词】<br /></p>
