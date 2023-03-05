@@ -564,7 +564,9 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 
 返回RedLang对应的对象，若解析失败，则返回空文本。<br />
 
-注意，json中的数值，将会转化成文本；json中的布尔型，将会转化成<font color="red">真</font>或<font color="red">假</font>；json中的null，将会转化成空文本。
+注意，json中的数值，将会转化成文本；json中的布尔型，将会转化成<font color="red">真</font>或<font color="red">假</font>；json中的null，将会转化成空文本。<br />
+
+若<font color="red">Json内容</font>为字节集，则会自动先按utf-8转换成文本，再进行Json解析。
 
 
 ### 读文件 

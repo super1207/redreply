@@ -294,7 +294,13 @@ pub fn init_ex_fun_map() {
         return Ok(Some(ret))
     });
     add_fun(vec!["JSON解析"],|self_t,params|{
-        let json_str = self_t.get_param(params, 0)?;
+        let json_obj = self_t.get_param(params, 0)?;
+        let mut json_str = json_obj.to_owned() ;
+        let tp = self_t.get_type(&json_str)?;
+        if tp == "字节集" {
+            let u8_vec = RedLang::parse_bin(&json_obj)?;
+            json_str = String::from_utf8(u8_vec)?;
+        }
         if let Ok(json_data_ret) = serde_json::from_str(&json_str) {
             let json_parse_out = do_json_parse(&json_data_ret,&self_t.type_uuid)?;
             return Ok(Some(json_parse_out));
