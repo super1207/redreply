@@ -38,6 +38,7 @@ rusqlite = {version = "*",features = ["bundled"]}
 screenshots = "*"
 sevenz-rust = "*"
 ureq = "*"
+jsonpath-rust = "*"
 
 [target.'cfg(windows)'.dependencies]
 headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}

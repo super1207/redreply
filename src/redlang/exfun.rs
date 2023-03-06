@@ -2,6 +2,7 @@ use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::BTree
 
 use chrono::TimeZone;
 use encoding::Encoding;
+use jsonpath_rust::JsonPathQuery;
 use md5::{Md5, Digest};
 use urlencoding::encode;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -301,12 +302,21 @@ pub fn init_ex_fun_map() {
             let u8_vec = RedLang::parse_bin(&json_obj)?;
             json_str = String::from_utf8(u8_vec)?;
         }
-        if let Ok(json_data_ret) = serde_json::from_str(&json_str) {
-            let json_parse_out = do_json_parse(&json_data_ret,&self_t.type_uuid)?;
-            return Ok(Some(json_parse_out));
-        }else{
+        let json_data_rst = serde_json::from_str(&json_str);
+        if json_data_rst.is_err() {
             return Ok(Some("".to_string())); 
         }
+        
+        let json_data:serde_json::Value = json_data_rst.unwrap();
+        let jsonpath = self_t.get_param(params, 1)?;
+        let json_parse_out;
+        if jsonpath != "" {
+            let v = &json_data.path(&jsonpath)?;
+            json_parse_out = do_json_parse(&v,&self_t.type_uuid)?;
+        }else {
+            json_parse_out = do_json_parse(&json_data,&self_t.type_uuid)?;
+        }
+        return Ok(Some(json_parse_out));
     });
     add_fun(vec!["读文件"],|self_t,params|{
         let file_path = self_t.get_param(params, 0)?;

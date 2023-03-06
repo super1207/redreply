@@ -293,8 +293,9 @@
 <p>对url进行编码，如：</p>
 <pre><code>https://image.baidu.com/search/index?tn=baiduimage&amp;word=【编码@樱小路露娜】
 </code></pre><h3 id="json-">Json解析</h3>
-<p>【Json解析@<font color="red">Json内容</font>】<br /></p>
+<p>【Json解析@<font color="red">Json内容</font>@<font color="red">jsonpath</font>】<br /></p>
 <p>返回RedLang对应的对象，若解析失败，则返回空文本。<br /></p>
+<p>jsonpath的规则参见<a href="https://github.com/besok/jsonpath-rust">jsonpath-rust</a>，可以省略。<br /></p>
 <p>注意，json中的数值，将会转化成文本；json中的布尔型，将会转化成<font color="red">真</font>或<font color="red">假</font>；json中的null，将会转化成空文本。<br /></p>
 <p>若<font color="red">Json内容</font>为字节集，则会自动先按utf-8转换成文本，再进行Json解析。</p>
 <h3 id="-">读文件</h3>
