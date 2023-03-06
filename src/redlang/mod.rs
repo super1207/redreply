@@ -1181,7 +1181,12 @@ pub fn init_core_fun_map() {
         for i in 1..nums {
             let tp = self_t.get_type(&param_data)?;
             if tp == "数组" {
-                let index = self_t.get_param(params, i)?.parse::<usize>()?;
+                let index_rst = self_t.get_param(params, i)?.parse::<usize>();
+                if index_rst.is_err() {
+                    param_data = df;
+                    break;
+                }
+                let index = index_rst.unwrap();
                 let mp = RedLang::parse_arr(&param_data)?;
                 let v_opt = mp.get(index);
                 if let Some(v) = v_opt {
@@ -1201,7 +1206,12 @@ pub fn init_core_fun_map() {
                     break;
                 }
             }else if tp == "文本" {
-                let index = self_t.get_param(params, i)?.parse::<usize>()?;
+                let index_rst = self_t.get_param(params, i)?.parse::<usize>();
+                if index_rst.is_err() {
+                    param_data = df;
+                    break;
+                }
+                let index = index_rst.unwrap();
                 let v_chs =param_data.chars().collect::<Vec<char>>();
                 let v_opt = v_chs.get(index);
                 if let Some(v) = v_opt {
@@ -1232,20 +1242,36 @@ pub fn init_core_fun_map() {
         // 获得变量类型
         let tp =(*data).borrow().get_type();
         if tp == "数组" {
-            let index = k_name.parse::<usize>()?;
-            let mut v = (*data).borrow_mut();
-            ret_str = v.get_arr(index);
+            let index_rst = k_name.parse::<usize>();
+            if index_rst.is_err() {
+                ret_str = "".to_owned();
+            }else{
+                let index = index_rst.unwrap();
+                let mut v = (*data).borrow_mut();
+                ret_str = v.get_arr(index);
+            }
+            
         }else if tp == "对象" {
             let mut v = (*data).borrow_mut();
             ret_str = v.get_obj(&k_name);
         }else if tp == "文本" { 
-            let index = k_name.parse::<usize>()?;
-            let mut v = (*data).borrow_mut();
-            ret_str = v.get_str(index);
+            let index_rst = k_name.parse::<usize>();
+            if index_rst.is_err() {
+                ret_str = "".to_owned();
+            }else {
+                let index = index_rst.unwrap();
+                let mut v = (*data).borrow_mut();
+                ret_str = v.get_str(index);
+            }
         }else if tp == "字节集" {
-            let index = k_name.parse::<usize>()?;
-            let mut v = (*data).borrow_mut();
-            ret_str = v.get_bin(index);
+            let index_rst = k_name.parse::<usize>();
+            if index_rst.is_err() {
+                ret_str = self_t.build_bin(vec![]);
+            }else {
+                let index = index_rst.unwrap();
+                let mut v = (*data).borrow_mut();
+                ret_str = v.get_bin(index);
+            }
         }else{
             return Err(RedLang::make_err(&("对应类型不能替换元素:".to_owned()+&tp)));
         }
