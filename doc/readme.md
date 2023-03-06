@@ -1279,7 +1279,7 @@ CQ码<strong>外部</strong>的字符需要CQ转义，以上三个命令的作�
 
 【图片@<font color="red">文本或字节集</font>@<font color="red">不使用缓存</font>】<br />
 
-支持http/https链接，绝对地址，相对地址(相对于data/image目录)，字节集。<br />
+支持http/https链接，绝对地址，字节集。<br />
 
 当为http/https连接时，如果第二个参数为`真`，则不使用缓存，否则使用缓存。
 
@@ -1289,7 +1289,7 @@ CQ码<strong>外部</strong>的字符需要CQ转义，以上三个命令的作�
 
 【语音@<font color="red">文本或字节集</font>@<font color="red">不使用缓存</font>】<br />
 
-支持http/https链接，绝对地址，相对地址(相对于data/image目录)，字节集<br />
+支持http/https链接，绝对地址，字节集<br />
 
 当为http/https连接时，如果第二个参数为`真`，则不使用缓存，否则使用缓存。<br />
 
