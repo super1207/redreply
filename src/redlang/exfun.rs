@@ -1005,7 +1005,15 @@ pub fn init_ex_fun_map() {
         while let Some(row) = rows.next()? {
             let mut v:Vec<String> = vec![];
             for i in 0..count {
-                v.push(row.get_unwrap(i));
+                let k = row.get_ref_unwrap(i);
+                let dat = match k.data_type(){
+                    rusqlite::types::Type::Null => "".to_string(),
+                    rusqlite::types::Type::Integer => k.as_i64().unwrap().to_string(),
+                    rusqlite::types::Type::Real => k.as_f64().unwrap().to_string(),
+                    rusqlite::types::Type::Text => k.as_str().unwrap().to_owned(),
+                    rusqlite::types::Type::Blob => self_t.build_bin(k.as_blob().unwrap().to_vec())
+                };
+                v.push(dat);
             }
             vec.push(self_t.build_arr(v));
         }

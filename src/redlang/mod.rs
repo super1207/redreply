@@ -1357,6 +1357,15 @@ pub fn init_core_fun_map() {
         }
         return Ok(Some(ret_str));
     });
+    add_fun(vec!["反转义"],|self_t,params|{
+        let mut rl = RedLang::new();
+        rl.exmap = self_t.exmap.clone(); // 获得一些拓展相关的变量
+        rl.pkg_name = self_t.pkg_name.clone();
+        rl.script_name = self_t.script_name.clone();
+        let code = self_t.get_param(params, 0)?;
+        let ret_str = self_t.parse(&code)?;
+        return Ok(Some(ret_str));
+    });
     add_fun(vec!["选择"],|self_t,params|{
         let select_num = self_t.get_param(params, 0)?.parse::<usize>()?;
         let params_len = params.len();
