@@ -232,7 +232,7 @@ pub async fn call_api(self_id:&str,json:&mut serde_json::Value) -> Result<serde_
         },
         _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
             cq_add_log_w(&format!("接收api返回超时")).unwrap();
-            return Ok(serde_json::to_value({})?);
+            return Ok(serde_json::json!(""));
         }
     }
 }
