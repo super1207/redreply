@@ -200,7 +200,7 @@ pub fn init_cq_ex_fun_map() {
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
                 let not_use_cache = self_t.get_param(params, 1)?;
-                if  not_use_cache == "真" {
+                if  not_use_cache == "假" {
                     ret = format!("[CQ:image,file={},cache=0]",cq_encode(&pic));
                 }else {
                     ret = format!("[CQ:image,file={}]",cq_encode(&pic));
@@ -233,7 +233,7 @@ pub fn init_cq_ex_fun_map() {
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
                 let not_use_cache = self_t.get_param(params, 1)?;
-                if  not_use_cache == "真" {
+                if  not_use_cache == "假" {
                     ret = format!("[CQ:record,file={},cache=0]",cq_encode(&pic));
                 }else {
                     ret = format!("[CQ:record,file={}]",cq_encode(&pic));
