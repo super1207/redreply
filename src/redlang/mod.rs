@@ -443,7 +443,7 @@ pub fn init_core_fun_map() {
         }
         return Ok(Some("".to_string()));
     });
-    add_fun(vec!["判断"],|self_t,params|{
+    add_fun(vec!["判断","判等"],|self_t,params|{
         let ret_str;
         let k1 = self_t.get_param(params, 0)?;
         let k2 = self_t.get_param(params, 1)?;
@@ -451,6 +451,16 @@ pub fn init_core_fun_map() {
             ret_str = self_t.get_param(params, 2)?;
         } else {
             ret_str = self_t.get_param(params, 3)?;
+        }
+        return Ok(Some(ret_str));
+    });
+    add_fun(vec!["判真"],|self_t,params|{
+        let ret_str;
+        let k1 = self_t.get_param(params, 0)?;
+        if k1 != "真"{
+            ret_str = self_t.get_param(params, 1)?;
+        }else {
+            ret_str = self_t.get_param(params, 2)?;
         }
         return Ok(Some(ret_str));
     });

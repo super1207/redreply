@@ -203,6 +203,21 @@ hellohellohellohellohello
 
 其中<font color="red">相同执行</font>可以省略。
 
+### 判等
+
+
+【判等@<font color="red">文本1</font>@<font color="red">文本2</font>@<font color="red">不同执行</font>@<font color="red">相同执行</font>】<br />
+
+与【判断】相同。
+
+
+### 判真
+
+
+【判真@<font color="red">文本</font>@<font color="red">不为真执行</font>@<font color="red">为真执行</font>】<br />
+
+用于判断<font color="red">文本</font>是否为<font color="red">真</font>。
+
 
 ### 选择
 
