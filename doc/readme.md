@@ -1,4 +1,4 @@
-# RedLang v0.0.36 语法简述
+# RedLang v0.0.37 语法简述
 
 
 注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br />
@@ -967,18 +967,33 @@ QQ相关的命令依赖的数据，会被共享；而普通变量、序号等信
 将图片垂直翻转
 
 
-### 图像旋转
+### 图片旋转
 
 
-【图像旋转@<font color="red">图片字节集</font>@<font color="red">旋转角度</font>】<br />
+【图片旋转@<font color="red">图片字节集</font>@<font color="red">旋转角度</font>】<br />
 
 将图片顺时针旋转指定角度
 
 
-### 图像大小调整
+### 图片嵌字
 
 
-【图像大小调整@<font color="red">图片字节集</font>@<font color="red">调整后的宽度</font>@<font color="red">调整后的高度</font>】<br />
+【图片嵌字@<font color="red">图片字节集</font>@<font color="red">要嵌入的字</font>@<font color="red">x坐标</font>@<font color="red">y坐标</font>@<font color="red">字体大小</font>@<font color="red">rgba颜色数组</font>@<font color="red">字体名称</font>】<br />
+
+例如：
+```
+【定义变量@img1@【访问【取元素【取图片】@0】】】
+【图片【图片嵌字@【变量@img1】@舔舔？@0@0@30@【数组@255@0@0@255】@宋体】】
+```
+
+**注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
+
+
+
+### 图片大小调整
+
+
+【图片大小调整@<font color="red">图片字节集</font>@<font color="red">调整后的宽度</font>@<font color="red">调整后的高度</font>】<br />
 
 调整图片大小
 

@@ -65,7 +65,7 @@
 				</div>
         <div id='readme' style='width:70%;margin-left:20%;'>
           	<article class='markdown-body'>
-            	<h1 id="redlang-v0-0-36-">RedLang v0.0.36 语法简述</h1>
+            	<h1 id="redlang-v0-0-37-">RedLang v0.0.37 语法简述</h1>
 <p>注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br /></p>
 <p>作者qq：1875159423<br /></p>
 <p>qq群号：920220179 (目前使用MiraiCQ的群)<br /></p>
@@ -459,11 +459,17 @@
 <h3 id="-">垂直翻转</h3>
 <p>【垂直翻转@<font color="red">图片字节集</font>】<br /></p>
 <p>将图片垂直翻转</p>
-<h3 id="-">图像旋转</h3>
-<p>【图像旋转@<font color="red">图片字节集</font>@<font color="red">旋转角度</font>】<br /></p>
+<h3 id="-">图片旋转</h3>
+<p>【图片旋转@<font color="red">图片字节集</font>@<font color="red">旋转角度</font>】<br /></p>
 <p>将图片顺时针旋转指定角度</p>
-<h3 id="-">图像大小调整</h3>
-<p>【图像大小调整@<font color="red">图片字节集</font>@<font color="red">调整后的宽度</font>@<font color="red">调整后的高度</font>】<br /></p>
+<h3 id="-">图片嵌字</h3>
+<p>【图片嵌字@<font color="red">图片字节集</font>@<font color="red">要嵌入的字</font>@<font color="red">x坐标</font>@<font color="red">y坐标</font>@<font color="red">字体大小</font>@<font color="red">rgba颜色数组</font>@<font color="red">字体名称</font>】<br /></p>
+<p>例如：</p>
+<pre><code>【定义变量@img1@【访问【取元素【取图片】@0】】】
+【图片【图片嵌字@【变量@img1】@舔舔？@0@0@30@【数组@255@0@0@255】@宋体】】
+</code></pre><p><strong>注意</strong>：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)</p>
+<h3 id="-">图片大小调整</h3>
+<p>【图片大小调整@<font color="red">图片字节集</font>@<font color="red">调整后的宽度</font>@<font color="red">调整后的高度</font>】<br /></p>
 <p>调整图片大小</p>
 <h3 id="gif-">GIF合成</h3>
 <p>【GIF合成@<font color="red">图片字节集数组</font>@<font color="red">延时</font>】<br /></p>

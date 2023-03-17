@@ -2,8 +2,10 @@ use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::BTree
 
 use chrono::TimeZone;
 use encoding::Encoding;
+use font_kit::{source::SystemSource};
 use jsonpath_rust::JsonPathQuery;
 use md5::{Md5, Digest};
+use rusttype::Scale;
 use urlencoding::encode;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 use super::RedLang;
@@ -745,6 +747,37 @@ pub fn init_ex_fun_map() {
                 pix.0[2] = color;
             }
         }
+        let mut bytes: Vec<u8> = Vec::new();
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    });
+    add_fun(vec!["图片嵌字","图像嵌字"],|self_t,params|{
+        let image_text = self_t.get_param(params, 0)?;
+        let img_vec = RedLang::parse_bin(&image_text)?;
+        let mut img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let text = self_t.get_param(params, 1)?;
+        let text_x = self_t.get_param(params, 2)?.parse::<i32>()?;
+        let text_y = self_t.get_param(params, 3)?.parse::<i32>()?;
+        let text_size = self_t.get_param(params, 4)?.parse::<f32>()?;
+        let text_color_text = self_t.get_param(params, 5)?;
+        let text_color = RedLang::parse_arr(&text_color_text)?;
+        let mut color = Rgba::<u8>([0,0,0,255]);
+        color.0[0] = text_color.get(0).unwrap_or(&"0").parse::<u8>()?;
+        color.0[1] = text_color.get(1).unwrap_or(&"0").parse::<u8>()?;
+        color.0[2] = text_color.get(2).unwrap_or(&"0").parse::<u8>()?;
+        color.0[3] = text_color.get(3).unwrap_or(&"255").parse::<u8>()?;
+        let scale = Scale {
+            x: text_size,
+            y: text_size,
+        };
+        let font_text = self_t.get_param(params, 6)?;
+        let font = SystemSource::new()
+            .select_by_postscript_name(&font_text)?
+            .load()?;
+        let font_dat = font.copy_font_data().ok_or("无法获得字体1")?;
+        let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
+        imageproc::drawing::draw_text_mut(&mut img,color,text_x,text_y,scale,&font,&text);
         let mut bytes: Vec<u8> = Vec::new();
         img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);

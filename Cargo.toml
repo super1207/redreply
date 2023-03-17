@@ -39,6 +39,8 @@ screenshots = "*"
 sevenz-rust = "*"
 ureq = "*"
 jsonpath-rust = "*"
+rusttype = "*"
+font-kit = "*"
 
 [target.'cfg(windows)'.dependencies]
 headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}
