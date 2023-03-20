@@ -340,6 +340,16 @@ impl error::Error for MyStrError {
     }
 }
 
+fn get_random() -> Result<usize, getrandom::Error> {
+    let mut rand_buf = [0u8; std::mem::size_of::<usize>()];
+    getrandom::getrandom(&mut rand_buf)?;
+    let mut num = 0usize;
+    for i in 0..std::mem::size_of::<usize>() {
+        num += (num << 8) + (rand_buf[i] as usize);
+    }
+    Ok(num)
+}
+
 
 pub fn init_core_fun_map() {
     fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
@@ -1321,15 +1331,6 @@ pub fn init_core_fun_map() {
         return Ok(Some(ret_str));
     });
     add_fun(vec!["取随机数"],|self_t,params|{
-        fn get_random() -> Result<usize, getrandom::Error> {
-            let mut rand_buf = [0u8; std::mem::size_of::<usize>()];
-            getrandom::getrandom(&mut rand_buf)?;
-            let mut num = 0usize;
-            for i in 0..std::mem::size_of::<usize>() {
-                num += (num << 8) + (rand_buf[i] as usize);
-            }
-            Ok(num)
-        }
         let num1 = self_t.get_param(params, 0)?.parse::<usize>()?;
         let num2 = self_t.get_param(params, 1)?.parse::<usize>()?;
         if num1 > num2 {

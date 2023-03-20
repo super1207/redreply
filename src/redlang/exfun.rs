@@ -10,7 +10,7 @@ use urlencoding::encode;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 use super::RedLang;
 
-use crate::cqapi::{cq_add_log, cq_add_log_w};
+use crate::{cqapi::{cq_add_log, cq_add_log_w}, redlang::get_random};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -1108,6 +1108,48 @@ pub fn init_ex_fun_map() {
         let remote_path = self_t.get_param(params, 1)?;
         sevenz_rust::decompress_file(src_path, remote_path)?;
         return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["去重"],|self_t,params|{
+        let arr_text = self_t.get_param(params, 0)?;
+        let arr = RedLang::parse_arr(&arr_text)?;
+        let mut arr_out:Vec<String> = vec![];
+        for txt in arr {
+            let txt_t = txt.to_owned();
+            if !arr_out.contains(&txt_t) {
+                arr_out.push(txt.to_owned());
+            }
+        }
+        return Ok(Some(self_t.build_arr(arr_out)));
+    });
+    add_fun(vec!["打乱"],|self_t,params|{
+        let arr_text = self_t.get_param(params, 0)?;
+        let arr = RedLang::parse_arr(&arr_text)?;
+        let mut arr_out = vec![];
+        for it in arr {
+            arr_out.push(it.to_owned());
+        }
+        for i in 0..arr_out.len() {
+            let rand_i = get_random()? % arr_out.len();
+            if rand_i != i {
+                let k = arr_out[i].to_owned();
+                arr_out[i] = arr_out[rand_i].to_owned();
+                arr_out[rand_i] = k;
+            }
+        }
+        return Ok(Some(self_t.build_arr(arr_out)));
+    });
+    add_fun(vec!["合并"],|self_t,params|{
+        let arr_text = self_t.get_param(params, 0)?;
+        let arr = RedLang::parse_arr(&arr_text)?;
+        let txt = self_t.get_param(params, 1)?;
+        let mut str_out = String::new();
+        for i in 0..arr.len() {
+            str_out.push_str(arr[i]);
+            if i != arr.len() - 1 {
+                str_out.push_str(&txt);
+            }
+        }
+        return Ok(Some(str_out));
     });
 }
 
