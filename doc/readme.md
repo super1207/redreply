@@ -1,4 +1,4 @@
-# RedLang v0.0.38 语法简述
+# RedLang v0.0.39 语法简述
 
 
 注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br />
@@ -8,8 +8,6 @@
 qq群号：920220179 (目前使用MiraiCQ的群)<br />
 
 开源地址：https://github.com/super1207/redreply<br />
-
-构建方法：参考workflows
 
 
 ## 目标
@@ -978,7 +976,9 @@ QQ相关的命令依赖的数据，会被共享；而普通变量、序号等信
 ### 图片嵌字
 
 
-【图片嵌字@<font color="red">图片字节集</font>@<font color="red">要嵌入的字</font>@<font color="red">x坐标</font>@<font color="red">y坐标</font>@<font color="red">字体大小</font>@<font color="red">rgba颜色数组</font>@<font color="red">字体名称</font>】<br />
+【图片嵌字@<font color="red">图片字节集</font>@<font color="red">要嵌入的字</font>@<font color="red">x坐标</font>@<font color="red">y坐标</font>@<font color="red">字体大小</font>@<font color="red">rgba颜色数组</font>@<font color="red">字体名称</font>@<font color="red">字间距</font>@<font color="red">行间距</font>】<br />
+
+字间距和行间距默认为0。<br />
 
 例如：
 ```
@@ -986,8 +986,18 @@ QQ相关的命令依赖的数据，会被共享；而普通变量、序号等信
 【图片【图片嵌字@【变量@img1】@舔舔？@0@0@30@【数组@255@0@0@255】@宋体】】
 ```
 
-**注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
+### 创建图片
 
+
+【创建图片@<font color="red">宽</font>@<font color="red">高</font>@<font color="red">rgba颜色数组</font>】<br />
+
+用于创建一张空白图片。
+
+### 文字转图片
+
+【文字转图片@<font color="red">图片的宽</font>@<font color="red">文字</font>@<font color="red">字体大小</font>@<font color="red">rgba颜色数组</font>@<font color="red">字体名称</font>@<font color="red">字间距</font>@<font color="red">行间距</font>】<br />
+
+字间距和行间距默认为0。<br />
 
 
 ### 图片大小调整

@@ -752,6 +752,136 @@ pub fn init_ex_fun_map() {
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
+    fn get_char_size(font:&rusttype::Font,scale:Scale,ch:char) -> (i32, i32) {
+        let v_metrics = font.v_metrics(scale);
+        let text = ch.to_string();
+        let mut width = 0;
+        let mut height = 0;
+        for g in font.layout(&text, scale, rusttype::point(0.0, v_metrics.ascent)) {
+            if let Some(bb) = g.pixel_bounding_box() {
+                width = bb.max.x;
+                height = bb.max.y;
+            }
+        }
+        return (width,height);
+    }
+    
+    add_fun(vec!["文字转图片","文字转图像"],|self_t,params|{
+        let image_width = self_t.get_param(params, 0)?.parse::<u32>()?;
+        let text = self_t.get_param(params, 1)?;
+        let text_size = self_t.get_param(params, 2)?.parse::<f32>()?;
+        let text_color_text = self_t.get_param(params, 3)?;
+        let text_color = RedLang::parse_arr(&text_color_text)?;
+        let mut color = Rgba::<u8>([0,0,0,255]);
+        color.0[0] = text_color.get(0).unwrap_or(&"0").parse::<u8>()?;
+        color.0[1] = text_color.get(1).unwrap_or(&"0").parse::<u8>()?;
+        color.0[2] = text_color.get(2).unwrap_or(&"0").parse::<u8>()?;
+        color.0[3] = text_color.get(3).unwrap_or(&"255").parse::<u8>()?;
+        let scale = Scale {
+            x: text_size,
+            y: text_size,
+        };
+        let font_text = self_t.get_param(params, 4)?;
+        let font_type = self_t.get_type(&font_text)?;
+        let font_dat;
+        if font_type == "字节集" {
+            font_dat = RedLang::parse_bin(&font_text)?;
+        }else{
+            let font = SystemSource::new()
+            .select_by_postscript_name(&font_text)?
+            .load()?;
+            font_dat = font.copy_font_data().ok_or("无法获得字体1")?.to_vec();
+        }
+        let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
+        let font_sep_text = self_t.get_param(params, 5)?;
+        let line_sep_text = self_t.get_param(params, 6)?;
+        let font_sep;
+        if font_sep_text != "" {
+            font_sep = font_sep_text.parse::<usize>()?;
+        } else {
+            font_sep = 0usize;
+        }
+        let line_sep;
+        if line_sep_text != "" {
+            line_sep = line_sep_text.parse::<usize>()?;
+        } else {
+            line_sep = 0usize;
+        }
+        let image_height;
+        {
+            let mut max_y = 0;
+            let text_chars = text.chars().collect::<Vec<char>>();
+            let mut cur_x = 0;
+            let mut cur_y = 0;
+            for ch in text_chars {
+                let (width,height) = get_char_size(&font, scale, ch);
+                if height > max_y {
+                    max_y = height;
+                }
+                if ch == ' '{
+                    if cur_x + ((text_size / 2. + 0.5) as i32)  < image_width as i32{
+                        cur_x += ((text_size / 2. + 0.5) as i32) + font_sep as i32;
+                    } else {
+                        cur_y += max_y + line_sep as i32;
+                        cur_x = 0;
+                        cur_x += (text_size as i32) + font_sep as i32;
+                    }
+                } else if ch == '\n' {
+                    cur_x = 0;
+                    cur_y += max_y + line_sep as i32;
+                }else { 
+                    if cur_x + width  < image_width as i32 {
+                        cur_x += width + font_sep as i32;
+                    } else {
+                        cur_y += max_y + line_sep as i32;
+                        cur_x = 0;
+                        cur_x += width + font_sep as i32;
+                    }
+                }
+            }
+            cur_y += max_y + line_sep as i32;
+            image_height = cur_y;
+        }
+        let mut img = ImageBuffer::new(image_width, image_height as u32);
+        {
+            let mut max_y = 0;
+            let text_chars = text.chars().collect::<Vec<char>>();
+            let mut cur_x = 0;
+            let mut cur_y = 0;
+            for ch in text_chars {
+                let (width,height) = get_char_size(&font, scale, ch);
+                if height > max_y {
+                    max_y = height;
+                }
+                if ch == ' '{
+                    if cur_x + ((text_size / 2. + 0.5) as i32)  < img.width() as i32{
+                        cur_x += ((text_size / 2. + 0.5) as i32) + font_sep as i32;
+                    } else {
+                        cur_y += max_y + line_sep as i32;
+                        cur_x = 0;
+                        cur_x += (text_size as i32) + font_sep as i32;
+                    }
+                } else if ch == '\n' {
+                    cur_x = 0;
+                    cur_y += max_y + line_sep as i32;
+                }else { 
+                    if cur_x + width  < img.width() as i32{
+                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x,cur_y,scale,&font,&ch.to_string());
+                        cur_x += width + font_sep as i32;
+                    } else {
+                        cur_y += max_y + line_sep as i32;
+                        cur_x = 0;
+                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x,cur_y,scale,&font,&ch.to_string());
+                        cur_x += width + font_sep as i32;
+                    }
+                }
+            }
+        }
+        let mut bytes: Vec<u8> = Vec::new();
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    });
     add_fun(vec!["图片嵌字","图像嵌字"],|self_t,params|{
         let image_text = self_t.get_param(params, 0)?;
         let img_vec = RedLang::parse_bin(&image_text)?;
@@ -772,46 +902,121 @@ pub fn init_ex_fun_map() {
             y: text_size,
         };
         let font_text = self_t.get_param(params, 6)?;
-        let font = SystemSource::new()
+        let font_type = self_t.get_type(&font_text)?;
+        let font_dat;
+        if font_type == "字节集" {
+            font_dat = RedLang::parse_bin(&font_text)?;
+        }else{
+            let font = SystemSource::new()
             .select_by_postscript_name(&font_text)?
             .load()?;
-        let font_dat = font.copy_font_data().ok_or("无法获得字体1")?;
+            font_dat = font.copy_font_data().ok_or("无法获得字体1")?.to_vec();
+        }
         let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
-        imageproc::drawing::draw_text_mut(&mut img,color,text_x,text_y,scale,&font,&text);
+        let font_sep_text = self_t.get_param(params, 7)?;
+        let line_sep_text = self_t.get_param(params, 8)?;
+        let font_sep;
+        if font_sep_text != "" {
+            font_sep = font_sep_text.parse::<usize>()?;
+        } else {
+            font_sep = 0usize;
+        }
+        let line_sep;
+        if line_sep_text != "" {
+            line_sep = line_sep_text.parse::<usize>()?;
+        } else {
+            line_sep = 0usize;
+        }
+        {
+            let mut max_y = 0;
+            let text_chars = text.chars().collect::<Vec<char>>();
+            let mut cur_x = 0;
+            let mut cur_y = 0;
+            for ch in text_chars {
+                let (width,height) = get_char_size(&font, scale, ch);
+                if height > max_y {
+                    max_y = height;
+                }
+                if ch == ' '{
+                    if text_x + cur_x + ((text_size / 2. + 0.5) as i32)  < img.width() as i32{
+                        cur_x += ((text_size / 2. + 0.5) as i32) + font_sep as i32;
+                    } else {
+                        cur_y += max_y + line_sep as i32;
+                        cur_x = 0;
+                        cur_x += (text_size as i32) + font_sep as i32;
+                    }
+                } else if ch == '\n' {
+                    cur_x = 0;
+                    cur_y += max_y + line_sep as i32;
+                }else { 
+                    if text_x + cur_x + width  < img.width() as i32{
+                        imageproc::drawing::draw_text_mut(&mut img,color,text_x + cur_x,text_y + cur_y,scale,&font,&ch.to_string());
+                        cur_x += width + font_sep as i32;
+                    } else {
+                        cur_y += max_y + line_sep as i32;
+                        cur_x = 0;
+                        imageproc::drawing::draw_text_mut(&mut img,color,text_x + cur_x,text_y + cur_y,scale,&font,&ch.to_string());
+                        cur_x += width + font_sep as i32;
+                    }
+                }
+            }
+        }
         let mut bytes: Vec<u8> = Vec::new();
         img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
-    add_fun(vec!["文字图片大小","文字图像大小"],|self_t,params|{
-        let text = self_t.get_param(params, 0)?;
-        let text_size = self_t.get_param(params, 1)?.parse::<f32>()?;
-        let scale = Scale {
-            x: text_size,
-            y: text_size,
-        };
-        let font_text = self_t.get_param(params, 2)?;
-        let font = SystemSource::new()
-            .select_by_postscript_name(&font_text)?
-            .load()?;
-        let font_dat = font.copy_font_data().ok_or("无法获得字体1")?;
-        let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
-        let v_metrics = font.v_metrics(scale);
-        let mut max_x = 0;
-        let mut max_y = 0;
-        for g in font.layout(&text, scale, rusttype::point(0.0, v_metrics.ascent)) {
-            if let Some(bb) = g.pixel_bounding_box() {
-                if bb.max.x + 1 > max_x {
-                    max_x = bb.max.x + 1;
-                }
-                if bb.max.y + 1 > max_y {
-                    max_y = bb.max.y + 1;
-                }
+    add_fun(vec!["创建图片","创建图像"],|self_t,params|{
+        let image_width = self_t.get_param(params, 0)?.parse::<u32>()?;
+        let image_height = self_t.get_param(params, 1)?.parse::<u32>()?;
+        let text_color_text = self_t.get_param(params, 2)?;
+        let text_color = RedLang::parse_arr(&text_color_text)?;
+        let mut color = Rgba::<u8>([0,0,0,0]);
+        color.0[0] = text_color.get(0).unwrap_or(&"0").parse::<u8>()?;
+        color.0[1] = text_color.get(1).unwrap_or(&"0").parse::<u8>()?;
+        color.0[2] = text_color.get(2).unwrap_or(&"0").parse::<u8>()?;
+        color.0[3] = text_color.get(3).unwrap_or(&"255").parse::<u8>()?;
+        let mut img:ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(image_width, image_height as u32);
+        for x in 0..image_width {
+            for y in 0..image_height {
+                let mut pix = img.get_pixel_mut(x, y);
+                pix.0 = color.0;
             }
         }
-        let ret = self_t.build_arr(vec![max_x.to_string(),max_y.to_string()]);
+        let mut bytes: Vec<u8> = Vec::new();
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
+    // add_fun(vec!["文字图片大小","文字图像大小"],|self_t,params|{
+    //     let text = self_t.get_param(params, 0)?;
+    //     let text_size = self_t.get_param(params, 1)?.parse::<f32>()?;
+    //     let scale = Scale {
+    //         x: text_size,
+    //         y: text_size,
+    //     };
+    //     let font_text = self_t.get_param(params, 2)?;
+    //     let font = SystemSource::new()
+    //         .select_by_postscript_name(&font_text)?
+    //         .load()?;
+    //     let font_dat = font.copy_font_data().ok_or("无法获得字体1")?;
+    //     let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
+    //     let v_metrics = font.v_metrics(scale);
+    //     let mut max_x = 0;
+    //     let mut max_y = 0;
+    //     for g in font.layout(&text, scale, rusttype::point(0.0, v_metrics.ascent)) {
+    //         if let Some(bb) = g.pixel_bounding_box() {
+    //             if bb.max.x + 1 > max_x {
+    //                 max_x = bb.max.x + 1;
+    //             }
+    //             if bb.max.y + 1 > max_y {
+    //                 max_y = bb.max.y + 1;
+    //             }
+    //         }
+    //     }
+    //     let ret = self_t.build_arr(vec![max_x.to_string(),max_y.to_string()]);
+    //     return Ok(Some(ret));
+    // });
     add_fun(vec!["水平翻转"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let img_vec = RedLang::parse_bin(&text1)?;
