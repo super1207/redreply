@@ -1,7 +1,7 @@
-use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any, sync::Arc};
+use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any, sync::Arc, thread};
 use encoding::Encoding;
 
-use crate::{G_CONST_MAP, CLEAR_UUID};
+use crate::{G_CONST_MAP, CLEAR_UUID, cqevent::do_script, cqapi::cq_add_log_w};
 pub mod exfun;
 pub(crate) mod cqexfun;
 
@@ -1367,6 +1367,32 @@ pub fn init_core_fun_map() {
             ret_str = ret_str.get((pos + 36)..).unwrap().to_owned();
         }
         return Ok(Some(ret_str));
+    });
+    add_fun(vec!["后台运行脚本"],|self_t,params|{
+        let exmap = (*self_t.exmap).borrow().clone();
+        let code = self_t.get_param(params, 0)?;
+        let pkg_name = self_t.pkg_name.clone();
+        let script_name = self_t.script_name.clone();
+        // 获取参数
+        let params_len = params.len();
+        let mut params_vec: Vec<String> = vec![];
+        for i in 1..params_len {
+            params_vec.push(self_t.get_param(params, i)?);
+        }
+        thread::spawn(move ||{
+            let mut rl = RedLang::new();
+            rl.exmap = Rc::new(RefCell::new(exmap)); // 获得一些拓展相关的变量
+            rl.pkg_name = pkg_name;
+            rl.script_name = script_name;
+            // 将参数传入新脚本
+            for i in 0..params_vec.len() {
+                rl.params_vec[0].push(params_vec[i].clone());
+            }
+            if let Err(err) = do_script(&mut rl, &code, true) {
+                cq_add_log_w(&format!("{}",err)).unwrap();
+            }
+        });
+        return Ok(Some("".to_string()));
     });
     add_fun(vec!["反转义"],|self_t,params|{
         let mut rl = RedLang::new();

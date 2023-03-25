@@ -65,7 +65,7 @@
 				</div>
         <div id='readme' style='width:70%;margin-left:20%;'>
           	<article class='markdown-body'>
-            	<h1 id="redlang-v0-0-39-">RedLang v0.0.39 语法简述</h1>
+            	<h1 id="redlang-v0-0-40-">RedLang v0.0.40 语法简述</h1>
 <p>注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br /></p>
 <p>作者qq：1875159423<br /></p>
 <p>qq群号：920220179 (目前使用MiraiCQ的群)<br /></p>
@@ -297,7 +297,10 @@
 <p>【编码@<font color="red">要编码的内容</font>】<br /></p>
 <p>对url进行编码，如：</p>
 <pre><code>https://image.baidu.com/search/index?tn=baiduimage&amp;word=【编码@樱小路露娜】
-</code></pre><h3 id="json-">Json解析</h3>
+</code></pre><h3 id="-">解码</h3>
+<p>【解码@<font color="red">要解码的文本</font>】<br /></p>
+<p>对url进行解码，返回解码后的文本。</p>
+<h3 id="json-">Json解析</h3>
 <p>【Json解析@<font color="red">Json内容</font>@<font color="red">jsonpath</font>】<br /></p>
 <p>返回RedLang对应的对象，若解析失败，则返回空文本。<br /></p>
 <p>jsonpath的规则参见<a href="https://github.com/besok/jsonpath-rust">jsonpath-rust</a>，可以省略。<br /></p>
@@ -417,6 +420,10 @@
 <p>【运行脚本@<font color="red">脚本内容</font>@<font color="red">参数1</font>@<font color="red">参数2</font>...】<br /></p>
 <p>在一个新的环境中运行RedLang脚本，返回脚本执行结果，可以带参数<br /></p>
 <p>QQ相关的命令依赖的数据，会被共享；而普通变量、序号等信息不会保留。</p>
+<h3 id="-">后台运行脚本</h3>
+<p>【后台运行脚本@<font color="red">脚本内容</font>@<font color="red">参数1</font>@<font color="red">参数2</font>...】<br /></p>
+<p>在一个新的环境中运行RedLang脚本，立刻返回空文本，不会阻塞当前脚本，可以带参数<br /></p>
+<p>QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信息不会保留。</p>
 <h3 id="md5-">MD5编码</h3>
 <p>【MD5编码@<font color="red">字节集</font>】<br /></p>
 <p>将字节集转为md5编码的文本，全小写<br /></p>

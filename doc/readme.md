@@ -1,4 +1,4 @@
-# RedLang v0.0.39 语法简述
+# RedLang v0.0.40 语法简述
 
 
 注意，目前项目正在快速迭代，所有规则都有可能会改变，并且不会有任何通知，如果有自己的想法或者需求，可以一起讨论:<br />
@@ -570,6 +570,13 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 ```
 
 
+### 解码
+
+
+【解码@<font color="red">要解码的文本</font>】<br />
+
+对url进行解码，返回解码后的文本。
+
 ### Json解析 
 
 
@@ -859,6 +866,15 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 
 QQ相关的命令依赖的数据，会被共享；而普通变量、序号等信息不会保留。
 
+
+### 后台运行脚本
+
+
+【后台运行脚本@<font color="red">脚本内容</font>@<font color="red">参数1</font>@<font color="red">参数2</font>...】<br />
+
+在一个新的环境中运行RedLang脚本，立刻返回空文本，不会阻塞当前脚本，可以带参数<br />
+
+QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信息不会保留。
 
 ### MD5编码
 
