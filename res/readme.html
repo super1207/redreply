@@ -101,7 +101,7 @@
 <h3 id="-">对象</h3>
 <p>即键值对的组合，在有些编程语言中也叫做字典或者map。</p>
 <h3 id="-">数组</h3>
-<p>多个元素按次序组合的结构称为数组。</p>
+<p>多个元素按次序组合的结构称为数组，有时也称为列表。</p>
 <h3 id="-">函数</h3>
 <p>函数被视作一种普通的类型，可以储存在变量中。函数本身也可以在定义时按值捕获外部变量(通过&quot;闭包&quot;指令)，如其它编程语言中的lambda一样。</p>
 <h3 id="-">字节集</h3>
@@ -115,7 +115,7 @@
 <p>命令由命令名和参数组成，中间由@分割。<br /></p>
 <p>特殊说明：如果命令名后紧接着下一个命令，那么之间的@可以省略<br /></p>
 <p>如【命令名@【命令名...】...】可以等效为【命令名【命令名...】...】<br /></p>
-<p><strong>内置的命令</strong>是大小写不敏感、繁体简体不敏感的。</p>
+<p><strong>内置的命令的命令名</strong>是大小写不敏感、繁体简体不敏感的，但是注意，命令的参数通常是大小写敏感的。</p>
 <h2 id="-">通用命令说明</h2>
 <h3 id="-">换行</h3>
 <p>【换行】<br />用来代替字面量的\n</p>
@@ -143,7 +143,8 @@
 <p>用来修改距离当前作用域最近的变量，若搜索完所有作用域都无此变量，则在当前定义域定义此变量。</p>
 <h3 id="-">判断</h3>
 <p>【判断@<font color="red">文本1</font>@<font color="red">文本2</font>@<font color="red">不同执行</font>@<font color="red">相同执行</font>】<br /></p>
-<p>其中<font color="red">相同执行</font>可以省略。</p>
+<p>其中<font color="red">相同执行</font>可以省略。<br /></p>
+<p>注意：此命令与【判等】命令完全相同，请优先使用判等，更加见名知义。</p>
 <h3 id="-">判等</h3>
 <p>【判等@<font color="red">文本1</font>@<font color="red">文本2</font>@<font color="red">不同执行</font>@<font color="red">相同执行</font>】<br /></p>
 <p>与【判断】相同。</p>
@@ -204,6 +205,103 @@
 <p>\==(等于) !=(不等于) &gt; &gt;= &lt; &lt;=<br /></p>
 <p>&amp;&amp;(与) ||(或) !(非)<br /></p>
 <p>逻辑运算表达式返回<font color="red">真</font>或<font color="red">假</font>。</p>
+<table>
+<thead>
+<tr>
+<th>符号</th>
+<th>说明</th>
+<th>优先级</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>^</td>
+<td>指数运算</td>
+<td>1</td>
+</tr>
+<tr>
+<td>!</td>
+<td>取非</td>
+<td>2</td>
+</tr>
+<tr>
+<td>-</td>
+<td>取负</td>
+<td>2</td>
+</tr>
+<tr>
+<td>%</td>
+<td>取余数3</td>
+<td>3</td>
+</tr>
+<tr>
+<td>//</td>
+<td>整除</td>
+<td>3</td>
+</tr>
+<tr>
+<td>/</td>
+<td>除</td>
+<td>3</td>
+</tr>
+<tr>
+<td>*</td>
+<td>乘</td>
+<td>3</td>
+</tr>
+<tr>
+<td>-</td>
+<td>减</td>
+<td>4</td>
+</tr>
+<tr>
+<td>+</td>
+<td>加</td>
+<td>4</td>
+</tr>
+<tr>
+<td>!=</td>
+<td>不等</td>
+<td>5</td>
+</tr>
+<tr>
+<td>&lt;=</td>
+<td>小于等于</td>
+<td>5</td>
+</tr>
+<tr>
+<td>>=</td>
+<td>大于等于</td>
+<td>5</td>
+</tr>
+<tr>
+<td>&gt;</td>
+<td>大于</td>
+<td>5</td>
+</tr>
+<tr>
+<td>&lt;</td>
+<td>小于</td>
+<td>5</td>
+</tr>
+<tr>
+<td>==</td>
+<td>等于</td>
+<td>5</td>
+</tr>
+<tr>
+<td>&amp;&amp;</td>
+<td>与</td>
+<td>6</td>
+</tr>
+<tr>
+<td>11</td>
+<td>或</td>
+<td>7</td>
+</tr>
+</tbody>
+</table>
+<p>优先级数字越小越高。</p>
 <h3 id="-">数组</h3>
 <p>【数组@<font color="red">元素1</font>@<font color="red">元素2</font>@......】<br /></p>
 <p>用来构建一个数组，可以为空数组：【数组】</p>
@@ -497,7 +595,7 @@
 <p>将图片变成灰色，公式：Gray = (Red <em> 0.3 + Green </em> 0.589 + Blue * 0.11)</p>
 <h3 id="-">应用目录</h3>
 <p>【应用目录】<br /></p>
-<p>返回红色问答的应用目录，末尾有分隔符</p>
+<p>返回红色问答的应用目录，应用目录就是包的script.json所在目录，末尾有分隔符。</p>
 <h3 id="-windows-">网页截图(仅windows可用)</h3>
 <p>【网页截图@<font color="red">网址</font>@<font color="red">CSS选择器</font>】<br /></p>
 <p>用无界面的浏览器打开网址，进行截图，返回图片字节集。若访问失败，返回空字节集。<br /></p>
@@ -583,13 +681,13 @@
 【消息ID@<font color="red">目标QQ</font>】<br />
 这个命令有两种形式：<br />
 第一种返回当前消息的消息ID<br />
-第二种返回目标QQ在当前群聊的历史消息ID数组。</p>
+第二种返回目标QQ在当前群聊的历史消息ID数组（因内存条很贵，所以最多返回20条数据）。</p>
 <h3 id="-">获取消息</h3>
 <p>【获取消息@<font color="red">消息ID</font>】</p>
-<p>根据消息ID获取消息，返回文本格式的消息。</p>
+<p>根据消息ID获取消息，返回文本格式的消息，此命令需要onebot协议端支持。</p>
 <h3 id="-">撤回</h3>
 <p>【撤回@<font color="red">消息ID</font>或<font color="red">消息ID数组</font>】<br /></p>
-<p>若省略参数，则表示撤回当前消息。</p>
+<p>若省略参数，则表示撤回当前消息，此命令需要onebot协议端支持。</p>
 <h3 id="-">禁言</h3>
 <p>【禁言@<font color="red">时间(秒)</font>】<br /></p>
 <p>禁言当前发消息的人，0表示解除禁言。</p>
@@ -622,7 +720,7 @@
 <p>【语音@<font color="red">文本或字节集</font>@<font color="red">不使用缓存</font>】<br /></p>
 <p>支持http/https链接，绝对地址，字节集<br /></p>
 <p>当为http/https连接时，如果第二个参数为<code>假</code>，则不使用缓存，否则使用缓存。<br /></p>
-<p>注意，可能需要安装ffmpeg，才能正常使用此功能。</p>
+<p>注意，可能需要给onebot协议端安装ffmpeg，才能正常使用此功能。</p>
 <h3 id="-">子关键词</h3>
 <p>【子关键词】<br /></p>
 <p><font color="red">模糊匹配</font>和<font color="red">完全匹配</font>没有子关键词<br /></p>
@@ -649,13 +747,15 @@
 <p>【输入流@<font color="red">超时</font>】<br /></p>
 <p>返回当前群、当前发送者的下一条消息，可以在私聊和频道中使用。<br />
 超时参数的单位是毫秒，可以省略，默认15000。<br />
-若超时，返回空文本。</p>
+若超时，返回空文本。<br />
+注意：输入流容易导致逻辑混乱，不推荐使用。</p>
 <h3 id="-">群输入流</h3>
 <p>【群输入流@<font color="red">超时</font>】<br /></p>
 <p>返回当前群的下一条消息和其发送者(一个RedLang对象)，可以在频道中使用。<br />
 返回示例:<code>{&quot;发送者ID&quot;:&quot;1875159423&quot;,&quot;消息&quot;:&quot;你好，世界&quot;}</code><br />
 超时参数的单位是毫秒，可以省略，默认15000。<br />
-若超时，返回空对象。</p>
+若超时，返回空对象。<br />
+注意：输入流容易导致逻辑混乱，不推荐使用。</p>
 <h3 id="ob-">OB调用</h3>
 <p>【OB调用@<font color="red">onebot要求的json文本</font>】<br /></p>
 <p>此命令用于发送原始onebot数据，以调用框架不支持，以及尚未支持的功能。<br /></p>
