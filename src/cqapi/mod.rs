@@ -7,7 +7,8 @@ pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error>> {
     let curdir = curexedir.parent().ok_or("无法获得当前可执行文件的父目录")?; 
     let path = curdir.join("plus_dir");
     std::fs::create_dir_all(&path)?;
-    return Ok(format!("{}{}",path.to_str().unwrap(),std::path::MAIN_SEPARATOR.to_string()))
+    let path_str = format!("{}{}",path.to_str().unwrap(),std::path::MAIN_SEPARATOR.to_string());
+    return Ok(crate::mytool::deal_path_str(&path_str).to_string());
 }
 
 // 获取应用目录，绝对路径，末尾有'\',utf8编码
@@ -16,7 +17,8 @@ pub fn cq_get_app_directory2() -> Result<String, Box<dyn std::error::Error>> {
     let curdir = curexedir.parent().ok_or("无法获得当前可执行文件的父目录")?; 
     let path = curdir.join("plus_dir").join("default_pkg_dir");
     std::fs::create_dir_all(&path)?;
-    return Ok(format!("{}{}",path.to_str().unwrap(),std::path::MAIN_SEPARATOR.to_string()))
+    let path_str = format!("{}{}",path.to_str().unwrap(),std::path::MAIN_SEPARATOR.to_string());
+    return Ok(crate::mytool::deal_path_str(&path_str).to_string());
 }
 
 // 用于发送Onebot原始数据，返回OneBot原始数据，utf8编码

@@ -6,7 +6,6 @@ use font_kit::{source::SystemSource};
 use jsonpath_rust::JsonPathQuery;
 use md5::{Md5, Digest};
 use rusttype::Scale;
-use urlencoding::encode;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 use super::RedLang;
 
@@ -199,8 +198,16 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["编码"],|self_t,params|{
         let urlcode = self_t.get_param(params, 0)?;
-        let encoded = encode(&urlcode);
+        let encoded = urlencoding::encode(&urlcode);
         return Ok(Some(encoded.to_string()));
+    });
+    add_fun(vec!["解码"],|self_t,params|{
+        let urlcode = self_t.get_param(params, 0)?;
+        if let Ok(decoded) = urlencoding::decode(&urlcode){
+            return Ok(Some(decoded.to_string()));
+        }
+        cq_add_log_w(&format!("url解码失败:`{}`",urlcode)).unwrap();
+        return Ok(Some("".to_string()));
     });
     add_fun(vec!["随机取"],|self_t,params|{
         let arr_data = self_t.get_param(params, 0)?;
@@ -333,7 +340,7 @@ pub fn init_ex_fun_map() {
         let exe_dir = std::env::current_exe()?;
         let exe_path = exe_dir.parent().ok_or("无法获得运行目录")?;
         let exe_path_str = exe_path.to_string_lossy().to_string() + "\\";
-        return Ok(Some(exe_path_str));
+        return Ok(Some(crate::mytool::deal_path_str(&exe_path_str).to_string()));
     });
     add_fun(vec!["分割"],|self_t,params|{
         let data_str = self_t.get_param(params, 0)?;

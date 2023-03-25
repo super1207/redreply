@@ -284,3 +284,12 @@ pub fn json_to_cq_str(js: & serde_json::Value) ->Result<String, Box<dyn std::err
     }
     return  Ok(ret);
 }
+
+
+pub fn deal_path_str(path_str:&str) -> &str {
+    if path_str.starts_with("\\\\?\\") {
+        return &path_str[4..];
+    }else{
+        return path_str;
+    }
+}
