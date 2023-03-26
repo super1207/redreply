@@ -149,8 +149,16 @@ pub fn init_cq_ex_fun_map() {
         return Ok(Some(qq));
     });
     add_fun(vec!["机器人名字"],|self_t,_params|{
-        let name = self_t.get_exmap("机器人名字");
-        return Ok(Some(name.to_string()));
+        let send_json = serde_json::json!({
+            "action":"get_login_info",
+            "params":{}
+        });
+        let self_id = self_t.get_exmap("机器人ID");
+        let cq_ret = cq_call_api(&self_id,&send_json.to_string())?;
+        let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
+        let err = "获机器人名字失败";
+        let bot_name = ret_json.get("data").ok_or(err)?.get("nickname").ok_or(err)?.as_str().ok_or(err)?;
+        return Ok(Some(bot_name.to_string()));
     });
     add_fun(vec!["权限","发送者权限"],|self_t,_params|{
         let role = self_t.get_exmap("发送者权限");
