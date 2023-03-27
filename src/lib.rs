@@ -24,8 +24,8 @@ mod mytool;
 mod initevent;
 mod cronevent;
 mod botconn;
-pub mod httpserver;
-
+mod httpserver;
+mod test;
 
 #[macro_use]
 extern crate lazy_static; 

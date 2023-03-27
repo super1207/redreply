@@ -1293,6 +1293,40 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some(self_t.build_arr(vec)));
     });
+    add_fun(vec!["定义持久常量"],|self_t,params|{
+        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+        let sql_file = app_dir + "reddat.db";
+        let conn = rusqlite::Connection::open(sql_file)?;
+        conn.execute("CREATE TABLE IF NOT EXISTS CONST_TABLE (KEY TEXT PRIMARY KEY,VALUE TEXT);", [])?;
+        let mut key = self_t.get_param(params, 0)?;
+        let mut value = self_t.get_param(params, 1)?;
+        if self_t.get_type(&key)? !=  "文本" {
+            key = String::from("12331549-6D26-68A5-E192-5EBE9A6EB998") + key.get(36..).unwrap();
+        }
+        if self_t.get_type(&value)? !=  "文本" {
+            value = String::from("12331549-6D26-68A5-E192-5EBE9A6EB998") + value.get(36..).unwrap();
+        }
+        conn.execute("REPLACE INTO CONST_TABLE (KEY,VALUE) VALUES (?,?)", [key,value])?;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["持久常量"],|self_t,params|{
+        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+        let sql_file = app_dir + "reddat.db";
+        let conn = rusqlite::Connection::open(sql_file)?;
+        let mut key = self_t.get_param(params, 0)?;
+        if self_t.get_type(&key)? !=  "文本" {
+            key = String::from("12331549-6D26-68A5-E192-5EBE9A6EB998") + key.get(36..).unwrap();
+        }
+        let ret_rst:Result<String,rusqlite::Error> = conn.query_row("SELECT VALUE FROM CONST_TABLE WHERE KEY = ?", [key], |row| row.get(0));
+        if let Ok(ret) =  ret_rst {
+            if ret.starts_with("12331549-6D26-68A5-E192-5EBE9A6EB998") {
+                let value = crate::REDLANG_UUID.to_owned() + ret.get(36..).unwrap();
+                return Ok(Some(value));
+            }
+            return Ok(Some(ret));
+        }
+        return Ok(Some("".to_string()));
+    });
     add_fun(vec!["截屏"],|self_t,_params|{
         let screens = screenshots::Screen::all()?;
         if screens.len() > 0 {

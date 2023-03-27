@@ -797,6 +797,22 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 此命令有两种形式，第一种用于获取当前包的常量，第二种用于获取其它包的常量。<br />
 
 
+### 定义持久常量
+
+
+【定义持久常量@<font color="red">常量名</font>@<font color="red">常量内容</font>】<br />
+
+定义一个持久常量，持久常量在同包的所有脚本中可见，且重启后不会丢失。
+
+
+### 持久常量
+
+
+【持久常量@<font color="red">常量名</font>】<br />
+
+读取一个持久常量，若持久常量不存在，返回空文本。
+
+
 ### 转字节集
 
 
