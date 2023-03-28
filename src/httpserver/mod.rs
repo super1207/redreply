@@ -132,6 +132,7 @@ async fn deal_file(request: hyper::Request<hyper::Body>) -> Result<hyper::Respon
     let url_path = request.uri().path();
     let app_dir = cq_get_app_directory1().unwrap();
     let path = PathBuf::from(&app_dir);
+    let path = path.join("webui");
     let url_path_t = url_path.replace("/", &std::path::MAIN_SEPARATOR.to_string());
     let file_path = path.join(url_path_t.get(1..).unwrap());
     let file_buf = tokio::fs::read(&file_path).await?;
@@ -211,6 +212,7 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
         if url_path == "/readme.html" {
             let app_dir = cq_get_app_directory1().unwrap();
             let path = PathBuf::from(&app_dir);
+            let path = path.join("webui");
             let url_path_t = "readme.md".to_owned();
             let file_path = path.join(url_path_t);
             let file_buf = tokio::fs::read(&file_path).await?;

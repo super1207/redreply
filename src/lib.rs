@@ -341,14 +341,16 @@ pub fn read_code() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
 }
 
 pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
+    let sep = std::path::MAIN_SEPARATOR;
     let err = "get asset err";
+    fs::create_dir_all(cq_get_app_directory1().unwrap() + "webui")?;
     for it in Asset::iter() {
         let file = Asset::get(&it.to_string()).ok_or(err)?;
-        fs::write(cq_get_app_directory1().unwrap() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
+        fs::write(cq_get_app_directory1().unwrap() + "webui" +  &sep.to_string() +  it.to_string().get(4..).unwrap_or_default(), file.data)?;
     } 
     for it in AssetDoc::iter() {
         let file = AssetDoc::get(&it.to_string()).ok_or(err)?;
-        fs::write(cq_get_app_directory1().unwrap() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
+        fs::write(cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
     } 
     Ok(())
 }
