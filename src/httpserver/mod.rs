@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::cqapi::cq_get_app_directory1;
+use crate::cqapi::{cq_get_app_directory1, get_history_log};
 use crate::read_config;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 use futures_util::SinkExt;
@@ -175,8 +175,13 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
         if url_path == "/watch_log" {
             // ws协议升级返回
             let (response, websocket) = hyper_tungstenite::upgrade(request, None)?;
-            let (tx, rx) =  tokio::sync::mpsc::channel::<String>(32);
+            let (tx, rx) =  tokio::sync::mpsc::channel::<String>(60);
             
+            let history_log = get_history_log();
+            for it in history_log {
+                tx.send(it).await?;
+            }
+
             // 开启一个线程来处理ws
             tokio::spawn(async move {
                 let uid = uuid::Uuid::new_v4().to_string();

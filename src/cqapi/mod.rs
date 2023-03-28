@@ -1,5 +1,27 @@
 use crate::{RT_PTR, httpserver::add_ws_log};
 
+lazy_static! {
+    static ref G_HISTORY_LOG:std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(vec![]);
+}
+
+fn add_history_log(msg:&str) -> Result<(), Box<dyn std::error::Error>> {
+    let mut lk = G_HISTORY_LOG.write()?;
+    lk.push(msg.to_owned());
+    if lk.len() > 50 {
+        lk.remove(0);
+    }
+    Ok(())
+}
+
+pub fn get_history_log() -> Vec<String> {
+    let lk_rst = G_HISTORY_LOG.read();
+    if let Ok(lk) = lk_rst {
+        let ret = &*lk;
+        return ret.to_owned();
+    }
+    return vec![];
+}
+
 
 // 获取插件的目录，绝对路径，末尾有'\',utf8编码
 pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error>> {
@@ -37,12 +59,15 @@ pub fn cq_call_api(self_id:&str,json_str: &str) -> Result<String, Box<dyn std::e
 
 fn cq_add_log_t(_log_level:i32,log_msg: &str) -> Result<i32, Box<dyn std::error::Error>> {
     if _log_level == 0 {
-        
         log::info!("{}",log_msg);
-        add_ws_log(format!("Info:{}",log_msg));
+        let log_msg = format!("Info:{}",log_msg);
+        add_history_log(&log_msg)?;
+        add_ws_log(log_msg);
     }else {
         log::warn!("{}",log_msg);
-        add_ws_log(format!("Warn:{}",log_msg));
+        let log_msg = format!("Warn:{}",log_msg);
+        add_history_log(&log_msg)?;
+        add_ws_log(log_msg);
     }
     Ok(0)
 }
