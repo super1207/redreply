@@ -13,7 +13,7 @@ qq群号：920220179 (目前使用MiraiCQ的群)
 ## 目标
 
 
-一个简单但强大的文本生成规则，由各种命令组成，<strong>将会</strong>支持读写文件，网络访问等一切和文本处理相关的事情。
+一个简单但强大的文本生成规则，由各种命令组成，**将会**支持读写文件，网络访问等一切和文本处理相关的事情。
 
 
 ## 代码一览
@@ -103,13 +103,13 @@ hellohellohellohellohello
 ## 作用域规则
 
 
-只有调用函数会产生新的作用域，如果没有被函数包裹，则位于全局作用域(不能跨越脚本，如果想要跨越脚本，请使用<strong>定义常量</strong>命令)。
+只有调用函数会产生新的作用域，如果没有被函数包裹，则位于全局作用域(不能跨越脚本，如果想要跨越脚本，请使用**定义常量**命令)。
 
 
 ## 转义规则
 
 
-只有<strong>字符串字面量</strong>需要转义，转义符号为<font color="red">\\</font>。需要转义的字符有 <font color="red">@</font>、<font color="red">【</font>、<font color="red">】</font>、<font color="red">\\</font>。另外，空格和换行的字面量会被忽略，需要使用命令【空格】、【换行】代替。特别说明的是，空格也可以用<font color="red">\\</font>来转义。
+只有**字符串字面量**需要转义，转义符号为<font color="red">\\</font>。需要转义的字符有 <font color="red">@</font>、<font color="red">【</font>、<font color="red">】</font>、<font color="red">\\</font>。另外，空格和换行的字面量会被忽略，需要使用命令【空格】、【换行】代替。特别说明的是，空格也可以用<font color="red">\\</font>来转义。
 
 
 ## 命令格式
@@ -288,7 +288,7 @@ hellohellohellohellohello
 命令不产生新的作用域，所以在命令中使用【返回】指令将直接跳出当前作用域。
 
 命令不产生新的作用域，所以在命令中定义变量将在当前作用域定义变量。
-<strong>调用命令</strong>时，命令名不参与解析，也不处理转义。所以，您在定义命令时，命令名中不要有需要转义的符号。
+**调用命令**时，命令名不参与解析，也不处理转义。所以，您在定义命令时，命令名中不要有需要转义的符号。
 
 自定义的命令可以覆盖内置命令。
 
@@ -324,7 +324,7 @@ hellohellohellohellohello
 
 【返回】
 
-跳出当前作用域。一般用于跳出函数，在函数之外也<strong>可以</strong>使用，表示跳出脚本。
+跳出当前作用域。一般用于跳出函数，在函数之外也**可以**使用，表示跳出脚本。
 
 
 ### 计算
@@ -481,7 +481,7 @@ hellohellohellohellohello
 
 随机返回X、Y之间的整数，包括X、Y。
 
-X，Y都必须为非负整数，且Y<strong>不能小于</strong>X。
+X，Y都必须为非负整数，且Y**不能小于**X。
 
 对于32位版本，X、Y最大支持32位二进制位，对于64位版本，X、Y最大支持64位二进制位。
 
@@ -491,7 +491,7 @@ X，Y都必须为非负整数，且Y<strong>不能小于</strong>X。
 
 【闭包@<font color="red">语句</font>】
 
-用于在函数定义的时候使用，闭包中的语句会在<strong>函数定义</strong>时执行，成为函数定义的一部分。
+用于在函数定义的时候使用，闭包中的语句会在**函数定义**时执行，成为函数定义的一部分。
 
 
 ### 随机取
@@ -1396,7 +1396,7 @@ at发送者，如果要at其它人，可以这么写：【艾特@<font color="re
 
 【CQ码转义@<font color="red">内容</font>】
 
-CQ码<strong>内部</strong>中的字符需要CQ码转义
+CQ码**内部**中的字符需要CQ码转义
 
 
 ### CQ转义
@@ -1404,7 +1404,7 @@ CQ码<strong>内部</strong>中的字符需要CQ码转义
 
 【CQ转义@<font color="red">内容</font>】
 
-CQ码<strong>外部</strong>的字符需要CQ转义，以上三个命令的作用可以参考：[onebot字符格式消息转义规则](https://github.com/botuniverse/onebot-11/blob/master/message/string.md#%E8%BD%AC%E4%B9%89)
+CQ码**外部**的字符需要CQ转义，以上三个命令的作用可以参考：[onebot字符格式消息转义规则](https://github.com/botuniverse/onebot-11/blob/master/message/string.md#%E8%BD%AC%E4%B9%89)
 
 
 ### 图片
