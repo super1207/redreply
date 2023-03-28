@@ -41,6 +41,7 @@ ureq = "*"
 jsonpath-rust = "*"
 rusttype = "*"
 font-kit = "*"
+markdown = "1.0.0-alpha.7"
 
 [target.'cfg(windows)'.dependencies]
 headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}

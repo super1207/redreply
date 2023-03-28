@@ -1,4 +1,4 @@
-use std::collections::{vec_deque, VecDeque};
+use std::collections::VecDeque;
 
 use crate::{cqapi::*, redlang::RedLang, mytool::{json_to_cq_str, read_json_str}, read_code, G_INPUTSTREAM_VEC};
 
@@ -14,7 +14,7 @@ pub fn msg_id_map_insert(user_id:String,group_id:String,message_id:String) ->Res
             v.pop_back();
         }
     }else{
-        let mut v = VecDeque::new();
+        let v = VecDeque::new();
         mp.insert(flag, v);
     }
     Ok(())

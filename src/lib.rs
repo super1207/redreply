@@ -83,6 +83,12 @@ lazy_static! {
 #[prefix = "res/"]
 pub struct Asset;
 
+
+#[derive(RustEmbed)]
+#[folder = "doc/"]
+#[prefix = "doc/"]
+pub struct AssetDoc;
+
 pub fn wait_for_quit() -> ! {
     (*G_QUIT_FLAG.write().unwrap()) = true;
     let _foo = std::thread::spawn(||{
@@ -336,13 +342,12 @@ pub fn read_code() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
 
 pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
     let err = "get asset err";
-    let sep = std::path::MAIN_SEPARATOR;
-    fs::create_dir_all(cq_get_app_directory1().unwrap() + &format!("toc{sep}css{sep}zTreeStyle{sep}img{sep}diy"))?;
-    fs::create_dir_all(cq_get_app_directory1().unwrap() + &format!("toc{sep}js"))?;
-    fs::create_dir_all(cq_get_app_directory1().unwrap() + &format!("toc{sep}style"))?;
-    fs::create_dir_all(cq_get_app_directory1().unwrap() + "webui")?;
     for it in Asset::iter() {
         let file = Asset::get(&it.to_string()).ok_or(err)?;
+        fs::write(cq_get_app_directory1().unwrap() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
+    } 
+    for it in AssetDoc::iter() {
+        let file = AssetDoc::get(&it.to_string()).ok_or(err)?;
         fs::write(cq_get_app_directory1().unwrap() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
     } 
     Ok(())
