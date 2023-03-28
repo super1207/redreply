@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::VecDeque;
 use std::fs;
 use std::panic;
 use std::path::PathBuf;
@@ -58,7 +59,7 @@ lazy_static! {
     // 用于记录常量:包名-常量名-常量值
     pub static ref G_CONST_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
     // 用于撤回消息
-    pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,Vec<String>>> = RwLock::new(HashMap::new());
+    pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,VecDeque<String>>> = RwLock::new(HashMap::new());
     // 用于记录自定义的命令
     pub static ref G_CMD_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
     // 用于记录命令

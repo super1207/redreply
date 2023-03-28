@@ -194,8 +194,14 @@ pub fn init_cq_ex_fun_map() {
             let mp = crate::G_MSG_ID_MAP.read()?;
             let group_id = self_t.get_exmap("群ID").parse::<i32>()?;
             let flag = qq + &group_id.to_string();
-            ret = match mp.get(&flag) {
-                Some(v) => self_t.build_arr(v.to_vec()),
+            ret = match mp.get(&flag) {  
+                Some(v) => {
+                    let mut vv = vec![];
+                    for it in v {
+                        vv.push(it.to_string());
+                    }
+                    self_t.build_arr(vv)
+                },
                 None => self_t.build_arr(vec![])
             };
         }

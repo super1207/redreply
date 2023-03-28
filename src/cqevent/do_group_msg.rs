@@ -1,3 +1,5 @@
+use std::collections::{vec_deque, VecDeque};
+
 use crate::{cqapi::*, redlang::RedLang, mytool::{json_to_cq_str, read_json_str}, read_code, G_INPUTSTREAM_VEC};
 
 use super::{is_key_match, get_script_info, set_normal_message_info};
@@ -7,12 +9,12 @@ pub fn msg_id_map_insert(user_id:String,group_id:String,message_id:String) ->Res
     let mut mp = crate::G_MSG_ID_MAP.write()?;
     if mp.contains_key(&flag) {
         let v = mp.get_mut(&flag).unwrap();
-        v.insert(0, message_id.to_string());
+        v.push_front(message_id.to_string());
         if v.len() > 20 {
-            v.pop();
+            v.pop_back();
         }
     }else{
-        let v = vec![message_id.to_string()];
+        let mut v = VecDeque::new();
         mp.insert(flag, v);
     }
     Ok(())

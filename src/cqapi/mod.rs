@@ -1,25 +1,27 @@
+use std::collections::VecDeque;
+
 use crate::{RT_PTR, httpserver::add_ws_log};
 
 lazy_static! {
-    static ref G_HISTORY_LOG:std::sync::RwLock<Vec<String>> = std::sync::RwLock::new(vec![]);
+    static ref G_HISTORY_LOG:std::sync::RwLock<VecDeque<String>> = std::sync::RwLock::new(VecDeque::new());
 }
 
 fn add_history_log(msg:&str) -> Result<(), Box<dyn std::error::Error>> {
     let mut lk = G_HISTORY_LOG.write()?;
-    lk.push(msg.to_owned());
+    lk.push_back(msg.to_owned());
     if lk.len() > 50 {
-        lk.remove(0);
+        lk.pop_front();
     }
     Ok(())
 }
 
-pub fn get_history_log() -> Vec<String> {
+pub fn get_history_log() -> VecDeque<String> {
     let lk_rst = G_HISTORY_LOG.read();
     if let Ok(lk) = lk_rst {
         let ret = &*lk;
         return ret.to_owned();
     }
-    return vec![];
+    return VecDeque::new();
 }
 
 
