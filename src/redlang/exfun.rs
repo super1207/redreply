@@ -1,4 +1,4 @@
-use std::{path::Path, io::Read, time::{SystemTime, Duration}, collections::BTreeMap, vec, fs};
+use std::{path::Path, time::{SystemTime, Duration}, collections::BTreeMap, vec, fs, str::FromStr};
 
 use chrono::TimeZone;
 use encoding::Encoding;
@@ -8,8 +8,10 @@ use md5::{Md5, Digest};
 use rusttype::Scale;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 use super::RedLang;
+use reqwest::header::HeaderName;
+use reqwest::header::HeaderValue;
 
-use crate::{cqapi::{cq_add_log, cq_add_log_w}, redlang::get_random};
+use crate::{cqapi::{cq_add_log, cq_add_log_w}, redlang::get_random, RT_PTR};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -45,53 +47,76 @@ pub fn init_ex_fun_map() {
             }
         }
     }
+
+    async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,proxy_str:&str,is_post:bool) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+        let client;
+        let uri = reqwest::Url::from_str(url)?;
+        if proxy_str == "" {
+            if uri.scheme() == "http" {
+                client = reqwest::Client::builder().no_proxy().build()?;
+            } else {
+                client = reqwest::Client::builder().danger_accept_invalid_certs(true).no_proxy().build()?;
+            }
+        }else {
+            if uri.scheme() == "http" {
+                let proxy = reqwest::Proxy::http(proxy_str)?;
+                client = reqwest::Client::builder().proxy(proxy).build()?;
+            }else{
+                let proxy = reqwest::Proxy::https(proxy_str)?;
+                client = reqwest::Client::builder().danger_accept_invalid_certs(true).proxy(proxy).build()?;
+            }
+        }
+        
+        let mut req;
+        if is_post {
+            req = client.post(uri).body(reqwest::Body::from(data)).build()?;
+        }else {
+            req = client.get(uri).build()?;
+        }
+        for (key,val) in headers {
+            req.headers_mut().append(HeaderName::from_str(key)?, HeaderValue::from_str(val)?);
+        }
+        let retbin;
+        let ret = client.execute(req).await?;
+        retbin = ret.bytes().await?.to_vec();
+        return Ok(retbin);
+    }
+
     add_fun(vec!["访问"],|self_t,params|{
         fn access(self_t:&mut RedLang,url:&str) -> Result<Option<String>, Box<dyn std::error::Error>> {
-            let agent;
             let proxy = self_t.get_coremap("代理")?;
-            if proxy != "" {
-                agent = ureq::AgentBuilder::new()
-                    .proxy(ureq::Proxy::new(proxy)?)
-                    .build();
-            }else{
-                agent = ureq::AgentBuilder::new().build();
-            }
-            let mut req = agent.request_url("GET", &url.parse::<url::Url>()?);
-
             let mut timeout_str = self_t.get_coremap("访问超时")?;
             if timeout_str == "" {
                 timeout_str = "60000";
             }
-            req = req.timeout(core::time::Duration::from_millis(timeout_str.parse::<u64>()?));
-
+            let mut http_header = BTreeMap::new();
             let http_header_str = self_t.get_coremap("访问头")?;
             if http_header_str != "" {
-                let mut http_header = RedLang::parse_obj(&http_header_str)?;
+                http_header = RedLang::parse_obj(&http_header_str)?;
                 if !http_header.contains_key("User-Agent"){
                     http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
                 }
-                for it in http_header {
-                    if it.1 != "" {
-                        req = req.set(&it.0, &it.1);
-                    }
-                }
             }else {
-                req = req.set("User-Agent", "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36");
+                http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
             }
-            let mut content:Vec<u8> = vec![];
-            match req.call() {
-                Ok(resp) => {
-                    let mut reader = resp.into_reader();
-                    reader.read_to_end(&mut content)?;
-                },
-                Err(ureq::Error::Status(_code, resp)) => {
-                    let mut reader = resp.into_reader();
-                    reader.read_to_end(&mut content)?;
-                },
-                Err(err) => {
-                    return Err(Box::new(err));
-                }
-            };
+            let timeout = timeout_str.parse::<u64>()?;
+            let content = RT_PTR.block_on(async { 
+                let ret = tokio::select! {
+                    val_rst = http_post(url,Vec::new(),&http_header,proxy,false) => {
+                        if let Ok(val) = val_rst {
+                            val
+                        } else {
+                            cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
+                            vec![]
+                        }
+                    },
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(timeout)) => {
+                        cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
+                        vec![]
+                    }
+                };
+                return ret;
+            });
             Ok(Some(self_t.build_bin(content)))
         }
         let url = self_t.get_param(params, 0)?;
@@ -114,51 +139,40 @@ pub fn init_ex_fun_map() {
             }else {
                 return Err(RedLang::make_err(&("不支持的post访问体类型:".to_owned()+&tp)));
             }
-            let agent;
-            let proxy = self_t.get_coremap("代理")?;
-            if proxy != "" {
-                agent = ureq::AgentBuilder::new()
-                    .proxy(ureq::Proxy::new(proxy)?)
-                    .build();
-            }else{
-                agent = ureq::AgentBuilder::new().build();
-            }
-            let mut req = agent.request_url("POST", &url.parse::<url::Url>()?);
 
+            let proxy = self_t.get_coremap("代理")?;
             let mut timeout_str = self_t.get_coremap("访问超时")?;
             if timeout_str == "" {
                 timeout_str = "60000";
             }
-            req = req.timeout(core::time::Duration::from_millis(timeout_str.parse::<u64>()?));
-
+            let mut http_header = BTreeMap::new();
             let http_header_str = self_t.get_coremap("访问头")?;
             if http_header_str != "" {
-                let mut http_header = RedLang::parse_obj(&http_header_str)?;
+                http_header = RedLang::parse_obj(&http_header_str)?;
                 if !http_header.contains_key("User-Agent"){
                     http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
                 }
-                for it in http_header {
-                    if it.1 != "" {
-                        req = req.set(&it.0, &it.1);
-                    }
-                }
             }else {
-                req = req.set("User-Agent", "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36");
+                http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
             }
-            let mut content:Vec<u8> = vec![];
-            match req.send_bytes(&data) {
-                Ok(resp) => {
-                    let mut reader = resp.into_reader();
-                    reader.read_to_end(&mut content)?;
-                },
-                Err(ureq::Error::Status(_code, resp)) => {
-                    let mut reader = resp.into_reader();
-                    reader.read_to_end(&mut content)?;
-                },
-                Err(err) => {
-                    return Err(Box::new(err));
-                }
-            };
+            let timeout = timeout_str.parse::<u64>()?;
+            let content = RT_PTR.block_on(async { 
+                let ret = tokio::select! {
+                    val_rst = http_post(url,data,&http_header,proxy,true) => {
+                        if let Ok(val) = val_rst {
+                            val
+                        } else {
+                            cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
+                            vec![]
+                        }
+                    },
+                    _ = tokio::time::sleep(std::time::Duration::from_secs(timeout)) => {
+                        cq_add_log_w(&format!("POST访问:`{}`超时",url)).unwrap();
+                        vec![]
+                    }
+                };
+                return ret;
+            });
             Ok(Some(self_t.build_bin(content)))
         }
         let url = self_t.get_param(params, 0)?;
