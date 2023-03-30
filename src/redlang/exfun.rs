@@ -204,6 +204,46 @@ pub fn init_ex_fun_map() {
         self_t.set_coremap("代理", &k)?;
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["系统代理"],|_self_t,_params|{
+        if cfg!(target_os = "windows") {
+            const HKEY_CURRENT_USER: winreg::HKEY = 0x80000001u32 as usize as winreg::HKEY;
+            let hkcu = winreg::RegKey::predef(HKEY_CURRENT_USER);
+            let internet_setting: winreg::RegKey = hkcu.open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")?;
+            // ensure the proxy is enable, if the value doesn't exist, an error will returned.
+            let proxy_enable: u32 = internet_setting.get_value("ProxyEnable")?;
+            let proxy_server: String = internet_setting.get_value("ProxyServer")?;
+            let mut proxy = "".to_string();
+            if proxy_enable == 1 {
+                if !(proxy.starts_with("http://") || proxy.starts_with("https://")) {
+                    proxy = format!("http://{}",proxy_server);
+                }else{
+                    proxy = proxy_server;
+                }
+            }
+            return Ok(Some(proxy));
+        } else {
+            return Ok(Some("".to_string()));
+        }
+    });
+    add_fun(vec!["IE代理"],|_self_t,_params|{
+        if cfg!(target_os = "windows") {
+            const HKEY_CURRENT_USER: winreg::HKEY = 0x80000001u32 as usize as winreg::HKEY;
+            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            let internet_setting: winreg::RegKey = hkcu.open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")?;
+            let proxy_server_rst = internet_setting.get_value("ProxyServer");
+            let mut proxy = "".to_string();
+            if let Ok(proxy_server) = proxy_server_rst {
+                if !(proxy.starts_with("http://") || proxy.starts_with("https://")) {
+                    proxy = format!("http://{}",proxy_server);
+                }else{
+                    proxy = proxy_server;
+                }
+            }
+            return Ok(Some(proxy));
+        } else {
+            return Ok(Some("".to_string()));
+        }
+    });
     add_fun(vec!["设置访问超时"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
         k.parse::<u64>()?;

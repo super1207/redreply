@@ -46,6 +46,8 @@ reqwest = {version = "0.11.16",default-features = false,features = ["rustls-tls"
 
 [target.'cfg(windows)'.dependencies]
 headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}
+winreg = "*"
+
 
 [profile.release]
 panic = 'abort'
