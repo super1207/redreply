@@ -228,7 +228,7 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["IE代理"],|_self_t,_params|{
         if cfg!(target_os = "windows") {
             const HKEY_CURRENT_USER: winreg::HKEY = 0x80000001u32 as usize as winreg::HKEY;
-            let hkcu = RegKey::predef(HKEY_CURRENT_USER);
+            let hkcu = winreg::RegKey::predef(HKEY_CURRENT_USER);
             let internet_setting: winreg::RegKey = hkcu.open_subkey("Software\\Microsoft\\Windows\\CurrentVersion\\Internet Settings")?;
             let proxy_server_rst = internet_setting.get_value("ProxyServer");
             let mut proxy = "".to_string();
