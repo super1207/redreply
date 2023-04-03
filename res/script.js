@@ -13,10 +13,20 @@ const { createApp } = Vue
                         // 用于记录所有数据
                         codes: "正在加载内容...",
                         pkg_codes : {"默认包":[]},
-                        select_pkg_name:"默认包"
+                        select_pkg_name:"默认包",
+                        version:""
                     }
                 },
                 mounted () {
+                    axios
+                    .get("/get_version")
+                    .then(
+                    res => {
+                        this.version = res.data["data"];
+                    })
+                    .catch(function (error) {
+                        console.log(error);
+                    });
                     axios
                     .get("/get_all_pkg_name")
                     .then(

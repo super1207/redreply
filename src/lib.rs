@@ -354,3 +354,8 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
     } 
     Ok(())
 }
+
+
+pub fn get_version() -> String{
+    return "0.0.42".to_string();
+}

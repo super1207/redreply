@@ -122,7 +122,16 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
     }else if url_path == "/close" {
         cq_add_log_w("收到退出指令，正在退出").unwrap();
         crate::wait_for_quit();
-    }else{
+    }else if url_path == "/get_version" {
+        let ret = json!({
+            "retcode":0,
+            "data":crate::get_version()
+        });
+        let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)
+    }
+    else{
         let res = hyper::Response::new(hyper::Body::from("api not found"));
         Ok(res)
     }

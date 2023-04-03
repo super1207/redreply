@@ -1414,6 +1414,9 @@ pub fn init_core_fun_map() {
         }
         return Ok(Some(ret_str));
     });
+    add_fun(vec!["当前版本"],|_self_t,_params|{
+        return Ok(Some(crate::get_version()));
+    });
 }
 
 impl RedLang {
