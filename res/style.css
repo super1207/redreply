@@ -3,11 +3,17 @@ html,body{
     height: 100%;
     display: flex;
     margin: 0;
+    background:url("luna_sama.png");
+    background-size: 100%;
+    background-position:center;
 }
+
 #app {
     display: flex;
     flex: 1 0 auto;
     flex-direction: column;
+    opacity:0.8; 
+    /* background-color: transparent; */
 }
 
 #app > h1 {
@@ -27,6 +33,7 @@ html,body{
     text-align: center;
     overflow: auto;
     flex: 1 0 auto;
+    color: white;
 }
 #pkg_content > div:nth-child(1) > div:nth-child(1) { /* 包内容左边-标题 */
     border-style:solid;
@@ -38,9 +45,17 @@ html,body{
     padding: 2px;
     flex: 1 0 auto;
 }
+
 #pkg_content > div:nth-child(1) > div:nth-child(2) > div { /* 包内容左边-单个名字 */
     border-style:solid;
     cursor: pointer;
+    margin-top: 1px;
+}
+#pkg_content > div:nth-child(1) > div:nth-child(3){ /* 包内容左边-单个名字 */
+    display: flex;
+    flex-direction: column;
+}
+#pkg_content > div:nth-child(1) > div:nth-child(3) > button { /* 包内容左边-单个名字 */
     margin-top: 1px;
 }
 #pkg_content > div:nth-child(2) { /* 包内容右边 */

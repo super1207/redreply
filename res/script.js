@@ -155,6 +155,31 @@ const { createApp } = Vue
                     },
                     connect_ob() {
                         window.open("/obconnect.html", "_blank");
+                    },
+                    select_up() {
+                        if(this.select_name_index <= 0){
+                            return;
+                        }
+                        this.save_cache(this.select_name_index);
+                        t = this.pkg_codes[this.select_pkg_name][this.select_name_index]
+                        this.pkg_codes[this.select_pkg_name][this.select_name_index] = this.pkg_codes[this.select_pkg_name][this.select_name_index - 1]
+                        this.pkg_codes[this.select_pkg_name][this.select_name_index - 1] = t
+                        this.select_name_index_change(this.select_name_index - 1);
+                        this.select_name_index = this.select_name_index - 1
+                    },
+                    select_down() {
+                        if(this.select_name_index < 0){
+                            return;
+                        }
+                        if(this.select_name_index == this.pkg_codes[this.select_pkg_name].length - 1){
+                            return;
+                        }
+                        this.save_cache(this.select_name_index);
+                        t = this.pkg_codes[this.select_pkg_name][this.select_name_index]
+                        this.pkg_codes[this.select_pkg_name][this.select_name_index] = this.pkg_codes[this.select_pkg_name][this.select_name_index + 1]
+                        this.pkg_codes[this.select_pkg_name][this.select_name_index + 1] = t
+                        this.select_name_index_change(this.select_name_index + 1);
+                        this.select_name_index = this.select_name_index + 1
                     }
                 }
             }).mount('#app')
