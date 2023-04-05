@@ -709,6 +709,25 @@ pub fn init_ex_fun_map() {
         let ret = self_t.build_bin(img_out);
         return Ok(Some(ret));
     });
+
+    add_fun(vec!["图片模糊","图像模糊"],|self_t,params|{
+        let text1 = self_t.get_param(params, 0)?;
+        let img_vec = RedLang::parse_bin(&text1)?;
+        let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let sigma = self_t.get_param(params, 1)?.parse::<f32>()?;
+        let img_out;
+        if sigma <= 0. {
+            img_out = img;
+        }else {
+            
+            img_out = imageproc::filter::gaussian_blur_f32(&img,sigma);
+        }
+        let mut bytes: Vec<u8> = Vec::new();
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    });
+
     add_fun(vec!["图片上叠加","图像上叠加"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
@@ -1473,6 +1492,10 @@ pub fn init_ex_fun_map() {
         let txt = self_t.get_param(params, 1)?;
         let mut str_out = String::new();
         for i in 0..arr.len() {
+            let tp = self_t.get_type(arr[i])?;
+            if tp != "文本" {
+                return Err(RedLang::make_err("只能对元素类型为文本的数组进行合并"));
+            }
             str_out.push_str(arr[i]);
             if i != arr.len() - 1 {
                 str_out.push_str(&txt);

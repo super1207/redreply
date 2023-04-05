@@ -3,17 +3,18 @@ html,body{
     height: 100%;
     display: flex;
     margin: 0;
-    background:url("luna_sama.png");
-    background-size: 100%;
-    background-position:center;
+}
+
+
+button,textarea,body,select,input{
+    background-color: #C7EDCC;
 }
 
 #app {
     display: flex;
     flex: 1 0 auto;
     flex-direction: column;
-    opacity:0.8; 
-    /* background-color: transparent; */
+    width: 0;
 }
 
 #app > h1 {
@@ -31,19 +32,26 @@ html,body{
     display: flex;
     flex-direction: column;
     text-align: center;
-    overflow: auto;
     flex: 1 0 auto;
-    color: white;
 }
 #pkg_content > div:nth-child(1) > div:nth-child(1) { /* 包内容左边-标题 */
     border-style:solid;
     border-spacing: 1px;
-    flex: 0 0 auto;
 }
 #pkg_content > div:nth-child(1) > div:nth-child(2) { /* 包内容左边-名字 */
     border-style:solid;
     padding: 2px;
+    height: 0;
     flex: 1 0 auto;
+    overflow: auto;
+}
+
+#pkg_content > div:nth-child(1) > div:nth-child(3) { /* 上移，下移按钮 */
+    display: flex;
+    flex-direction: column;
+    border-style:solid;
+    padding: 2px;
+    flex: 0 0 auto;
 }
 
 #pkg_content > div:nth-child(1) > div:nth-child(2) > div { /* 包内容左边-单个名字 */
@@ -51,13 +59,7 @@ html,body{
     cursor: pointer;
     margin-top: 1px;
 }
-#pkg_content > div:nth-child(1) > div:nth-child(3){ /* 包内容左边-单个名字 */
-    display: flex;
-    flex-direction: column;
-}
-#pkg_content > div:nth-child(1) > div:nth-child(3) > button { /* 包内容左边-单个名字 */
-    margin-top: 1px;
-}
+
 #pkg_content > div:nth-child(2) { /* 包内容右边 */
     display: flex;
     flex-direction: column;
@@ -96,13 +98,13 @@ html,body{
 
 #cmd_content{
     display: flex;
-    flex: 0 0 6em;
+    flex: 0 0 5em;
     flex-direction:column;
 }
 
 #cmd_content > div {
     display: flex;
-    flex: 0 0 3em;
+    flex: 0 0 2.5em;
 }
 
 #cmd_content > div:nth-child(1) > button {
@@ -119,4 +121,16 @@ html,body{
 
 #pkg_btn_vec {
     display: flex;
+    flex-wrap: wrap;
+    margin-left: 0.1em;
+    margin-right: 0.1em;
+    margin-bottom: 0.15em;
+}
+
+#pkg_btn_vec > div {
+    padding: 0.1em;
+}
+
+#pkg_btn_vec > div > button {
+    height: 2em;
 }

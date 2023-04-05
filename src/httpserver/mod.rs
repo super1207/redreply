@@ -232,7 +232,17 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
             let mut res = hyper::Response::new(hyper::Body::from(html));
             res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
             return Ok(res);
-        }else if !url_path.contains(".") {
+        }else if url_path == "/favicon.ico" {
+            let app_dir = cq_get_app_directory1().unwrap();
+            let path = PathBuf::from(&app_dir);
+            let path = path.join("webui");
+            let url_path_t = "favicon.ico".to_owned();
+            let file_path = path.join(url_path_t);
+            let file_buf = tokio::fs::read(&file_path).await?;
+            let mut res = hyper::Response::new(hyper::Body::from(file_buf));
+            res.headers_mut().insert("Content-Type", HeaderValue::from_static("image/x-icon"));
+            return Ok(res);
+        } else if !url_path.contains(".") {
             return deal_api(request).await;
         } else {
             return deal_file(request).await;

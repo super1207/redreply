@@ -1083,6 +1083,14 @@ QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信
 调整图片大小
 
 
+### 图片模糊
+
+
+【图片模糊@<font color="red">图片字节集</font>@<font color="red">sigma</font>】
+
+图片模糊使用高斯模糊，<font color="red">sigma</font>为高斯函数中的sigma参数，必须大于0（否则原样输出），越大越模糊。
+
+
 ### GIF合成
 
 
