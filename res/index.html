@@ -29,7 +29,7 @@
                     <div>名字</div>
                     <div>
                         <div v-for="(code,index) in pkg_codes[select_pkg_name]" @click="this.save_cache(select_name_index);select_name_index_change(index);select_name_index=index" :class="{name_active:index==select_name_index}">
-                            {{ code["name"] }}
+                            <span>{{ code["name"] }}</span>
                         </div>
                     </div>
                     <div>
@@ -39,9 +39,9 @@
                     
                 </div>
                 <div>
-                    <div class="input_div">脚本名：<input id="script_name" v-model="script_name"></input></div>
-                    <div class="input_div">介绍：&emsp;<input id="script_description" v-model="script_description"></input></div>
-                    <div class="input_div">关键词：<input id="script_keyword" v-model="script_keyword"></input></div>
+                    <div class="input_div"><span>脚本名：</span><input id="script_name" v-model="script_name"></input></div>
+                    <div class="input_div"><span>介绍：&emsp;</span><input id="script_description" v-model="script_description"></input></div>
+                    <div class="input_div"><span>关键词：</span><input id="script_keyword" v-model="script_keyword"></input></div>
                     <select id="script_ppfs" v-model="script_ppfs">
                         <option disabled value="匹配方式">匹配方式</option>
                         <option value ="完全匹配">完全匹配</option>

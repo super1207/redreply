@@ -1,8 +1,11 @@
+
+
 html,body{
     width: 100%;
     height: 100%;
     display: flex;
     margin: 0;
+    padding: 0;
 }
 
 
@@ -12,9 +15,10 @@ button,textarea,body,select,input{
 
 #app {
     display: flex;
-    flex: 1 0 auto;
     flex-direction: column;
+    flex: 0 0 100%;
     width: 0;
+    align-items: stretch;
 }
 
 #app > h1 {
@@ -24,25 +28,27 @@ button,textarea,body,select,input{
 
 #pkg_content{ /* 包内容 */
     display: flex;
-    height: 0; /* 使得内容不会被子元素撑开 */
     flex: 1 0 auto;
+    width: 100%;
+    overflow-x: auto;
 }
 
 #pkg_content > div:nth-child(1) { /* 包内容左边 */
     display: flex;
     flex-direction: column;
-    text-align: center;
-    flex: 1 0 auto;
+    flex: 0 0 7em;
+    overflow: auto;
 }
 #pkg_content > div:nth-child(1) > div:nth-child(1) { /* 包内容左边-标题 */
+    text-align: center;
     border-style:solid;
     border-spacing: 1px;
 }
 #pkg_content > div:nth-child(1) > div:nth-child(2) { /* 包内容左边-名字 */
+    display: flex;
+    flex-direction: column;
     border-style:solid;
-    padding: 2px;
-    height: 0;
-    flex: 1 0 auto;
+    flex: 0 1 100%;
     overflow: auto;
 }
 
@@ -50,37 +56,73 @@ button,textarea,body,select,input{
     display: flex;
     flex-direction: column;
     border-style:solid;
-    padding: 2px;
-    flex: 0 0 auto;
 }
 
 #pkg_content > div:nth-child(1) > div:nth-child(2) > div { /* 包内容左边-单个名字 */
+    display: flex;
+    flex:  0 0 auto;
+    align-items: stretch;
     border-style:solid;
+}
+
+#pkg_content > div:nth-child(1) > div:nth-child(2) > div > span{ /* 包内容左边-单个名字 */
+    text-align: center;
     cursor: pointer;
     margin-top: 1px;
+    overflow-x: auto;
+    flex: 1 0 100%;
 }
 
 #pkg_content > div:nth-child(2) { /* 包内容右边 */
     display: flex;
     flex-direction: column;
-    flex: 9 0 auto;
+    flex: 0 0 100%;
+    overflow-x: auto;
 }
 .input_div{
     display: flex;
 }
+
+#pkg_content > div:nth-child(2) > div:nth-child(1){ /* 包内容右边 */
+    display: flex;
+    overflow-x: auto;
+}
+
+#pkg_content > div:nth-child(2) > div:nth-child(1) > span { /* 包内容右边 */
+    flex: 0 0 auto;
+}
+
+#pkg_content > div:nth-child(2) > div:nth-child(2){ /* 包内容右边 */
+    display: flex;
+    overflow-x: auto;
+}
+
+#pkg_content > div:nth-child(2) > div:nth-child(2) > span { /* 包内容右边 */
+    flex: 0 0 auto;
+}
+
+#pkg_content > div:nth-child(2) > div:nth-child(3){ /* 包内容右边 */
+    display: flex;
+    overflow-x: auto;
+}
+
+#pkg_content > div:nth-child(2) > div:nth-child(3) > span { /* 包内容右边 */
+    flex: 0 0 auto;
+}
+
 #script_name { /* 包内容右边 */
     border-style:solid;
-    flex: 1 0 auto;
+    flex: 1 1 auto;
     margin: 2px;
 }
 #script_description { /* 包内容右边 */
     border-style:solid;
-    flex: 1 0 auto;
+    flex: 1 1 auto;
     margin: 2px;
 }
 #script_keyword { /* 包内容右边 */
     border-style:solid;
-    flex: 1 0 auto;
+    flex: 1 1 auto;
     margin: 2px;
 }
 #script_ppfs { /* 包内容右边 */

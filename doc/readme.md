@@ -231,7 +231,7 @@ hellohellohellohellohello
 
 【选择@<font color="red">数字</font>@<font color="red">内容1</font>@<font color="red">内容2</font>@...】
 
-根据<font color="red">数字</font>来选择要执行的内容，从1开始数。如果越界，则返回空文本。
+根据<font color="red">数字</font>来选择要执行的内容，从1开始数。如果越界，则返回空文本。如果<font color="red">数字</font>为空，则表示随机选择一个。
 
 
 ### 循环

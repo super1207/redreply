@@ -1404,8 +1404,18 @@ pub fn init_core_fun_map() {
         return Ok(Some(ret_str));
     });
     add_fun(vec!["选择"],|self_t,params|{
-        let select_num = self_t.get_param(params, 0)?.parse::<usize>()?;
+        let select_num_str = self_t.get_param(params, 0)?;
         let params_len = params.len();
+        if params_len == 0 {
+            return Ok(Some("".to_string()));
+        }
+        let select_num;
+        if select_num_str == "" {
+            let rand_num = get_random()?;
+            select_num = rand_num % params_len + 1;
+        }else {
+            select_num = select_num_str.parse::<usize>()?;
+        }
         let ret_str;
         if select_num == 0 || select_num > params_len {
             ret_str = "".to_string();
