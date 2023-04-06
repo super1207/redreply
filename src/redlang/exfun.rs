@@ -710,6 +710,49 @@ pub fn init_ex_fun_map() {
         return Ok(Some(ret));
     });
 
+    add_fun(vec!["图片覆盖","图像覆盖"],|self_t,params|{
+        fn img_paste(img_vec_big:Vec<u8>,img_vec_sub:Vec<u8>,x:i64,y:i64) -> Result<Vec<u8>, Box<dyn std::error::Error>>{
+            let img1 = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
+            let img2 = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
+            let w = img1.width();
+            let h = img1.height();
+            let mut img:ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(w, h);
+            image::imageops::overlay(&mut img, &img2, x, y);
+            image::imageops::overlay(&mut img, &img1, 0, 0);
+            let mut bytes: Vec<u8> = Vec::new();
+            img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+            Ok(bytes)
+        }
+        let text1 = self_t.get_param(params, 0)?;
+        let text2 = self_t.get_param(params, 1)?;
+        let text3 = self_t.get_param(params, 2)?;
+        let text4 = self_t.get_param(params, 3)?;
+        let img_vec_big = RedLang::parse_bin(&text1)?;
+        let img_vec_sub = RedLang::parse_bin(&text2)?;
+        let mut img_big = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
+        let img_sub = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
+        let x = text3.parse::<i64>()?;
+        let y = text4.parse::<i64>()?;
+        for i in 0..img_sub.width() {
+            for j in 0..img_sub.height() {
+                let ii = x + i as i64;
+                let jj = y + j as i64;
+                if ii >= 0 && (ii as u32) < img_big.width() && jj >= 0 && (jj as u32) < img_big.height() {
+                    let pix = img_big.get_pixel_mut(ii as u32, jj as u32);
+                    let pix_sub = img_sub.get_pixel(i, j);
+                    pix.0[0] = pix_sub.0[0];
+                    pix.0[1] = pix_sub.0[1];
+                    pix.0[2] = pix_sub.0[2];
+                    pix.0[3] = pix_sub.0[3];
+                }
+            }
+        }
+        let mut bytes: Vec<u8> = Vec::new();
+        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    });
+
     add_fun(vec!["图片模糊","图像模糊"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let img_vec = RedLang::parse_bin(&text1)?;
