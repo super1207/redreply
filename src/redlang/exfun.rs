@@ -110,7 +110,7 @@ pub fn init_ex_fun_map() {
                             vec![]
                         }
                     },
-                    _ = tokio::time::sleep(std::time::Duration::from_secs(timeout)) => {
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
                         cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
                         vec![]
                     }
@@ -166,7 +166,7 @@ pub fn init_ex_fun_map() {
                             vec![]
                         }
                     },
-                    _ = tokio::time::sleep(std::time::Duration::from_secs(timeout)) => {
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
                         cq_add_log_w(&format!("POST访问:`{}`超时",url)).unwrap();
                         vec![]
                     }
