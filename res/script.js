@@ -148,10 +148,13 @@ const { createApp } = Vue
                         window.open("/watchlog.html", "_blank");
                     },
                     quit_redreply() {
-                        setTimeout(function(){
-                            location.reload();
-                        },1000);
-                        axios.get("/close")
+                        let is_quit = confirm("是否真的要退出强大的红色问答？")
+                        if(is_quit){
+                            setTimeout(function(){
+                                location.reload();
+                            },1000);
+                            axios.get("/close")
+                        }
                     },
                     connect_ob() {
                         window.open("/obconnect.html", "_blank");
