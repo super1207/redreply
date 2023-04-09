@@ -28,7 +28,7 @@ button,textarea,body,select,input{
 
 #pkg_content{ /* 包内容 */
     display: flex;
-    flex: 1 0 auto;
+    flex: 1 1 auto;
     width: 100%;
     overflow-x: auto;
 }
