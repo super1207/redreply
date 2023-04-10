@@ -204,6 +204,8 @@ pub fn init_ex_fun_map() {
         self_t.set_coremap("代理", &k)?;
         return Ok(Some("".to_string()));
     });
+
+    #[cfg(target_os = "windows")]
     add_fun(vec!["系统代理"],|_self_t,_params|{
         if cfg!(target_os = "windows") {
             const HKEY_CURRENT_USER: winreg::HKEY = 0x80000001u32 as usize as winreg::HKEY;
@@ -225,6 +227,8 @@ pub fn init_ex_fun_map() {
             return Ok(Some("".to_string()));
         }
     });
+
+    #[cfg(target_os = "windows")]
     add_fun(vec!["IE代理"],|_self_t,_params|{
         if cfg!(target_os = "windows") {
             const HKEY_CURRENT_USER: winreg::HKEY = 0x80000001u32 as usize as winreg::HKEY;
@@ -244,6 +248,7 @@ pub fn init_ex_fun_map() {
             return Ok(Some("".to_string()));
         }
     });
+
     add_fun(vec!["设置访问超时"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
         k.parse::<u64>()?;
@@ -1281,49 +1286,45 @@ pub fn init_ex_fun_map() {
         std::io::Write::write_all(&mut f, bin.as_bytes())?;
         return Ok(Some("".to_string()));
     });
-    if cfg!(target_os = "windows") {
-        add_fun(vec!["网页截图"],|self_t,params|{
-            fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
-                let path = self_t.get_param(params, 0)?;
-                let sec = self_t.get_param(params, 1)?;
-                let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
-                let proxy_str = self_t.get_coremap("代理")?;
-                let proxy:std::ffi::OsString;
-                if proxy_str != "" {
-                    proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + proxy_str);
-                    arg_vec.push(&proxy);
-                }
-                let options = headless_chrome::LaunchOptions::default_builder()
-                    .window_size(Some((1920, 1080)))
-                    .args(arg_vec)
-                    .build()?;
-                    let browser = headless_chrome::Browser::new(options)?;
-                    let tab = browser.wait_for_initial_tab()?;
-                    tab.navigate_to(&path)?.wait_until_navigated()?;
-                let el_html= tab.wait_for_element("html")?;
-                let body_height = el_html.get_box_model()?.height;
-                let body_width = el_html.get_box_model()?.width;
-                tab.set_bounds(headless_chrome::types::Bounds::Normal { left: Some(0), top: Some(0), width:Some(body_width), height: Some(body_height) })?;
-                let mut el = el_html;
-                if sec != ""{
-                    el = tab.wait_for_element(&sec)?;
-                }
-                let png_data = tab.capture_screenshot(headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
-                    None,
-                    Some(el.get_box_model()?.content_viewport()),
-                    true)?;
-                return Ok(Some(self_t.build_bin(png_data)));
+    
+    #[cfg(target_os = "windows")]
+    add_fun(vec!["网页截图"],|self_t,params|{
+        fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
+            let path = self_t.get_param(params, 0)?;
+            let sec = self_t.get_param(params, 1)?;
+            let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
+            let proxy_str = self_t.get_coremap("代理")?;
+            let proxy:std::ffi::OsString;
+            if proxy_str != "" {
+                proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + proxy_str);
+                arg_vec.push(&proxy);
             }
-            if let Ok(ret) = access(self_t,params){
-                return Ok(ret);
+            let options = headless_chrome::LaunchOptions::default_builder()
+                .window_size(Some((1920, 1080)))
+                .args(arg_vec)
+                .build()?;
+                let browser = headless_chrome::Browser::new(options)?;
+                let tab = browser.wait_for_initial_tab()?;
+                tab.navigate_to(&path)?.wait_until_navigated()?;
+            let el_html= tab.wait_for_element("html")?;
+            let body_height = el_html.get_box_model()?.height;
+            let body_width = el_html.get_box_model()?.width;
+            tab.set_bounds(headless_chrome::types::Bounds::Normal { left: Some(0), top: Some(0), width:Some(body_width), height: Some(body_height) })?;
+            let mut el = el_html;
+            if sec != ""{
+                el = tab.wait_for_element(&sec)?;
             }
-            return Ok(Some(self_t.build_bin(vec![])));
-        });
-    }else {
-        add_fun(vec!["网页截图"],|self_t,_params|{
-            return Ok(Some(self_t.build_bin(vec![])));
-        });
-    };
+            let png_data = tab.capture_screenshot(headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+                None,
+                Some(el.get_box_model()?.content_viewport()),
+                true)?;
+            return Ok(Some(self_t.build_bin(png_data)));
+        }
+        if let Ok(ret) = access(self_t,params){
+            return Ok(ret);
+        }
+        return Ok(Some(self_t.build_bin(vec![])));
+    });
     
     
     add_fun(vec!["命令行"],|self_t,params|{
