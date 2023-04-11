@@ -857,6 +857,35 @@ pub fn init_ex_fun_map() {
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
+
+    add_fun(vec!["图片遮罩","图像遮罩"],|self_t,params|{
+        let text1 = self_t.get_param(params, 0)?;
+        let text2 = self_t.get_param(params, 1)?;
+        let text3 = self_t.get_param(params, 2)?;
+        let text4 = self_t.get_param(params, 3)?;
+        let img_vec_big = RedLang::parse_bin(&text1)?;
+        let img_vec_sub = RedLang::parse_bin(&text2)?;
+        let x = text3.parse::<i64>()?;
+        let y = text4.parse::<i64>()?;
+        let mut img_big = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
+        let img_sub = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
+        for i in 0..img_sub.width() {
+            for j in 0..img_sub.height() {
+                let ii = x + i as i64;
+                let jj = y + j as i64;
+                if ii >= 0 && (ii as u32) < img_big.width() && jj >= 0 && (jj as u32) < img_big.height() {
+                    let pix = img_big.get_pixel_mut(ii as u32, jj as u32);
+                    let pix_sub = img_sub.get_pixel(i, j);
+                    pix.0[3] = 255 - pix_sub.0[3];
+                }
+            }
+        }
+        let mut bytes: Vec<u8> = Vec::new();
+        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    });
+
     add_fun(vec!["图片变灰","图像变灰"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let img_vec = RedLang::parse_bin(&text1)?;
@@ -1116,35 +1145,6 @@ pub fn init_ex_fun_map() {
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
-    // add_fun(vec!["文字图片大小","文字图像大小"],|self_t,params|{
-    //     let text = self_t.get_param(params, 0)?;
-    //     let text_size = self_t.get_param(params, 1)?.parse::<f32>()?;
-    //     let scale = Scale {
-    //         x: text_size,
-    //         y: text_size,
-    //     };
-    //     let font_text = self_t.get_param(params, 2)?;
-    //     let font = SystemSource::new()
-    //         .select_by_postscript_name(&font_text)?
-    //         .load()?;
-    //     let font_dat = font.copy_font_data().ok_or("无法获得字体1")?;
-    //     let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
-    //     let v_metrics = font.v_metrics(scale);
-    //     let mut max_x = 0;
-    //     let mut max_y = 0;
-    //     for g in font.layout(&text, scale, rusttype::point(0.0, v_metrics.ascent)) {
-    //         if let Some(bb) = g.pixel_bounding_box() {
-    //             if bb.max.x + 1 > max_x {
-    //                 max_x = bb.max.x + 1;
-    //             }
-    //             if bb.max.y + 1 > max_y {
-    //                 max_y = bb.max.y + 1;
-    //             }
-    //         }
-    //     }
-    //     let ret = self_t.build_arr(vec![max_x.to_string(),max_y.to_string()]);
-    //     return Ok(Some(ret));
-    // });
     add_fun(vec!["水平翻转"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let img_vec = RedLang::parse_bin(&text1)?;
