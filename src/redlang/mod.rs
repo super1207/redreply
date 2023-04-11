@@ -1412,7 +1412,7 @@ pub fn init_core_fun_map() {
         let select_num;
         if select_num_str == "" {
             let rand_num = get_random()?;
-            select_num = rand_num % params_len + 1;
+            select_num = rand_num % (params_len - 1) + 1;
         }else {
             select_num = select_num_str.parse::<usize>()?;
         }

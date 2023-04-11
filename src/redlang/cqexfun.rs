@@ -1,6 +1,6 @@
 use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr, sync::Arc};
 
-use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC};
+use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC, REDLANG_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -54,6 +54,9 @@ fn cq_encode_t(cq_code:&str) -> String {
 
 pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error::Error>> {
     if msg == "" {
+        return Ok("".to_string());
+    }
+    if (msg.len() == REDLANG_UUID.len() + 1 || msg.len() == REDLANG_UUID.len())  && msg.starts_with(&*REDLANG_UUID) {
         return Ok("".to_string());
     }
     let group_id_str = rl.get_exmap("群ID").to_string();
