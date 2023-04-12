@@ -157,6 +157,7 @@ pub fn dec_running_script_num(pkg_name:&str,script_name:&str) {
 
 // 这是插件第一个被调用的函数，不要在这里调用任何CQ的API,也不要在此处阻塞
 pub fn initialize() -> i32 {
+    cq_add_log_w(&format!("欢迎使用`红色问答{}`,正在进行资源初始化...",get_version())).unwrap();
     panic::set_hook(Box::new(|e| {
         cq_add_log_w(e.to_string().as_str()).unwrap();
     }));
@@ -182,6 +183,7 @@ pub fn initialize() -> i32 {
     if let Err(err) = cronevent::do_cron_event(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
+    cq_add_log_w("资源初始化完成！").unwrap();
     return 0;
 }
 

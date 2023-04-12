@@ -1435,14 +1435,17 @@ pub fn init_ex_fun_map() {
             key = String::from("12331549-6D26-68A5-E192-5EBE9A6EB998") + key.get(36..).unwrap();
         }
         let ret_rst:Result<String,rusqlite::Error> = conn.query_row("SELECT VALUE FROM CONST_TABLE WHERE KEY = ?", [key], |row| row.get(0));
+        let ret_str;
         if let Ok(ret) =  ret_rst {
             if ret.starts_with("12331549-6D26-68A5-E192-5EBE9A6EB998") {
-                let value = crate::REDLANG_UUID.to_owned() + ret.get(36..).unwrap();
-                return Ok(Some(value));
+                ret_str = crate::REDLANG_UUID.to_owned() + ret.get(36..).unwrap();
+            }else {
+                ret_str = ret;
             }
-            return Ok(Some(ret));
+        }else {
+            ret_str =  self_t.get_param(params, 1)?;
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(ret_str));
     });
     add_fun(vec!["截屏"],|self_t,_params|{
         let screens = screenshots::Screen::all()?;

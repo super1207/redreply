@@ -824,9 +824,9 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 ### 持久常量
 
 
-【持久常量@<font color="red">常量名</font>】
+【持久常量@<font color="red">常量名</font>@<font color="red">默认值</font>】
 
-读取一个持久常量，若持久常量不存在，返回空文本。
+读取一个持久常量，若持久常量不存在，返回默认值，默认值可以省略，默认为空文本。
 
 
 ### 转字节集

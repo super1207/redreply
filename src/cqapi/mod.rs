@@ -60,17 +60,19 @@ pub fn cq_call_api(self_id:&str,json_str: &str) -> Result<String, Box<dyn std::e
 
 
 fn cq_add_log_t(_log_level:i32,log_msg: &str) -> Result<i32, Box<dyn std::error::Error>> {
+    let now: chrono::DateTime<chrono::Local> = chrono::Local::now();
+    let time_str = format!("{}",now.format("%Y-%m-%d %H:%M:%S%.3f").to_string());
+    let log_msg_with_level;
     if _log_level == 0 {
         log::info!("{}",log_msg);
-        let log_msg = format!("Info:{}",log_msg);
-        add_history_log(&log_msg)?;
-        add_ws_log(log_msg);
+        log_msg_with_level = format!("Info:{}",log_msg);
     }else {
         log::warn!("{}",log_msg);
-        let log_msg = format!("Warn:{}",log_msg);
-        add_history_log(&log_msg)?;
-        add_ws_log(log_msg);
+        log_msg_with_level = format!("Warn:{}",log_msg);
     }
+    let web_log = format!("{time_str} {log_msg_with_level}");
+    add_history_log(&web_log)?;
+    add_ws_log(web_log);
     Ok(0)
 }
 
