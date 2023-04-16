@@ -15,7 +15,7 @@ RUN cd redreply && cargo build --release \
 # 构建可执行文件的运行环境，只安装必须的库即可
 FROM ubuntu
 RUN apt-get update  -y \
-	&& apt install dbus fontconfig xcb -y \
+	&& apt install dbus fontconfig xcb tzdata -y \
 	&& apt-get clean
 COPY --from=0 redlang /
 COPY --from=0 /usr/share/fonts/simsun.ttf /usr/share/fonts/
