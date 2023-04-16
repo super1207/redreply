@@ -5,7 +5,7 @@
 
 作者qq：1875159423
 
-qq群号：920220179 (目前使用MiraiCQ的群)
+qq群号：920220179(已满) 556515826
 
 开源地址：https://github.com/super1207/redreply
 
@@ -1643,11 +1643,15 @@ onebot事件json对应的RedLang对象。
 
 支持的事件关键词可以参考[onebot文档](https://github.com/botuniverse/onebot-11)中有关事件的描述。
 
+如果想要发送消息，请先使用命令【设置来源】
+
 ## CRON表达式
 
 如果触发类型为<font color="red">CRON定时器</font>，那么关键词应该为<font color="red">CRON表达式</font>。
 
 您可以在此处查看cron表达式的写法：[cron_百度百科](https://baike.baidu.com/item/cron/10952601)
+
+在定时器事件中，如果想要发送消息，请先使用命令【设置来源】
 
 
 ## 框架初始化事件
