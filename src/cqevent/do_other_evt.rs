@@ -18,8 +18,11 @@ fn get_evt_flag(root: &serde_json::Value) -> Result<Vec<&str>, Box<dyn std::erro
         "meta_event" => {
             ret_vec.push(root.get("meta_event_type").ok_or("缺少meta_event_type")?.as_str().unwrap_or(""));
         },
+        "message_sent" => {
+            ret_vec.push(root.get("message_type").ok_or("message_type")?.as_str().unwrap_or(""));
+        },
         _ => {
-            return None.ok_or("unkown post_type")?;
+            return None.ok_or(format!("unkown post_type:{}",post_type))?;
         }
     }
     ret_vec.push(match root.get("sub_type") {

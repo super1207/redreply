@@ -1550,6 +1550,13 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some(str_out));
     });
+    add_fun(vec!["骰"],|self_t,params|{
+        let text = self_t.get_param(params, 0)?;
+        let mut result = diro::parse(&text)?;
+        result.roll();
+        let ret = format!("{}",result.calc()?);
+        return Ok(Some(ret));
+    });
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {
@@ -1653,6 +1660,9 @@ fn get_mid<'a>(s:&'a str,sub_begin:&str,sub_end:&str) -> Result<Vec<&'a str>, Bo
     let mut ret_vec:Vec<&str> = vec![];
     let mut s_pos = s;
     let err_str = "get_mid err";
+    if sub_begin == "" || sub_end == "" {
+        return Err(RedLang::make_err(err_str));
+    }
     loop {
         let pos = s_pos.find(sub_begin);
         if let Some(pos_num) = pos {
