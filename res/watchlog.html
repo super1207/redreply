@@ -1,11 +1,13 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>红色问答日志</title>
-    <style>
-      html,body {
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>红色问答日志</title>
+   <style>
+      html,
+      body {
          display: flex;
          flex-direction: column;
          width: 100%;
@@ -13,48 +15,54 @@
          margin: 0;
          padding: 0%;
       }
-    </style>
-    <script type="text/javascript">
-        function WebSocketTest()
-        {
-           if ("WebSocket" in window)
-           {
-              var ws = new WebSocket("ws://"+window.location.host+"/watch_log")
-              ws.onmessage = function (evt) 
-              { 
-                 var received_msg = evt.data;
-                 var ele = document.getElementById("logtext");
-                 ele.value += received_msg + "\r\n\r\n";
-                 if (ele.value.length > 10000){
-                     ele.value.slice(ele.value.length - 9999);
-                 }
-                 ele.scrollTop = ele.scrollHeight;
-              };
-              ws.onopen = function () 
-              { 
-                 var ele = document.getElementById("connect_status");
-                 ele.innerHTML = "已连接"
-              };
-              ws.onclose = function () 
-              {
-                  var ele = document.getElementById("connect_status");
-                  ele.innerHTML = "未连接，自动连接中..."
-                  setTimeout(WebSocketTest,1000);
-              }
-           }
-           else
-           {
-              alert("您的浏览器不支持 WebSocket!");
-           }
-        }
-     </script>
+   </style>
+   <script type="text/javascript">
+      function is_https() {
+         return 'https:' == location.protocol ? true : false;
+      }
+      function WebSocketTest() {
+         if ("WebSocket" in window) {
+            var ws;
+            if (is_https()) {
+               ws = new WebSocket("wss://" + window.location.host + "/watch_log")
+            } else {
+               ws = new WebSocket("ws://" + window.location.host + "/watch_log")
+            }
+            ws.onmessage = function (evt) {
+               var received_msg = evt.data;
+               var ele = document.getElementById("logtext");
+               ele.value += received_msg + "\r\n\r\n";
+               if (ele.value.length > 10000) {
+                  ele.value.slice(ele.value.length - 9999);
+               }
+               ele.scrollTop = ele.scrollHeight;
+            };
+            ws.onopen = function () {
+               var ele = document.getElementById("connect_status");
+               ele.innerHTML = "已连接"
+            };
+            ws.onclose = function () {
+               var ele = document.getElementById("connect_status");
+               ele.innerHTML = "未连接，自动连接中..."
+               setTimeout(WebSocketTest, 1000);
+            }
+         }
+         else {
+            alert("您的浏览器不支持 WebSocket!");
+         }
+      }
+   </script>
 </head>
+
 <body>
    <h1 style="text-align: center;color: red;">红色问答日志</h1>
    <span id="connect_status">正在连接...</span>
-   <textarea id="logtext" style="align-content: stretch;flex: 1 0 auto;white-space:pre-wrap;word-wrap: break-word;word-break:break-all" readonly></textarea>
+   <textarea id="logtext"
+      style="align-content: stretch;flex: 1 0 auto;white-space:pre-wrap;word-wrap: break-word;word-break:break-all"
+      readonly></textarea>
    <script type="text/javascript">
       WebSocketTest();
    </script>
 </body>
+
 </html>
