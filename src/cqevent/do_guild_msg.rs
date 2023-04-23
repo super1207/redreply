@@ -7,6 +7,7 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
     // 在这里处理输入流
     {
         let user_id = read_json_str(root,"user_id");
+        let self_id = read_json_str(root,"self_id");
         let guild_id = read_json_str(root,"guild_id");
         let channel_id = read_json_str(root,"channel_id");
         let vec_lk = G_INPUTSTREAM_VEC.read()?;
@@ -14,12 +15,12 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
         for i in 0..vec_len {
             let st = vec_lk.get(i).unwrap();
             if st.stream_type == "输入流" {
-                if user_id == st.user_id && guild_id == st.guild_id && st.channel_id == channel_id {
+                if self_id == st.self_id && user_id == st.user_id && guild_id == st.guild_id && st.channel_id == channel_id {
                     let k_arc = st.tx.clone().unwrap();
                     k_arc.lock().unwrap().send(msg.clone())?;
                 }
             }else{
-                if guild_id == st.guild_id && st.channel_id == channel_id {
+                if self_id == st.self_id && guild_id == st.guild_id && st.channel_id == channel_id {
                     let k_arc = st.tx.clone().unwrap();
                     let to_send = serde_json::json!({
                         "发送者ID":user_id,

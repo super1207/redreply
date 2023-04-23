@@ -25,18 +25,19 @@ fn do_redlang(root: &serde_json::Value) -> Result< (), Box<dyn std::error::Error
     // 在这里处理输入流
     {
         let user_id = read_json_str(root,"user_id");
+        let self_id = read_json_str(root,"self_id");
         let group_id = read_json_str(root,"group_id");
         let vec_lk = G_INPUTSTREAM_VEC.read()?;
         let vec_len = vec_lk.len();
         for i in 0..vec_len {
             let st = vec_lk.get(i).unwrap();
             if st.stream_type == "输入流" {
-                if user_id == st.user_id && group_id ==st.group_id {
+                if self_id == st.self_id && user_id == st.user_id && group_id ==st.group_id {
                     let k_arc = st.tx.clone().unwrap();
                     k_arc.lock().unwrap().send(msg.clone())?;
                 }
             }else{
-                if group_id ==st.group_id {
+                if self_id == st.self_id && group_id ==st.group_id {
                     let k_arc = st.tx.clone().unwrap();
                     let to_send = serde_json::json!({
                         "发送者ID":user_id,

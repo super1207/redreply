@@ -544,6 +544,7 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["输入流"],|self_t,params|{
         let tm = self_t.get_param(params, 0)?;
         let d = std::time::Duration::from_millis(tm.parse::<u64>().unwrap_or(15000));
+        let self_id = self_t.get_exmap("机器人ID");
         let group_id = self_t.get_exmap("群ID");
         let user_id = self_t.get_exmap("发送者ID");
         let guild_id = self_t.get_exmap("频道ID");
@@ -551,6 +552,7 @@ pub fn init_cq_ex_fun_map() {
         let echo = uuid::Uuid::new_v4().to_string();
         let (tx, rx): (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
         let ip = crate::InputStream {
+            self_id: self_id.to_string(),
             group_id: group_id.to_string(),
             user_id: user_id.to_string(),
             guild_id: guild_id.to_string(),
@@ -589,6 +591,7 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["群输入流"],|self_t,params|{
         let tm = self_t.get_param(params, 0)?;
         let d = std::time::Duration::from_millis(tm.parse::<u64>().unwrap_or(15000));
+        let self_id = self_t.get_exmap("机器人ID");
         let group_id = self_t.get_exmap("群ID");
         let user_id = self_t.get_exmap("发送者ID");
         let guild_id = self_t.get_exmap("频道ID");
@@ -596,6 +599,7 @@ pub fn init_cq_ex_fun_map() {
         let echo = uuid::Uuid::new_v4().to_string();
         let (tx, rx): (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
         let ip = crate::InputStream {
+            self_id: self_id.to_string(),
             group_id: group_id.to_string(),
             user_id: user_id.to_string(),
             guild_id: guild_id.to_string(),

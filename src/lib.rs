@@ -38,6 +38,7 @@ pub struct ScriptInfo {
 }
 
 pub struct InputStream {
+    pub self_id:String,
     pub group_id:String,
     pub user_id:String,
     pub guild_id:String,
