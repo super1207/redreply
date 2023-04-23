@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use crate::cqapi::{cq_get_app_directory1, get_history_log};
 use crate::read_config;
+use crate::redlang::RedLang;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 use futures_util::SinkExt;
 use hyper::http::HeaderValue;
@@ -130,6 +131,14 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
         let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)
+    }else if url_path == "/login" {
+        let body = hyper::body::to_bytes(request.into_body()).await?;
+        let mut res = hyper::Response::new(hyper::Body::from(vec![]));
+        *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
+        let pass_cookie = format!("{};Max-Age=31536000",String::from_utf8(body.to_vec())?);
+        res.headers_mut().append(hyper::header::SET_COOKIE, HeaderValue::from_str(&pass_cookie)?);
+        res.headers_mut().insert("Location", HeaderValue::from_static("/index.html"));
+        Ok(res)
     }
     else{
         let res = hyper::Response::new(hyper::Body::from("api not found"));
@@ -176,9 +185,42 @@ async fn serve_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tok
     }
     Ok(())
 }
+
+fn http_auth(request: &hyper::Request<hyper::Body>) -> Result<(), Box<dyn std::error::Error>> {
+    let web_pass_raw = crate::read_web_password()?;
+    if web_pass_raw == "" {
+        return Ok(())
+    }
+    let headers = request.headers();
+    let cookie_str = headers.get("Cookie").ok_or("can not found Cookie")?.to_str()?;
+    let web_pass = urlencoding::encode(&web_pass_raw);
+    if cookie_str.contains(&format!("password={}",web_pass)) {
+        return Ok(())
+    }
+    return Err(RedLang::make_err("password invaild"));
+}
+
 async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
     
     let url_path = request.uri().path();
+
+    // 登录页面不进行身份验证
+    if url_path == "/login.html" {
+        return deal_file(request).await; 
+    }
+    if url_path == "/login" {
+        return deal_api(request).await;
+    }
+    
+    // 身份验证
+    if let Err(err) = http_auth(&request) {
+        // 认证失败，跳转登录页面
+        cq_add_log_w(&format!("{}",err)).unwrap();
+        let mut res = hyper::Response::new(hyper::Body::from(vec![]));
+        *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
+        res.headers_mut().insert("Location", HeaderValue::from_static("/login.html"));
+        return Ok(res);
+    }
 
     // 升级ws协议
     if hyper_tungstenite::is_upgrade_request(&request) {
@@ -270,8 +312,6 @@ pub fn init_http_server() -> Result<(), Box<dyn std::error::Error>> {
             })).await;
             if let Err(err)  = ret{
                 cq_add_log_w(&format!("绑定端口号失败：{}",err)).unwrap();
-                // log::error!("{}",err);
-                // std::process::exit(-1);
             }
         }
     });
