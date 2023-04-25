@@ -1,6 +1,9 @@
 FROM ubuntu
 RUN apt-get update -y
-RUN apt install cargo git libdbus-glib-1-dev libfontconfig1-dev libxcb* wget -y
+RUN apt install git libdbus-glib-1-dev libfontconfig1-dev libxcb* wget curl build-essential -y
+RUN curl https://sh.rustup.rs -sSf | \
+    sh -s -- --default-toolchain stable -y
+ENV PATH=/root/.cargo/bin:$PATH
 RUN git clone https://github.com/super1207/redreply.git \
 	&&cd redreply \
 	&&cargo build --release
@@ -9,7 +12,8 @@ RUN wget -O /usr/share/fonts/simsun.ttf https://pfh-file-store.oss-cn-hangzhou.a
 ADD "https://www.random.org/cgi-bin/randbyte?nbytes=10&format=h" skipcache 
 RUN cd redreply && git pull
 # 两次构建，可以充分利用缓存
-RUN cd redreply && cargo build --release \
+RUN cd redreply \
+	&&cargo build --release \
 	&&cp /redreply/target/release/redlang /redlang
 
 # 构建可执行文件的运行环境，只安装必须的库即可

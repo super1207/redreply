@@ -716,18 +716,6 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片覆盖","图像覆盖"],|self_t,params|{
-        fn img_paste(img_vec_big:Vec<u8>,img_vec_sub:Vec<u8>,x:i64,y:i64) -> Result<Vec<u8>, Box<dyn std::error::Error>>{
-            let img1 = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
-            let img2 = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
-            let w = img1.width();
-            let h = img1.height();
-            let mut img:ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(w, h);
-            image::imageops::overlay(&mut img, &img2, x, y);
-            image::imageops::overlay(&mut img, &img1, 0, 0);
-            let mut bytes: Vec<u8> = Vec::new();
-            img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
-            Ok(bytes)
-        }
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
         let text3 = self_t.get_param(params, 2)?;
