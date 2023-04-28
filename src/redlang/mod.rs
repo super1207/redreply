@@ -644,10 +644,10 @@ pub fn init_core_fun_map() {
                     if ch == ',' || ch == '+'  || ch == '*' || ch == '^' || ch == '(' || ch == ')' || ch == '%' || ch == '真' || ch == '假' {
                         token.push(ch.to_string());
                     }else if ch == '-' {
-                        if i == 0 || expres[i - 1] == '(' {
-                            token.push("--".to_string());
-                        }else{
+                        if i != 0 && (expres[i - 1] == ')' || is_num_char(&expres[i - 1])) {
                             token.push(ch.to_string());
+                        } else {
+                            token.push("--".to_string());
                         }
                     }else if ch == '/' {
                         let ch1 = expres.get(i+1).ok_or("express error near '/'")?;

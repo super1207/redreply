@@ -1546,6 +1546,7 @@ pub fn init_ex_fun_map() {
         return Ok(Some(ret));
     });
     add_fun(vec!["运行WASM"],|self_t,params|{
+        cq_add_log_w("运行WASM功能目前正在开发中,暂不可用！").unwrap();
         use wasmtime::*;
         let text = self_t.get_param(params, 0)?;
         let wasm_bytes = RedLang::parse_bin(&text)?;
