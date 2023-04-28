@@ -614,6 +614,7 @@ pub fn init_core_fun_map() {
     });
     add_fun(vec!["计算"],|self_t,params|{
         let k1 = self_t.get_param(params, 0)?;
+        let k1 = k1.replace("小恶魔", "0").replace("恶魔妹妹", "0").replace("恶魔", "0");
         fn cala(expre:&str) -> Result<String, Box<dyn std::error::Error>> {
             let expres_t = expre.chars().collect::<Vec<char>>();
             let mut expres:Vec<char> = vec![];
@@ -761,7 +762,7 @@ pub fn init_core_fun_map() {
                         
                     }else {
                         loop {
-                            if op_stack.is_empty() || op_stack[op_stack.len() - 1] == "(" {
+                            if op_stack.is_empty() || op_stack[op_stack.len() - 1] == "(" || it == "--" || it == "!" {
                                 op_stack.push(it);
                                 break;
                             }
