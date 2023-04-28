@@ -620,7 +620,13 @@ pub fn init_core_fun_map() {
             let mut expres:Vec<char> = vec![];
             // 去除空白
             for it in expres_t {
-                if !it.is_whitespace() {
+                if it.is_whitespace() {
+                    continue;
+                } else if it == '（' {
+                    expres.push('(');
+                } else if it == '）' {
+                    expres.push(')');
+                } else {
                     expres.push(it);
                 }
             }
