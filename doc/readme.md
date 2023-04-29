@@ -1160,7 +1160,7 @@ QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信
 
 CSS选择器可以选择截图的元素，省略CSS选择器表示截图整个网页
 
-注意：在第一次使用此命令时，会自动下载一个140M左右的chrome浏览器，下载速度取决于你的网速，你可以在`C:\Users\<你的用户名>\AppData\Roaming\headless-chrome\data`查看下载进度。
+注意：使用此命令前，请自行安装[Chrome浏览器](https://www.google.cn/chrome/index.html)
 
 **注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
 

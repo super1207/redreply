@@ -1292,7 +1292,7 @@ pub fn init_ex_fun_map() {
                 .args(arg_vec)
                 .build()?;
                 let browser = headless_chrome::Browser::new(options)?;
-                let tab = browser.wait_for_initial_tab()?;
+                let tab = browser.new_tab()?;
                 tab.navigate_to(&path)?.wait_until_navigated()?;
             let el_html= tab.wait_for_element("html")?;
             let body_height = el_html.get_box_model()?.height;
@@ -1308,12 +1308,14 @@ pub fn init_ex_fun_map() {
                 true)?;
             return Ok(Some(self_t.build_bin(png_data)));
         }
-        if let Ok(ret) = access(self_t,params){
-            return Ok(ret);
+        match access(self_t,params) {
+            Ok(ret) => return Ok(ret),
+            Err(err) => {
+                cq_add_log_w(&format!("网页截图失败：`{:?}`",err)).unwrap();
+                return Ok(Some(self_t.build_bin(vec![])));
+            }
         }
-        return Ok(Some(self_t.build_bin(vec![])));
     });
-    
     
     add_fun(vec!["命令行"],|self_t,params|{
         let cmd_str = self_t.get_param(params, 0)?;

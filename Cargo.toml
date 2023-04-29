@@ -48,7 +48,7 @@ wasmtime = "8.0.0"
 
 
 [target.'cfg(windows)'.dependencies]
-headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome", features = ["fetch"]}
+headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome",default-features = false}
 winreg = "*"
 
 
