@@ -1073,7 +1073,7 @@ QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信
 
 【图片嵌字@<font color="red">图片字节集</font>@<font color="red">要嵌入的字</font>@<font color="red">x坐标</font>@<font color="red">y坐标</font>@<font color="red">字体大小</font>@<font color="red">rgba颜色数组</font>@<font color="red">字体名称</font>@<font color="red">字间距</font>@<font color="red">行间距</font>】
 
-字间距和行间距默认为0。
+字间距和行间距默认为0。<font color="red">字体名称</font>可以是字节集。
 
 例如：
 ```
@@ -1092,7 +1092,7 @@ QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信
 
 【文字转图片@<font color="red">图片的宽</font>@<font color="red">文字</font>@<font color="red">字体大小</font>@<font color="red">rgba颜色数组</font>@<font color="red">字体名称</font>@<font color="red">字间距</font>@<font color="red">行间距</font>】
 
-字间距和行间距默认为0。
+字间距和行间距默认为0。<font color="red">字体名称</font>可以是字节集。
 
 
 ### 图片大小调整
