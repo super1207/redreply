@@ -1,7 +1,7 @@
 use std::{collections::{HashMap, BTreeMap, HashSet}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any, sync::Arc, thread};
 use encoding::Encoding;
 
-use crate::{G_CONST_MAP, CLEAR_UUID, cqevent::do_script, cqapi::cq_add_log_w, G_RWLOCK};
+use crate::{G_CONST_MAP, CLEAR_UUID, cqevent::do_script, cqapi::cq_add_log_w, G_LOCK};
 pub mod exfun;
 pub(crate) mod cqexfun;
 
@@ -1444,9 +1444,12 @@ pub fn init_core_fun_map() {
             }
             // 全局已经存在锁，则等待锁消失，再创建锁
             {
-                let mut k = crate::G_RWLOCK.lock()?;
-                if !k.contains_key(&lock_name) {
-                    k.insert(lock_name.clone(), 0);
+                let mut k = crate::G_LOCK.lock()?;
+                if !k.contains_key(&self_t.pkg_name) {
+                    k.insert(self_t.pkg_name.clone(), HashMap::new());
+                }
+                if !k[&self_t.pkg_name].contains_key(&lock_name) {
+                    k.get_mut(&self_t.pkg_name).unwrap().insert(lock_name.clone(), 0);
                     self_t.lock_vec.insert(lock_name);
                     break;
                 }
@@ -1463,8 +1466,8 @@ pub fn init_core_fun_map() {
             return Ok(Some("".to_string()));
         } else {
             // 否则删除锁
-            let mut k = crate::G_RWLOCK.lock()?;
-            k.remove(&lock_name);
+            let mut k = crate::G_LOCK.lock()?;
+            k.get_mut(&self_t.pkg_name).unwrap().remove(&lock_name);
             self_t.lock_vec.remove(&lock_name);
             return Ok(Some("".to_string()));
         }
@@ -1778,9 +1781,11 @@ impl RedLang {
 
 impl Drop for RedLang {
     fn drop(&mut self) {
-        let mut lk = G_RWLOCK.lock().unwrap();
-        for lock_name in &self.lock_vec {
-                lk.remove(lock_name);
+        let mut lk = G_LOCK.lock().unwrap();
+        if lk.contains_key(&self.pkg_name) {
+            for lock_name in &self.lock_vec {
+                lk.get_mut(&self.pkg_name).unwrap().remove(lock_name);
+            }
         }
     }
 }

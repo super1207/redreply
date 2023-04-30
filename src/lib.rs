@@ -78,7 +78,7 @@ lazy_static! {
     // webui的访问密码
     pub static ref G_WEB_PASSWORD:RwLock<Option<String>> = RwLock::new(None);
     // 全局锁
-    pub static ref G_RWLOCK:Mutex<HashMap<String,i32>> = Mutex::new(HashMap::new());
+    pub static ref G_LOCK:Mutex<HashMap<String,HashMap<String, i32>>> = Mutex::new(HashMap::new());
 }
 
 
