@@ -77,6 +77,8 @@ lazy_static! {
     pub static ref G_INPUTSTREAM_VEC:RwLock<Vec<InputStream>> = RwLock::new(vec![]);
     // webui的访问密码
     pub static ref G_WEB_PASSWORD:RwLock<Option<String>> = RwLock::new(None);
+    // 全局锁
+    pub static ref G_RWLOCK:Mutex<HashMap<String,i32>> = Mutex::new(HashMap::new());
 }
 
 

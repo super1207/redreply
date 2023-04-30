@@ -1,7 +1,7 @@
-use std::{collections::{HashMap, BTreeMap}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any, sync::Arc, thread};
+use std::{collections::{HashMap, BTreeMap, HashSet}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any, sync::Arc, thread};
 use encoding::Encoding;
 
-use crate::{G_CONST_MAP, CLEAR_UUID, cqevent::do_script, cqapi::cq_add_log_w};
+use crate::{G_CONST_MAP, CLEAR_UUID, cqevent::do_script, cqapi::cq_add_log_w, G_RWLOCK};
 pub mod exfun;
 pub(crate) mod cqexfun;
 
@@ -312,7 +312,8 @@ pub struct RedLang {
     xuhao: HashMap<String, usize>,
     pub type_uuid:String,
     pub pkg_name:String,
-    pub script_name:String
+    pub script_name:String,
+    pub lock_vec:HashSet<String>
 }
 
 #[derive(Debug, Clone)]
@@ -1434,6 +1435,40 @@ pub fn init_core_fun_map() {
     add_fun(vec!["当前版本"],|_self_t,_params|{
         return Ok(Some(crate::get_version()));
     });
+    add_fun(vec!["加锁"],|self_t,params|{
+        let lock_name = self_t.get_param(params, 0)?;
+        loop {
+            // 当前脚本已经创建了这个锁，则不做任何事
+            if self_t.lock_vec.contains(&lock_name) {
+                break;
+            }
+            // 全局已经存在锁，则等待锁消失，再创建锁
+            {
+                let mut k = crate::G_RWLOCK.lock()?;
+                if !k.contains_key(&lock_name) {
+                    k.insert(lock_name.clone(), 0);
+                    self_t.lock_vec.insert(lock_name);
+                    break;
+                }
+            }
+            let time_struct = core::time::Duration::from_millis(10);
+            std::thread::sleep(time_struct);
+        }
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["解锁"],|self_t,params|{
+        let lock_name = self_t.get_param(params, 0)?;
+        if self_t.lock_vec.contains(&lock_name) {
+            // 当前脚本没有创建这个锁，则不做任何事
+            return Ok(Some("".to_string()));
+        } else {
+            // 否则删除锁
+            let mut k = crate::G_RWLOCK.lock()?;
+            k.remove(&lock_name);
+            self_t.lock_vec.remove(&lock_name);
+            return Ok(Some("".to_string()));
+        }
+    });
 }
 
 impl RedLang {
@@ -1741,6 +1776,15 @@ impl RedLang {
 
 }
 
+impl Drop for RedLang {
+    fn drop(&mut self) {
+        let mut lk = G_RWLOCK.lock().unwrap();
+        for lock_name in &self.lock_vec {
+                lk.remove(lock_name);
+        }
+    }
+}
+
 impl RedLang {
     pub fn new() -> RedLang {
 
@@ -1763,7 +1807,8 @@ impl RedLang {
             xuhao:HashMap::new(),
             type_uuid:crate::REDLANG_UUID.to_string(),
             pkg_name:String::new(),
-            script_name:String::new()
+            script_name:String::new(),
+            lock_vec:HashSet::new()
         }
     }
 
