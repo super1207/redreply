@@ -1548,16 +1548,35 @@ pub fn init_ex_fun_map() {
         return Ok(Some(ret));
     });
     add_fun(vec!["运行WASM"],|self_t,params|{
-        cq_add_log_w("运行WASM功能目前正在开发中,暂不可用！").unwrap();
         use wasmtime::*;
         let text = self_t.get_param(params, 0)?;
-        let wasm_bytes = RedLang::parse_bin(&text)?;
+        let text_type = self_t.get_type(&text)?;
+        let mut call_fun_name = self_t.get_param(params, 1)?;
+        if call_fun_name == "" {
+            call_fun_name = "start".to_string();
+        }
+        let mut host_fun_name = self_t.get_param(params, 2)?;
+        if host_fun_name == "" {
+            host_fun_name = "host_call_cmd".to_string();
+        }
+        let mut alloc_fun_name = self_t.get_param(params, 3)?;
+        if alloc_fun_name == "" {
+            alloc_fun_name = "wasm_alloc".to_string();
+        }
         let engine = Engine::new(Config::new().debug_info(true))?;
-        let mut store = Store::new(&engine, self_t);
-        let module = Module::from_binary(&engine, &wasm_bytes)?;
+        let mut store = Store::new(&engine, (self_t,alloc_fun_name));
+        let module;
+        if text_type == "字节集" {
+            let wasm_bytes = RedLang::parse_bin(&text)?;
+            module = Module::from_binary(&engine, &wasm_bytes)?;
+        }else if text_type == "文本" {
+            module = Module::new(&engine, text)?;
+        }else {
+            return Err(RedLang::make_err("`运行WASM`只支持传入字节集或文本"));
+        }
         let mut linker = Linker::new(&engine);
-        linker.func_wrap("env", "host_call_cmd",|caller: Caller<'_, &mut RedLang>, cmd_ptr: u32, cmd_len: u32,args_ptr: u32, args_len: u32,out_len_ptr:u32| -> i32 {
-            fn run_sth(mut caller: Caller<'_, &mut RedLang>, cmd_ptr: u32, cmd_len: u32,args_ptr: u32, args_len: u32,out_len_ptr:u32) -> Result<i32, Box<dyn std::error::Error>> {
+        linker.func_wrap("env", &host_fun_name,|caller: Caller<'_, (&mut RedLang,String)>, cmd_ptr: u32, cmd_len: u32,args_ptr: u32, args_len: u32,out_len_ptr:u32| -> i32 {
+            fn run_sth(mut caller: Caller<'_, (&mut RedLang,String)>, cmd_ptr: u32, cmd_len: u32,args_ptr: u32, args_len: u32,out_len_ptr:u32) -> Result<i32, Box<dyn std::error::Error>> {
                 let mem = caller.get_export("memory").ok_or("获得memory失败")?.into_memory().ok_or("获得memory失败")?;
             
                 // 获取cmd_name
@@ -1578,7 +1597,7 @@ pub fn init_ex_fun_map() {
                 //处理数据，得到返回值 
                 let ret_str;
                 {
-                    let self_t = caller.data_mut();
+                    let (self_t,_) = caller.data_mut();
                     
                     let args_str = format!("{}A{}",crate::REDLANG_UUID.to_string(),args_str);
                     let args_arr = RedLang::parse_arr(&args_str)?;
@@ -1597,7 +1616,8 @@ pub fn init_ex_fun_map() {
                 let ret_ptr;
                 {
                     // 申请空间
-                    let wasm_alloc = caller.get_export("wasm_alloc").unwrap().into_func().ok_or("申请空间（wasm_alloc）失败")?;
+                    let (_,alloc_fun_name) = caller.data();
+                    let wasm_alloc = caller.get_export(&alloc_fun_name.clone()).unwrap().into_func().ok_or("申请空间（wasm_alloc）失败")?;
                     let mut ret_ptr_t = [Val::I32(0)];
                     wasm_alloc.call(&mut caller, &[Val::I32(ret_str.as_bytes().len() as i32)], &mut ret_ptr_t)?;
                     ret_ptr = ret_ptr_t[0].i32().ok_or("申请空间失败")? as * mut u8;
@@ -1628,7 +1648,7 @@ pub fn init_ex_fun_map() {
         })?;
 
         let instance = linker.instantiate(&mut store, &module)?;
-        let add_fun = instance.get_func(&mut store, "start").ok_or("从wsam中获取start函数失败")?;
+        let add_fun = instance.get_func(&mut store, &call_fun_name).ok_or("从wsam中获取启动函数失败")?;
         let mut results:Vec<Val> = vec![Val::I32(0)];
         add_fun.call(&mut store, &[], &mut results)?;
         return Ok(Some("".to_string()));
