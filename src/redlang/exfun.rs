@@ -1653,6 +1653,90 @@ pub fn init_ex_fun_map() {
         add_fun.call(&mut store, &[], &mut results)?;
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["补位"],|self_t,params|{
+        let mut num_f64 = self_t.get_param(params, 0)?.parse::<f64>()?;
+        let is_f;
+        if num_f64 < 0.0 {
+            num_f64 = -num_f64;
+            is_f = true;
+        }else {
+            is_f = false;
+        }
+        let mut num = num_f64.to_string();
+        let num_format: String = self_t.get_param(params, 1)?;
+        // 得到整数部分和小数部分的位数
+        let mut num_format_left_count;
+        let mut num_format_right_count;
+        if let Some(pos) = num_format.find('.') {
+            num_format_left_count = pos;
+            num_format_right_count = num_format.len() - pos - 1;
+        }else {
+            num_format_left_count = num_format.len();
+            num_format_right_count = 0;
+        }
+        // 得到整数部分和小数部分的位数
+        let mut num_left_count;
+        let mut num_right_count;
+        if let Some(pos) = num.find('.') {
+            num_left_count = pos;
+            num_right_count = num.len() - pos - 1;
+        }else {
+            num_left_count = num.len();
+            num_right_count = 0;
+        }
+        // 处理四舍五入
+        if num_right_count > num_format_right_count {
+            let ch = num.as_bytes()[num_left_count + 1 + num_format_right_count];
+            if ch - 48 >= 5 {
+                num = (num_f64 +  1_f64 / 10_f64.powf(num_format_right_count as f64)).to_string();
+            }
+            if let Some(pos) = num_format.find('.') {
+                num_format_left_count = pos;
+                num_format_right_count = num_format.len() - pos - 1;
+            }else {
+                num_format_left_count = num_format.len();
+                num_format_right_count = 0;
+            }
+            // 得到整数部分和小数部分的位数
+            if let Some(pos) = num.find('.') {
+                num_left_count = pos;
+                num_right_count = num.len() - pos - 1;
+            }else {
+                num_left_count = num.len();
+                num_right_count = 0;
+            }
+        }
+        let mut out_str_num = String::new();
+        // 处理负号
+        if is_f {
+            out_str_num.push('-');
+        }
+        // 处理整数部分
+        if num_left_count  < num_format_left_count {
+            let num0 = num_format_left_count - num_left_count;
+            for _i in 0..num0{
+                out_str_num.push('0');
+            }
+        }
+        out_str_num.push_str(&num[0..num_left_count]);
+        // 处理小数点
+        if num_format_right_count != 0 {
+            out_str_num.push('.');
+        }
+        // 处理小数部分
+        if num_right_count <= num_format_right_count {
+            let num0 = num_format_right_count - num_right_count;
+            if num_right_count != 0 {
+                out_str_num.push_str(&num[num_left_count + 1..]);
+            }
+            for _i in 0..num0{
+                out_str_num.push('0');
+            }
+        } else {
+            out_str_num.push_str(&num[num_left_count + 1..num_left_count + num_format_right_count + 1]);
+        }
+        return Ok(Some(out_str_num));
+    });
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {

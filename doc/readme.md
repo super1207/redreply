@@ -1297,6 +1297,22 @@ onedice参数的写法参考[onedice](https://github.com/OlivOS-Team/onedice)。
 
 删除当前脚本创建的锁名。
 
+
+### 补位
+
+【补位@<font color="red">数字</font>@<font color="red">格式</font>】
+
+将数字按格式进行补0或者确定精度。例如`【补位@12.07@000.0】`将会输出`012.1`；`【补位@12.07@0.000】`将会输出`12.070`。
+
+### 运行WASM
+
+【运行WASM@<font color="red">WASM字节集</font>@<font color="red">调用函数名</font>@<font color="red">宿主redlang接口函数名</font>@<font color="red">内存分配函数名</font>】
+
+略。
+
+**注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
+
+
 ## QQ、频道相关命令说明
 
 
