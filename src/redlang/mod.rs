@@ -78,7 +78,8 @@ impl RedLangVarType {
                 self.show_str = Rc::new(dat_ref.iter().collect::<String>());
             }else if self.dat.is::<Vec<String>>() {
                 let dat_ref = self.dat.downcast_ref::<Vec<String>>().unwrap();
-                self.show_str = Rc::new(RedLang::build_arr_with_uid(&crate::REDLANG_UUID.to_string(),dat_ref.to_owned()));
+                let dat_ref_t = dat_ref.iter().map(|x|x.as_str()).collect::<Vec<&str>>();
+                self.show_str = Rc::new(RedLang::build_arr_with_uid(&crate::REDLANG_UUID.to_string(),dat_ref_t));
             }
             else if self.dat.is::<BTreeMap<String,String>>() {
                 let dat_ref = self.dat.downcast_ref::<BTreeMap<String,String>>().unwrap();
@@ -960,7 +961,7 @@ pub fn init_core_fun_map() {
             let s = self_t.get_param(params, i)?;
             temp_ret.push(s);
         }
-        let ret_str = self_t.build_arr(temp_ret);
+        let ret_str = self_t.build_arr(temp_ret.iter().map(AsRef::as_ref).collect());
         return Ok(Some(ret_str));
     });
     add_fun(vec!["对象"],|self_t,params|{
@@ -1312,9 +1313,9 @@ pub fn init_core_fun_map() {
             return Err(RedLang::make_err(&("对应类型不能取对象key:".to_owned()+&tp)));
         }
         let parse_ret = RedLang::parse_obj(&param_data)?;
-        let mut arr:Vec<String> = vec![];
+        let mut arr:Vec<&str> = vec![];
         for key in parse_ret.keys() {
-            arr.push(key.to_string());
+            arr.push(key);
         }
         let ret_str = self_t.build_arr(arr);
         return Ok(Some(ret_str));
@@ -1926,10 +1927,10 @@ impl RedLang {
         ret_str.push_str(&content);
         return ret_str;
     }
-    fn build_arr(&self,arr:Vec<String>) -> String {
+    fn build_arr(&self,arr:Vec<&str>) -> String {
         return Self::build_arr_with_uid(&self.type_uuid,arr);
     }
-    fn build_arr_with_uid(uid:&str,arr:Vec<String>) -> String {
+    fn build_arr_with_uid(uid:&str,arr:Vec<&str>) -> String {
         let mut ret_str = String::new();
         ret_str.push_str(uid);
         ret_str.push('A');

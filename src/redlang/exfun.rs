@@ -283,9 +283,9 @@ pub fn init_ex_fun_map() {
         let sub_begin = self_t.get_param(params, 1)?;
         let sub_end = self_t.get_param(params, 2)?;
         let ret_vec = get_mid(&s, &sub_begin, &sub_end)?;
-        let mut ret_str:Vec<String> = vec![];
+        let mut ret_str:Vec<&str> = vec![];
         for it in ret_vec {
-            ret_str.push(it.to_string());
+            ret_str.push(it);
         }
         return Ok(Some(self_t.build_arr(ret_str)))
     });
@@ -347,9 +347,9 @@ pub fn init_ex_fun_map() {
             }
             ret = match arr.get(begen_pos..end_pos) {
                 Some(value) => {
-                    let mut array:Vec<String> = vec![];
+                    let mut array:Vec<&str> = vec![];
                     for it in value {
-                        array.push(it.to_string());
+                        array.push(it);
                     }
                     self_t.build_arr(array)
                 },
@@ -487,9 +487,9 @@ pub fn init_ex_fun_map() {
                     temp_vec.push(s.as_str().to_owned());
                 }
             }
-            sub_key_vec.push(self_t.build_arr(temp_vec));
+            sub_key_vec.push(self_t.build_arr(temp_vec.iter().map(AsRef::as_ref).collect()));
         }
-        return Ok(Some(self_t.build_arr(sub_key_vec)));
+        return Ok(Some(self_t.build_arr(sub_key_vec.iter().map(AsRef::as_ref).collect())));
     });
     add_fun(vec!["转字节集"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
@@ -816,7 +816,7 @@ pub fn init_ex_fun_map() {
             img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
             ret_vec.push(self_t.build_bin(bytes));
         }
-        let ret = self_t.build_arr(ret_vec);
+        let ret = self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect());
         return Ok(Some(ret));
     });
 
@@ -1200,11 +1200,11 @@ pub fn init_ex_fun_map() {
             if path.is_dir() {
                 ret_vec.push(format!("{}{}",file_name,std::path::MAIN_SEPARATOR));
             }else{
-                ret_vec.push(file_name.to_string());
+                ret_vec.push(file_name.to_owned());
             }
             
         }
-        let ret = self_t.build_arr(ret_vec);
+        let ret = self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect());
         return Ok(Some(ret));
     });
     add_fun(vec!["读目录文件"],|self_t,params|{
@@ -1214,11 +1214,11 @@ pub fn init_ex_fun_map() {
         for dir in dirs {
             let path = dir?.path();
             if path.is_file() {
-                let file_name = path.to_str().ok_or("获取目录文件异常")?;
-                ret_vec.push(file_name.to_string());
+                let file_name = path.to_str().ok_or("获取目录文件异常")?.to_owned();
+                ret_vec.push(file_name);
             }
         }
-        let ret = self_t.build_arr(ret_vec);
+        let ret = self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect());
         return Ok(Some(ret));
     });
     add_fun(vec!["目录分隔符"],|_self_t,_params|{
@@ -1396,9 +1396,9 @@ pub fn init_ex_fun_map() {
                 };
                 v.push(dat);
             }
-            vec.push(self_t.build_arr(v));
+            vec.push(self_t.build_arr(v.iter().map(AsRef::as_ref).collect()));
         }
-        return Ok(Some(self_t.build_arr(vec)));
+        return Ok(Some(self_t.build_arr(vec.iter().map(AsRef::as_ref).collect())));
     });
     add_fun(vec!["定义持久常量"],|self_t,params|{
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
@@ -1504,20 +1504,21 @@ pub fn init_ex_fun_map() {
                 arr_out.push(txt.to_owned());
             }
         }
-        return Ok(Some(self_t.build_arr(arr_out)));
+        let arr_out_t = arr_out.iter().map(|x|x.as_str()).collect();
+        return Ok(Some(self_t.build_arr(arr_out_t)));
     });
     add_fun(vec!["打乱"],|self_t,params|{
         let arr_text = self_t.get_param(params, 0)?;
         let arr = RedLang::parse_arr(&arr_text)?;
         let mut arr_out = vec![];
         for it in arr {
-            arr_out.push(it.to_owned());
+            arr_out.push(it);
         }
         for i in 0..arr_out.len() {
             let rand_i = get_random()? % arr_out.len();
             if rand_i != i {
-                let k = arr_out[i].to_owned();
-                arr_out[i] = arr_out[rand_i].to_owned();
+                let k = arr_out[i];
+                arr_out[i] = arr_out[rand_i];
                 arr_out[rand_i] = k;
             }
         }
@@ -1737,6 +1738,36 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some(out_str_num));
     });
+    add_fun(vec!["排序"],|self_t,params|{
+        let arr_str = self_t.get_param(params, 0)?;
+        let mut arr = RedLang::parse_arr(&arr_str)?;
+
+        if params.len() > 1 {
+            let func = params.get(1).ok_or("函数获取失败")?.to_string();
+            for i in 0..arr.len() - 1 {
+                for j in i + 1 ..arr.len()
+                {
+                    let ret_str = self_t.call_fun(&[func.clone(),arr[i].to_owned(),arr[j].to_owned()],true)?;
+                    if ret_str != "真" {
+                        (arr[i],arr[j]) = (arr[j],arr[i]);
+                    }
+                }
+            }
+        } else {
+            for i in 0..arr.len() - 1 {
+                for j in i + 1 ..arr.len()
+                {
+                    let f1 = arr[i].parse::<f64>()?;
+                    let f2 = arr[j].parse::<f64>()?;
+                    if f1 > f2 {
+                        (arr[i],arr[j]) = (arr[j],arr[i]);
+                    }
+                }
+            }
+        }
+        let ret = self_t.build_arr(arr);
+        return Ok(Some(ret));
+    });
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {
@@ -1833,7 +1864,7 @@ fn do_json_arr(self_uid: &str, root: &serde_json::Value) -> Result<String, Box<d
         }
         ret_str.push(v_ret);
     }
-    Ok(RedLang::build_arr_with_uid(self_uid, ret_str))
+    Ok(RedLang::build_arr_with_uid(self_uid, ret_str.iter().map(AsRef::as_ref).collect()))
 }
 
 fn get_mid<'a>(s:&'a str,sub_begin:&str,sub_end:&str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {

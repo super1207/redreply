@@ -196,9 +196,9 @@ pub fn init_cq_ex_fun_map() {
             let flag = qq + &group_id.to_string();
             ret = match mp.get(&flag) {  
                 Some(v) => {
-                    let mut vv = vec![];
+                    let mut vv:Vec<&str> = vec![];
                     for it in v {
-                        vv.push(it.to_string());
+                        vv.push(it);
                     }
                     self_t.build_arr(vv)
                 },
@@ -452,9 +452,9 @@ pub fn init_cq_ex_fun_map() {
             let word_list = words.split('\n').collect::<Vec<&str>>();
             let key:&str = word_list.get(0).ok_or(err.clone())?;
             let word_list_t = word_list.get(1..).ok_or(err.clone())?;
-            let mut arr_val:Vec<String> = vec![];
+            let mut arr_val:Vec<&str> = vec![];
             for word in  word_list_t{
-                arr_val.push(word.to_string());
+                arr_val.push(word);
             }
             let arr_str = self_t.build_arr(arr_val);
             dict_obj.insert(key.to_owned(), arr_str);
@@ -471,12 +471,12 @@ pub fn init_cq_ex_fun_map() {
         let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
         let err = "获取message失败";
         let message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?;
-        let mut ret_vec:Vec<String> = vec![];
+        let mut ret_vec:Vec<&str> = vec![];
         for it in message {
             let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
             if tp == "at" {
                 let qq = it.get("data").ok_or(err)?.get("qq").ok_or(err)?.as_str().ok_or(err)?;
-                ret_vec.push(qq.to_string());
+                ret_vec.push(qq);
             }
         }
         let ret = self_t.build_arr(ret_vec);
@@ -487,12 +487,12 @@ pub fn init_cq_ex_fun_map() {
         let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
         let err = "获取message失败";
         let message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?;
-        let mut ret_vec:Vec<String> = vec![];
+        let mut ret_vec:Vec<&str> = vec![];
         for it in message {
             let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
             if tp == "image" {
                 let url = it.get("data").ok_or(err)?.get("url").ok_or(err)?.as_str().ok_or(err)?;
-                ret_vec.push(url.to_string());
+                ret_vec.push(url);
             }
         }
         let ret = self_t.build_arr(ret_vec);
