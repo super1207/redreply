@@ -342,7 +342,7 @@ impl error::Error for MyStrError {
     }
 }
 
-fn get_random() -> Result<usize, getrandom::Error> {
+pub fn get_random() -> Result<usize, getrandom::Error> {
     let mut rand_buf = [0u8; std::mem::size_of::<usize>()];
     getrandom::getrandom(&mut rand_buf)?;
     let mut num = 0usize;

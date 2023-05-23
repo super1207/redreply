@@ -1,4 +1,4 @@
-use std::{path::Path, time::{SystemTime, Duration}, collections::BTreeMap, vec, fs, str::FromStr};
+use std::{path::Path, time::{SystemTime, Duration}, collections::{BTreeMap, HashMap}, vec, fs, str::FromStr};
 
 use chrono::TimeZone;
 use encoding::Encoding;
@@ -559,6 +559,9 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["时间戳转文本"],|self_t,params|{
         let numstr = self_t.get_param(params, 0)?;
+        if numstr.len() > 10 {
+            return Ok(Some("".to_string()));
+        }
         let num = numstr.parse::<i64>()?;
         let datetime_rst = chrono::prelude::Local.timestamp_opt(num, 0);
         if let chrono::LocalResult::Single(datetime) = datetime_rst {
@@ -1541,11 +1544,309 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some(str_out));
     });
+
+    
     add_fun(vec!["骰"],|self_t,params|{
+        fn tou(input:&str) -> Result <String, Box<dyn std::error::Error>> {
+            // 分割tokens
+            fn get_token(input: &str) -> Vec<String> {
+                let mut ret_vec:Vec<String> = vec![];
+                let mut tmp = String::new();
+                for ch in input.chars() {
+                    if ch.is_ascii_digit() {
+                        tmp.push(ch);
+                    } else if ch.is_ascii_lowercase() {
+                        if tmp != "" {
+                            ret_vec.push(tmp.clone());
+                            tmp.clear();
+                            ret_vec.push(ch.to_string());
+                        }
+                    }
+                }
+                if tmp != "" {
+                    ret_vec.push(tmp);
+                }
+                return ret_vec;
+            }
+        
+            // 取参数
+            fn get_params(tokens:&Vec<String>) -> HashMap<String,(Option<i64>,Option<i64>)> {
+                let mut ret_map = HashMap::new();
+                fn get_left(index:usize,tokens:&Vec<String>) -> Option<i64> {
+                    if index == 0 {
+                        return None;
+                    } else {
+                        if let Ok(num) = tokens[index - 1].parse::<i64>() {
+                            return Some(num);
+                        }else {
+                            return None;
+                        }
+                    }
+                }
+                fn get_right(index:usize,tokens:&Vec<String>) -> Option<i64> {
+                    if index == tokens.len() - 1 {
+                        return None;
+                    } else {
+                        if let Ok(num) = tokens[index + 1].parse::<i64>() {
+                            return Some(num);
+                        }else {
+                            return None;
+                        }
+                    }
+                }
+                for index in 0..tokens.len() {
+                    let it = &tokens[index];
+                    if it == "d" || it == "k" || it == "q" || it == "p" || it == "b" || it == "m" || it == "a" || it == "c" || it == "f"  {
+                        ret_map.insert(it.to_owned(), (get_left(index,tokens),get_right(index,&tokens)));
+                    }
+                }
+                return ret_map;
+            }
+            let tokens = get_token(input);
+            let mp = get_params(&tokens);
+        
+            fn get_tou(m:i64,des:&mut String) -> i64 {
+                let ret = get_random().unwrap() % m as usize + 1;
+                des.push_str(&format!("掷出面数为{}的骰子:{}\n",m,ret));
+                return ret as i64;
+            }
+        
+            fn get_two_tou(des:&mut String) -> i64 {
+                let ret1 = get_random().unwrap() % 10 as usize + 1;
+                let ret2 = get_random().unwrap() % 10 as usize + 1;
+                des.push_str(&format!("掷出两个面数为10的骰子:{:?}\n",vec![ret1,ret2]));
+                let mut ret = (ret1 - 1) * 10 + ret2 - 1;
+                if ret == 0 {
+                    ret = 100;
+                }
+                des.push_str(&format!("组成一个面数位100的骰子:{}\n",ret));
+                return ret as i64;
+            }
+            let mut des = String::new();
+            if  mp.contains_key("f") { // FATE掷骰池
+                des += "检测到c参数,所以为`FATE掷骰池`\n";
+                let f = mp["f"].0.unwrap_or(4);
+                let mut tou_vec:Vec<i64> = vec![];
+                for _i in 0..f {
+                    tou_vec.push(((get_random().unwrap() % 3 as usize) as i64) - 1);
+                }
+                des.push_str(&format!("掷出{f}个三面骰:{tou_vec:?}\n"));
+                let mut sum:i64 = 0;
+                for it in tou_vec {
+                    sum += it;
+                }
+                des.push_str(&format!("{}个骰子的总和为:{}",f,sum));
+            } else if mp.contains_key("d") { // 只可能是普通多面骰
+                des += "检测到d参数,所以为`普通多面掷骰`\n";
+                if mp.contains_key("a") { // 应该转化为无限加骰池
+                    des += "检测到a参数,转化为`无限加骰池`\n";
+                    let a = mp["d"].0.unwrap_or(1);
+                    let bb = mp["d"].1.ok_or("err1")? + 1;
+                    let b = bb - 1;
+                    let e = mp["a"].1.ok_or("err2")?;
+                    let zhjg = format!("{a}a{bb}k{e}m{b}");
+                    des.push_str(&format!("转化结果:{zhjg}\n"));
+                    des += &tou(&zhjg)?;
+                } else if mp.contains_key("k") { // 选取最大
+                    let ts = mp["d"].0.unwrap_or(1);
+                    let ms = mp["d"].1.unwrap_or(100);
+                    let mut tou_vec:Vec<i64> = vec![];
+                    for i in 0..ts {
+                        des.push_str(&format!("第{}次:",i+1));
+                        tou_vec.push(get_tou(ms,&mut des));
+                    }
+                    tou_vec.sort();
+                    tou_vec.reverse();
+                    des.push_str(&format!("从大到小排序后为:{:?}\n",tou_vec));
+                    let k = mp["k"].1.unwrap_or(ts);
+                    let tou_vec2 = tou_vec.get(0..k as usize).ok_or("err3")?;
+                    des.push_str(&format!("选取最大的{}个骰子:{:?}\n",k,tou_vec2));
+                    let mut sum = 0;
+                    for it in tou_vec2 {
+                        sum += it;
+                    }
+                    des.push_str(&format!("{}个骰子的总和为:{}",k,sum));
+                } else if mp.contains_key("q") { // 选取最小
+                    let ts = mp["d"].0.unwrap_or(1);
+                    let ms = mp["d"].1.unwrap_or(100);
+                    let mut tou_vec:Vec<i64> = vec![];
+                    for i in 0..ts {
+                        des.push_str(&format!("第{}次:",i+1));
+                        tou_vec.push(get_tou(ms,&mut des));
+                    }
+                    tou_vec.sort();
+                    des.push_str(&format!("从小到大排序后为:{:?}\n",tou_vec));
+                    let k = mp["q"].1.unwrap_or(ts);
+                    let tou_vec2 = tou_vec.get(0..k as usize).ok_or("err4")?;
+                    des.push_str(&format!("选取最小的{}个骰子:{:?}\n",k,tou_vec2));
+                    let mut sum = 0;
+                    for it in tou_vec2 {
+                        sum += it;
+                    }
+                    des.push_str(&format!("{}个骰子的总和为:{}",k,sum));
+                } else if mp.contains_key("p") { // 追加惩罚
+                    let p_num = mp["p"].1.unwrap_or(0);
+                    let mut ret = get_two_tou(&mut des);
+                    let mut p_vec:Vec<i64> = vec![];
+                    for _i in 0..p_num {
+                        p_vec.push((get_random().unwrap() % 10 as usize + 1) as i64)
+                    }
+                    des.push_str(&format!("掷出{p_num}个惩罚骰:{p_vec:?}\n"));
+                    p_vec.sort();
+                    p_vec.reverse();
+                    des.push_str(&format!("从大到小排序后为:{:?}\n",p_vec));
+                    let sw = ret / 10;
+                    if p_vec.get(0).ok_or("err5")? > &sw {
+                        ret = ret % 10 + p_vec[0] * 10;
+                    }
+                    des.push_str(&format!("惩罚后的结果是:{ret}"));
+                } else if mp.contains_key("b") { // 追加奖励 
+                    let p_num = mp["b"].1.unwrap_or(0);
+                    let mut ret = get_two_tou(&mut des);
+                    let mut p_vec:Vec<i64> = vec![];
+                    for _i in 0..p_num {
+                        p_vec.push((get_random().unwrap() % 10 as usize + 1) as i64)
+                    }
+                    des.push_str(&format!("掷出{p_num}个奖励骰:{p_vec:?}\n"));
+                    p_vec.sort();
+                    des.push_str(&format!("从小到大排序后为:{:?}\n",p_vec));
+                    let sw = ret / 10;
+                    if p_vec.get(0).ok_or("err6")? < &sw {
+                        ret = ret % 10 + p_vec[0] * 10;
+                    }
+                    des.push_str(&format!("奖励后的结果是:{ret}"));
+                } else { // 普通掷骰
+                    let ts = mp["d"].0.unwrap_or(1);
+                    let ms = mp["d"].1.unwrap_or(100);
+                    let mut sum:i64 = 0;
+                    for i in 0..ts {
+                        des.push_str(&format!("第{}次:",i+1));
+                        sum += get_tou(ms,&mut des);
+                    }
+                    des.push_str(&format!("{}个骰子的总和为:{}",ts,sum));
+                }
+            } else if mp.contains_key("p") { // 惩罚
+                des += "检测到p参数,所以为`惩罚骰`\n";
+                let p_num = mp["p"].1.unwrap_or(0);
+                let mut ret = get_two_tou(&mut des);
+                let mut p_vec:Vec<i64> = vec![];
+                for _i in 0..p_num {
+                    p_vec.push((get_random().unwrap() % 10 as usize + 1) as i64)
+                }
+                des.push_str(&format!("掷出{p_num}个惩罚骰:{p_vec:?}\n"));
+                p_vec.sort();
+                p_vec.reverse();
+                des.push_str(&format!("从大到小排序后为:{:?}\n",p_vec));
+                let sw = ret / 10;
+                if p_vec.get(0).ok_or("err7")? > &sw {
+                    ret = ret % 10 + p_vec[0] * 10;
+                }
+                des.push_str(&format!("惩罚后的结果是:{ret}"));
+            } else if mp.contains_key("b") { // 奖励 
+                des += "检测到p参数,所以为`奖励骰`\n";
+                let p_num = mp["b"].1.unwrap_or(0);
+                let mut ret = get_two_tou(&mut des);
+                let mut p_vec:Vec<i64> = vec![];
+                for _i in 0..p_num {
+                    p_vec.push((get_random().unwrap() % 10 as usize + 1) as i64)
+                }
+                des.push_str(&format!("掷出{p_num}个奖励骰:{p_vec:?}\n"));
+                p_vec.sort();
+                des.push_str(&format!("从小到大排序后为:{:?}\n",p_vec));
+                let sw = ret / 10;
+                if p_vec.get(0).ok_or("err8")? < &sw {
+                    ret = ret % 10 + p_vec[0] * 10;
+                }
+                des.push_str(&format!("奖励后的结果是:{ret}"));
+            } else if  mp.contains_key("a") { // 无限加骰池
+                des += "检测到a参数,所以为`无限加骰池`\n";
+                let mut a1 = mp["a"].0.unwrap_or(1);
+                let a2 = mp["a"].1.ok_or("err9")?;
+                let mut m = 10;
+                if mp.contains_key("m") {
+                    m = mp["m"].1.unwrap();
+                }
+                let mut cgx = 8;
+                if mp.contains_key("k") {
+                    cgx = mp["k"].1.unwrap();
+                }
+                let mut fxcgx = m;
+                if mp.contains_key("q") {
+                    fxcgx = mp["q"].1.unwrap();
+                }
+                let mut ls: i32 = 1;
+                let mut ret = 0;
+                loop {
+                    let mut tou_vec:Vec<i64> = vec![];
+                    for _i in 0..a1 {
+                        tou_vec.push((get_random().unwrap() % m as usize + 1) as i64);
+                    }
+                    des.push_str(&format!("第{ls}轮掷骰:{tou_vec:?}\n"));
+                    tou_vec.sort();
+                    des.push_str(&format!("从小到大排序后为:{:?}\n",tou_vec));
+                    a1 = 0;
+                    for it in &tou_vec {
+                        if it >= &a2 {
+                            a1 += 1;
+                        }
+                    }
+                    des.push_str(&format!("下一轮掷骰数目:{a1}\n"));
+                    for it in tou_vec {
+                        if it >= cgx && it <= fxcgx {
+                            ret += 1;
+                        }
+                    }
+                    des.push_str(&format!("累计成功骰数:{ret}"));
+                    ls += 1;
+                    if a1 != 0 {
+                        des.push_str(&format!("\n"));
+                    }else {
+                        break;
+                    }
+                }
+            }else if  mp.contains_key("c") { // 双重十字加骰池
+                des += "检测到c参数,所以为`双重十字加骰池`\n";
+                let mut a = mp["c"].0.unwrap();
+                let b = mp["c"].1.unwrap();
+                let mut m = 10;
+                if mp.contains_key("m") {
+                    m = mp["m"].1.unwrap();
+                }
+                let mut ls = 1;
+                let mut ret = 0;
+                loop {
+                    let mut tou_vec:Vec<i64> = vec![];
+                    for _i in 0..a {
+                        tou_vec.push((get_random().unwrap() % m as usize + 1) as i64);
+                    }
+                    des.push_str(&format!("第{ls}轮掷骰:{tou_vec:?}\n"));
+                    tou_vec.sort();
+                    des.push_str(&format!("从小到大排序后为:{:?}\n",tou_vec));
+                    a = 0;
+                    for it in &tou_vec {
+                        if it >= &b {
+                            a += 1;
+                        }
+                    }
+                    des.push_str(&format!("下一轮掷骰数目:{a}\n"));
+                    if a != 0 {
+                        ret += m;
+                    }else {
+                        ret += tou_vec.get(tou_vec.len() - 1).ok_or("err10")?;
+                    }
+                    des.push_str(&format!("累计成功骰数:{ret}\n"));
+                    if a == 0 {
+                        break;
+                    }else {
+                        des.push_str(&format!("\n"));
+                    }
+                    ls += 1;
+                }
+            }
+            return Ok(des);
+        }
         let text = self_t.get_param(params, 0)?;
-        let mut result = diro::parse(&text)?;
-        result.roll();
-        let ret = format!("{}",result.calc()?);
+        let ret = tou(&text)?;
         return Ok(Some(ret));
     });
     add_fun(vec!["运行WASM"],|self_t,params|{

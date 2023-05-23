@@ -909,7 +909,7 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 
 【时间戳转文本@时间戳】
 
-参数为10位unix时间戳，返回本地时间的文本表示(年-月-日-时-分-秒)，如<font color="red">2022-09-01-13-55-56</font>
+参数为10位unix时间戳（暂不支持10位以上的10位时间戳），返回本地时间的文本表示(年-月-日-时-分-秒)，如<font color="red">2022-09-01-13-55-56</font>
 
 
 ### 文本转时间戳

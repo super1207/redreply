@@ -43,7 +43,6 @@ font-kit = "0.11.0"
 markdown = "1.0.0-alpha.7"
 reqwest = {version = "0.11.16",default-features = false,features = ["rustls-tls"]}
 time = { version = "0.3", features = ["formatting", "macros"] }
-diro = {git = "https://github.com/abrahum/diro"}
 wasmtime = "8.0.0"
 
 
