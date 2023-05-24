@@ -2090,6 +2090,76 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some(ret));
     });
+    add_fun(vec!["上传文件"],|self_t,params|{
+        fn access(self_t:&mut RedLang,filename:&str,url:&str,file_data:&mut Vec<u8>) -> Result<String, Box<dyn std::error::Error>> {
+
+            let proxy = self_t.get_coremap("代理")?;
+            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            if timeout_str == "" {
+                timeout_str = "60000";
+            }
+            let mut http_header = BTreeMap::new();
+            let http_header_str = self_t.get_coremap("访问头")?;
+            if http_header_str != "" {
+                http_header = RedLang::parse_obj(&http_header_str)?;
+                if !http_header.contains_key("User-Agent"){
+                    http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
+                }
+            }else {
+                http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
+            }
+            let bound = uuid::Uuid::new_v4().to_string();
+
+            {
+                let ct = "multipart/form-data; boundary=".to_owned() + &bound;
+                http_header.insert("Content-Type".to_string(),ct); 
+            }
+
+            let mut data:Vec<u8> = vec![];
+            data.append(&mut "--".as_bytes().to_owned());
+            data.append(&mut bound.as_bytes().to_owned());
+            data.append(&mut "\r\nContent-Disposition: form-data; name=\"reqtype\"\r\n\r\nfileupload\r\n".as_bytes().to_owned());
+            data.append(&mut "--".as_bytes().to_owned());
+            data.append(&mut bound.as_bytes().to_owned());
+            let fname = urlencoding::encode(filename).to_string();
+            data.append(&mut format!("\r\nContent-Disposition: form-data; name=\"fileToUpload\";filename=\"{fname}\"\r\n\r\n").as_bytes().to_owned());
+            data.append(file_data);
+            data.append(&mut "\r\n--".as_bytes().to_owned());
+            data.append(&mut bound.as_bytes().to_owned());
+            data.append(&mut "--\r\n".as_bytes().to_owned());
+            
+            let timeout = timeout_str.parse::<u64>()?;
+            let content = RT_PTR.block_on(async { 
+                let ret = tokio::select! {
+                    val_rst = http_post(url,data,&http_header,proxy,true) => {
+                        if let Ok(val) = val_rst {
+                            val
+                        } else {
+                            cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
+                            vec![]
+                        }
+                    },
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
+                        cq_add_log_w(&format!("POST访问:`{}`超时",url)).unwrap();
+                        vec![]
+                    }
+                };
+                return ret;
+            });
+            Ok(String::from_utf8(content)?)
+        }
+        let bin_text = self_t.get_param(params, 0)?;
+        let filename = self_t.get_param(params, 1)?;
+        let mut bin = RedLang::parse_bin(&bin_text)?;
+        let url = "https://catbox.moe/user/api.php";
+        match access(self_t,&filename,&url,&mut bin) {
+            Ok(ret) => Ok(Some(ret)),
+            Err(err) => {
+                cq_add_log_w(&format!("{:?}",err)).unwrap();
+                Ok(Some("".to_string()))
+            },
+        }
+    });
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {
