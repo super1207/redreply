@@ -1329,6 +1329,14 @@ onedice参数的写法参考[onedice](https://github.com/OlivOS-Team/onedice)。
 将会从大到小进行排序。
 
 
+### 翻转
+
+【翻转@<font color="red">内容</font>】
+
+翻转内容。支持字节集，文本，数组。
+
+
+
 
 ## QQ、频道相关命令说明
 

@@ -2069,6 +2069,27 @@ pub fn init_ex_fun_map() {
         let ret = self_t.build_arr(arr);
         return Ok(Some(ret));
     });
+    add_fun(vec!["翻转"],|self_t,params|{
+        let to_rev = self_t.get_param(params, 0)?;
+        let tp = self_t.get_type(&to_rev)?;
+        let ret;
+        if tp == "数组" {
+            let mut arr = RedLang::parse_arr(&to_rev)?;
+            arr.reverse();
+            ret = self_t.build_arr(arr);
+        } else if tp == "文本" {
+            let mut s = to_rev.chars().collect::<Vec<char>>();
+            s.reverse();
+            ret = String::from_iter(s);
+        } else if tp == "字节集" {
+            let mut bin = RedLang::parse_bin(&to_rev)?;
+            bin.reverse();
+            ret = self_t.build_bin(bin);
+        } else {
+            return Err(RedLang::make_err(&format!("不支持的翻转类型:{tp}")));
+        }
+        return Ok(Some(ret));
+    });
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {
