@@ -385,5 +385,5 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
 
 
 pub fn get_version() -> String{
-    return "0.0.54".to_string();
+    return "0.0.55".to_string();
 }

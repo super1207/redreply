@@ -104,7 +104,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
     let msg_id = read_json_str(ret_json.get("data").ok_or(err)?,"message_id");
     if msg_type == "group" {
         let self_id = rl.get_exmap("机器人ID");
-        crate::cqevent::do_group_msg::msg_id_map_insert(self_id.to_string(),group_id_str,msg_id.clone())?;
+        crate::cqevent::do_group_msg::msg_id_map_insert(self_id.to_string(),self_id.to_string(),group_id_str,msg_id.clone())?;
     }
     return Ok(msg_id);
 }
@@ -193,7 +193,8 @@ pub fn init_cq_ex_fun_map() {
         }else {
             let mp = crate::G_MSG_ID_MAP.read()?;
             let group_id = self_t.get_exmap("群ID").parse::<i32>()?;
-            let flag = qq + &group_id.to_string();
+            let self_id = self_t.get_exmap("机器人ID");
+            let flag = self_id.to_string() + &qq + &group_id.to_string();
             ret = match mp.get(&flag) {  
                 Some(v) => {
                     let mut vv:Vec<&str> = vec![];
