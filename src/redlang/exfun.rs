@@ -1871,6 +1871,7 @@ pub fn init_ex_fun_map() {
             .inherit_stdio()
             .inherit_args()?
             .build();
+        
         let mut store = Store::new(&engine, (wasi,self_t,alloc_fun_name));
         let module;
         if text_type == "字节集" {

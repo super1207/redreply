@@ -43,8 +43,8 @@ font-kit = "0.11.0"
 markdown = "1.0.0-alpha.7"
 reqwest = {version = "0.11.16",default-features = false,features = ["rustls-tls"]}
 time = { version = "0.3", features = ["formatting", "macros"] }
-wasmtime-wasi = "*"
-wasmtime = "*"
+wasmtime-wasi = "9.0.2"
+wasmtime = "9.0.2"
 
 
 [target.'cfg(windows)'.dependencies]
