@@ -140,6 +140,12 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
         res.headers_mut().insert("Location", HeaderValue::from_static("/index.html"));
         Ok(res)
     }
+    else if url_path.starts_with("/user") {
+        let true_url = url_path.get(5..).unwrap();
+        println!("{true_url}");
+        let res = hyper::Response::new(hyper::Body::from("user api"));
+        Ok(res)
+    }
     else{
         let res = hyper::Response::new(hyper::Body::from("api not found"));
         Ok(res)

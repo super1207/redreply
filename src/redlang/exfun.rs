@@ -398,7 +398,11 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["运行目录"],|_self_t,_params|{
         let exe_dir = std::env::current_exe()?;
         let exe_path = exe_dir.parent().ok_or("无法获得运行目录")?;
-        let exe_path_str = exe_path.to_string_lossy().to_string() + "\\";
+        let mut exe_path_str = exe_path.to_string_lossy().to_string();
+        if !exe_path_str.ends_with(std::path::MAIN_SEPARATOR)
+        {
+            exe_path_str.push(std::path::MAIN_SEPARATOR);
+        }
         return Ok(Some(crate::mytool::deal_path_str(&exe_path_str).to_string()));
     });
     add_fun(vec!["分割"],|self_t,params|{
