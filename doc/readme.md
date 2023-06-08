@@ -1073,7 +1073,7 @@ QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信
 
 【图片嵌字@<font color="red">图片字节集</font>@<font color="red">要嵌入的字</font>@<font color="red">x坐标</font>@<font color="red">y坐标</font>@<font color="red">字体大小</font>@<font color="red">rgba颜色数组</font>@<font color="red">字体名称</font>@<font color="red">字间距</font>@<font color="red">行间距</font>】
 
-字间距和行间距默认为0。<font color="red">字体名称</font>可以是字节集。
+字间距和行间距默认为0。<font color="red">字体名称</font>可以是字节集。注意在非windows系统下，字体名称必须是字节集。
 
 例如：
 ```
@@ -1092,7 +1092,7 @@ QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信
 
 【文字转图片@<font color="red">图片的宽</font>@<font color="red">文字</font>@<font color="red">字体大小</font>@<font color="red">rgba颜色数组</font>@<font color="red">字体名称</font>@<font color="red">字间距</font>@<font color="red">行间距</font>】
 
-字间距和行间距默认为0。<font color="red">字体名称</font>可以是字节集。
+字间距和行间距默认为0。<font color="red">字体名称</font>可以是字节集。注意在非windows系统下，字体名称必须是字节集。
 
 
 ### 图片大小调整
@@ -1165,7 +1165,7 @@ CSS选择器可以选择截图的元素，省略CSS选择器表示截图整个�
 **注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
 
 
-### 截屏
+### 截屏(仅windows可用)
 
 【截屏】
 

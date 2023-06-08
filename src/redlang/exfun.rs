@@ -2,7 +2,6 @@ use std::{path::Path, time::{SystemTime, Duration}, collections::BTreeMap, vec, 
 
 use chrono::TimeZone;
 use encoding::Encoding;
-use font_kit::{source::SystemSource};
 use jsonpath_rust::JsonPathQuery;
 use md5::{Md5, Digest};
 use rusttype::Scale;
@@ -910,6 +909,20 @@ pub fn init_ex_fun_map() {
         }
         return (width,height);
     }
+
+    #[cfg(target_os = "windows")]
+    fn get_font(font_text:&str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        use font_kit::source::SystemSource;
+        let font = SystemSource::new()
+        .select_by_postscript_name(&font_text)?
+        .load()?;
+        return Ok(font.copy_font_data().ok_or("无法获得字体1")?.to_vec());
+    }
+
+    #[cfg(not(target_os = "windows"))]
+    fn get_font(font_text:&str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        Ok(vec![])
+    }
     
     add_fun(vec!["文字转图片","文字转图像"],|self_t,params|{
         let image_width = self_t.get_param(params, 0)?.parse::<u32>()?;
@@ -932,10 +945,7 @@ pub fn init_ex_fun_map() {
         if font_type == "字节集" {
             font_dat = RedLang::parse_bin(&font_text)?;
         }else{
-            let font = SystemSource::new()
-            .select_by_postscript_name(&font_text)?
-            .load()?;
-            font_dat = font.copy_font_data().ok_or("无法获得字体1")?.to_vec();
+            font_dat = get_font(&font_text)?;
         }
         let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
         let font_sep_text = self_t.get_param(params, 5)?;
@@ -1052,10 +1062,7 @@ pub fn init_ex_fun_map() {
         if font_type == "字节集" {
             font_dat = RedLang::parse_bin(&font_text)?;
         }else{
-            let font = SystemSource::new()
-            .select_by_postscript_name(&font_text)?
-            .load()?;
-            font_dat = font.copy_font_data().ok_or("无法获得字体1")?.to_vec();
+            font_dat = get_font(&font_text)?;
         }
         let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
         let font_sep_text = self_t.get_param(params, 7)?;
@@ -1437,6 +1444,8 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some(ret_str));
     });
+
+    #[cfg(target_os = "windows")]
     add_fun(vec!["截屏"],|self_t,_params|{
         let screens = screenshots::Screen::all()?;
         if screens.len() > 0 {
@@ -1446,6 +1455,7 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some(self_t.build_bin(vec![])));
     });
+    
     add_fun(vec!["文件信息"],|self_t,params|{
         let file_path = self_t.get_param(params, 0)?;
         let path = Path::new(&file_path);
