@@ -101,24 +101,26 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
     }else if url_path == "/set_code" {
         let body = hyper::body::to_bytes(request.into_body()).await?;
         let js:serde_json::Value = serde_json::from_slice(&body)?;
-        match crate::save_code(&js.to_string()){
-            Ok(_) => {
+        let (tx, rx) =  std::sync::mpsc::channel();
+        tokio::task::spawn_blocking(move || {
+            let rst = crate::save_code(&js.to_string());
+            if rst.is_ok() {
                 let ret = json!({
                     "retcode":0,
                 });
-                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
-                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
-                Ok(res)
-            },
-            Err(_) => {
+                tx.send(ret).unwrap();
+            }
+            else {
                 let ret = json!({
                     "retcode":-1,
                 });
-                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
-                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
-                Ok(res)
-            },
-        }
+                tx.send(ret).unwrap();
+            }
+        }).await?;
+        let ret = rx.recv()?;
+        let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)
         
     }else if url_path == "/close" {
         cq_add_log_w("收到退出指令，正在退出").unwrap();
@@ -138,6 +140,12 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
         let pass_cookie = format!("{};Max-Age=31536000",String::from_utf8(body.to_vec())?);
         res.headers_mut().append(hyper::header::SET_COOKIE, HeaderValue::from_str(&pass_cookie)?);
         res.headers_mut().insert("Location", HeaderValue::from_static("/index.html"));
+        Ok(res)
+    }
+    else if url_path.starts_with("/user") {
+        let true_url = url_path.get(5..).unwrap();
+        println!("{true_url}");
+        let res:hyper::Response<hyper::Body> = hyper::Response::new(hyper::Body::from("user api"));
         Ok(res)
     }
     else{
@@ -181,7 +189,7 @@ async fn serve_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tok
     
     while let Some(msg) = rx.recv().await { // 当所有tx被释放时,tx.recv会返回None
         // log::info!("recive:{}",msg);
-        let _foo = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string())).await;
+        write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string())).await?;
     }
     Ok(())
 }

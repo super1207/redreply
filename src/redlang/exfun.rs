@@ -1,4 +1,4 @@
-use std::{path::Path, time::{SystemTime, Duration}, collections::BTreeMap, vec, fs, str::FromStr};
+use std::{path::Path, time::{SystemTime, Duration}, collections::{BTreeMap, HashMap}, vec, fs, str::FromStr};
 
 use chrono::TimeZone;
 use encoding::Encoding;
@@ -282,9 +282,9 @@ pub fn init_ex_fun_map() {
         let sub_begin = self_t.get_param(params, 1)?;
         let sub_end = self_t.get_param(params, 2)?;
         let ret_vec = get_mid(&s, &sub_begin, &sub_end)?;
-        let mut ret_str:Vec<String> = vec![];
+        let mut ret_str:Vec<&str> = vec![];
         for it in ret_vec {
-            ret_str.push(it.to_string());
+            ret_str.push(it);
         }
         return Ok(Some(self_t.build_arr(ret_str)))
     });
@@ -346,9 +346,9 @@ pub fn init_ex_fun_map() {
             }
             ret = match arr.get(begen_pos..end_pos) {
                 Some(value) => {
-                    let mut array:Vec<String> = vec![];
+                    let mut array:Vec<&str> = vec![];
                     for it in value {
-                        array.push(it.to_string());
+                        array.push(it);
                     }
                     self_t.build_arr(array)
                 },
@@ -397,7 +397,11 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["运行目录"],|_self_t,_params|{
         let exe_dir = std::env::current_exe()?;
         let exe_path = exe_dir.parent().ok_or("无法获得运行目录")?;
-        let exe_path_str = exe_path.to_string_lossy().to_string() + "\\";
+        let mut exe_path_str = exe_path.to_string_lossy().to_string();
+        if !exe_path_str.ends_with(std::path::MAIN_SEPARATOR)
+        {
+            exe_path_str.push(std::path::MAIN_SEPARATOR);
+        }
         return Ok(Some(crate::mytool::deal_path_str(&exe_path_str).to_string()));
     });
     add_fun(vec!["分割"],|self_t,params|{
@@ -486,9 +490,9 @@ pub fn init_ex_fun_map() {
                     temp_vec.push(s.as_str().to_owned());
                 }
             }
-            sub_key_vec.push(self_t.build_arr(temp_vec));
+            sub_key_vec.push(self_t.build_arr(temp_vec.iter().map(AsRef::as_ref).collect()));
         }
-        return Ok(Some(self_t.build_arr(sub_key_vec)));
+        return Ok(Some(self_t.build_arr(sub_key_vec.iter().map(AsRef::as_ref).collect())));
     });
     add_fun(vec!["转字节集"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
@@ -558,6 +562,9 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["时间戳转文本"],|self_t,params|{
         let numstr = self_t.get_param(params, 0)?;
+        if numstr.len() > 10 {
+            return Ok(Some("".to_string()));
+        }
         let num = numstr.parse::<i64>()?;
         let datetime_rst = chrono::prelude::Local.timestamp_opt(num, 0);
         if let chrono::LocalResult::Single(datetime) = datetime_rst {
@@ -815,7 +822,7 @@ pub fn init_ex_fun_map() {
             img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
             ret_vec.push(self_t.build_bin(bytes));
         }
-        let ret = self_t.build_arr(ret_vec);
+        let ret = self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect());
         return Ok(Some(ret));
     });
 
@@ -1207,11 +1214,11 @@ pub fn init_ex_fun_map() {
             if path.is_dir() {
                 ret_vec.push(format!("{}{}",file_name,std::path::MAIN_SEPARATOR));
             }else{
-                ret_vec.push(file_name.to_string());
+                ret_vec.push(file_name.to_owned());
             }
             
         }
-        let ret = self_t.build_arr(ret_vec);
+        let ret = self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect());
         return Ok(Some(ret));
     });
     add_fun(vec!["读目录文件"],|self_t,params|{
@@ -1221,11 +1228,11 @@ pub fn init_ex_fun_map() {
         for dir in dirs {
             let path = dir?.path();
             if path.is_file() {
-                let file_name = path.to_str().ok_or("获取目录文件异常")?;
-                ret_vec.push(file_name.to_string());
+                let file_name = path.to_str().ok_or("获取目录文件异常")?.to_owned();
+                ret_vec.push(file_name);
             }
         }
-        let ret = self_t.build_arr(ret_vec);
+        let ret = self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect());
         return Ok(Some(ret));
     });
     add_fun(vec!["目录分隔符"],|_self_t,_params|{
@@ -1403,9 +1410,9 @@ pub fn init_ex_fun_map() {
                 };
                 v.push(dat);
             }
-            vec.push(self_t.build_arr(v));
+            vec.push(self_t.build_arr(v.iter().map(AsRef::as_ref).collect()));
         }
-        return Ok(Some(self_t.build_arr(vec)));
+        return Ok(Some(self_t.build_arr(vec.iter().map(AsRef::as_ref).collect())));
     });
     add_fun(vec!["定义持久常量"],|self_t,params|{
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
@@ -1514,20 +1521,21 @@ pub fn init_ex_fun_map() {
                 arr_out.push(txt.to_owned());
             }
         }
-        return Ok(Some(self_t.build_arr(arr_out)));
+        let arr_out_t = arr_out.iter().map(|x|x.as_str()).collect();
+        return Ok(Some(self_t.build_arr(arr_out_t)));
     });
     add_fun(vec!["打乱"],|self_t,params|{
         let arr_text = self_t.get_param(params, 0)?;
         let arr = RedLang::parse_arr(&arr_text)?;
         let mut arr_out = vec![];
         for it in arr {
-            arr_out.push(it.to_owned());
+            arr_out.push(it);
         }
         for i in 0..arr_out.len() {
             let rand_i = get_random()? % arr_out.len();
             if rand_i != i {
-                let k = arr_out[i].to_owned();
-                arr_out[i] = arr_out[rand_i].to_owned();
+                let k = arr_out[i];
+                arr_out[i] = arr_out[rand_i];
                 arr_out[rand_i] = k;
             }
         }
@@ -1550,15 +1558,314 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some(str_out));
     });
+
+    
     add_fun(vec!["骰"],|self_t,params|{
+        fn tou(input:&str) -> Result <String, Box<dyn std::error::Error>> {
+            // 分割tokens
+            fn get_token(input: &str) -> Vec<String> {
+                let mut ret_vec:Vec<String> = vec![];
+                let mut tmp = String::new();
+                for ch in input.chars() {
+                    if ch.is_ascii_digit() {
+                        tmp.push(ch);
+                    } else if ch.is_ascii_lowercase() {
+                        if tmp != "" {
+                            ret_vec.push(tmp.clone());
+                            tmp.clear();
+                            ret_vec.push(ch.to_string());
+                        }
+                    }
+                }
+                if tmp != "" {
+                    ret_vec.push(tmp);
+                }
+                return ret_vec;
+            }
+        
+            // 取参数
+            fn get_params(tokens:&Vec<String>) -> HashMap<String,(Option<i64>,Option<i64>)> {
+                let mut ret_map = HashMap::new();
+                fn get_left(index:usize,tokens:&Vec<String>) -> Option<i64> {
+                    if index == 0 {
+                        return None;
+                    } else {
+                        if let Ok(num) = tokens[index - 1].parse::<i64>() {
+                            return Some(num);
+                        }else {
+                            return None;
+                        }
+                    }
+                }
+                fn get_right(index:usize,tokens:&Vec<String>) -> Option<i64> {
+                    if index == tokens.len() - 1 {
+                        return None;
+                    } else {
+                        if let Ok(num) = tokens[index + 1].parse::<i64>() {
+                            return Some(num);
+                        }else {
+                            return None;
+                        }
+                    }
+                }
+                for index in 0..tokens.len() {
+                    let it = &tokens[index];
+                    if it == "d" || it == "k" || it == "q" || it == "p" || it == "b" || it == "m" || it == "a" || it == "c" || it == "f"  {
+                        ret_map.insert(it.to_owned(), (get_left(index,tokens),get_right(index,&tokens)));
+                    }
+                }
+                return ret_map;
+            }
+            let tokens = get_token(input);
+            let mp = get_params(&tokens);
+        
+            fn get_tou(m:i64,des:&mut String) -> i64 {
+                let ret = get_random().unwrap() % m as usize + 1;
+                des.push_str(&format!("掷出面数为{}的骰子:{}\n",m,ret));
+                return ret as i64;
+            }
+        
+            fn get_two_tou(des:&mut String) -> i64 {
+                let ret1 = get_random().unwrap() % 10 as usize + 1;
+                let ret2 = get_random().unwrap() % 10 as usize + 1;
+                des.push_str(&format!("掷出两个面数为10的骰子:{:?}\n",vec![ret1,ret2]));
+                let mut ret = (ret1 - 1) * 10 + ret2 - 1;
+                if ret == 0 {
+                    ret = 100;
+                }
+                des.push_str(&format!("组成一个面数位100的骰子:{}\n",ret));
+                return ret as i64;
+            }
+            let mut des = String::new();
+            if  mp.contains_key("f") { // FATE掷骰池
+                des += "检测到c参数,所以为`FATE掷骰池`\n";
+                let f = mp["f"].0.unwrap_or(4);
+                let mut tou_vec:Vec<i64> = vec![];
+                for _i in 0..f {
+                    tou_vec.push(((get_random().unwrap() % 3 as usize) as i64) - 1);
+                }
+                des.push_str(&format!("掷出{f}个三面骰:{tou_vec:?}\n"));
+                let mut sum:i64 = 0;
+                for it in tou_vec {
+                    sum += it;
+                }
+                des.push_str(&format!("{}个骰子的总和为:{}",f,sum));
+            } else if mp.contains_key("d") { // 只可能是普通多面骰
+                des += "检测到d参数,所以为`普通多面掷骰`\n";
+                if mp.contains_key("a") { // 应该转化为无限加骰池
+                    des += "检测到a参数,转化为`无限加骰池`\n";
+                    let a = mp["d"].0.unwrap_or(1);
+                    let bb = mp["d"].1.ok_or("err1")? + 1;
+                    let b = bb - 1;
+                    let e = mp["a"].1.ok_or("err2")?;
+                    let zhjg = format!("{a}a{bb}k{e}m{b}");
+                    des.push_str(&format!("转化结果:{zhjg}\n"));
+                    des += &tou(&zhjg)?;
+                } else if mp.contains_key("k") { // 选取最大
+                    let ts = mp["d"].0.unwrap_or(1);
+                    let ms = mp["d"].1.unwrap_or(100);
+                    let mut tou_vec:Vec<i64> = vec![];
+                    for i in 0..ts {
+                        des.push_str(&format!("第{}次:",i+1));
+                        tou_vec.push(get_tou(ms,&mut des));
+                    }
+                    tou_vec.sort();
+                    tou_vec.reverse();
+                    des.push_str(&format!("从大到小排序后为:{:?}\n",tou_vec));
+                    let k = mp["k"].1.unwrap_or(ts);
+                    let tou_vec2 = tou_vec.get(0..k as usize).ok_or("err3")?;
+                    des.push_str(&format!("选取最大的{}个骰子:{:?}\n",k,tou_vec2));
+                    let mut sum = 0;
+                    for it in tou_vec2 {
+                        sum += it;
+                    }
+                    des.push_str(&format!("{}个骰子的总和为:{}",k,sum));
+                } else if mp.contains_key("q") { // 选取最小
+                    let ts = mp["d"].0.unwrap_or(1);
+                    let ms = mp["d"].1.unwrap_or(100);
+                    let mut tou_vec:Vec<i64> = vec![];
+                    for i in 0..ts {
+                        des.push_str(&format!("第{}次:",i+1));
+                        tou_vec.push(get_tou(ms,&mut des));
+                    }
+                    tou_vec.sort();
+                    des.push_str(&format!("从小到大排序后为:{:?}\n",tou_vec));
+                    let k = mp["q"].1.unwrap_or(ts);
+                    let tou_vec2 = tou_vec.get(0..k as usize).ok_or("err4")?;
+                    des.push_str(&format!("选取最小的{}个骰子:{:?}\n",k,tou_vec2));
+                    let mut sum = 0;
+                    for it in tou_vec2 {
+                        sum += it;
+                    }
+                    des.push_str(&format!("{}个骰子的总和为:{}",k,sum));
+                } else if mp.contains_key("p") { // 追加惩罚
+                    let p_num = mp["p"].1.unwrap_or(0);
+                    let mut ret = get_two_tou(&mut des);
+                    let mut p_vec:Vec<i64> = vec![];
+                    for _i in 0..p_num {
+                        p_vec.push((get_random().unwrap() % 10 as usize + 1) as i64)
+                    }
+                    des.push_str(&format!("掷出{p_num}个惩罚骰:{p_vec:?}\n"));
+                    p_vec.sort();
+                    p_vec.reverse();
+                    des.push_str(&format!("从大到小排序后为:{:?}\n",p_vec));
+                    let sw = ret / 10;
+                    if p_vec.get(0).ok_or("err5")? > &sw {
+                        ret = ret % 10 + p_vec[0] * 10;
+                    }
+                    des.push_str(&format!("惩罚后的结果是:{ret}"));
+                } else if mp.contains_key("b") { // 追加奖励 
+                    let p_num = mp["b"].1.unwrap_or(0);
+                    let mut ret = get_two_tou(&mut des);
+                    let mut p_vec:Vec<i64> = vec![];
+                    for _i in 0..p_num {
+                        p_vec.push((get_random().unwrap() % 10 as usize + 1) as i64)
+                    }
+                    des.push_str(&format!("掷出{p_num}个奖励骰:{p_vec:?}\n"));
+                    p_vec.sort();
+                    des.push_str(&format!("从小到大排序后为:{:?}\n",p_vec));
+                    let sw = ret / 10;
+                    if p_vec.get(0).ok_or("err6")? < &sw {
+                        ret = ret % 10 + p_vec[0] * 10;
+                    }
+                    des.push_str(&format!("奖励后的结果是:{ret}"));
+                } else { // 普通掷骰
+                    let ts = mp["d"].0.unwrap_or(1);
+                    let ms = mp["d"].1.unwrap_or(100);
+                    let mut sum:i64 = 0;
+                    for i in 0..ts {
+                        des.push_str(&format!("第{}次:",i+1));
+                        sum += get_tou(ms,&mut des);
+                    }
+                    des.push_str(&format!("{}个骰子的总和为:{}",ts,sum));
+                }
+            } else if mp.contains_key("p") { // 惩罚
+                des += "检测到p参数,所以为`惩罚骰`\n";
+                let p_num = mp["p"].1.unwrap_or(0);
+                let mut ret = get_two_tou(&mut des);
+                let mut p_vec:Vec<i64> = vec![];
+                for _i in 0..p_num {
+                    p_vec.push((get_random().unwrap() % 10 as usize + 1) as i64)
+                }
+                des.push_str(&format!("掷出{p_num}个惩罚骰:{p_vec:?}\n"));
+                p_vec.sort();
+                p_vec.reverse();
+                des.push_str(&format!("从大到小排序后为:{:?}\n",p_vec));
+                let sw = ret / 10;
+                if p_vec.get(0).ok_or("err7")? > &sw {
+                    ret = ret % 10 + p_vec[0] * 10;
+                }
+                des.push_str(&format!("惩罚后的结果是:{ret}"));
+            } else if mp.contains_key("b") { // 奖励 
+                des += "检测到p参数,所以为`奖励骰`\n";
+                let p_num = mp["b"].1.unwrap_or(0);
+                let mut ret = get_two_tou(&mut des);
+                let mut p_vec:Vec<i64> = vec![];
+                for _i in 0..p_num {
+                    p_vec.push((get_random().unwrap() % 10 as usize + 1) as i64)
+                }
+                des.push_str(&format!("掷出{p_num}个奖励骰:{p_vec:?}\n"));
+                p_vec.sort();
+                des.push_str(&format!("从小到大排序后为:{:?}\n",p_vec));
+                let sw = ret / 10;
+                if p_vec.get(0).ok_or("err8")? < &sw {
+                    ret = ret % 10 + p_vec[0] * 10;
+                }
+                des.push_str(&format!("奖励后的结果是:{ret}"));
+            } else if  mp.contains_key("a") { // 无限加骰池
+                des += "检测到a参数,所以为`无限加骰池`\n";
+                let mut a1 = mp["a"].0.unwrap_or(1);
+                let a2 = mp["a"].1.ok_or("err9")?;
+                let mut m = 10;
+                if mp.contains_key("m") {
+                    m = mp["m"].1.unwrap();
+                }
+                let mut cgx = 8;
+                if mp.contains_key("k") {
+                    cgx = mp["k"].1.unwrap();
+                }
+                let mut fxcgx = m;
+                if mp.contains_key("q") {
+                    fxcgx = mp["q"].1.unwrap();
+                }
+                let mut ls: i32 = 1;
+                let mut ret = 0;
+                loop {
+                    let mut tou_vec:Vec<i64> = vec![];
+                    for _i in 0..a1 {
+                        tou_vec.push((get_random().unwrap() % m as usize + 1) as i64);
+                    }
+                    des.push_str(&format!("第{ls}轮掷骰:{tou_vec:?}\n"));
+                    tou_vec.sort();
+                    des.push_str(&format!("从小到大排序后为:{:?}\n",tou_vec));
+                    a1 = 0;
+                    for it in &tou_vec {
+                        if it >= &a2 {
+                            a1 += 1;
+                        }
+                    }
+                    des.push_str(&format!("下一轮掷骰数目:{a1}\n"));
+                    for it in tou_vec {
+                        if it >= cgx && it <= fxcgx {
+                            ret += 1;
+                        }
+                    }
+                    des.push_str(&format!("累计成功骰数:{ret}"));
+                    ls += 1;
+                    if a1 != 0 {
+                        des.push_str(&format!("\n"));
+                    }else {
+                        break;
+                    }
+                }
+            }else if  mp.contains_key("c") { // 双重十字加骰池
+                des += "检测到c参数,所以为`双重十字加骰池`\n";
+                let mut a = mp["c"].0.unwrap();
+                let b = mp["c"].1.unwrap();
+                let mut m = 10;
+                if mp.contains_key("m") {
+                    m = mp["m"].1.unwrap();
+                }
+                let mut ls = 1;
+                let mut ret = 0;
+                loop {
+                    let mut tou_vec:Vec<i64> = vec![];
+                    for _i in 0..a {
+                        tou_vec.push((get_random().unwrap() % m as usize + 1) as i64);
+                    }
+                    des.push_str(&format!("第{ls}轮掷骰:{tou_vec:?}\n"));
+                    tou_vec.sort();
+                    des.push_str(&format!("从小到大排序后为:{:?}\n",tou_vec));
+                    a = 0;
+                    for it in &tou_vec {
+                        if it >= &b {
+                            a += 1;
+                        }
+                    }
+                    des.push_str(&format!("下一轮掷骰数目:{a}\n"));
+                    if a != 0 {
+                        ret += m;
+                    }else {
+                        ret += tou_vec.get(tou_vec.len() - 1).ok_or("err10")?;
+                    }
+                    des.push_str(&format!("累计成功骰数:{ret}\n"));
+                    if a == 0 {
+                        break;
+                    }else {
+                        des.push_str(&format!("\n"));
+                    }
+                    ls += 1;
+                }
+            }
+            return Ok(des);
+        }
         let text = self_t.get_param(params, 0)?;
-        let mut result = diro::parse(&text)?;
-        result.roll();
-        let ret = format!("{}",result.calc()?);
+        let ret = tou(&text)?;
         return Ok(Some(ret));
     });
     add_fun(vec!["运行WASM"],|self_t,params|{
         use wasmtime::*;
+        use wasmtime_wasi::sync::WasiCtxBuilder;
         let text = self_t.get_param(params, 0)?;
         let text_type = self_t.get_type(&text)?;
         let mut call_fun_name = self_t.get_param(params, 1)?;
@@ -1574,7 +1881,12 @@ pub fn init_ex_fun_map() {
             alloc_fun_name = "wasm_alloc".to_string();
         }
         let engine = Engine::new(Config::new().debug_info(true))?;
-        let mut store = Store::new(&engine, (self_t,alloc_fun_name));
+        let wasi = WasiCtxBuilder::new()
+            .inherit_stdio()
+            .inherit_args()?
+            .build();
+        
+        let mut store = Store::new(&engine, (wasi,self_t,alloc_fun_name));
         let module;
         if text_type == "字节集" {
             let wasm_bytes = RedLang::parse_bin(&text)?;
@@ -1585,8 +1897,9 @@ pub fn init_ex_fun_map() {
             return Err(RedLang::make_err("`运行WASM`只支持传入字节集或文本"));
         }
         let mut linker = Linker::new(&engine);
-        linker.func_wrap("env", &host_fun_name,|caller: Caller<'_, (&mut RedLang,String)>, cmd_ptr: u32, cmd_len: u32,args_ptr: u32, args_len: u32,out_len_ptr:u32| -> i32 {
-            fn run_sth(mut caller: Caller<'_, (&mut RedLang,String)>, cmd_ptr: u32, cmd_len: u32,args_ptr: u32, args_len: u32,out_len_ptr:u32) -> Result<i32, Box<dyn std::error::Error>> {
+        wasmtime_wasi::add_to_linker(&mut linker, |s:&mut (wasmtime_wasi::WasiCtx,&mut RedLang,String)| &mut s.0)?;
+        linker.func_wrap("env", &host_fun_name,|caller: Caller<'_, (wasmtime_wasi::WasiCtx,&mut RedLang,String)>, cmd_ptr: u32, cmd_len: u32,args_ptr: u32, args_len: u32,out_len_ptr:u32| -> i32 {
+            fn run_sth(mut caller: Caller<'_, (wasmtime_wasi::WasiCtx,&mut RedLang,String)>, cmd_ptr: u32, cmd_len: u32,args_ptr: u32, args_len: u32,out_len_ptr:u32) -> Result<i32, Box<dyn std::error::Error>> {
                 let mem = caller.get_export("memory").ok_or("获得memory失败")?.into_memory().ok_or("获得memory失败")?;
             
                 // 获取cmd_name
@@ -1607,7 +1920,7 @@ pub fn init_ex_fun_map() {
                 //处理数据，得到返回值 
                 let ret_str;
                 {
-                    let (self_t,_) = caller.data_mut();
+                    let (_,self_t,_) = caller.data_mut();
                     
                     let args_str = format!("{}A{}",crate::REDLANG_UUID.to_string(),args_str);
                     let args_arr = RedLang::parse_arr(&args_str)?;
@@ -1626,8 +1939,10 @@ pub fn init_ex_fun_map() {
                 let ret_ptr;
                 {
                     // 申请空间
-                    let (_,alloc_fun_name) = caller.data();
-                    let wasm_alloc = caller.get_export(&alloc_fun_name.clone()).unwrap().into_func().ok_or("申请空间（wasm_alloc）失败")?;
+                    let (_,_,alloc_fun_name) = caller.data();
+                    let err = format!("获取函数`{alloc_fun_name}`失败");
+                    let wasm_alloc_fun = caller.get_export(&alloc_fun_name.clone()).ok_or(err)?;
+                    let wasm_alloc = wasm_alloc_fun.into_func().ok_or("申请空间（wasm_alloc）失败")?;
                     let mut ret_ptr_t = [Val::I32(0)];
                     wasm_alloc.call(&mut caller, &[Val::I32(ret_str.as_bytes().len() as i32)], &mut ret_ptr_t)?;
                     ret_ptr = ret_ptr_t[0].i32().ok_or("申请空间失败")? as * mut u8;
@@ -1656,7 +1971,7 @@ pub fn init_ex_fun_map() {
                 }
             }
         })?;
-
+        
         let instance = linker.instantiate(&mut store, &module)?;
         let add_fun = instance.get_func(&mut store, &call_fun_name).ok_or("从wsam中获取启动函数失败")?;
         let mut results:Vec<Val> = vec![Val::I32(0)];
@@ -1746,6 +2061,127 @@ pub fn init_ex_fun_map() {
             out_str_num.push_str(&num[num_left_count + 1..num_left_count + num_format_right_count + 1]);
         }
         return Ok(Some(out_str_num));
+    });
+    add_fun(vec!["排序"],|self_t,params|{
+        let arr_str = self_t.get_param(params, 0)?;
+        let mut arr = RedLang::parse_arr(&arr_str)?;
+
+        if params.len() > 1 {
+            let func = params.get(1).ok_or("函数获取失败")?.to_string();
+            for i in 0..arr.len() - 1 {
+                for j in i + 1 ..arr.len()
+                {
+                    let ret_str = self_t.call_fun(&[func.clone(),arr[i].to_owned(),arr[j].to_owned()],true)?;
+                    if ret_str != "真" {
+                        (arr[i],arr[j]) = (arr[j],arr[i]);
+                    }
+                }
+            }
+        } else {
+            for i in 0..arr.len() - 1 {
+                for j in i + 1 ..arr.len()
+                {
+                    let f1 = arr[i].parse::<f64>()?;
+                    let f2 = arr[j].parse::<f64>()?;
+                    if f1 > f2 {
+                        (arr[i],arr[j]) = (arr[j],arr[i]);
+                    }
+                }
+            }
+        }
+        let ret = self_t.build_arr(arr);
+        return Ok(Some(ret));
+    });
+    add_fun(vec!["翻转"],|self_t,params|{
+        let to_rev = self_t.get_param(params, 0)?;
+        let tp = self_t.get_type(&to_rev)?;
+        let ret;
+        if tp == "数组" {
+            let mut arr = RedLang::parse_arr(&to_rev)?;
+            arr.reverse();
+            ret = self_t.build_arr(arr);
+        } else if tp == "文本" {
+            let mut s = to_rev.chars().collect::<Vec<char>>();
+            s.reverse();
+            ret = String::from_iter(s);
+        } else if tp == "字节集" {
+            let mut bin = RedLang::parse_bin(&to_rev)?;
+            bin.reverse();
+            ret = self_t.build_bin(bin);
+        } else {
+            return Err(RedLang::make_err(&format!("不支持的翻转类型:{tp}")));
+        }
+        return Ok(Some(ret));
+    });
+    add_fun(vec!["上传文件"],|self_t,params|{
+        fn access(self_t:&mut RedLang,filename:&str,url:&str,file_data:&mut Vec<u8>) -> Result<String, Box<dyn std::error::Error>> {
+
+            let proxy = self_t.get_coremap("代理")?;
+            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            if timeout_str == "" {
+                timeout_str = "60000";
+            }
+            let mut http_header = BTreeMap::new();
+            let http_header_str = self_t.get_coremap("访问头")?;
+            if http_header_str != "" {
+                http_header = RedLang::parse_obj(&http_header_str)?;
+                if !http_header.contains_key("User-Agent"){
+                    http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
+                }
+            }else {
+                http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
+            }
+            let bound = uuid::Uuid::new_v4().to_string();
+
+            {
+                let ct = "multipart/form-data; boundary=".to_owned() + &bound;
+                http_header.insert("Content-Type".to_string(),ct); 
+            }
+
+            let mut data:Vec<u8> = vec![];
+            data.append(&mut "--".as_bytes().to_owned());
+            data.append(&mut bound.as_bytes().to_owned());
+            let fname = urlencoding::encode(filename).to_string();
+            data.append(&mut format!("\r\nContent-Disposition: form-data; name=\"files[]\";filename=\"{fname}\"\r\n\r\n").as_bytes().to_owned());
+            data.append(file_data);
+            data.append(&mut "\r\n--".as_bytes().to_owned());
+            data.append(&mut bound.as_bytes().to_owned());
+            data.append(&mut "--\r\n".as_bytes().to_owned());
+            
+            let timeout = timeout_str.parse::<u64>()?;
+            let content = RT_PTR.block_on(async { 
+                let ret = tokio::select! {
+                    val_rst = http_post(url,data,&http_header,proxy,true) => {
+                        if let Ok(val) = val_rst {
+                            val
+                        } else {
+                            cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
+                            vec![]
+                        }
+                    },
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
+                        cq_add_log_w(&format!("POST访问:`{}`超时",url)).unwrap();
+                        vec![]
+                    }
+                };
+                return ret;
+            });
+            let err = "json解析失败";
+            let js:serde_json::Value = serde_json::from_str(&String::from_utf8(content)?)?;
+            let url = js.get("files").ok_or(err)?.get(0).ok_or(err)?.get("url").ok_or(err)?.as_str().ok_or(err)?;
+            Ok(url.to_owned())
+        }
+        let bin_text = self_t.get_param(params, 0)?;
+        let filename = self_t.get_param(params, 1)?;
+        let mut bin = RedLang::parse_bin(&bin_text)?;
+        let url = "https://up1.fileditch.com/upload.php";
+        match access(self_t,&filename,&url,&mut bin) {
+            Ok(ret) => Ok(Some(ret)),
+            Err(err) => {
+                cq_add_log_w(&format!("{:?}",err)).unwrap();
+                Ok(Some("".to_string()))
+            },
+        }
     });
 }
 
@@ -1843,7 +2279,7 @@ fn do_json_arr(self_uid: &str, root: &serde_json::Value) -> Result<String, Box<d
         }
         ret_str.push(v_ret);
     }
-    Ok(RedLang::build_arr_with_uid(self_uid, ret_str))
+    Ok(RedLang::build_arr_with_uid(self_uid, ret_str.iter().map(AsRef::as_ref).collect()))
 }
 
 fn get_mid<'a>(s:&'a str,sub_begin:&str,sub_end:&str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {
