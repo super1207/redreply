@@ -50,7 +50,7 @@ jobs:
       with:
         name: redlang_linux_aarch64
         path: 
-            Release/Release/redlang_linux_aarch64
+            Release/redlang_linux_aarch64
 
     - name: upload file3
       uses: actions/upload-artifact@v3
