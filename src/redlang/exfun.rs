@@ -1289,7 +1289,7 @@ pub fn init_ex_fun_map() {
         return Ok(Some("".to_string()));
     });
     
-    #[cfg(target_os = "redos")]
+    #[cfg(target_os = "windows")]
     add_fun(vec!["网页截图"],|self_t,params|{
         fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
             let path = self_t.get_param(params, 0)?;
