@@ -22,20 +22,39 @@ jobs:
         profile: minimal
         toolchain: stable
         override: true
-        
+
     - name: install_cross
       run: |
         cargo install cross --git https://github.com/cross-rs/cross
     - name: build
       run: |
         cross build --target x86_64-pc-windows-gnu --release
+        cross build --target aarch64-unknown-linux-musl --release
+        cross build --target x86_64-unknown-linux-musl --release
     - name: before_upload
       run: |
         mkdir Release
-        cp target/x86_64-pc-windows-gnu/release/redlang.exe Release/redlang.exe
-    - name: upload file
-      uses: actions/upload-artifact@v2
+        cp target/x86_64-pc-windows-gnu/release/redlang.exe Release/redlang_windows_x86_64.exe
+        cp target/aarch64-unknown-linux-musl/release/redlang Release/redlang_linux_aarch64
+        cp target/x86_64-unknown-linux-musl/release/redlang Release/redlang_linux_x86_64
+
+    - name: upload file1
+      uses: actions/upload-artifact@v3
       with:
-        name: upload files
+        name: redlang_windows_x86_64.exe
         path: 
-            Release
+            Release/redlang_windows_x86_64.exe
+
+    - name: upload file2
+      uses: actions/upload-artifact@v3
+      with:
+        name: redlang_linux_aarch64
+        path: 
+            Release/Release/redlang_linux_aarch64
+
+    - name: upload file3
+      uses: actions/upload-artifact@v3
+      with:
+        name: redlang_linux_x86_64
+        path: 
+          Release/redlang_linux_x86_64

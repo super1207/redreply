@@ -927,7 +927,7 @@ pub fn init_ex_fun_map() {
     }
 
     #[cfg(not(target_os = "windows"))]
-    fn get_font(font_text:&str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    fn get_font(_font_text:&str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         Ok(vec![])
     }
     
