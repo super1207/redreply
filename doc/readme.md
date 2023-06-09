@@ -1151,7 +1151,7 @@ QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信
 返回红色问答的应用目录，应用目录就是包的script.json所在目录，末尾有分隔符。
 
 
-### 网页截图(仅windows可用)
+### 网页截图(仅redos可用)
 
 
 【网页截图@<font color="red">网址</font>@<font color="red">CSS选择器</font>】

@@ -46,10 +46,13 @@ wasmtime = "9.0.2"
 
 
 [target.'cfg(windows)'.dependencies]
-headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome",default-features = false}
 winreg = "0.50.0"
 font-kit = "0.11.0"
 screenshots = "0.5.3"
+
+
+[target.'cfg(redos)'.dependencies]
+headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome",default-features = false}
 
 
 [profile.release]
