@@ -12,12 +12,17 @@ on:
 jobs:
   test:
     name: build project
-    runs-on: windows-latest 
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout
       uses: actions/checkout@master
-    - name: Add msbuild to PATH
-      uses: microsoft/setup-msbuild@v1.0.3
+    - name: rust_install
+      uses: actions-rs/toolchain@v1
+      with:
+        profile: minimal
+        toolchain: stable
+        override: true
+        
     - name: install_cross
       run: |
         cargo install cross --git https://github.com/cross-rs/cross
