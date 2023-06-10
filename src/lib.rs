@@ -258,7 +258,8 @@ pub fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error>> {
 fn get_all_pkg_code() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let plus_dir_str = cq_get_app_directory1()?;
     let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
-    let pkg_names = get_all_pkg_name()?;
+    let pkg_names 
+     = get_all_pkg_name()?;
     let mut arr_val:Vec<serde_json::Value> = vec![];
     for it in &pkg_names {
         let script_path = pkg_dir.join(&it).join("script.json");

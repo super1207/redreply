@@ -2,6 +2,7 @@ pub(crate) mod do_group_msg;
 mod do_private_msg;
 mod do_guild_msg;
 mod do_other_evt;
+mod do_group_inc;
 
 use std::{rc::Rc, collections::HashMap, sync::Arc, cell::RefCell};
 
@@ -27,6 +28,12 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
             do_private_msg::do_private_msg(&root)?;
         }else if message_type == "guild"{
             do_guild_msg::do_guild_msg(&root)?;
+        }
+    }
+
+    if let Some(notice_type) = root.get("notice_type") {
+        if notice_type == "group_increase" {
+            do_group_inc::do_group_inc(&root)?;
         }
     }
     do_other_evt::do_other_evt(&root)?;
