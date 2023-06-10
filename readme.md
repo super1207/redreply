@@ -37,13 +37,13 @@
 
 ## 自行编译
 
-注意，通常情况下，如果您不打算参与此项目的开发，且仅使用windows操作系统，就无需自行编译，请直接到release中去下载。<br />
+注意，通常情况下，如果您不打算参与此项目的开发，就无需自行编译，请直接到release(或者github action)中去下载。<br />
 
 1：安装好[rust编译环境](https://www.rust-lang.org/)。<br />
 
 2：<br />
     在`windows`下，仅需要在项目目录下运行`cargo build`即可。<br />
-    在`linux`下，编译过程参考Dockerfile，更建议在Docker中使用。(目前已经在`docker on wsl2`中测试通过)
+    在`linux`下，编译过程参考github action
 
 
 ## 开源说明
