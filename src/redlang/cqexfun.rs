@@ -1,4 +1,4 @@
-use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr, sync::Arc};
+use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr, sync::Arc, thread};
 
 use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC};
 use serde_json;
@@ -668,5 +668,14 @@ pub fn init_cq_ex_fun_map() {
             return Err(RedLang::make_err("获取BOT权限失败:返回的json中无role字段"));
         }
         return Ok(Some(role_ret.to_string()));
+    });
+    add_fun(vec!["伪造OB事件"],|self_t,params|{
+        let ob_event = self_t.get_param(params, 0)?;
+        thread::spawn(move ||{
+            if let Err(e) = crate::cqevent::do_1207_event(&ob_event) {
+                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+            }
+        });
+        return Ok(Some("".to_owned()));
     });
 }
