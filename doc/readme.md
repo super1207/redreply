@@ -1728,6 +1728,34 @@ onebot事件json对应的RedLang对象。
 实际使用的时候，建议把读词库文件和函数定义放到初始化事件中，更合理些。
 
 
+### 同意
+
+
+【同意@<font color="red">好友备注</font>】
+
+事件处理机制请参考本帮助中的`事件关键词`部分。
+
+此命令用于处理如下事件：加群请求(`request:group:add`)，邀请机器人入群请求(`request:group:invite`)，好友申请请求(`request:friend`)。
+
+其中，<font color="red">好友备注</font>可空，且只在好友申请请求事件中有效。
+
+备注：可通过`【取元素【事件内容】@comment】`获得验证信息。
+
+
+### 拒绝
+
+
+【拒绝@<font color="red">拒绝理由</font>】
+
+事件处理机制请参考本帮助中的`事件关键词`部分。
+
+此命令用于处理如下事件：加群请求(`request:group:add`)，邀请机器人入群请求(`request:group:invite`)，好友申请请求(`request:friend`)。
+
+其中，<font color="red">拒绝理由</font>可空，且只在加群请求事件中有效。
+
+备注：可通过`【取元素【事件内容】@comment】`获得验证信息。
+
+
 ## 事件关键词
 
 

@@ -678,4 +678,69 @@ pub fn init_cq_ex_fun_map() {
         });
         return Ok(Some("".to_owned()));
     });
+    add_fun(vec!["同意"],|self_t,params|{
+        let raw_data = self_t.get_exmap("原始事件");
+        let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+        let request_type = read_json_str(&raw_json, "request_type");
+        let sub_type = read_json_str(&raw_json, "sub_type");
+        let flag = read_json_str(&raw_json, "flag");
+        let remark = self_t.get_param(params, 0)?;
+        let self_id = self_t.get_exmap("机器人ID");
+        if request_type == "group" && (sub_type == "add"  || sub_type == "invite") {
+            let send_json = serde_json::json!({
+                "action":"set_group_add_request",
+                "params":{
+                    "sub_type": sub_type,
+                    "flag": flag,
+                    "approve":true,
+                    "reason":"".to_owned()
+                }
+            });
+            
+            cq_call_api(&self_id,&send_json.to_string())?;
+        }else if request_type == "friend"{
+            let send_json = serde_json::json!({
+                "action":"set_friend_add_request",
+                "params":{
+                    "flag": flag,
+                    "approve":true,
+                    "remark":remark
+                }
+            });
+            cq_call_api(&self_id,&send_json.to_string())?;
+        }
+        return Ok(Some("".to_owned()));
+    });
+    add_fun(vec!["拒绝"],|self_t,params|{
+        let raw_data = self_t.get_exmap("原始事件");
+        let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+        let request_type = read_json_str(&raw_json, "request_type");
+        let sub_type = read_json_str(&raw_json, "sub_type");
+        let flag = read_json_str(&raw_json, "flag");
+        let reason = self_t.get_param(params, 0)?;
+        let self_id = self_t.get_exmap("机器人ID");
+        if request_type == "group" && (sub_type == "add"  || sub_type == "invite") {
+            let send_json = serde_json::json!({
+                "action":"set_group_add_request",
+                "params":{
+                    "sub_type": sub_type,
+                    "flag": flag,
+                    "approve":false,
+                    "reason":reason
+                }
+            });
+            cq_call_api(&self_id,&send_json.to_string())?;
+        }else if request_type == "friend"{
+            let send_json = serde_json::json!({
+                "action":"set_friend_add_request",
+                "params":{
+                    "flag": flag,
+                    "approve":false,
+                    "remark":"".to_owned()
+                }
+            });
+            cq_call_api(&self_id,&send_json.to_string())?;
+        }
+        return Ok(Some("".to_owned()));
+    });
 }
