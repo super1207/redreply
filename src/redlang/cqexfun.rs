@@ -1,6 +1,6 @@
-use std::{fs, collections::{BTreeMap, VecDeque}, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr, sync::Arc, thread};
+use std::{fs, collections::{BTreeMap}, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
 
-use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_OUT_MSG, ScriptOutMsg, cqevent::get_msg_type};
+use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC,G_SCRIPT_RELATE_MSG, ScriptRelatMsg};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -114,27 +114,35 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
     }
     let err = "输出流调用失败，获取message_id失败";
     let msg_id = read_json_str(ret_json.get("data").ok_or(err)?,"message_id");
-    // 记录脚本的输出
     {
-        let v = ScriptOutMsg {
-            self_id: (*self_id).clone(),
-            msg_id:msg_id.to_owned(),
-            sub_id:sub_id.clone()
-        };
-        let mut lk = G_SCRIPT_OUT_MSG.write()?;
-        let key = format!("{}|{}",rl.pkg_name,rl.script_name);
-        let val_opt = lk.get_mut(&key);
-        if val_opt.is_none() {
-            let mut vc = VecDeque::new();
-            vc.push_front(v);
-            lk.insert(key, vc);
-        }else 
-        {
-            let vc = val_opt.unwrap();
-            vc.push_front(v);
-            if vc.len() > 20 {
-                vc.pop_back();
+        let mut lk = G_SCRIPT_RELATE_MSG.write()?;
+        let src_msg_id = rl.get_exmap("消息ID");
+        let tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
+        if *src_msg_id != "" {
+            let key = format!("{}|{}|{}|{}",rl.pkg_name,rl.script_name,self_id,src_msg_id);
+            let val_opt = lk.get_mut(&key);
+            if val_opt.is_none() {
+                
+                let vc = ScriptRelatMsg {
+                    self_id: (*self_id).clone(),
+                    msg_id_vec: vec![msg_id.clone()],
+                    create_time:tm
+                };
+                lk.insert(key, vc);
+            }else   
+            {
+                let vc = val_opt.unwrap();
+                vc.msg_id_vec.push(msg_id.clone());
             }
+        }
+        let mut del_msg_vec = vec![];
+        for it in &*lk {
+            if tm - it.1.create_time > 300 {
+                del_msg_vec.push(it.0.to_owned());
+            }
+        }
+        for it in del_msg_vec {
+            lk.remove(&it);
         }
     }
     if msg_type == "group" {
@@ -778,24 +786,20 @@ pub fn init_cq_ex_fun_map() {
         }
         return Ok(Some("".to_owned()));
     });
-    add_fun(vec!["脚本输出"],|self_t,_params|{
-        let key = format!("{}|{}",self_t.pkg_name,self_t.script_name);
-        let lk = G_SCRIPT_OUT_MSG.read()?;
+    add_fun(vec!["脚本输出"],|self_t,params|{
+        let src_msg_id = self_t.get_param(params, 0)?;
+        let self_id = self_t.get_exmap("机器人ID");
+        let key = format!("{}|{}|{}|{}",self_t.pkg_name,self_t.script_name,self_id,src_msg_id);
+        let lk = G_SCRIPT_RELATE_MSG.read()?;
+        println!("{:?}",*lk);
         let val_opt = lk.get(&key);
         if val_opt.is_none() {
             return Ok(Some(self_t.build_arr(vec![])));
-        }else {
-            let mut out_vec = vec![];
-            let msg_type = get_msg_type(self_t);
-            let sub_id = get_sub_id(self_t, msg_type);
-            for it in val_opt.unwrap() {
-                
-                if it.self_id == *self_t.get_exmap("机器人ID") && it.sub_id == sub_id {
-                    out_vec.push(&it.msg_id);
-                }
-            }
-            let dat_ref = out_vec.iter().map(|x|x.as_str()).collect::<Vec<&str>>();
-            return Ok(Some(self_t.build_arr(dat_ref)));
+        }else{
+            let val = val_opt.unwrap();
+            let msg_id_vec = &val.msg_id_vec;
+            let ret_vec = msg_id_vec.iter().map(AsRef::as_ref).collect();
+            return Ok(Some(self_t.build_arr(ret_vec)));
         }
     });
 }
