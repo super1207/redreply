@@ -48,6 +48,13 @@ pub struct InputStream {
     pub tx:Option<Arc<Mutex<std::sync::mpsc::Sender<String>>>>
 }
 
+
+pub struct ScriptOutMsg {
+    pub self_id:String,
+    pub msg_id:String,
+    pub sub_id:String
+}
+
 lazy_static! {
     // 用于记录加载的脚本
     pub static ref G_SCRIPT:RwLock<serde_json::Value> = RwLock::new(serde_json::json!([]));
@@ -79,6 +86,8 @@ lazy_static! {
     pub static ref G_WEB_PASSWORD:RwLock<Option<String>> = RwLock::new(None);
     // 全局锁
     pub static ref G_LOCK:Mutex<HashMap<String,HashMap<String, i32>>> = Mutex::new(HashMap::new());
+    // 记录脚本的输出:包名|脚本名-self_id|msg_id
+    pub static ref G_SCRIPT_OUT_MSG:RwLock<HashMap<String,VecDeque<ScriptOutMsg>>> = RwLock::new(HashMap::new());
 }
 
 

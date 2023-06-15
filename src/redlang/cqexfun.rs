@@ -1,6 +1,6 @@
-use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr, sync::Arc, thread};
+use std::{fs, collections::{BTreeMap, VecDeque}, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr, sync::Arc, thread};
 
-use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC};
+use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_OUT_MSG, ScriptOutMsg, cqevent::get_msg_type};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -52,14 +52,26 @@ fn cq_encode_t(cq_code:&str) -> String {
     return ret_str;
 }
 
+fn get_sub_id(rl:& RedLang,msg_type:&str) -> String {
+    let sub_id;
+    if msg_type == "group" {
+        sub_id = rl.get_exmap("群ID").to_string();
+    } else if msg_type == "channel" {
+        sub_id = rl.get_exmap("子频道ID").to_string();
+    } else {
+        sub_id = "".to_owned();
+    }
+    sub_id
+}
+
 pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error::Error>> {
     if msg == "" {
         return Ok("".to_string());
     }
-    let group_id_str = rl.get_exmap("群ID").to_string();
-    let guild_id_str = rl.get_exmap("频道ID").to_string();
-    let channel_id_str = rl.get_exmap("子频道ID").to_string();
     let msg_type:&'static str = crate::cqevent::get_msg_type(&rl);
+    let sub_id = get_sub_id(rl,msg_type);
+    let guild_id_str = rl.get_exmap("频道ID").to_string();
+    
     // 没有设置输出流类型，所以不输出
     if msg_type == "" {
         return Ok("".to_string());
@@ -69,7 +81,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
         send_json = serde_json::json!({
             "action":"send_group_msg",
             "params":{
-                "group_id":rl.get_exmap("群ID").parse::<i64>()?,
+                "group_id":sub_id.parse::<i64>()?,
                 "message":msg
             }
         });
@@ -78,7 +90,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
             "action":"send_guild_channel_msg",
             "params":{
                 "guild_id": guild_id_str,
-                "channel_id": channel_id_str,
+                "channel_id": sub_id,
                 "message":msg
             }
         });
@@ -102,9 +114,32 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
     }
     let err = "输出流调用失败，获取message_id失败";
     let msg_id = read_json_str(ret_json.get("data").ok_or(err)?,"message_id");
+    // 记录脚本的输出
+    {
+        let v = ScriptOutMsg {
+            self_id: (*self_id).clone(),
+            msg_id:msg_id.to_owned(),
+            sub_id:sub_id.clone()
+        };
+        let mut lk = G_SCRIPT_OUT_MSG.write()?;
+        let key = format!("{}|{}",rl.pkg_name,rl.script_name);
+        let val_opt = lk.get_mut(&key);
+        if val_opt.is_none() {
+            let mut vc = VecDeque::new();
+            vc.push_front(v);
+            lk.insert(key, vc);
+        }else 
+        {
+            let vc = val_opt.unwrap();
+            vc.push_front(v);
+            if vc.len() > 20 {
+                vc.pop_back();
+            }
+        }
+    }
     if msg_type == "group" {
         let self_id = rl.get_exmap("机器人ID");
-        crate::cqevent::do_group_msg::msg_id_map_insert(self_id.to_string(),self_id.to_string(),group_id_str,msg_id.clone())?;
+        crate::cqevent::do_group_msg::msg_id_map_insert(self_id.to_string(),self_id.to_string(),sub_id,msg_id.clone())?;
     }
     return Ok(msg_id);
 }
@@ -742,5 +777,25 @@ pub fn init_cq_ex_fun_map() {
             cq_call_api(&self_id,&send_json.to_string())?;
         }
         return Ok(Some("".to_owned()));
+    });
+    add_fun(vec!["脚本输出"],|self_t,_params|{
+        let key = format!("{}|{}",self_t.pkg_name,self_t.script_name);
+        let lk = G_SCRIPT_OUT_MSG.read()?;
+        let val_opt = lk.get(&key);
+        if val_opt.is_none() {
+            return Ok(Some(self_t.build_arr(vec![])));
+        }else {
+            let mut out_vec = vec![];
+            let msg_type = get_msg_type(self_t);
+            let sub_id = get_sub_id(self_t, msg_type);
+            for it in val_opt.unwrap() {
+                
+                if it.self_id == *self_t.get_exmap("机器人ID") && it.sub_id == sub_id {
+                    out_vec.push(&it.msg_id);
+                }
+            }
+            let dat_ref = out_vec.iter().map(|x|x.as_str()).collect::<Vec<&str>>();
+            return Ok(Some(self_t.build_arr(dat_ref)));
+        }
     });
 }
