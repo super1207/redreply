@@ -1783,7 +1783,7 @@ impl RedLang {
 impl Drop for RedLang {
     fn drop(&mut self) {
         let mut lk = G_LOCK.lock().unwrap();
-        if lk.contains_key(&self.pkg_name) {
+        if lk.contains_key(&self.pkg_name) { 
             for lock_name in &self.lock_vec {
                 lk.get_mut(&self.pkg_name).unwrap().remove(lock_name);
             }
