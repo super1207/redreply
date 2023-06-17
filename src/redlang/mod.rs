@@ -358,7 +358,7 @@ pub fn init_core_fun_map() {
         let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
         for it in k_vec {
             let k = it.to_string();
-            let k_t = crate::mytool::str_to_jt(&k);
+            let k_t = crate::mytool::cmd_to_jt(&k);
             if k == k_t {
                 if w.contains_key(&k) {
                     let err_opt:Option<String> = None;
@@ -1649,7 +1649,7 @@ impl RedLang {
         // 执行核心命令与拓展命令
         let exret;
         {
-            let cmd_t = crate::mytool::str_to_jt(&cmd.to_uppercase());
+            let cmd_t = crate::mytool::cmd_to_jt(&cmd.to_uppercase());
             let r = crate::G_CMD_FUN_MAP.read()?;
             exret = match r.get(&cmd_t) {
                 Some(fun) => fun(self,params)?,

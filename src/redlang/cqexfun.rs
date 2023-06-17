@@ -157,7 +157,7 @@ pub fn init_cq_ex_fun_map() {
         let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
         for it in k_vec {
             let k = it.to_string();
-            let k_t = crate::mytool::str_to_jt(&k);
+            let k_t = crate::mytool::cmd_to_jt(&k);
             if k == k_t {
                 if w.contains_key(&k) {
                     let err_opt:Option<String> = None;
