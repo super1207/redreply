@@ -384,7 +384,7 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
     fs::create_dir_all(cq_get_app_directory1().unwrap() + "webui")?;
     for it in Asset::iter() {
         let file = Asset::get(&it.to_string()).ok_or(err)?;
-        fs::write(cq_get_app_directory1().unwrap() + "webui" +  &sep.to_string() +  it.to_string().get(4..).unwrap_or_default(), file.data)?;
+        fs::write(cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
     } 
     for it in AssetDoc::iter() {
         let file = AssetDoc::get(&it.to_string()).ok_or(err)?;
@@ -394,6 +394,9 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 
-pub fn get_version() -> String{
-    return "0.0.57".to_string();
+pub fn get_version() -> String {
+    let file = Asset::get("res/version.txt").unwrap();
+    let buf = file.data;
+    let version_str = String::from_utf8(buf.to_vec()).unwrap();
+    return version_str;
 }
