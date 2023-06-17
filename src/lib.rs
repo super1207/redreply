@@ -27,6 +27,7 @@ mod cronevent;
 mod botconn;
 mod httpserver;
 mod test;
+mod httpevent;
 
 #[macro_use]
 extern crate lazy_static; 
@@ -175,6 +176,7 @@ pub fn initialize() -> i32 {
     panic::set_hook(Box::new(|e| {
         cq_add_log_w(e.to_string().as_str()).unwrap();
     }));
+    redlang::webexfun::init_web_ex_fun_map();
     redlang::cqexfun::init_cq_ex_fun_map();
     redlang::exfun::init_ex_fun_map();
     redlang::init_core_fun_map();

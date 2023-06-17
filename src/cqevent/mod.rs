@@ -64,9 +64,10 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
     return msg_type;
 }
 
-pub fn do_script(rl:&mut RedLang,code:&str,deal_err:bool) -> Result<(), Box<dyn std::error::Error>>{
+pub fn do_script(rl:&mut RedLang,code:&str,deal_err:bool) -> Result<String, Box<dyn std::error::Error>>{
+    // 增加脚本运行计数
     if add_running_script_num(&rl.pkg_name,&rl.script_name) == false {
-        return Ok(());
+        return Ok("".to_owned());
     }
     let pkg_name = rl.pkg_name.clone();
     let script_name = rl.script_name.clone();
@@ -74,7 +75,10 @@ pub fn do_script(rl:&mut RedLang,code:&str,deal_err:bool) -> Result<(), Box<dyn 
         dec_running_script_num(&pkg_name,&script_name);
     });
 
+    // 执行脚本
     let out_str_t_rst = rl.parse(code);
+
+    // 处理脚本执行错误
     if let Err(err) = out_str_t_rst {
         let err_str = format!("在包`{}`脚本`{}`中发送错误:{}",rl.pkg_name, rl.script_name,err);
         // 如果需要处理错误
@@ -131,11 +135,13 @@ pub fn do_script(rl:&mut RedLang,code:&str,deal_err:bool) -> Result<(), Box<dyn 
     if let Some(pos) = out_str_t.rfind(CLEAR_UUID.as_str()) {
         after_clear = out_str_t.get((pos + 36)..).unwrap();
     }
+    // 处理分页指令
     let out_str_vec = do_paging(after_clear)?;
+    // 发送到协议端
     for out_str in out_str_vec {
         crate::redlang::cqexfun::send_one_msg(rl, out_str)?;
     }
-    Ok(())
+    Ok(after_clear.to_owned())
 }
 
 fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
@@ -163,7 +169,7 @@ fn set_normal_message_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<()
 }
 
 
-fn is_key_match(rl:&mut RedLang,ppfs:&str,keyword:&str,msg:&str) -> Result<bool, Box<dyn std::error::Error>>{
+pub fn is_key_match(rl:&mut RedLang,ppfs:&str,keyword:&str,msg:&str) -> Result<bool, Box<dyn std::error::Error>>{
     let mut is_match = false;
     if ppfs == "完全匹配"{
         if keyword == msg {

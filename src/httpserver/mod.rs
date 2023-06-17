@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 
 use crate::cqapi::{cq_get_app_directory1, get_history_log};
+use crate::httpevent::do_http_event;
 use crate::read_config;
 use crate::redlang::RedLang;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
@@ -143,10 +144,20 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
         Ok(res)
     }
     else if url_path.starts_with("/user") {
-        let true_url = url_path.get(5..).unwrap();
-        println!("{true_url}");
-        let res:hyper::Response<hyper::Body> = hyper::Response::new(hyper::Body::from("user api"));
-        Ok(res)
+        let (tx, rx) =  std::sync::mpsc::channel();
+        tokio::task::spawn_blocking(move || {
+            let ret = do_http_event(&request);
+            if ret.is_ok() {
+                tx.send(ret.unwrap()).unwrap();
+            }else {
+                let err_str = format!("Error:{:?}",ret);
+                let mut res:hyper::Response<hyper::Body> = hyper::Response::new(hyper::Body::from(err_str));
+                res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
+                tx.send(res).unwrap();
+            }
+        }).await?;
+        let ret = rx.recv()?;
+        Ok(ret)    
     }
     else{
         let res = hyper::Response::new(hyper::Body::from("api not found"));
@@ -292,7 +303,7 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
             let mut res = hyper::Response::new(hyper::Body::from(file_buf));
             res.headers_mut().insert("Content-Type", HeaderValue::from_static("image/x-icon"));
             return Ok(res);
-        } else if !url_path.contains(".") {
+        } else if !url_path.contains(".") || url_path.starts_with("/user") {
             return deal_api(request).await;
         } else {
             return deal_file(request).await;

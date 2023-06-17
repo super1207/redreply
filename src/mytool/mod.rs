@@ -19,7 +19,7 @@ lazy_static! {
     static ref CMD_TO_JT_MAP:RwLock<HashMap<String,String>> = RwLock::new(HashMap::new());
 }
 
-fn cq_text_encode(data:&str) -> String {
+pub fn cq_text_encode(data:&str) -> String {
     let mut ret_str:String = String::new();
     for ch in data.chars() {
         if ch == '&' {
@@ -250,7 +250,7 @@ fn str_to_jt(s:&str) -> String {
     out_str
 }
 
-fn cq_params_encode(data:&str) -> String {
+pub fn cq_params_encode(data:&str) -> String {
     let mut ret_str:String = String::new();
     for ch in data.chars() {
         if ch == '&' {

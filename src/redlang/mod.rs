@@ -4,6 +4,7 @@ use encoding::Encoding;
 use crate::{G_CONST_MAP, CLEAR_UUID, cqevent::do_script, cqapi::cq_add_log_w, G_LOCK};
 pub mod exfun;
 pub(crate) mod cqexfun;
+pub(crate) mod webexfun;
 
 lazy_static! {
     static ref OOP_MAP:HashMap<String,i32> = {
@@ -1744,7 +1745,7 @@ impl RedLang {
         }
         return Ok(ret_arr);
     }
-    fn parse_obj(obj_data: &str) -> Result<BTreeMap<String,String>, Box<dyn std::error::Error>> {
+    pub fn parse_obj(obj_data: &str) -> Result<BTreeMap<String,String>, Box<dyn std::error::Error>> {
         let err_str = "不能获得对象类型";
         if !obj_data.starts_with(&crate::REDLANG_UUID.to_string()) {
             return Err(RedLang::make_err(err_str));
@@ -1903,6 +1904,11 @@ impl RedLang {
     }
 
     fn parsecq(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
+
+        if input.starts_with("【@") {
+           return  Ok(input.get(4..(input.len() - 3)).unwrap().to_owned());
+        }
+
         let params = self.parse_params(input)?;
 
         // 此cmd已经不含cq码
@@ -1955,7 +1961,7 @@ impl RedLang {
         }
         return ret_str;
     }
-    fn build_obj(&self,obj:BTreeMap<String,String>) -> String {
+    pub fn build_obj(&self,obj:BTreeMap<String,String>) -> String {
         return Self::build_obj_with_uid(&self.type_uuid,obj);
     }
     fn conect_arr(status:&mut u8,chs_out:&mut String,new_str:String) -> Result<(), Box<dyn std::error::Error>>{

@@ -1,6 +1,6 @@
 use std::{fs, collections::{BTreeMap}, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
 
-use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::read_json_str, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC,G_SCRIPT_RELATE_MSG, ScriptRelatMsg};
+use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::{read_json_str, cq_params_encode, cq_text_encode}, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC,G_SCRIPT_RELATE_MSG, ScriptRelatMsg};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -18,39 +18,6 @@ pub fn get_app_dir(pkg_name:&str) -> Result<String, Box<dyn std::error::Error>> 
     return Ok(app_dir)
 }
 
-fn cq_encode(cq_code:&str) -> String {
-    let mut ret_str = String::new();
-    for ch in cq_code.chars() {
-        let s:String;
-        ret_str.push_str(match ch {
-            '&' => "&amp;",
-            '[' => "&#91;",
-            ']' => "&#93;",
-            ',' => "&#44;",
-            ch_t => {
-                s = ch_t.to_string();
-                &s
-            }
-        });
-    }
-    return ret_str;
-}
-fn cq_encode_t(cq_code:&str) -> String {
-    let mut ret_str = String::new();
-    for ch in cq_code.chars() {
-        let s:String;
-        ret_str.push_str(match ch {
-            '&' => "&amp;",
-            '[' => "&#91;",
-            ']' => "&#93;",
-            ch_t => {
-                s = ch_t.to_string();
-                &s
-            }
-        });
-    }
-    return ret_str;
-}
 
 fn get_sub_id(rl:& RedLang,msg_type:&str) -> String {
     let sub_id;
@@ -271,9 +238,9 @@ pub fn init_cq_ex_fun_map() {
             if pic.starts_with("http://") || pic.starts_with("https://"){
                 let not_use_cache = self_t.get_param(params, 1)?;
                 if  not_use_cache == "假" {
-                    ret = format!("[CQ:image,file={},cache=0]",cq_encode(&pic));
+                    ret = format!("[CQ:image,file={},cache=0]",cq_params_encode(&pic));
                 }else {
-                    ret = format!("[CQ:image,file={}]",cq_encode(&pic));
+                    ret = format!("[CQ:image,file={}]",cq_params_encode(&pic));
                 }
             }else{
                 if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
@@ -304,9 +271,9 @@ pub fn init_cq_ex_fun_map() {
             if pic.starts_with("http://") || pic.starts_with("https://"){
                 let not_use_cache = self_t.get_param(params, 1)?;
                 if  not_use_cache == "假" {
-                    ret = format!("[CQ:record,file={},cache=0]",cq_encode(&pic));
+                    ret = format!("[CQ:record,file={},cache=0]",cq_params_encode(&pic));
                 }else {
-                    ret = format!("[CQ:record,file={}]",cq_encode(&pic));
+                    ret = format!("[CQ:record,file={}]",cq_params_encode(&pic));
                 }
             }else{
                 if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
@@ -395,11 +362,11 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["CQ码转义"],|self_t,params|{
         let cq_code = self_t.get_param(params, 0)?;
-        return Ok(Some(cq_encode(&cq_code)));
+        return Ok(Some(cq_params_encode(&cq_code)));
     });
     add_fun(vec!["CQ转义"],|self_t,params|{
         let cq_code = self_t.get_param(params, 0)?;
-        return Ok(Some(cq_encode_t(&cq_code)));
+        return Ok(Some(cq_text_encode(&cq_code)));
     });
     add_fun(vec!["子关键词"],|self_t,_params|{
         let key = self_t.get_exmap("子关键词").to_string();
