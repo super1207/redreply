@@ -2141,8 +2141,11 @@ pub fn init_ex_fun_map() {
             let mut data:Vec<u8> = vec![];
             data.append(&mut "--".as_bytes().to_owned());
             data.append(&mut bound.as_bytes().to_owned());
+            data.append(&mut "\r\nContent-Disposition: form-data; name=\"reqtype\"\r\n\r\nfileupload\r\n".as_bytes().to_owned());
+            data.append(&mut "--".as_bytes().to_owned());
+            data.append(&mut bound.as_bytes().to_owned());
             let fname = urlencoding::encode(filename).to_string();
-            data.append(&mut format!("\r\nContent-Disposition: form-data; name=\"files[]\";filename=\"{fname}\"\r\n\r\n").as_bytes().to_owned());
+            data.append(&mut format!("\r\nContent-Disposition: form-data; name=\"fileToUpload\";filename=\"{fname}\"\r\n\r\n").as_bytes().to_owned());
             data.append(file_data);
             data.append(&mut "\r\n--".as_bytes().to_owned());
             data.append(&mut bound.as_bytes().to_owned());
@@ -2166,15 +2169,12 @@ pub fn init_ex_fun_map() {
                 };
                 return ret;
             });
-            let err = "json解析失败";
-            let js:serde_json::Value = serde_json::from_str(&String::from_utf8(content)?)?;
-            let url = js.get("files").ok_or(err)?.get(0).ok_or(err)?.get("url").ok_or(err)?.as_str().ok_or(err)?;
-            Ok(url.to_owned())
+            Ok(String::from_utf8(content)?)
         }
         let bin_text = self_t.get_param(params, 0)?;
         let filename = self_t.get_param(params, 1)?;
         let mut bin = RedLang::parse_bin(&bin_text)?;
-        let url = "https://up1.fileditch.com/upload.php";
+        let url = "https://catbox.moe/user/api.php";
         match access(self_t,&filename,&url,&mut bin) {
             Ok(ret) => Ok(Some(ret)),
             Err(err) => {
