@@ -102,7 +102,7 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
     }else if url_path == "/set_code" {
         let body = hyper::body::to_bytes(request.into_body()).await?;
         let js:serde_json::Value = serde_json::from_slice(&body)?;
-        let (tx, rx) =  std::sync::mpsc::channel();
+        let (tx, rx) =  tokio::sync::oneshot::channel();
         tokio::task::spawn_blocking(move || {
             let rst = crate::save_code(&js.to_string());
             if rst.is_ok() {
@@ -118,7 +118,7 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
                 tx.send(ret).unwrap();
             }
         }).await?;
-        let ret = rx.recv()?;
+        let ret = rx.await.unwrap();
         let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)
@@ -144,9 +144,9 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
         Ok(res)
     }
     else if url_path.starts_with("/user") {
-        let (tx, rx) =  std::sync::mpsc::channel();
+        let (tx, rx) =  tokio::sync::oneshot::channel();
         tokio::task::spawn_blocking(move || {
-            let ret = do_http_event(&request);
+            let ret = do_http_event(request);
             if ret.is_ok() {
                 tx.send(ret.unwrap()).unwrap();
             }else {
@@ -156,7 +156,7 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
                 tx.send(res).unwrap();
             }
         }).await?;
-        let ret = rx.recv()?;
+        let ret = rx.await?;
         Ok(ret)    
     }
     else{

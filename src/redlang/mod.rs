@@ -315,7 +315,9 @@ pub struct RedLang {
     pub type_uuid:String,
     pub pkg_name:String,
     pub script_name:String,
-    pub lock_vec:HashSet<String>
+    pub lock_vec:HashSet<String>,
+    pub req_tx:Option<tokio::sync::mpsc::Sender<bool>>,
+    pub req_rx:Option<tokio::sync::mpsc::Receiver<Vec<u8>>>
 }
 
 #[derive(Debug, Clone)]
@@ -1666,7 +1668,7 @@ impl RedLang {
         Ok(ret_str)
     }
 
-    fn get_type(&self, param_data:&str) -> Result<String, Box<dyn std::error::Error>> {
+    pub fn get_type(&self, param_data:&str) -> Result<String, Box<dyn std::error::Error>> {
         let ret_str:String;
         if !param_data.starts_with(&self.type_uuid) {
             ret_str = "文本".to_string();
@@ -1686,7 +1688,7 @@ impl RedLang {
         }
         Ok(ret_str)
     }
-    fn parse_bin(bin_data: & str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    pub fn parse_bin(bin_data: & str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let err_str = "不能获得字节集类型";
         if !bin_data.starts_with(&crate::REDLANG_UUID.to_string()) {
             return Err(RedLang::make_err(err_str));
@@ -1815,7 +1817,9 @@ impl RedLang {
             type_uuid:crate::REDLANG_UUID.to_string(),
             pkg_name:String::new(),
             script_name:String::new(),
-            lock_vec:HashSet::new()
+            lock_vec:HashSet::new(),
+            req_tx:None,
+            req_rx:None
         }
     }
 
@@ -1919,7 +1923,7 @@ impl RedLang {
         Ok(ret)
     }
 
-    fn build_bin(&self,bin:Vec<u8>) ->String {
+    pub fn build_bin(&self,bin:Vec<u8>) ->String {
         return Self::build_bin_with_uid(&self.type_uuid,bin);
     }
     fn build_bin_with_uid(uid:&str,bin:Vec<u8>) -> String {

@@ -86,7 +86,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
         let src_msg_id = rl.get_exmap("消息ID");
         let tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
         if *src_msg_id != "" {
-            let key = format!("{}|{}|{}|{}",rl.pkg_name,rl.script_name,self_id,src_msg_id);
+            let key = format!("{}|{}|{}",rl.pkg_name,self_id,src_msg_id);
             let val_opt = lk.get_mut(&key);
             if val_opt.is_none() {
                 
@@ -756,9 +756,8 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["脚本输出"],|self_t,params|{
         let src_msg_id = self_t.get_param(params, 0)?;
         let self_id = self_t.get_exmap("机器人ID");
-        let key = format!("{}|{}|{}|{}",self_t.pkg_name,self_t.script_name,self_id,src_msg_id);
+        let key = format!("{}|{}|{}",self_t.pkg_name,self_id,src_msg_id);
         let lk = G_SCRIPT_RELATE_MSG.read()?;
-        println!("{:?}",*lk);
         let val_opt = lk.get(&key);
         if val_opt.is_none() {
             return Ok(Some(self_t.build_arr(vec![])));
