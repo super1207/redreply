@@ -42,7 +42,7 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
             if is_key_match(&mut rl,&ppfs,keyword,&msg)? {
                 rl.pkg_name = pkg_name.to_owned();
                 rl.script_name = name.to_owned();
-                super::do_script(&mut rl,code,true)?;
+                super::do_script(&mut rl,code)?;
             }    
         }
     }

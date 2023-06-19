@@ -64,7 +64,7 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
     return msg_type;
 }
 
-pub fn do_script(rl:&mut RedLang,code:&str,deal_err:bool) -> Result<String, Box<dyn std::error::Error>>{
+pub fn do_script(rl:&mut RedLang,code:&str) -> Result<String, Box<dyn std::error::Error>>{
     // 增加脚本运行计数
     if add_running_script_num(&rl.pkg_name,&rl.script_name) == false {
         return Ok("".to_owned());
@@ -82,7 +82,7 @@ pub fn do_script(rl:&mut RedLang,code:&str,deal_err:bool) -> Result<String, Box<
     if let Err(err) = out_str_t_rst {
         let err_str = format!("在包`{}`脚本`{}`中发送错误:{}",rl.pkg_name, rl.script_name,err);
         // 如果需要处理错误
-        if deal_err == true {
+        if rl.can_wrong == true {
             let err_str_t = err_str.clone();
             let exmap = (*rl.exmap).borrow().clone();
             let script_name = rl.script_name.clone();
@@ -115,7 +115,8 @@ pub fn do_script(rl:&mut RedLang,code:&str,deal_err:bool) -> Result<String, Box<
                             rl2.pkg_name = pkg_name.clone();
                             rl2.script_name = script_name.clone();
                             rl2.set_coremap("错误信息", &err_str)?;
-                            if let Err(err) = crate::cqevent::do_script(&mut rl2,&code,false) {
+                            rl2.can_wrong = false;
+                            if let Err(err) = crate::cqevent::do_script(&mut rl2,&code) {
                                 cq_add_log_w(&format!("{}",err)).unwrap();
                             }
                         }      

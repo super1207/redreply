@@ -23,7 +23,7 @@ pub fn do_init_event() -> Result<i32, Box<dyn std::error::Error>> {
         if cffs == "框架初始化" {
             rl.script_name = name.to_owned();
             rl.pkg_name = pkg_name.to_owned();
-            let ret = crate::cqevent::do_script(&mut rl,&code,true);
+            let ret = crate::cqevent::do_script(&mut rl,&code);
             if let Err(err) = ret{
                 cq_add_log_w(&format!("{}",err)).unwrap();
             }

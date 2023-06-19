@@ -95,7 +95,7 @@ pub fn do_http_event(mut req:hyper::Request<hyper::Body>) -> Result<hyper::Respo
             rl.req_rx = Some(body_rx2);
             rl.pkg_name = pkg_name.to_owned();
             rl.script_name = name.to_owned();
-            let rl_ret = crate::cqevent::do_script(&mut rl,code,true)?;
+            let rl_ret = crate::cqevent::do_script(&mut rl,code)?;
             let mut http_header = BTreeMap::new();
             let mut res:hyper::Response<hyper::Body>;
             if rl.get_type(&rl_ret)? == "字节集" {

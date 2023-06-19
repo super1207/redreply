@@ -46,7 +46,7 @@ fn do_cron_event_t() -> Result<i32, Box<dyn std::error::Error>> {
                         let mut rl = crate::redlang::RedLang::new();
                         rl.pkg_name = pkg_name_t;
                         rl.script_name = name_t;
-                        if let Err(err) = crate::cqevent::do_script(&mut rl,&code_t,true) {
+                        if let Err(err) = crate::cqevent::do_script(&mut rl,&code_t) {
                             cq_add_log_w(&format!("{}",err)).unwrap();
                         }
                     });

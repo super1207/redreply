@@ -317,7 +317,8 @@ pub struct RedLang {
     pub script_name:String,
     pub lock_vec:HashSet<String>,
     pub req_tx:Option<tokio::sync::mpsc::Sender<bool>>,
-    pub req_rx:Option<tokio::sync::mpsc::Receiver<Vec<u8>>>
+    pub req_rx:Option<tokio::sync::mpsc::Receiver<Vec<u8>>>,
+    pub can_wrong:bool
 }
 
 #[derive(Debug, Clone)]
@@ -1366,6 +1367,7 @@ pub fn init_core_fun_map() {
         rl.exmap = self_t.exmap.clone(); // 获得一些拓展相关的变量
         rl.pkg_name = self_t.pkg_name.clone();
         rl.script_name = self_t.script_name.clone();
+        rl.can_wrong = self_t.can_wrong;
         let code = self_t.get_param(params, 0)?;
         // 将参数传入新脚本
         let params_len = params.len();
@@ -1385,6 +1387,7 @@ pub fn init_core_fun_map() {
         let code = self_t.get_param(params, 0)?;
         let pkg_name = self_t.pkg_name.clone();
         let script_name = self_t.script_name.clone();
+        let can_wrong = self_t.can_wrong;
         // 获取参数
         let params_len = params.len();
         let mut params_vec: Vec<String> = vec![];
@@ -1396,11 +1399,12 @@ pub fn init_core_fun_map() {
             rl.exmap = Rc::new(RefCell::new(exmap)); // 获得一些拓展相关的变量
             rl.pkg_name = pkg_name;
             rl.script_name = script_name;
+            rl.can_wrong = can_wrong;
             // 将参数传入新脚本
             for i in 0..params_vec.len() {
                 rl.params_vec[0].push(params_vec[i].clone());
             }
-            if let Err(err) = do_script(&mut rl, &code, true) {
+            if let Err(err) = do_script(&mut rl, &code) {
                 cq_add_log_w(&format!("{}",err)).unwrap();
             }
         });
@@ -1819,7 +1823,8 @@ impl RedLang {
             script_name:String::new(),
             lock_vec:HashSet::new(),
             req_tx:None,
-            req_rx:None
+            req_rx:None,
+            can_wrong:true
         }
     }
 
