@@ -135,11 +135,14 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)
     }else if url_path == "/login" {
-        let body = hyper::body::to_bytes(request.into_body()).await?;
+        let body_len = request.headers().get("content-length").ok_or("/login 中没有content-length")?.to_str()?.parse::<usize>()?;
         let mut res = hyper::Response::new(hyper::Body::from(vec![]));
-        *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
-        let pass_cookie = format!("{};Max-Age=31536000",String::from_utf8(body.to_vec())?);
-        res.headers_mut().append(hyper::header::SET_COOKIE, HeaderValue::from_str(&pass_cookie)?);
+        if body_len < 256 {
+            let body = hyper::body::to_bytes(request.into_body()).await?;
+            *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
+            let pass_cookie = format!("{};Max-Age=31536000",String::from_utf8(body.to_vec())?);
+            res.headers_mut().append(hyper::header::SET_COOKIE, HeaderValue::from_str(&pass_cookie)?);
+        }
         res.headers_mut().insert("Location", HeaderValue::from_static("/index.html"));
         Ok(res)
     }
