@@ -191,12 +191,16 @@ async fn deal_file(request: hyper::Request<hyper::Body>) -> Result<hyper::Respon
     let mut res = hyper::Response::new(hyper::Body::from(file_buf));
     *res.status_mut() = hyper::StatusCode::OK;
     if url_path.ends_with(".html") {
+        res.headers_mut().insert("Cache-Control", HeaderValue::from_static("max-age=86400"));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
     }else if url_path.ends_with(".js") {
+        res.headers_mut().insert("Cache-Control", HeaderValue::from_static("max-age=86400"));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/javascript; charset=utf-8"));
     }else if url_path.ends_with(".css") {
+        res.headers_mut().insert("Cache-Control", HeaderValue::from_static("max-age=86400"));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/css; charset=utf-8"));
     }else if url_path.ends_with(".png") {
+        res.headers_mut().insert("Cache-Control", HeaderValue::from_static("max-age=86400"));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("image/png"));
     }else if url_path.ends_with(".txt") {
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/plain"));
