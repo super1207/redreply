@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::cqapi::{cq_get_app_directory1, get_history_log};
+use crate::cqapi::{cq_get_app_directory1, get_history_log, cq_add_log};
 use crate::httpevent::do_http_event;
 use crate::read_config;
 use crate::redlang::RedLang;
@@ -363,6 +363,7 @@ pub fn init_http_server() -> Result<(), Box<dyn std::error::Error>> {
         host = "127.0.0.1";
     }
     let web_uri = format!("{host}:{port}");
+    cq_add_log_w(&format!("webui访问地址：http://{web_uri}")).unwrap();
     let addr = web_uri.parse::<std::net::SocketAddr>()?;
     RT_PTR.clone().spawn(async move {
         let bd_rst = hyper::Server::try_bind(&addr);
