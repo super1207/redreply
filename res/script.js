@@ -121,7 +121,12 @@ const { createApp } = Vue
                         axios
                         .post("/set_code",code)
                         .then(function (res){
-                            alert("保存成功")
+                            let kk = JSON.parse(res)
+                            if(kk['retcode'] == 0){
+                                alert("保存成功")
+                            }else {
+                                alert("保存失败")
+                            }
                         })
                         .catch(function (error) {
                             console.log(error);

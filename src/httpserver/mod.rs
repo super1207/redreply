@@ -24,7 +24,7 @@ pub fn add_ws_log(log_msg:String) {
     });
 }
 
-async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
+async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
     let url_path = request.uri().path();
     if url_path == "/get_code" {
         match crate::read_code() {
@@ -78,6 +78,10 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
             },
         }
     }else if url_path == "/set_ws_urls" {
+        if can_write == false {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
         let body = hyper::body::to_bytes(request.into_body()).await?;
         let js:serde_json::Value = serde_json::from_slice(&body)?;
         match crate::set_ws_urls(js){
@@ -100,6 +104,10 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
         }
         
     }else if url_path == "/set_code" {
+        if can_write == false {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
         let body = hyper::body::to_bytes(request.into_body()).await?;
         let js:serde_json::Value = serde_json::from_slice(&body)?;
         let (tx, rx) =  tokio::sync::oneshot::channel();
@@ -124,6 +132,10 @@ async fn deal_api(request: hyper::Request<hyper::Body>) -> Result<hyper::Respons
         Ok(res)
         
     }else if url_path == "/close" {
+        if can_write == false {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
         cq_add_log_w("收到退出指令，正在退出").unwrap();
         crate::wait_for_quit();
     }else if url_path == "/get_version" {
@@ -205,16 +217,28 @@ async fn serve_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tok
     Ok(())
 }
 
-fn http_auth(request: &hyper::Request<hyper::Body>) -> Result<(), Box<dyn std::error::Error>> {
+fn http_auth(request: &hyper::Request<hyper::Body>) -> Result<i32, Box<dyn std::error::Error>> {
     let web_pass_raw = crate::read_web_password()?;
     if web_pass_raw == "" {
-        return Ok(())
+        return Ok(2)
     }
     let headers = request.headers();
     let cookie_str = headers.get("Cookie").ok_or("can not found Cookie")?.to_str()?;
-    let web_pass = urlencoding::encode(&web_pass_raw);
-    if cookie_str.contains(&format!("password={}",web_pass)) {
-        return Ok(())
+    {
+        let web_pass = urlencoding::encode(&web_pass_raw);
+        if cookie_str.contains(&format!("password={}",web_pass)) {
+            return Ok(2)
+        }
+    }
+    let read_only_web_pass_raw = crate::read_readonly_web_password()?;
+    if read_only_web_pass_raw == "" {
+        return Ok(1)
+    }
+    {
+        let web_pass = urlencoding::encode(&read_only_web_pass_raw);
+        if cookie_str.contains(&format!("password={}",web_pass)) {
+            return Ok(1)
+        }
     }
     return Err(RedLang::make_err("password invaild"));
 }
@@ -228,17 +252,28 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
         return deal_file(request).await; 
     }
     if url_path == "/login" {
-        return deal_api(request).await;
+        return deal_api(request,false).await;
     }
     
     // 身份验证
-    if let Err(err) = http_auth(&request) {
-        // 认证失败，跳转登录页面
-        cq_add_log_w(&format!("{}",err)).unwrap();
-        let mut res = hyper::Response::new(hyper::Body::from(vec![]));
-        *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
-        res.headers_mut().insert("Location", HeaderValue::from_static("/login.html"));
-        return Ok(res);
+    let can_write;
+    {
+        let http_auth_rst = http_auth(&request);
+        if http_auth_rst.is_err() {
+            // 认证失败，跳转登录页面
+            cq_add_log_w(&format!("{}",http_auth_rst.err().unwrap())).unwrap();
+            let mut res = hyper::Response::new(hyper::Body::from(vec![]));
+            *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
+            res.headers_mut().insert("Location", HeaderValue::from_static("/login.html"));
+            return Ok(res);
+        }else {
+            let auth_code = http_auth_rst.unwrap();
+            if auth_code == 2 {
+                can_write = true;
+            }else {
+                can_write = false;
+            }
+        }
     }
 
     // 升级ws协议
@@ -304,7 +339,7 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
             res.headers_mut().insert("Content-Type", HeaderValue::from_static("image/x-icon"));
             return Ok(res);
         } else if !url_path.contains(".") || url_path.starts_with("/user") {
-            return deal_api(request).await;
+            return deal_api(request,can_write).await;
         } else {
             return deal_file(request).await;
         }

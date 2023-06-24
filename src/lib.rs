@@ -85,6 +85,8 @@ lazy_static! {
     pub static ref G_INPUTSTREAM_VEC:RwLock<Vec<InputStream>> = RwLock::new(vec![]);
     // webui的访问密码
     pub static ref G_WEB_PASSWORD:RwLock<Option<String>> = RwLock::new(None);
+    // webui的访问密码2
+    pub static ref G_READONLY_WEB_PASSWORD:RwLock<Option<String>> = RwLock::new(None);
     // 全局锁
     pub static ref G_LOCK:Mutex<HashMap<String,HashMap<String, i32>>> = Mutex::new(HashMap::new());
     // 记录与某条消息相关的脚本输出
@@ -212,7 +214,7 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         }
     }
     if !is_file_exists{
-        fs::write(script_path.clone(), "{\"web_port\":1207,\"web_password\":\"\",\"web_host\":\"127.0.0.1\",\"ws_urls\":[],\"not_open_browser\":false}")?;
+        fs::write(script_path.clone(), "{\"web_port\":1207,\"web_password\":\"\",\"readonly_web_password\":\"\",\"web_host\":\"127.0.0.1\",\"ws_urls\":[],\"not_open_browser\":false}")?;
     }
     let script = fs::read_to_string(script_path)?;
     Ok(serde_json::from_str(&script)?)
@@ -234,6 +236,27 @@ pub fn read_web_password() -> Result<String, Box<dyn std::error::Error>> {
     }
     {
         let mut lk = G_WEB_PASSWORD.write()?;
+        *lk = Some(ret_str.clone());
+    }
+    return Ok(ret_str);
+}
+
+pub fn read_readonly_web_password() -> Result<String, Box<dyn std::error::Error>> {
+    {
+        let lk = G_READONLY_WEB_PASSWORD.read()?;
+        if lk.is_some() {
+            return Ok(lk.clone().unwrap());
+        }
+    }
+    let mut ret_str = String::new();
+    let config = read_config()?;
+    if let Some(pass_opt) = config.get("readonly_web_password") {
+        if let Some(pass) = pass_opt.as_str() {
+            ret_str = pass.to_string();
+        }
+    }
+    {
+        let mut lk = G_READONLY_WEB_PASSWORD.write()?;
         *lk = Some(ret_str.clone());
     }
     return Ok(ret_str);
