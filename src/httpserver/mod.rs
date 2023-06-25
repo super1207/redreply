@@ -117,16 +117,22 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool) -> Result
                 let ret = json!({
                     "retcode":0,
                 });
-                tx.send(ret).unwrap();
+                let rst = tx.send(ret);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
             }
             else {
                 let ret = json!({
                     "retcode":-1,
                 });
-                tx.send(ret).unwrap();
+                let rst = tx.send(ret);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
             }
         }).await?;
-        let ret = rx.await.unwrap();
+        let ret = rx.await?;
         let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)
@@ -163,12 +169,18 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool) -> Result
         tokio::task::spawn_blocking(move || {
             let ret = do_http_event(request);
             if ret.is_ok() {
-                tx.send(ret.unwrap()).unwrap();
+                let rst = tx.send(ret.unwrap());
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
             }else {
                 let err_str = format!("Error:{:?}",ret);
                 let mut res:hyper::Response<hyper::Body> = hyper::Response::new(hyper::Body::from(err_str));
                 res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
-                tx.send(res).unwrap();
+                let rst = tx.send(res);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
             }
         }).await?;
         let ret = rx.await?;
