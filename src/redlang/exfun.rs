@@ -522,7 +522,7 @@ pub fn init_ex_fun_map() {
         let b64_str = self_t.get_param(params, 0)?;
         let content = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
             &base64::alphabet::STANDARD,
-            base64::engine::general_purpose::NO_PAD), b64_str)?;
+            base64::engine::general_purpose::PAD), b64_str)?;
         return Ok(Some(self_t.build_bin(content)));
     });
     add_fun(vec!["延时"],|self_t,params|{
