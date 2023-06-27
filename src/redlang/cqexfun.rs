@@ -48,7 +48,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
         send_json = serde_json::json!({
             "action":"send_group_msg",
             "params":{
-                "group_id":sub_id.parse::<i64>()?,
+                "group_id":sub_id.parse::<u64>()?,
                 "message":msg
             }
         });
@@ -65,7 +65,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
         send_json = serde_json::json!( {
             "action":"send_private_msg",
             "params":{
-                "user_id":rl.get_exmap("发送者ID").parse::<i64>()?,
+                "user_id":rl.get_exmap("发送者ID").parse::<u64>()?,
                 "message":msg
             }
         });
