@@ -18,7 +18,7 @@
 
 ## 开始使用
 
-1：登录一个`onebot11`的协议端，如[go-cqhttp](https://github.com/Mrs4s/go-cqhttp)，并开启[ws正向连接](https://github.com/botuniverse/onebot-11/tree/master/communication)。<br />
+1：登录一个`onebot11`的协议端，如[go-cqhttp](https://github.com/Mrs4s/go-cqhttp)、[KookOnebot](https://github.com/super1207/KookOneBot)并开启[ws正向连接](https://github.com/botuniverse/onebot-11/tree/master/communication)。<br />
 
 2：下载项目release中的`redlang.exe`，并执行。<br />
 
@@ -27,7 +27,10 @@
 `ws://127.0.0.1:8080?access_token=77156`
 
 4：如果出现任何疑惑，可以到我们的`QQ`群中随意询问(没有疑惑也可以来玩。
-`QQ`群：920220179(已满)<br /> 			556515826
+
+<br /> QQ群：920220179(已满)、556515826
+
+此外，欢迎来我的KOOK群玩！邀请链接：https://kook.top/3SEwQj
 
 
 ## 访问控制
