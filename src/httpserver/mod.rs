@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-use crate::cqapi::{cq_get_app_directory1, get_history_log, cq_add_log};
+use crate::cqapi::{cq_get_app_directory1, get_history_log};
 use crate::httpevent::do_http_event;
 use crate::read_config;
 use crate::redlang::RedLang;
@@ -298,6 +298,13 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
     // 升级ws协议
     if hyper_tungstenite::is_upgrade_request(&request) {
         if url_path == "/watch_log" {
+
+            // 没有写权限不允许访问log
+            if can_write == false {
+                let res = hyper::Response::new(hyper::Body::from("api not found"));
+                return Ok(res);
+            }
+
             // ws协议升级返回
             let (response, websocket) = hyper_tungstenite::upgrade(request, None)?;
             let (tx, rx) =  tokio::sync::mpsc::channel::<String>(60);

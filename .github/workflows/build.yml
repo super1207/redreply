@@ -16,6 +16,7 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@master
+
     - name: rust_install
       uses: actions-rs/toolchain@v1
       with:
@@ -34,16 +35,16 @@ jobs:
     - name: before_upload
       run: |
         mkdir Release
-        cp target/x86_64-pc-windows-gnu/release/redlang.exe Release/redlang_windows_x86_64.exe
+        cp target/x86_64-pc-windows-gnu/release/redlang.exe Release/redlang_windows_i686.exe
         cp target/aarch64-unknown-linux-musl/release/redlang Release/redlang_linux_aarch64
-        cp target/x86_64-unknown-linux-musl/release/redlang Release/redlang_linux_x86_64
+        cp target/x86_64-unknown-linux-musl/release/redlang Release/redlang_linux_i686
 
     - name: upload file1
       uses: actions/upload-artifact@v3
       with:
-        name: redlang_windows_x86_64.exe
+        name: redlang_windows_i686.exe
         path: 
-            Release/redlang_windows_x86_64.exe
+            Release/redlang_windows_i686.exe
 
     - name: upload file2
       uses: actions/upload-artifact@v3
@@ -55,6 +56,6 @@ jobs:
     - name: upload file3
       uses: actions/upload-artifact@v3
       with:
-        name: redlang_linux_x86_64
+        name: redlang_linux_i686
         path: 
-          Release/redlang_linux_x86_64
+          Release/redlang_linux_i686

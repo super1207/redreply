@@ -1,15 +1,16 @@
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::{Arc, atomic::AtomicBool}};
 
 use futures_util::{StreamExt, SinkExt};
 use tokio_tungstenite::connect_async;
 
-use crate::{RT_PTR, cqapi::cq_add_log_w, mytool::read_json_str};
+use crate::{RT_PTR, cqapi::{cq_add_log_w, cq_add_log}, mytool::read_json_str};
 #[derive(Debug)]
 pub struct BotConnect {
     pub ws_uuid:String,
     pub id:String,
     pub url:String,
-    pub tx:Option<tokio::sync::mpsc::Sender<serde_json::Value>>
+    pub tx:Option<tokio::sync::mpsc::Sender<serde_json::Value>>,
+    pub is_alive:AtomicBool
 }
 
 impl BotConnect {
@@ -19,6 +20,7 @@ impl BotConnect {
             id: "".to_string(),
             url: "".to_string(),
             tx: None,
+            is_alive:AtomicBool::new(false)
         };
     }
 }
@@ -73,18 +75,27 @@ fn get_json_dat(msg:Result<hyper_tungstenite::tungstenite::Message, hyper_tungst
     crate::cqapi::cq_add_log(format!("收到数据:{}", json_dat.to_string()).as_str()).unwrap();
     return Some(json_dat);
 }
-
+async fn get_bot_uuid_by_url(url:&str) -> String {
+    let lk = G_BOT_MAP.read().await;
+    let conn = lk.get(url);
+    if let Some(c) = conn {
+        return c.read().await.ws_uuid.to_owned();
+    }else{
+        return String::new();
+    }
+}
 async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    println!("正在连接ws：{}",url_str);
     let url = url::Url::parse(url_str)?;
     let (ws_stream, _) = connect_async(url).await?;
     let (mut write_half,mut read_halt) = ws_stream.split();
     let (tx_ay, mut rx_ay) =  tokio::sync::mpsc::channel::<serde_json::Value>(128);
     let ws_uuid = uuid::Uuid::new_v4().to_string();
+    let tx_ay_t = tx_ay.clone();
     {
+        // 先将原本存在的移除
+        G_BOT_MAP.write().await.remove(url_str);
         // 将bot放入全局bot表
-        if G_BOT_MAP.read().await.contains_key(url_str) {
-            return Ok(());
-        }
         let bot = Arc::new(tokio::sync::RwLock::new(BotConnect::new()));
         bot.write().await.url = url_str.to_owned();
         bot.write().await.tx = Some(tx_ay);
@@ -96,12 +107,8 @@ async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error +
     let ws_uuid_t = ws_uuid.to_string();
     tokio::spawn(async move {
         while let Some(msg) = read_halt.next().await {  
-            // 判断是否断开连接
-            if let Some(bot) = G_BOT_MAP.read().await.get(&url_str_t) {
-                if bot.read().await.ws_uuid != ws_uuid {
-                    break;
-                }
-            }else{
+            // 判断是否断开连接,bot列表中不存在了，自然要退出循环
+            if G_BOT_MAP.read().await.get(&url_str_t).is_none() {
                 break;
             }
             // 获得json数据
@@ -110,6 +117,9 @@ async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error +
                 json_dat = val;
             }else{
                 continue;
+            }
+            if let Some(bot) = G_BOT_MAP.write().await.get(&url_str_t) {
+                bot.write().await.is_alive.store(true, std::sync::atomic::Ordering::Relaxed);
             }
             // 设置self_id
             let self_id = read_json_str(&json_dat, "self_id");
@@ -134,7 +144,7 @@ async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error +
                     }
                     let _foo = tx.send(json_dat).await;
                 }else { // 是事件
-                    let _foo = tokio::task::spawn_blocking(move ||{
+                    tokio::task::spawn_blocking(move ||{
                         if let Err(e) = crate::cqevent::do_1207_event(&json_dat.to_string()) {
                             crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
                         }
@@ -142,42 +152,64 @@ async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error +
                 }
             });
         }
-        let mut lk = G_BOT_MAP.write().await;
-        let can_remove;
-        if let Some(bot) = lk.get(&url_str_t) {
-            if bot.read().await.ws_uuid == ws_uuid {
-                can_remove = true;
-            }else{
-                can_remove = false;
-            }
-        }else{
-            can_remove = false;
+        // 移除conn
+        let exist_uuid = get_bot_uuid_by_url(&url_str_t).await;
+        if exist_uuid == ws_uuid {
+            G_BOT_MAP.write().await.remove(&url_str_t);
         }
-        if can_remove {
-            cq_add_log_w(&format!("ws连接已经断开(read_halt):{url_str_t}")).unwrap();
-            lk.remove(&url_str_t);
-        }
+        cq_add_log_w(&format!("ws连接已经断开(read_halt):{url_str_t}")).unwrap();
     });
     let url_str_t = url_str.to_string();
     tokio::spawn(async move {
-        while let Some(msg) = rx_ay.recv().await {
-            let _foo = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string())).await;
-        }
-        let mut lk = G_BOT_MAP.write().await;
-        let can_remove;
-        if let Some(bot) = lk.get(&url_str_t) {
-            if bot.read().await.ws_uuid == ws_uuid_t {
-                can_remove = true;
-            }else{
-                can_remove = false;
+        let uuid2 = ws_uuid_t.clone();
+        let url_str2 = url_str_t.clone();
+
+        // 构造特殊心跳,防止长时间连接导致防火墙不处理数据
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+                if let Some(bot) = G_BOT_MAP.read().await.get(&url_str2) {
+                    let is_alive = bot.read().await.is_alive.load(std::sync::atomic::Ordering::Relaxed);
+                    if is_alive == false {
+                        break;
+                    }else {
+                        cq_add_log(&format!("ws alive:{url_str2}")).unwrap();
+                    }
+                } else {
+                    break;
+                }
+                if let Some(bot) = G_BOT_MAP.write().await.get(&url_str2) {
+                    bot.write().await.is_alive.store(false, std::sync::atomic::Ordering::Relaxed);
+                }
+                let rst = tx_ay_t.send(serde_json::json!({
+                    "action":"get_version_info",
+                    "params":{},
+                    "echo":uuid2
+                })).await;
+                if rst.is_err() {
+                    break;
+                }
             }
-        }else{
-            can_remove = false;
+            // 移除conn
+            let exist_uuid = get_bot_uuid_by_url(&url_str2).await;
+            if exist_uuid == uuid2 {
+                G_BOT_MAP.write().await.remove(&url_str2);
+            }
+            cq_add_log_w(&format!("ws心跳已断开:{url_str2}")).unwrap();
+        });
+
+        while let Some(msg) = rx_ay.recv().await {
+            let rst = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string())).await;
+            if rst.is_err() {
+                break;
+            }
         }
-        if can_remove {
-            cq_add_log_w(&format!("ws连接已经断开(read_halt):{url_str_t}")).unwrap();
-            lk.remove(&url_str_t);
+        // 移除conn
+        let exist_uuid = get_bot_uuid_by_url(&url_str_t).await;
+        if exist_uuid == ws_uuid_t {
+            G_BOT_MAP.write().await.remove(&url_str_t);
         }
+        cq_add_log_w(&format!("ws连接已经断开(write_half):{url_str_t}")).unwrap();
     });
     Ok(())
 }
@@ -236,8 +268,10 @@ pub async fn call_api(self_id:&str,json:&mut serde_json::Value) -> Result<serde_
         }
     }
 }
+
+
 pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
-    let _foo = std::thread::spawn(move ||{
+    std::thread::spawn(move ||{
         loop {
             // 得到配置文件中的url
             let config = crate::read_config().unwrap();
