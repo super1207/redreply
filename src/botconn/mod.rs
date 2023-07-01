@@ -108,6 +108,12 @@ async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error +
     tokio::spawn(async move {
         while let Some(msg) = read_halt.next().await {  
             // 判断是否断开连接,bot列表中不存在了，自然要退出循环
+            {
+                let exist_uuid = get_bot_uuid_by_url(&url_str_t).await;
+                if exist_uuid != ws_uuid {
+                    break;
+                }
+            }
             if G_BOT_MAP.read().await.get(&url_str_t).is_none() {
                 break;
             }
