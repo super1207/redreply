@@ -1349,6 +1349,22 @@ onedice参数的写法参考[onedice](https://github.com/OlivOS-Team/onedice)。
 **注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
 
 
+### 运行PY
+
+【运行PY@<font color="red">脚本内容</font>@<font color="red">参数文本</font>】
+
+此命令用于调用机器上的python，来执行python。在<font color="red">脚本内容</font>中，可以使用如下内置函数：
+
+red_in()：用于获取参数文本，若没有参数文本，则得到空文本。
+
+red_out(str)：用于返回文本,作为命令的返回。
+
+red_install(pkg_name)：用于联网从pypi安装一个三方包(目前使用清华源)。
+
+另外：python环境中，所以和普通打印(stdout)相关的内容，都是无效的。并且，这个命令执行速度很慢，并且权限非常大，请谨慎使用。
+
+**注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
+
 ## QQ、频道相关命令说明
 
 

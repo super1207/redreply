@@ -2053,6 +2053,72 @@ pub fn init_ex_fun_map() {
             },
         }
     });
+
+    add_fun(vec!["运行PY"],|self_t,params|{
+        let code = r#"
+import os
+import sysconfig
+import sys
+
+def myprint(*args,**kwargs):
+    pass
+
+red_print = sys.stdout.write
+
+sys.stdout.write = myprint
+
+
+
+def red_install(pkg_name):
+    '''安装一个模块'''
+    from pip._internal.cli import main
+    ret = main.main(['install', pkg_name, '-i',
+                    'https://pypi.tuna.tsinghua.edu.cn/simple', "--no-warn-script-location"])
+
+    if ret != 0:
+        err = "安装依赖{}失败".format(pkg_name)
+        raise Exception(err)
+
+def red_in():
+    import os
+    import base64
+    import sys
+    l = len(sys.argv)
+    if l < 2:
+        return ""
+    sw = base64.b64decode(sys.argv[1]).decode()
+    return sw
+
+def red_out(sw):
+    import base64
+    en = base64.b64encode(sw.encode()).decode()
+    red_print(en)
+"#;
+        let code1 = self_t.get_param(params, 0)?;
+        let input = self_t.get_param(params, 1)?;
+        let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
+        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+        let p = std::process::Command::new("python")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(app_dir)
+        .arg("-c")
+        .arg(format!("{code}{code1}"))
+        .arg(&input_b64)
+        .output()?;
+        let out = String::from_utf8_lossy(&p.stdout).to_string();
+        let err = String::from_utf8_lossy(&p.stderr).to_string();
+        if err != "" {
+            return Err(RedLang::make_err(&err));
+        }
+        let content_rst = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+            &base64::alphabet::STANDARD,
+            base64::engine::general_purpose::PAD), &out);
+        if content_rst.is_err() {
+            return Err(RedLang::make_err(&out));
+        }
+        Ok(Some(String::from_utf8(content_rst.unwrap())?))
+    });
 }
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {

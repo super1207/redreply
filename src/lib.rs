@@ -26,7 +26,6 @@ mod initevent;
 mod cronevent;
 mod botconn;
 mod httpserver;
-mod test;
 mod httpevent;
 
 #[macro_use]
