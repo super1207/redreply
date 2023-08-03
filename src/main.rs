@@ -1,11 +1,23 @@
+use time::UtcOffset;
+
 
 fn main() {
     
     // 初始化日志
     let format = "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]";
+
+    // 获得utc偏移
+    let utc_offset;
+    if let Ok(v) = UtcOffset::current_local_offset() {
+        utc_offset = v;
+    } else {
+        // 中国是东八区，所以这里写8 hour
+        utc_offset = UtcOffset::from_hms(8,0,0).unwrap();
+    }
+
     tracing_subscriber::fmt()
     .with_timer(tracing_subscriber::fmt::time::OffsetTime::new(
-        time::UtcOffset::current_local_offset().unwrap(),
+        utc_offset,
         time::format_description::parse(format).unwrap(),
     )).with_max_level(tracing::Level::INFO)
     .init();

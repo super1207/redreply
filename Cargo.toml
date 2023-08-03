@@ -43,7 +43,7 @@ reqwest = {version = "0.11.16",default-features = false,features = ["rustls-tls"
 time = { version = "0.3", features = ["formatting", "macros"] }
 
 [target.'cfg(windows)'.dependencies]
-headless_chrome = {git = "https://github.com/atroche/rust-headless-chrome",default-features = false}
+headless_chrome = {version="*",default-features = false}
 winreg = "0.50.0"
 screenshots = "0.5.3"
 

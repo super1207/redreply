@@ -27,6 +27,7 @@ mod cronevent;
 mod botconn;
 mod httpserver;
 mod httpevent;
+mod pyserver;
 
 #[macro_use]
 extern crate lazy_static; 
@@ -177,6 +178,10 @@ pub fn initialize() -> i32 {
     panic::set_hook(Box::new(|e| {
         cq_add_log_w(e.to_string().as_str()).unwrap();
     }));
+
+    // 初始化配置文件
+    init_config();
+
     redlang::webexfun::init_web_ex_fun_map();
     redlang::cqexfun::init_cq_ex_fun_map();
     redlang::exfun::init_ex_fun_map();
@@ -213,10 +218,60 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         }
     }
     if !is_file_exists{
-        fs::write(script_path.clone(), "{\"web_port\":1207,\"web_password\":\"\",\"readonly_web_password\":\"\",\"web_host\":\"127.0.0.1\",\"ws_urls\":[],\"not_open_browser\":false}")?;
+        let config_json = serde_json::json!({
+            "web_port":1207,
+            "web_password":"",
+            "readonly_web_password":"",
+            "web_host":"127.0.0.1",
+            "ws_urls":[],
+            "not_open_browser":false
+        });
+        fs::write(script_path.clone(), config_json.to_string()).unwrap();
     }
     let script = fs::read_to_string(script_path)?;
     Ok(serde_json::from_str(&script)?)
+}
+
+pub fn init_config() {
+    let script_path = cq_get_app_directory1().unwrap() + "config.json";
+    let mut is_file_exists = false;
+    if fs::metadata(script_path.clone()).is_ok() {
+        if fs::metadata(script_path.clone()).unwrap().is_file(){
+            is_file_exists = true;
+        }
+    }
+    if !is_file_exists{
+
+        let mut line1 = String::new();
+        println!("请输入端口号(默认1207):");
+        std::io::stdin().read_line(&mut line1).unwrap();
+        let web_port;
+        if line1.trim() == "" {
+            web_port = 1207;
+        }else {
+            web_port = line1.trim().parse::<u16>().unwrap();
+        }
+        
+        let mut line2 = String::new();
+        let web_host:&str;
+        println!("请输入主机地址(默认127.0.0.1):");
+        std::io::stdin().read_line(&mut line2).unwrap();
+        if line2.trim() == "" {
+            web_host = "127.0.0.1";
+        } else {
+            web_host = &line2.trim();
+        }
+
+        let config_json = serde_json::json!({
+            "web_port":web_port,
+            "web_password":"",
+            "readonly_web_password":"",
+            "web_host":web_host,
+            "ws_urls":[],
+            "not_open_browser":false
+        });
+        fs::write(script_path.clone(), config_json.to_string()).unwrap();
+    }
 }
 
 pub fn read_web_password() -> Result<String, Box<dyn std::error::Error>> {
