@@ -193,6 +193,11 @@ pub fn initialize() -> i32 {
     if let Err(err) = init_http_server(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
+
+    if let Err(err) = init_python(){
+        cq_add_log_w(&err.to_string()).unwrap();
+    }
+
     if let Err(err) = init_code(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
@@ -230,6 +235,94 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     }
     let script = fs::read_to_string(script_path)?;
     Ok(serde_json::from_str(&script)?)
+}
+
+pub fn init_python() -> Result<(), Box<dyn std::error::Error>> {
+    let config = read_config()?;
+    let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
+    let code = r#"
+import websocket
+import json
+import threading
+import time
+import os
+
+lk = threading.Lock()
+WS_APP = None
+
+def red_install(pkg_name):
+    '''安装一个模块'''
+    from pip._internal.cli import main
+    ret = main.main(['install', pkg_name, '-i',
+                    'https://pypi.tuna.tsinghua.edu.cn/simple', "--no-warn-script-location"])
+
+    if ret != 0:
+        err = "安装依赖{}失败".format(pkg_name)
+        raise Exception(err)
+
+def deal_msg_t(message):
+    try:
+        deal_msg(message)
+    except Exception as e:
+        print(e)
+
+def deal_msg(message):
+    js = json.loads(message)
+    echo = js["echo"]
+    code = js["code"]
+    code = """
+__red_out_data = ""
+def red_install(pkg_name):
+    '''安装一个模块'''
+    from pip._internal.cli import main
+    ret = main.main(['install', pkg_name, '-i',
+                    'https://pypi.tuna.tsinghua.edu.cn/simple', "--no-warn-script-location"])
+
+    if ret != 0:
+        err = "安装依赖{}失败".format(pkg_name)
+        raise Exception(err)
+def red_in():
+    return __red_in_data
+def red_out(s):
+    global __red_out_data
+    __red_out_data = s
+""" + code
+    input_t = js["input"]
+    scope = {"__red_in_data":input_t}
+    exec(code,scope)
+    to_send = {"echo":echo,"data":scope["__red_out_data"]}
+    lk.acquire()
+    try:
+        WS_APP.send(json.dumps(to_send))
+    finally:
+        lk.release()
+
+def on_message(_, message):
+    threading.Thread(target=deal_msg,args=(message,)).start()
+
+def on_open(_):
+    WS_APP.send("opened")
+
+def conn_fun():
+    global WS_APP
+    port = os.environ.get('port', '1207')
+    WS_APP = websocket.WebSocketApp(
+        "ws://127.0.0.1:"+port+"/pyserver",
+        on_message=on_message,
+        on_open= on_open
+    )
+    while True:
+        WS_APP.run_forever()
+        time.sleep(5)
+red_install("websocket-client")
+conn_fun()
+"#;
+    std::process::Command::new("python")
+    .arg("-c")
+    .arg(code)
+    .env("port", port.to_string())
+    .spawn()?;
+    Ok(())
 }
 
 pub fn init_config() {

@@ -10,7 +10,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 
-use crate::{cqapi::{cq_add_log, cq_add_log_w}, redlang::get_random, RT_PTR};
+use crate::{cqapi::{cq_add_log, cq_add_log_w}, redlang::get_random, RT_PTR, pyserver::call_py_block};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -2118,6 +2118,12 @@ def red_out(sw):
             return Err(RedLang::make_err(&out));
         }
         Ok(Some(String::from_utf8(content_rst.unwrap())?))
+    });
+    add_fun(vec!["快速运行PY"],|self_t,params|{
+        let code = self_t.get_param(params, 0)?;
+        let input = self_t.get_param(params, 1)?;
+        let ret = call_py_block(&code,&input);
+        Ok(Some(ret))
     });
 }
 

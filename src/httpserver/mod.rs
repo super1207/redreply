@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::AtomicBool;
 
-use crate::cqapi::{cq_get_app_directory1, get_history_log};
+use crate::cqapi::{cq_get_app_directory1, get_history_log, cq_add_log};
 use crate::httpevent::do_http_event;
 use crate::mytool::read_json_str;
 use crate::read_config;
@@ -16,6 +17,7 @@ lazy_static! {
     static ref G_LOG_MAP:tokio::sync::RwLock<HashMap<String,tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(HashMap::new());
     pub static ref G_PY_ECHO_MAP:tokio::sync::RwLock<HashMap<String,tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(HashMap::new());
     pub static ref G_PY_HANDER:tokio::sync::RwLock<Option<tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(None);
+    pub static ref G_PYSER_OPEN:AtomicBool = AtomicBool::new(false);
 }
 
 pub fn add_ws_log(log_msg:String) {
@@ -243,6 +245,8 @@ async fn serve_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tok
 /// 处理ws协议
 async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tokio::sync::mpsc::Receiver<String>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     
+    cq_add_log("connect to pyserver").unwrap();
+
     // 获得升级后的ws流
     let ws_stream = websocket.await?;
     let (mut write_half, read_half ) = futures_util::StreamExt::split(ws_stream);
@@ -254,10 +258,11 @@ async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:
             if rst.is_err() {
                 let mut lk = G_PY_HANDER.write().await;
                 (*lk) = None;
-                cq_add_log_w("serve send of python err").unwrap();
+                cq_add_log_w("serve send1 of python err").unwrap();
                 break;
             }
         }
+        cq_add_log_w("serve send2 of python err").unwrap();
     });
 
     async fn deal_msg(mut read_half:futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<hyper::upgrade::Upgraded>>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -268,7 +273,14 @@ async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:
                     break;
                 }
             }
-            let js:serde_json::Value = serde_json::from_str(msg_t?.to_text()?)?;
+            let msg_text = msg_t?.to_text()?.to_owned();
+
+            if msg_text == "opened" {
+                G_PYSER_OPEN.store(true,std::sync::atomic::Ordering::Relaxed);
+                continue;
+            }
+
+            let js:serde_json::Value = serde_json::from_str(&msg_text)?;
             let echo = read_json_str(&js, "echo");
             let lk = G_PY_ECHO_MAP.read().await;
             if lk.contains_key(&echo) {
@@ -381,7 +393,7 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
                 lk.remove(&uid);
             });
             return Ok(response);
-        } else if url_path == "pyserver" {
+        } else if url_path == "/pyserver" {
             // 没有写权限不允许访问pyserver
             if can_write == false {
                 let res = hyper::Response::new(hyper::Body::from("api not found"));
