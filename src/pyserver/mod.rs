@@ -53,7 +53,7 @@ async fn call_py(code:&str,input:&str) -> Result<String, Box<dyn std::error::Err
         std::option::Option::Some(val) = rx.recv() => {
             return Ok(val);
         },
-        _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
+        _ = tokio::time::sleep(std::time::Duration::from_secs(90)) => {
             cq_add_log_w(&format!("接收python返回超时")).unwrap();
             return Ok("".to_string());
         }
