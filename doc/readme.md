@@ -613,7 +613,7 @@ POST访问网页，访问体必须是字节集或文本，返回字节集，失�
 
 【编码@<font color="red">要编码的内容</font>】
 
-对url进行编码，如：
+对url进行编码(使用W3C标准)，如：
 
 
 ```
@@ -626,7 +626,7 @@ https://image.baidu.com/search/index?tn=baiduimage&word=【编码@樱小路露�
 
 【解码@<font color="red">要解码的文本</font>】
 
-对url进行解码，返回解码后的文本。
+对url进行解码(兼容W3C与RFC3986)，返回解码后的文本。
 
 ### Json解析 
 

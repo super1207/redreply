@@ -305,11 +305,11 @@ def on_open(_):
 
 def conn_fun():
     global WS_APP
-    port = os.environ.get('port', '1207')
     WS_APP = websocket.WebSocketApp(
-        "ws://127.0.0.1:"+port+"/pyserver",
+        "ws://127.0.0.1:"+os.environ.get('port', '1207')+"/pyserver",
         on_message=on_message,
-        on_open= on_open
+        on_open= on_open,
+        cookie="password={}".format(os.environ.get('password', ''))
     )
     while True:
         WS_APP.run_forever()
@@ -317,10 +317,12 @@ def conn_fun():
 red_install("websocket-client")
 conn_fun()
 "#;
+    let password:String = url::form_urlencoded::byte_serialize(read_web_password()?.as_bytes()).collect();
     std::process::Command::new("python")
     .arg("-c")
     .arg(code)
     .env("port", port.to_string())
+    .env("password", password)
     .spawn()?;
     Ok(())
 }

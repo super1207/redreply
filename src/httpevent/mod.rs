@@ -34,19 +34,19 @@ fn get_params_from_uri(uri:&hyper::Uri) -> BTreeMap<String,String> {
         }
         let index_opt = it.find("=");
         if index_opt.is_some() {
-            let k_rst = urlencoding::decode(it.get(0..index_opt.unwrap()).unwrap());
-            let v_rst = urlencoding::decode(it.get(index_opt.unwrap() + 1..).unwrap());
-            if k_rst.is_err() || v_rst.is_err() {
-                continue;
-            }
-            ret_map.insert(k_rst.unwrap().to_string(), v_rst.unwrap().to_string());
+            let k_rst: String = url::form_urlencoded::parse(it.get(0..index_opt.unwrap()).unwrap().as_bytes())
+                .map(|(key, val)| [key, val].concat())
+                .collect::<String>();
+            let v_rst: String = url::form_urlencoded::parse(it.get(index_opt.unwrap() + 1..).unwrap().as_bytes())
+                .map(|(key, val)| [key, val].concat())
+                .collect::<String>();
+            ret_map.insert(k_rst, v_rst);
         }
         else {
-            let k_rst = urlencoding::decode(it);
-            if k_rst.is_err() {
-                continue;
-            }
-            ret_map.insert(k_rst.unwrap().to_string(),"".to_owned());
+            let k_rst: String = url::form_urlencoded::parse(it.as_bytes())
+                .map(|(key, val)| [key, val].concat())
+                .collect::<String>();
+            ret_map.insert(k_rst,"".to_owned());
         }
     }
     ret_map
@@ -59,8 +59,12 @@ pub fn do_http_event(mut req:hyper::Request<hyper::Body>) -> Result<hyper::Respo
     let splited_url = true_url.split('/').into_iter().collect::<Vec<&str>>();
     let pkg_name = splited_url.get(1).ok_or("无法得到包名")?;
     let pkg_key = true_url.get(pkg_name.len() + 1..).unwrap();
-    let pkg_name_t = urlencoding::decode(&pkg_name)?.to_string();
-    let msg = urlencoding::decode(&pkg_key)?.to_string();
+    let pkg_name_t: String = url::form_urlencoded::parse(pkg_name.as_bytes())
+        .map(|(key, val)| [key, val].concat())
+        .collect::<String>();
+    let msg: String = url::form_urlencoded::parse(pkg_key.as_bytes())
+        .map(|(key, val)| [key, val].concat())
+        .collect::<String>();
     let script_json = read_code()?;
     let method = req.method().to_string();
     let mut req_headers = BTreeMap::new();

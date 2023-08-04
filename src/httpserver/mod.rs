@@ -308,7 +308,7 @@ fn http_auth(request: &hyper::Request<hyper::Body>) -> Result<i32, Box<dyn std::
     let headers = request.headers();
     let cookie_str = headers.get("Cookie").ok_or("can not found Cookie")?.to_str()?;
     {
-        let web_pass = urlencoding::encode(&web_pass_raw);
+        let web_pass:String = url::form_urlencoded::byte_serialize(web_pass_raw.as_bytes()).collect();
         if cookie_str.contains(&format!("password={}",web_pass)) {
             return Ok(2)
         }
@@ -318,7 +318,7 @@ fn http_auth(request: &hyper::Request<hyper::Body>) -> Result<i32, Box<dyn std::
         return Ok(1)
     }
     {
-        let web_pass = urlencoding::encode(&read_only_web_pass_raw);
+        let web_pass:String = url::form_urlencoded::byte_serialize(read_only_web_pass_raw.as_bytes()).collect();
         if cookie_str.contains(&format!("password={}",web_pass)) {
             return Ok(1)
         }

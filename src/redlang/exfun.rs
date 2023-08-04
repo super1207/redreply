@@ -256,16 +256,15 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["编码"],|self_t,params|{
         let urlcode = self_t.get_param(params, 0)?;
-        let encoded = urlencoding::encode(&urlcode);
-        return Ok(Some(encoded.to_string()));
+        let encoded:String = url::form_urlencoded::byte_serialize(urlcode.as_bytes()).collect();
+        return Ok(Some(encoded));
     });
     add_fun(vec!["解码"],|self_t,params|{
         let urlcode = self_t.get_param(params, 0)?;
-        if let Ok(decoded) = urlencoding::decode(&urlcode){
-            return Ok(Some(decoded.to_string()));
-        }
-        cq_add_log_w(&format!("url解码失败:`{}`",urlcode)).unwrap();
-        return Ok(Some("".to_string()));
+        let decoded: String = url::form_urlencoded::parse(urlcode.as_bytes())
+            .map(|(key, val)| [key, val].concat())
+            .collect();
+        return Ok(Some(decoded));
     });
     add_fun(vec!["随机取"],|self_t,params|{
         let arr_data = self_t.get_param(params, 0)?;
@@ -2014,7 +2013,7 @@ pub fn init_ex_fun_map() {
             data.append(&mut "\r\nContent-Disposition: form-data; name=\"reqtype\"\r\n\r\nfileupload\r\n".as_bytes().to_owned());
             data.append(&mut "--".as_bytes().to_owned());
             data.append(&mut bound.as_bytes().to_owned());
-            let fname = urlencoding::encode(filename).to_string();
+            let fname:String = url::form_urlencoded::byte_serialize(filename.as_bytes()).collect();
             data.append(&mut format!("\r\nContent-Disposition: form-data; name=\"fileToUpload\";filename=\"{fname}\"\r\n\r\n").as_bytes().to_owned());
             data.append(file_data);
             data.append(&mut "\r\n--".as_bytes().to_owned());
