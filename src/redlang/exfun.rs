@@ -1441,7 +1441,7 @@ pub fn init_ex_fun_map() {
         let screens = screenshots::Screen::all()?;
         if screens.len() > 0 {
             let image = screens[0].capture()?;
-            let buffer = image.buffer();
+            let buffer = image.to_png(None)?;
             return Ok(Some(self_t.build_bin(buffer.to_vec())));
         }
         return Ok(Some(self_t.build_bin(vec![])));
