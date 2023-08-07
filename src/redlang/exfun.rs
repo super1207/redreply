@@ -1471,6 +1471,19 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some(self_t.build_obj(ret_obj)));
     });
+
+    add_fun(vec!["判存"],|self_t,params|{
+        let file_path = self_t.get_param(params, 0)?;
+        let path = Path::new(&file_path);
+        let ret_str;
+        if !path.exists() {
+            ret_str = self_t.get_param(params, 1)?;
+        } else {
+            ret_str = file_path;
+        }
+        return Ok(Some(ret_str));
+    });
+
     add_fun(vec!["删除目录"],|self_t,params|{
         let dir_path = self_t.get_param(params, 0)?;
         let path = Path::new(&dir_path);

@@ -710,7 +710,14 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 
 【删除文件@<font color="red">路径</font>】
 
-删除目录。无论成功与否，都返回空文本。
+删除文件。无论成功与否，都返回空文本。
+
+
+### 判存
+
+【判存@<font color="red">路径</font>@<font color="red">不存在执行</font>】
+
+判断文件(或目录)是否存在。存在则返回<font color="red">路径</font>，不存在则返回<font color="red">不存在执行</font>。
 
 
 ### 文件信息
@@ -1349,7 +1356,7 @@ onedice参数的写法参考[onedice](https://github.com/OlivOS-Team/onedice)。
 **注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
 
 
-### 运行PY
+### 运行PY(暂时仅windows下偶尔可用)
 
 【运行PY@<font color="red">脚本内容</font>@<font color="red">参数文本</font>】
 
@@ -1366,11 +1373,11 @@ red_install(pkg_name)：用于联网从pypi安装一个三方包(目前使用清
 **注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
 
 
-### 快速运行PY
+### 快速运行PY(暂时仅windows下偶尔可用)
 
 【快速运行PY@<font color="red">脚本内容</font>@<font color="red">参数文本</font>】
 
-与同【运行PY】相同，但是所有脚本都在同一个python环境下运行，具有更快的运行速度。
+与【运行PY】相同，但是所有脚本都在同一个python环境下运行，具有更快的运行速度。
 
 缺点是不能在`初始化事件`中使用，因为那时python运行环境还没有建立。
 
