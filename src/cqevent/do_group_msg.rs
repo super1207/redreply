@@ -67,9 +67,8 @@ fn do_redlang(root: &serde_json::Value) -> Result< (), Box<dyn std::error::Error
             {
                 let sender = root.get("sender").ok_or("sender not exists")?;
                 {
-                    let role_js = sender.get("role").ok_or("role in sender not exists")?;
-                    let role = role_js.as_str().ok_or("role in sender not str")?;
-                    let role_str = match role {
+                    let role = read_json_str(sender, "role");
+                    let role_str = match role.as_str() {
                         "owner" => "群主",
                         "admin" => "管理",
                         &_ => "群员"
