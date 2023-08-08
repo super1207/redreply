@@ -768,4 +768,96 @@ pub fn init_cq_ex_fun_map() {
             return Ok(Some(self_t.build_arr(ret_vec)));
         }
     });
+    add_fun(vec!["积分-增加"],|self_t,params|{
+        let key0 = self_t.get_exmap("子频道ID");
+        let key1 = self_t.get_exmap("群ID");
+        let group_id = format!("{}{}",key0,key1);
+        let user_id = self_t.get_exmap("发送者ID").to_string();
+        let add_score = self_t.get_param(params, 0)?.parse::<i64>()?;
+
+        // 创建表
+        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+        let sql_file = app_dir + "reddat.db";
+        let conn = rusqlite::Connection::open(sql_file)?;
+        conn.execute("CREATE TABLE IF NOT EXISTS SCORE_TABLE (GROUP_ID TEXT,USER_ID TEXT,VALUE INTEGER DEFAULT 0,PRIMARY KEY(GROUP_ID,USER_ID));", [])?;
+        
+        // 查询积分
+        let ret_rst:Result<i64,rusqlite::Error> = conn.query_row("SELECT VALUE FROM SCORE_TABLE WHERE GROUP_ID = ? AND USER_ID = ?", [group_id.clone(),user_id.clone()], |row| row.get(0));
+        let mut ret_num:i64;
+        if let Ok(ret) =  ret_rst {
+            ret_num = ret;
+        }else {
+            ret_num = 0;
+        }
+
+        // 积分变动
+        ret_num += add_score;
+        if ret_num < 0 {
+            ret_num = 0;
+        }
+
+        // 积分设置
+        conn.execute("REPLACE INTO SCORE_TABLE (GROUP_ID,USER_ID,VALUE) VALUES (?,?,?)", [group_id,user_id,ret_num.to_string()])?;
+        
+        return Ok(Some("".to_string()));
+    });
+
+
+    add_fun(vec!["积分"],|self_t,_params|{
+        let key0 = self_t.get_exmap("子频道ID");
+        let key1 = self_t.get_exmap("群ID");
+        let group_id = format!("{}{}",key0,key1);
+        let user_id = self_t.get_exmap("发送者ID").to_string();
+        // 查询积分
+        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+        let sql_file = app_dir + "reddat.db";
+        let conn = rusqlite::Connection::open(sql_file)?;
+        let ret_rst:Result<i64,rusqlite::Error> = conn.query_row("SELECT VALUE FROM SCORE_TABLE WHERE GROUP_ID = ? AND USER_ID = ?", [group_id.clone(),user_id.clone()], |row| row.get(0));
+        let ret_num:i64;
+        if let Ok(ret) =  ret_rst {
+            ret_num = ret;
+        }else {
+            ret_num = 0;
+        }
+
+        return Ok(Some(ret_num.to_string()));
+    });
+
+    add_fun(vec!["积分-排行"],|self_t,params|{
+        let key0 = self_t.get_exmap("子频道ID");
+        let key1 = self_t.get_exmap("群ID");
+        let group_id = format!("{}{}",key0,key1);
+
+        let limit = self_t.get_param(params, 0)?;
+        let limit_num;
+        if limit == "" {
+            limit_num = 10;
+        }else{
+            limit_num = limit.parse::<i32>()?;
+        }
+
+        // 查询积分
+        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+        let sql_file = app_dir + "reddat.db";
+        let conn = rusqlite::Connection::open(sql_file)?;
+        let mut stmt = conn.prepare("SELECT USER_ID,VALUE FROM SCORE_TABLE WHERE GROUP_ID = ? ORDER BY VALUE DESC LIMIT ?")?;
+        let mut rows = stmt.query(rusqlite::params_from_iter([group_id,limit_num.to_string()]))?;
+        let mut vec:Vec<String> = vec![];
+        while let Some(row) = rows.next()? {
+            let mut v:Vec<String> = vec![];
+            for i in 0..2 {
+                let k = row.get_ref_unwrap(i);
+                let dat = match k.data_type(){
+                    rusqlite::types::Type::Null => "".to_string(),
+                    rusqlite::types::Type::Integer => k.as_i64().unwrap().to_string(),
+                    rusqlite::types::Type::Real => k.as_f64().unwrap().to_string(),
+                    rusqlite::types::Type::Text => k.as_str().unwrap().to_owned(),
+                    rusqlite::types::Type::Blob => self_t.build_bin(k.as_blob().unwrap().to_vec())
+                };
+                v.push(dat);
+            }
+            vec.push(self_t.build_arr(v.iter().map(AsRef::as_ref).collect()));
+        }
+        return Ok(Some(self_t.build_arr(vec.iter().map(AsRef::as_ref).collect())));
+    });
 }
