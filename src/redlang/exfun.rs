@@ -840,7 +840,7 @@ pub fn init_ex_fun_map() {
         for x in 0..width {
             for y in 0..height {
                 if (x - r)*(x - r) + (y - r)*(y - r) > r * r {
-                    let mut pix = img.get_pixel_mut(x, y);
+                    let pix = img.get_pixel_mut(x, y);
                     pix.0[3] = 0;
                 }
             }
@@ -887,7 +887,7 @@ pub fn init_ex_fun_map() {
         let height = img.height();
         for x in 0..width {
             for y in 0..height {
-                let mut pix = img.get_pixel_mut(x, y);
+                let pix = img.get_pixel_mut(x, y);
                 let red = pix.0[0] as f32  * 0.3;
                 let green = pix.0[1] as f32  * 0.589;
                 let blue = pix.0[2] as f32  * 0.11;
@@ -1122,7 +1122,7 @@ pub fn init_ex_fun_map() {
         let mut img:ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(image_width, image_height as u32);
         for x in 0..image_width {
             for y in 0..image_height {
-                let mut pix = img.get_pixel_mut(x, y);
+                let pix = img.get_pixel_mut(x, y);
                 pix.0 = color.0;
             }
         }
@@ -1273,7 +1273,6 @@ pub fn init_ex_fun_map() {
         return Ok(Some("".to_string()));
     });
     
-    #[cfg(target_os = "windows")]
     add_fun(vec!["网页截图"],|self_t,params|{
         fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
             let path = self_t.get_param(params, 0)?;
@@ -1436,7 +1435,6 @@ pub fn init_ex_fun_map() {
         return Ok(Some(ret_str));
     });
 
-    #[cfg(target_os = "windows")]
     add_fun(vec!["截屏"],|self_t,_params|{
         let screens = screenshots::Screen::all()?;
         if screens.len() > 0 {
@@ -2136,6 +2134,28 @@ def red_out(sw):
         let input = self_t.get_param(params, 1)?;
         let ret = call_py_block(&code,&input);
         Ok(Some(ret))
+    });
+    add_fun(vec!["区间选择"],|self_t,params|{
+        let obj_text = self_t.get_param(params, 0)?;
+        let select_num = self_t.get_param(params, 1)?.parse::<f64>()? + 0.0000001f64;
+        let obj = RedLang::parse_obj(&obj_text)?;
+        for (k,v) in &obj {
+            let k_t = k.split('~').collect::<Vec<&str>>();
+            let num1_str = k_t.get(0).ok_or("num1 not exist")?;
+            let num2_str = k_t.get(1).ok_or("num2 not a exist")?;
+            let mut ok1 = false;
+            let mut ok2 = false;
+            if *num1_str == "" || select_num > num1_str.parse::<f64>()? {
+                ok1 = true;
+            }
+            if *num2_str == "" || select_num < num2_str.parse::<f64>()? {
+                ok2 = true;
+            }
+            if ok1 && ok2 {
+                return Ok(Some(v.to_owned()));
+            }
+        }
+        Ok(Some("".to_string()))
     });
 }
 
