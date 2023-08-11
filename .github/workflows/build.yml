@@ -1,14 +1,14 @@
 name: Build Test
 
 on:
-  push:
-    branches:
-    - master
-    paths:
-    - .github/workflows/**
-    - src/**
-    - res/**
-    - Cargo.toml
+  workflow_dispatch:
+    inputs:
+      logLevel:
+        description: 'Log level'
+        required: true
+        default: 'warning'
+      tags:
+        description: 'Test build tags'
 
 jobs:
   test:
