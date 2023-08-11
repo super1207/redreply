@@ -1435,6 +1435,7 @@ pub fn init_ex_fun_map() {
         return Ok(Some(ret_str));
     });
 
+    #[cfg(target_os = "windows")]
     add_fun(vec!["截屏"],|self_t,_params|{
         let screens = screenshots::Screen::all()?;
         if screens.len() > 0 {

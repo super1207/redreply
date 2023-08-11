@@ -41,12 +41,11 @@ markdown = "1.0.0-alpha.7"
 reqwest = {version = "0.11.18",default-features = false,features = ["rustls-tls"]}
 time = { version = "0.3.25", features = ["formatting", "macros"] }
 headless_chrome = {version="1.0.5",default-features = false}
-screenshots = "0.7.1"
+
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.50.0"
-
-
+screenshots = "0.7.1"
 
 
 [profile.release]
