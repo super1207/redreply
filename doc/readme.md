@@ -1676,7 +1676,6 @@ onebot事件json对应的RedLang对象。
 
 
 
-
 ### 群输入流
 
 
