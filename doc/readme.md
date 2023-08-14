@@ -1193,7 +1193,7 @@ CSS选择器可以选择截图的元素，省略CSS选择器表示截图整个�
 
 【命令行@<font color="red">文本</font>】
 
-运行一个命令，返回命令输出。windows上，用cmd运行；linux上用sh运行。
+运行一个命令，返回命令输出。windows上，用cmd运行；linux上用sh运行。运行目录为脚本的script.json所在的目录。
 
 
 ### 启动

@@ -3,12 +3,10 @@ name: Build Test
 on:
   workflow_dispatch:
     inputs:
-      logLevel:
+      name:
         description: 'Log level'
         required: true
         default: 'warning'
-      tags:
-        description: 'Test build tags'
 
 jobs:
   test:

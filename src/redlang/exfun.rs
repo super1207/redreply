@@ -10,7 +10,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 
-use crate::{cqapi::{cq_add_log, cq_add_log_w}, redlang::get_random, RT_PTR, pyserver::call_py_block};
+use crate::{cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory2}, redlang::get_random, RT_PTR, pyserver::call_py_block};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -1316,10 +1316,11 @@ pub fn init_ex_fun_map() {
     
     add_fun(vec!["命令行"],|self_t,params|{
         let cmd_str = self_t.get_param(params, 0)?;
+        let currdir = cq_get_app_directory2()?;
         let output = if cfg!(target_os = "windows") {
-            std::process::Command::new("cmd").arg("/c").arg(cmd_str).output()?
+            std::process::Command::new("cmd").current_dir(currdir).arg("/c").arg(cmd_str).output()?
         } else {
-            std::process::Command::new("sh").arg("-c").arg(cmd_str).output()?
+            std::process::Command::new("sh").current_dir(currdir).arg("-c").arg(cmd_str).output()?
         };
         let mut output_str = 
         if cfg!(target_os = "windows") {
