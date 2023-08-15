@@ -398,7 +398,9 @@ pub fn init_cq_ex_fun_map() {
         let mut sub_key_obj:BTreeMap<String,String> = BTreeMap::new();
         sub_key_obj.insert("type".to_string(), tp.to_string());
         let re = fancy_regex::Regex::new("[:,]([^\\[\\],]+?)=([^\\[\\],]*?)(?=[\\],])")?;
-        if let Some(cap) = re.captures(&data_str)? {
+
+        for cap_iter in re.captures_iter(&data_str) {
+            let cap = cap_iter?;
             let len = cap.len();
             if len == 3 {
                 let key = &cap[1];

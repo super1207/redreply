@@ -29,6 +29,7 @@ mod botconn;
 mod httpserver;
 mod httpevent;
 mod pyserver;
+mod test;
 
 #[macro_use]
 extern crate lazy_static; 
