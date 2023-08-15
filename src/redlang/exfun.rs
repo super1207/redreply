@@ -10,7 +10,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 
-use crate::{cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory2}, redlang::get_random, RT_PTR, pyserver::call_py_block};
+use crate::{cqapi::cq_add_log, cq_add_log_w, redlang::get_random, RT_PTR, pyserver::call_py_block};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -1316,7 +1316,7 @@ pub fn init_ex_fun_map() {
     
     add_fun(vec!["命令行"],|self_t,params|{
         let cmd_str = self_t.get_param(params, 0)?;
-        let currdir = cq_get_app_directory2()?;
+        let currdir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let output = if cfg!(target_os = "windows") {
             std::process::Command::new("cmd").current_dir(currdir).arg("/c").arg(cmd_str).output()?
         } else {
@@ -2110,10 +2110,32 @@ def red_out(sw):
         let input = self_t.get_param(params, 1)?;
         let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+
+
+        fs::create_dir_all(app_dir.clone() + "pymain")?;
+        let foo = std::process::Command::new("python").current_dir(app_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
+        if foo.is_err() {
+            return Err(RedLang::make_err(&format!("python环境创建失败:{:?}",foo)));
+        }else {
+            let is_ok = foo.unwrap().success();
+            if !is_ok {
+                cq_add_log_w("python环境创建异常").unwrap();
+            }
+        }
+
+        let curr_env = std::env::var("PATH").unwrap_or_default();
+
+        let new_env = if cfg!(target_os = "windows") {
+            format!("{}pymain/Scripts;{}",app_dir,curr_env)
+        } else {
+            format!("{}pymain/bin:{}",app_dir,curr_env)
+        };
+
         let p = std::process::Command::new("python")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .current_dir(app_dir)
+        .env("PATH", new_env)
         .arg("-c")
         .arg(format!("{code}{code1}"))
         .arg(&input_b64)
@@ -2121,7 +2143,7 @@ def red_out(sw):
         let out = String::from_utf8_lossy(&p.stdout).to_string();
         let err = String::from_utf8_lossy(&p.stderr).to_string();
         if err != "" {
-            return Err(RedLang::make_err(&err));
+            cq_add_log_w(&format!("python中的警告或错误:{}",err)).unwrap();
         }
         let content_rst = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
             &base64::alphabet::STANDARD,

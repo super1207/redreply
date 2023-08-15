@@ -7,6 +7,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
+use std::thread;
 use cqapi::cq_get_app_directory2;
 use httpserver::init_http_server;
 
@@ -194,10 +195,13 @@ pub fn initialize() -> i32 {
         cq_add_log_w(&err.to_string()).unwrap();
     }
 
-    if let Err(err) = init_python(){
-        cq_add_log_w(&err.to_string()).unwrap();
-    }
-
+    // 创建python运行环境
+    std::thread::spawn(||{
+        if let Err(err) = init_python(){
+            cq_add_log_w(&err.to_string()).unwrap();
+        }
+    });
+    
     if let Err(err) = init_code(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
@@ -237,11 +241,23 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     Ok(serde_json::from_str(&script)?)
 }
 
+fn create_python_env() -> Result<(), Box<dyn std::error::Error>> {
+    let app_dir = cq_get_app_directory1()?;
+    fs::create_dir_all(app_dir.clone() + "pymain")?;
+    let foo = std::process::Command::new("python").current_dir(app_dir).arg("-m").arg("venv").arg("pymain").status();
+    if foo.is_err() {
+        return Err(RedLang::make_err(&format!("python环境创建失败:{:?}",foo)));
+    }else {
+        cq_add_log_w(&format!("python服务创建:{:?}",foo.unwrap())).unwrap();
+    }
+    Ok(())
+}
+
 pub fn init_python() -> Result<(), Box<dyn std::error::Error>> {
+    create_python_env()?;
     let config = read_config()?;
     let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
     let code = r#"
-import websocket
 import json
 import threading
 import time
@@ -311,19 +327,35 @@ def conn_fun():
         on_open= on_open,
         cookie="password={}".format(os.environ.get('password', ''))
     )
-    while True:
-        WS_APP.run_forever()
-        time.sleep(5)
+    WS_APP.run_forever()
+
 red_install("websocket-client")
+import websocket
 conn_fun()
 "#;
     let password:String = url::form_urlencoded::byte_serialize(read_web_password()?.as_bytes()).collect();
-    std::process::Command::new("python")
-    .arg("-c")
-    .arg(code)
-    .env("port", port.to_string())
-    .env("password", password)
-    .spawn()?;
+    let curr_env = std::env::var("PATH").unwrap_or_default();
+    
+    let new_env = if cfg!(target_os = "windows") {
+        format!("{}pymain/Scripts;{}",cq_get_app_directory1()?,curr_env)
+    } else {
+        format!("{}pymain/bin:{}",cq_get_app_directory1()?,curr_env)
+    };
+
+    thread::spawn(move ||{
+        let foo = std::process::Command::new("python")
+        .env("PATH", new_env)
+        .arg("-c")
+        .arg(code)
+        .env("port", port.to_string())
+        .env("password", password)
+        .status();
+        if foo.is_err() {
+            cq_add_log_w(&format!("python服务启动失败:{:?}",foo)).unwrap();
+        }else {
+            cq_add_log_w(&format!("python服务退出:{:?}",foo.unwrap())).unwrap();
+        }
+    });
     Ok(())
 }
 

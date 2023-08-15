@@ -277,6 +277,7 @@ async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:
 
             if msg_text == "opened" {
                 G_PYSER_OPEN.store(true,std::sync::atomic::Ordering::Relaxed);
+                cq_add_log_w("python环境已经连接！").unwrap();
                 continue;
             }
 
@@ -481,6 +482,7 @@ pub fn init_http_server() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     });
+    
     if let Some(not_open_browser) = config.get("not_open_browser") {
         if not_open_browser == false {
             opener::open(format!("http://localhost:{port}"))?;
@@ -488,7 +490,6 @@ pub fn init_http_server() -> Result<(), Box<dyn std::error::Error>> {
     }else {
         opener::open(format!("http://localhost:{port}"))?;
     }
-    
     
     Ok(())
 }
