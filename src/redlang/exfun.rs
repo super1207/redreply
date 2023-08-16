@@ -2153,6 +2153,60 @@ def red_out(sw):
         }
         Ok(Some(String::from_utf8(content_rst.unwrap())?))
     });
+        add_fun(vec!["运行本地PY"],|self_t,params|{
+        let code = r#"
+import os
+import sysconfig
+import sys
+
+def myprint(*args,**kwargs):
+    pass
+
+red_print = sys.stdout.write
+
+sys.stdout.write = myprint
+
+def red_in():
+    import os
+    import base64
+    import sys
+    l = len(sys.argv)
+    if l < 2:
+        return ""
+    sw = base64.b64decode(sys.argv[1]).decode()
+    return sw
+
+def red_out(sw):
+    import base64
+    en = base64.b64encode(sw.encode()).decode()
+    red_print(en)
+"#;
+        let code1 = self_t.get_param(params, 0)?;
+        let input = self_t.get_param(params, 1)?;
+        let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
+        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+
+        let p = std::process::Command::new("python")
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(app_dir)
+        .arg("-c")
+        .arg(format!("{code}{code1}"))
+        .arg(&input_b64)
+        .output()?;
+        let out = String::from_utf8_lossy(&p.stdout).to_string();
+        let err = String::from_utf8_lossy(&p.stderr).to_string();
+        if err != "" {
+            cq_add_log_w(&format!("python中的警告或错误:{}",err)).unwrap();
+        }
+        let content_rst = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+            &base64::alphabet::STANDARD,
+            base64::engine::general_purpose::PAD), &out);
+        if content_rst.is_err() {
+            return Err(RedLang::make_err(&out));
+        }
+        Ok(Some(String::from_utf8(content_rst.unwrap())?))
+    });
     add_fun(vec!["快速运行PY"],|self_t,params|{
         let code = self_t.get_param(params, 0)?;
         let input = self_t.get_param(params, 1)?;
@@ -2182,6 +2236,9 @@ def red_out(sw):
         Ok(Some("".to_string()))
     });
 }
+
+
+
 
 pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {
     let err_str = "Json解析失败";
