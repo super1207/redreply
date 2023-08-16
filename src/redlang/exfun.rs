@@ -9,7 +9,7 @@ use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
-
+use std::io::Write;
 use crate::{cqapi::cq_add_log, cq_add_log_w, redlang::get_random, RT_PTR, pyserver::call_py_block};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
@@ -2130,18 +2130,25 @@ def red_out(sw):
         } else {
             format!("{}pymain/bin:{}",app_dir,curr_env)
         };
-
-        let p = std::process::Command::new("python")
+        let pip_in = std::process::Stdio::piped();
+        let mut p = std::process::Command::new("python")
+        .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .current_dir(app_dir)
         .env("PATH", new_env)
         .arg("-c")
         .arg(format!("{code}{code1}"))
-        .arg(&input_b64)
-        .output()?;
-        let out = String::from_utf8_lossy(&p.stdout).to_string();
-        let err = String::from_utf8_lossy(&p.stderr).to_string();
+        .spawn()?;
+        let s = p.stdin.take();
+        if s.is_none() {
+            p.kill()?;
+        }else {
+            s.unwrap().write_all(input_b64.as_bytes())?;
+        }
+        let output = p.wait_with_output()?;
+        let out = String::from_utf8_lossy(&output.stdout).to_string();
+        let err = String::from_utf8_lossy(&output.stderr).to_string();
         if err != "" {
             cq_add_log_w(&format!("python中的警告或错误:{}",err)).unwrap();
         }
@@ -2167,13 +2174,9 @@ red_print = sys.stdout.write
 sys.stdout.write = myprint
 
 def red_in():
-    import os
     import base64
-    import sys
-    l = len(sys.argv)
-    if l < 2:
-        return ""
-    sw = base64.b64decode(sys.argv[1]).decode()
+    inn = input()
+    sw = base64.b64decode(inn).decode()
     return sw
 
 def red_out(sw):
@@ -2181,21 +2184,30 @@ def red_out(sw):
     en = base64.b64encode(sw.encode()).decode()
     red_print(en)
 "#;
+    
         let code1 = self_t.get_param(params, 0)?;
         let input = self_t.get_param(params, 1)?;
         let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+        let pip_in = std::process::Stdio::piped();
 
-        let p = std::process::Command::new("python")
+        let mut p = std::process::Command::new("python")
+        .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .current_dir(app_dir)
         .arg("-c")
         .arg(format!("{code}{code1}"))
-        .arg(&input_b64)
-        .output()?;
-        let out = String::from_utf8_lossy(&p.stdout).to_string();
-        let err = String::from_utf8_lossy(&p.stderr).to_string();
+        .spawn()?;
+        let s = p.stdin.take();
+        if s.is_none() {
+            p.kill()?;
+        }else {
+            s.unwrap().write_all(input_b64.as_bytes())?;
+        }
+        let output = p.wait_with_output()?;
+        let out = String::from_utf8_lossy(&output.stdout).to_string();
+        let err = String::from_utf8_lossy(&output.stderr).to_string();
         if err != "" {
             cq_add_log_w(&format!("python中的警告或错误:{}",err)).unwrap();
         }

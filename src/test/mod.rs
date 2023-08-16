@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 #[test]
 fn test_cqstr_to_arr() {
 
@@ -13,6 +11,7 @@ fn test_cqstr_to_arr() {
 
 #[test]
 fn test_cqparse() {
+    use std::collections::BTreeMap;
     let data_str = "[CQ:image,file=620a6c143114a4feaaf9e89cc83162b6.image,subType=0,url=https://gchat.qpic.cn/]";
     let pos1 = data_str.find(",").ok_or("CQ码解析失败").unwrap();
     let tp = data_str.get(4..pos1).ok_or("CQ码解析失败").unwrap();
