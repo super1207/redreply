@@ -17,12 +17,12 @@
       }
    </style>
    <script type="text/javascript">
+      var ws;
       function is_https() {
          return 'https:' == location.protocol ? true : false;
       }
       function WebSocketTest() {
          if ("WebSocket" in window) {
-            var ws;
             if (is_https()) {
                ws = new WebSocket("wss://" + window.location.host + "/watch_log")
             } else {
@@ -51,12 +51,23 @@
             alert("您的浏览器不支持 WebSocket!");
          }
       }
+      function disconnect() {
+         if(ws != null) {
+            var ele = document.getElementById("connect_status");
+            ele.innerHTML = "已经关闭连接，刷新页面自动连接..."
+            var btn = document.getElementById("dis");
+            btn.hidden = true
+            ws.close();
+            delete ws
+         }
+         
+      }
    </script>
 </head>
 
 <body>
    <h1 style="text-align: center;color: red;">红色问答日志</h1>
-   <span id="connect_status">正在连接...</span>
+   <span id="connect_status">正在连接...</span><button id = "dis" onclick="disconnect()">断开连接</button>
    <textarea id="logtext"
       style="align-content: stretch;flex: 1 0 auto;white-space:pre-wrap;word-wrap: break-word;word-break:break-all"
       readonly></textarea>
