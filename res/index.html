@@ -19,7 +19,8 @@
             <dialog id = "other_dlg">
                 <div>
                     <div>
-                        <div class = "ws_set"><span>包名:</span><input v-model = "new_pkg_name"></input><button @click="pkg_create()">创建包</button></div>
+                        <div class = "ws_set"><span>包名:</span><input v-model = "new_pkg_name"></input><button @click="pkg_create()">创建新包</button></div>
+                        <div class = "ws_set"><span>包名:</span><input v-model = "rename_pkg_name"></input><button @click="pkg_rename()">修改包名</button></div>
                         <button @click="pkg_delete()">删除包</button>
                     </div>
                     <button @click="other_close()">取消</button>

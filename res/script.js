@@ -8,6 +8,14 @@ function validateFileName(fileName ){
 	}
 	return true;
 }
+function randomString(e) {    
+    e = e || 32;
+    var t = "123456789",
+    a = t.length,
+    n = "";
+    for (i = 0; i < e; i++) n += t.charAt(Math.floor(Math.random() * a));
+    return n
+}
 const { createApp } = Vue
             createApp({
                 data() {
@@ -26,6 +34,7 @@ const { createApp } = Vue
                         select_pkg_name:"默认包",
                         version:"",
                         new_pkg_name:"",
+                        rename_pkg_name:""
                     }
                 },
                 mounted () {
@@ -206,6 +215,8 @@ const { createApp } = Vue
                         this.select_name_index = this.select_name_index + 1
                     },
                     the_other(event) {
+                        this.new_pkg_name = "包_"+randomString(4)
+                        this.rename_pkg_name = this.select_pkg_name
                         document.getElementById('other_dlg').showModal();
                     },
                     other_close(event) {
@@ -227,6 +238,29 @@ const { createApp } = Vue
                             this.select_name_index_change(-1);
                             this.select_name_index=-1;
                             this.select_pkg_name = this.new_pkg_name
+                            document.getElementById('other_dlg').close()
+                        }  
+                    },
+                    pkg_rename(event) {
+                        if (this.rename_pkg_name == "") {
+                            alert("失败，包名不能为空")
+                        }
+                        else if (this.rename_pkg_name == this.select_pkg_name) {
+                            alert("失败，新旧包名一样")
+                        }
+                        else if(validateFileName(this.rename_pkg_name) == false) {
+                            alert("失败，包名不能包含【\\\\/:*?\"<>|】这些非法字符")
+                        }
+                        else if(this.pkg_codes.hasOwnProperty(this.rename_pkg_name)) {
+                            alert("失败，包名已经存在")
+                        }
+                        else if(this.select_pkg_name == "默认包") {
+                            alert("失败，不可以修改默认包")
+                        }
+                        else {
+                            this.pkg_codes[this.rename_pkg_name] = this.pkg_codes[this.select_pkg_name]
+                            delete this.pkg_codes[this.select_pkg_name]
+                            this.select_pkg_name = this.rename_pkg_name
                             document.getElementById('other_dlg').close()
                         }  
                     },
