@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fs;
 use std::panic;
@@ -11,6 +12,7 @@ use std::thread;
 use cqapi::cq_get_app_directory2;
 use httpserver::init_http_server;
 
+use mytool::read_json_str;
 use redlang::RedLang;
 use serde_json;
 use rust_embed::RustEmbed;
@@ -61,6 +63,8 @@ pub struct ScriptRelatMsg {
 lazy_static! {
     // 用于记录加载的脚本
     pub static ref G_SCRIPT:RwLock<serde_json::Value> = RwLock::new(serde_json::json!([]));
+    // 用于记录加载的包名
+    pub static ref G_PKG_NAME:RwLock<HashSet<String>> = RwLock::new(HashSet::new());
     // 用于类型UUID
     pub static ref REDLANG_UUID:String = uuid::Uuid::new_v4().to_string();
     // 用于分页命令
@@ -206,9 +210,7 @@ pub fn initialize() -> i32 {
     if let Err(err) = init_code(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
-    if let Err(err) = initevent::do_init_event(){
-        cq_add_log_w(&err.to_string()).unwrap();
-    }
+
     if let Err(err) = botconn::do_conn_event(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
@@ -452,7 +454,40 @@ pub fn set_ws_urls(ws_urls:serde_json::Value) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
-pub fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
+    let sep = std::path::MAIN_SEPARATOR;
+    let err = "get asset err";
+    fs::create_dir_all(cq_get_app_directory1().unwrap() + "webui")?;
+    for it in Asset::iter() {
+        let file = Asset::get(&it.to_string()).ok_or(err)?;
+        fs::write(cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
+    } 
+    for it in AssetDoc::iter() {
+        let file = AssetDoc::get(&it.to_string()).ok_or(err)?;
+        fs::write(cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
+    } 
+    Ok(())
+}
+
+
+pub fn get_version() -> String {
+    let file = Asset::get("res/version.txt").unwrap();
+    let buf = file.data;
+    let version_str = String::from_utf8(buf.to_vec()).unwrap();
+    return version_str;
+}
+
+pub fn get_all_pkg_name_by_cache() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let wk = G_PKG_NAME.read()?;
+    let mut ret: Vec<String> = vec![];
+    for it in &*wk {
+        ret.push(it.to_owned());
+    }
+    Ok(ret)
+}
+
+
+fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let plus_dir_str = cq_get_app_directory1()?;
     let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
     std::fs::create_dir_all(&pkg_dir)?;
@@ -474,8 +509,7 @@ pub fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error>> {
 fn get_all_pkg_code() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let plus_dir_str = cq_get_app_directory1()?;
     let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
-    let pkg_names 
-     = get_all_pkg_name()?;
+    let pkg_names = get_all_pkg_name()?;
     let mut arr_val:Vec<serde_json::Value> = vec![];
     for it in &pkg_names {
         let script_path = pkg_dir.join(&it).join("script.json");
@@ -530,80 +564,101 @@ pub fn init_code() -> Result<(), Box<dyn std::error::Error>>{
     }
 
     // 保存代码到内存
-    let mut wk = G_SCRIPT.write()?;
-    (*wk) = serde_json::Value::Array(arr_val);
+    {
+        let mut wk = G_SCRIPT.write()?;
+        (*wk) = serde_json::Value::Array(arr_val);
+    }
+
+    {
+        // 刷新包名
+        let pkg_names = get_all_pkg_name()?;
+        let mut lk = G_PKG_NAME.write()?;
+        lk.clear();
+        for it in &pkg_names {
+            lk.insert(it.to_owned());
+        }
+    }
+
+    // 执行初始化脚本
+    if let Err(err) = initevent::do_init_event(){
+        cq_add_log_w(&err.to_string()).unwrap();
+    }
+
     Ok(())
 }
 
+
 pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
+
+    // 解析网络数据
     let mut code_map:HashMap<String,Vec<serde_json::Value>> = HashMap::new();
-    for it in get_all_pkg_name()? {
-        code_map.insert(it, vec![]);
+    let mut key_vec:Vec<String> = vec![];
+    let js:Vec<serde_json::Value>; 
+
+    {
+        let js_t:Vec<serde_json::Value> = serde_json::from_str(contents)?;
+        js  = js_t.get(1..).ok_or("save_code err 1")?.to_vec();
+        { 
+            for it in &js {
+                let mut it_t = it.to_owned();
+                // 得到网络包的包名,如果没有pkg_name，则默认为"",网络包中的默认包是没有pkg_name的
+                let pkg_name_str = read_json_str(&it_t, "pkg_name");
+                it_t.as_object_mut().ok_or("it_t not obj")?.remove("pkg_name");
+                if !code_map.contains_key(&pkg_name_str) {
+                    code_map.insert(pkg_name_str.to_owned(), vec![]);
+                }
+                code_map.get_mut(&pkg_name_str).unwrap().push(it_t);
+            }
+        }
+
+        for it in js_t.get(0).unwrap().as_array().ok_or("save_code err 2")? {
+            let s = it.as_str().ok_or("save_code err 3")?;
+            key_vec.push(s.to_owned());
+        }
     }
-    code_map.insert("".to_string(), vec![]);
-    let js:Vec<serde_json::Value> = serde_json::from_str(contents)?;
-    for it in &js {
-        let pkg_name_opt = it.as_object().ok_or("脚本格式错误")?.get("pkg_name");
-        let mut pkg_name_str = "";
-        if let Some(pkg_name) = pkg_name_opt {
-            pkg_name_str = pkg_name.as_str().unwrap_or_default();
-        }
-        if !code_map.contains_key(pkg_name_str) {
-            code_map.insert(pkg_name_str.to_owned(), vec![]);
-        }
-        let mut it_t = it.to_owned();
-        if let Some(k) = it_t.as_object_mut() {
-            k.remove("pkg_name");
-        }
-        code_map.get_mut(pkg_name_str).unwrap().push(it_t);
-    }
+    
+
+    // 保存脚本
     {
         let plus_dir_str = cq_get_app_directory1()?;
         let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
-        let mut wk = G_SCRIPT.write()?;
-        for (pkg_name,code) in code_map {
-            let cont = serde_json::Value::Array(code).to_string();
+
+        // 创建文件夹
+        for pkg_name in &key_vec {
+            let script_path = pkg_dir.join(pkg_name);
+            std::fs::create_dir_all(&script_path)?;
+        }
+
+        for (pkg_name,code) in &code_map {
+            let cont = serde_json::Value::Array(code.to_vec()).to_string();
             if pkg_name == "" {
-                fs::write(cq_get_app_directory2()? + "script.json", cont).unwrap();
-            }else {
-                let script_path = pkg_dir.join(pkg_name).join("script.json");
-                fs::write(script_path, cont).unwrap();
+                fs::write(cq_get_app_directory2()? + "script.json", cont)?;
+            }else { 
+                let script_path = pkg_dir.join(pkg_name);
+                std::fs::create_dir_all(&script_path)?;
+                fs::write(script_path.join("script.json"), cont)?;
             }
         }
-        
-        
-        (*wk) = serde_json::Value::Array(js);
+
+        // 删除目录下多余的包
+        let pkg_names = get_all_pkg_name()?;
+        for name in &pkg_names {
+            if !key_vec.contains(name) {
+                let script_path = pkg_dir.join(name);
+                let _ = fs::remove_dir_all(script_path);
+            }
+        }
+
     }
-    if let Err(err) = crate::initevent::do_init_event(){
+   
+    // 重新加载脚本
+    if let Err(err) = crate::init_code() {
         cq_add_log_w(&format!("can't call init evt:{}",err)).unwrap();
     }
     Ok(())
 }
 
-pub fn read_code() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+pub fn read_code_cache() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let wk = G_SCRIPT.read()?;
     Ok((*wk).clone())
-}
-
-pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
-    let sep = std::path::MAIN_SEPARATOR;
-    let err = "get asset err";
-    fs::create_dir_all(cq_get_app_directory1().unwrap() + "webui")?;
-    for it in Asset::iter() {
-        let file = Asset::get(&it.to_string()).ok_or(err)?;
-        fs::write(cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
-    } 
-    for it in AssetDoc::iter() {
-        let file = AssetDoc::get(&it.to_string()).ok_or(err)?;
-        fs::write(cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
-    } 
-    Ok(())
-}
-
-
-pub fn get_version() -> String {
-    let file = Asset::get("res/version.txt").unwrap();
-    let buf = file.data;
-    let version_str = String::from_utf8(buf.to_vec()).unwrap();
-    return version_str;
 }

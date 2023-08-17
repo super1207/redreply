@@ -1,4 +1,4 @@
-use crate::{read_code, cqapi::cq_add_log_w};
+use crate::{read_code_cache, cqapi::cq_add_log_w};
 
 
 fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str,&'a str,&'a str), Box<dyn std::error::Error>>{
@@ -16,7 +16,7 @@ fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a
 
 // 处理init事件
 pub fn do_init_event() -> Result<i32, Box<dyn std::error::Error>> {
-    let script_json = read_code()?;
+    let script_json = read_code_cache()?;
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
         let (cffs,code,name,pkg_name) = get_script_info(&script_json[i])?;
         let mut rl = crate::redlang::RedLang::new();

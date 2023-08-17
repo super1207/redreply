@@ -1,3 +1,13 @@
+
+function validateFileName(fileName ){
+	//var fileName = 'a.html';
+	var reg = new RegExp('[\\\\/:*?\"<>|]');
+	if (reg.test(fileName)) {
+	    //"上传的文件名不能包含【\\\\/:*?\"<>|】这些非法字符,请修改后重新上传!";
+	    return false;
+	}
+	return true;
+}
 const { createApp } = Vue
             createApp({
                 data() {
@@ -14,7 +24,8 @@ const { createApp } = Vue
                         codes: "正在加载内容...",
                         pkg_codes : {"默认包":[]},
                         select_pkg_name:"默认包",
-                        version:""
+                        version:"",
+                        new_pkg_name:"",
                     }
                 },
                 mounted () {
@@ -97,10 +108,16 @@ const { createApp } = Vue
                     save_code() {
                         this.save_cache(this.select_name_index);
                         let code = []
+
+                        let keys = []
+                        for(let k in this.pkg_codes) {
+                            if(k != "默认包") {
+                                keys.push(k);
+                            }
+                        }
+                        code.push(keys)
                         
                         for(let k in this.pkg_codes) {
-                            // console.log(k)
-                            // console.log(this.pkg_codes[k])
                             
                             if(k == "默认包"){
                                 for(let it in this.pkg_codes[k])
@@ -187,6 +204,47 @@ const { createApp } = Vue
                         this.pkg_codes[this.select_pkg_name][this.select_name_index + 1] = t
                         this.select_name_index_change(this.select_name_index + 1);
                         this.select_name_index = this.select_name_index + 1
-                    }
+                    },
+                    the_other(event) {
+                        document.getElementById('other_dlg').showModal();
+                    },
+                    other_close(event) {
+                        document.getElementById('other_dlg').close();
+                    },
+                    pkg_create(event) {
+                        if (this.new_pkg_name == "") {
+                            alert("失败，包名不能为空")
+                        }
+                        else if(validateFileName(this.new_pkg_name) == false) {
+                            alert("失败，包名不能包含【\\\\/:*?\"<>|】这些非法字符")
+                        }
+                        else if(this.pkg_codes.hasOwnProperty(this.new_pkg_name)) {
+                            alert("失败，包名已经存在")
+                        }
+                        else {
+                            this.pkg_codes[this.new_pkg_name] = []
+                            this.save_cache(this.select_name_index);
+                            this.select_name_index_change(-1);
+                            this.select_name_index=-1;
+                            this.select_pkg_name = this.new_pkg_name
+                            document.getElementById('other_dlg').close()
+                        }  
+                    },
+                    pkg_delete(event) {
+                        if(this.select_pkg_name == "默认包") {
+                            alert("失败，不可以删除默认包")
+                        }
+                        else if(this.pkg_codes.hasOwnProperty(this.select_pkg_name) == false)
+                        {
+                            alert("失败，没有这个包")
+                        }
+                        else
+                        {
+                            select_name_index=-1;
+                            delete this.pkg_codes[this.select_pkg_name]
+                            this.select_pkg_name = "默认包"
+                            document.getElementById('other_dlg').close()
+                        }
+                    },
                 }
             }).mount('#app')

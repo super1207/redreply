@@ -102,7 +102,7 @@ pub fn do_script(rl:&mut RedLang,code:&str) -> Result<String, Box<dyn std::error
                     return Ok((cffs,code,pkg_name));
                 } 
                 fn fun(err_str:String,exmap:HashMap<String, Arc<String>>,pkg_name:String,script_name:String) -> Result<i32, Box<dyn std::error::Error>> {
-                    let script_json = crate::read_code()?;
+                    let script_json = crate::read_code_cache()?;
                     let exmap_ptr = Rc::new(RefCell::new(exmap));
                     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
                         let (cffs,code,pkg_name_t) = get_script_info(&script_json[i])?;

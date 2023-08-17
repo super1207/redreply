@@ -2,7 +2,7 @@ use std::{str::FromStr, collections::BTreeMap};
 use hyper::http::{HeaderValue, HeaderName};
 use crate::RT_PTR;
 use crate::cqapi::cq_add_log_w;
-use crate::{redlang::RedLang, read_code};
+use crate::{redlang::RedLang, read_code_cache};
 
 
 fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str,&'a str,&'a str,&'a str,&'a str), Box<dyn std::error::Error>>{
@@ -65,7 +65,7 @@ pub fn do_http_event(mut req:hyper::Request<hyper::Body>) -> Result<hyper::Respo
     let msg: String = url::form_urlencoded::parse(pkg_key.as_bytes())
         .map(|(key, val)| [key, val].concat())
         .collect::<String>();
-    let script_json = read_code()?;
+    let script_json = read_code_cache()?;
     let method = req.method().to_string();
     let mut req_headers = BTreeMap::new();
     for it in req.headers() {

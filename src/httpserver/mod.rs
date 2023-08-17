@@ -32,7 +32,7 @@ pub fn add_ws_log(log_msg:String) {
 async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
     let url_path = request.uri().path();
     if url_path == "/get_code" {
-        match crate::read_code() {
+        match crate::read_code_cache() {
             Ok(code) => {
                 let ret = json!({
                     "retcode":0,
@@ -49,7 +49,7 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool) -> Result
             },
         }
     }else if url_path == "/get_all_pkg_name" {
-        match crate::get_all_pkg_name() {
+        match crate::get_all_pkg_name_by_cache() {
             Ok(code) => {
                 let ret = json!({
                     "retcode":0,

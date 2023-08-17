@@ -16,6 +16,15 @@
     </head>
     <body>
         <div id="app">
+            <dialog id = "other_dlg">
+                <div>
+                    <div>
+                        <div class = "ws_set"><span>包名:</span><input v-model = "new_pkg_name"></input><button @click="pkg_create()">创建包</button></div>
+                        <button @click="pkg_delete()">删除包</button>
+                    </div>
+                    <button @click="other_close()">取消</button>
+                </div>  
+            </dialog>
             <h1>红色问答 {{version}}</h1>
             <div id="pkg_btn_vec">
                 <div v-for="(pkg_content,pkg_name) in pkg_codes" @click="" >
@@ -70,6 +79,7 @@
                     <button @click="add_code()">新增</button>
                     <button @click="del_code()">删除</button>
                     <button @click="save_code()">保存</button>
+                    <button @click="the_other()">其它</button>
                 </div>
                 <div>
                     <button @click="connect_ob()">连接ONEBOT</button>
