@@ -288,7 +288,7 @@ const app = createApp({
             }
             else
             {
-                select_name_index=-1;
+                this.select_name_index=-1;
                 delete this.pkg_codes[this.select_pkg_name]
                 this.select_pkg_name = "默认包"
                 document.getElementById('other_dlg').close()
