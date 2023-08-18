@@ -261,6 +261,10 @@ const { createApp } = Vue
                             this.pkg_codes[this.rename_pkg_name] = this.pkg_codes[this.select_pkg_name]
                             delete this.pkg_codes[this.select_pkg_name]
                             this.select_pkg_name = this.rename_pkg_name
+                            for(let it in this.pkg_codes[this.rename_pkg_name])
+                            {
+                                this.pkg_codes[this.rename_pkg_name][it]['pkg_name'] = this.rename_pkg_name;
+                            }
                             document.getElementById('other_dlg').close()
                         }  
                     },
