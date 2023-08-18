@@ -593,11 +593,14 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
     // 解析网络数据
     let mut code_map:HashMap<String,Vec<serde_json::Value>> = HashMap::new();
     let mut key_vec:Vec<String> = vec![];
+    let mut rename_pkg_process:Vec<Vec<String>> = vec![];
     let js:Vec<serde_json::Value>; 
 
     {
         let js_t:Vec<serde_json::Value> = serde_json::from_str(contents)?;
-        js  = js_t.get(1..).ok_or("save_code err 1")?.to_vec();
+        js  = js_t.get(2..).ok_or("save_code err 1")?.to_vec();
+
+        // 获得脚本内容
         { 
             for it in &js {
                 let mut it_t = it.to_owned();
@@ -611,9 +614,17 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        for it in js_t.get(0).unwrap().as_array().ok_or("save_code err 2")? {
+        // 获得存在的包
+        for it in js_t.get(1).unwrap().as_array().ok_or("save_code err 2")? {
             let s = it.as_str().ok_or("save_code err 3")?;
             key_vec.push(s.to_owned());
+        }
+
+        // 获得重命名目录的方案
+        for it in js_t.get(0).unwrap().as_array().ok_or("save_code err 4")? {
+            let k1 = it.as_array().ok_or("save_code err 5")?.get(0).ok_or("save_code err 6")?.as_str().ok_or("save_code err 7")?.to_owned();
+            let k2 = it.as_array().ok_or("save_code err 5")?.get(1).ok_or("save_code err 6")?.as_str().ok_or("save_code err 7")?.to_owned();
+            rename_pkg_process.push(vec![k1,k2]);
         }
     }
     
@@ -622,6 +633,11 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
     {
         let plus_dir_str = cq_get_app_directory1()?;
         let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
+
+        // 修改文件名
+        for it in rename_pkg_process {
+            fs::rename(pkg_dir.join(it[0].to_owned()), pkg_dir.join(it[1].to_owned()))?;
+        }
 
         // 创建文件夹
         for pkg_name in &key_vec {
