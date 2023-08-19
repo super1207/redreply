@@ -597,6 +597,23 @@ pub fn init_core_fun_map() {
         };
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["定义二类命令"],|self_t,params|{
+        let func_name = self_t.get_param(params, 0)?;
+        let func = params.get(1).ok_or("定义命令:读取参数失败")?;
+        let fun = format!("1FC0F025-BFE7-63A4-CA66-FC3FD8A55B7B{}",self_t.parse_fun(&func)?);
+        let mut w = crate::G_CMD_MAP.write()?;
+        match w.get_mut(&self_t.pkg_name){
+            Some(r) => {
+                r.insert(func_name, fun);
+            },
+            None => {
+                let mut r = HashMap::new();
+                r.insert(func_name, fun);
+                w.insert(self_t.pkg_name.clone(), r);
+            },
+        };
+        return Ok(Some("".to_string()));
+    });
     add_fun(vec!["函数调用","调用函数"],|self_t,params|{
         let ret_str = self_t.call_fun(params,false)?;
         return Ok(Some(ret_str));
@@ -607,6 +624,13 @@ pub fn init_core_fun_map() {
         let params_vec_len = self_t.params_vec.len();
         let ret_str = self_t.params_vec[params_vec_len - 1].get(tms).unwrap_or(&"".to_string()).to_string();
         return Ok(Some(ret_str));
+    });
+    add_fun(vec!["二类参数"],|self_t,params|{
+        let k1 = self_t.get_param(params, 0)?;
+        let tms = k1.parse::<usize>()? - 1;
+        let params_vec_len = self_t.params_vec.len();
+        let ret_str = self_t.params_vec[params_vec_len - 1].get(tms).unwrap_or(&"".to_string()).to_string();
+        return Ok(Some(self_t.parse(&ret_str)?));
     });
     add_fun(vec!["参数个数"],|self_t,_params|{
         let params_vec_len = self_t.params_vec.len();
@@ -1607,6 +1631,7 @@ impl RedLang {
 
         // 执行自定义命令
         {
+            // 获得命令内容
             let fun;
             {
                 let r = crate::G_CMD_MAP.read()?;
@@ -1624,20 +1649,31 @@ impl RedLang {
                     // 获得命令
                     let func = fun;
 
+                    // 判断是否为二类命令
+                    let is_cmd2 = func.starts_with("1FC0F025-BFE7-63A4-CA66-FC3FD8A55B7B");
+
                     // 获得命令参数
                     let fun_params = &params[0..];
                     let mut fun_params_t: Vec<String> = vec![];
                     for i in fun_params {
-                        let p = self.parse(i)?;
-                        fun_params_t.push(p);
+                        if is_cmd2 {
+                            fun_params_t.push(i.to_string()); // 二类命令不进行参数解析
+                        } else {
+                            let p = self.parse(i)?;
+                            fun_params_t.push(p);
+                        }
                     }
 
                     // 修改参数栈
                     self.params_vec.push(fun_params_t);
 
                     // 调用命令
-                    ret_str = self.parse(&func)?;
-
+                    if is_cmd2 {
+                        ret_str = self.parse(&func[36..])?;
+                    }else {
+                        ret_str = self.parse(&func)?;
+                    }
+                   
                     // 参数栈退栈
                     self.params_vec.pop();
 
