@@ -825,6 +825,69 @@ pub fn init_ex_fun_map() {
         return Ok(Some(ret));
     });
 
+    add_fun(vec!["WEBP分解"],|self_t,params|{
+        let webp_str = self_t.get_param(params, 0)?;
+        let webp_bin = RedLang::parse_bin(&webp_str)?;
+        let webp = webp::AnimDecoder::new(&webp_bin).decode()?;
+        let webp_frames = webp.get_frames(0..webp.len()).ok_or("解析webp失败")?;
+        let mut ret_vec:Vec<String> = vec![];
+        for frame in webp_frames {
+            let mut bytes: Vec<u8> = Vec::new();
+            match frame.get_layout() {
+                webp::PixelLayout::Rgb => {
+                    let img_buf: ImageBuffer<image::Rgb<u8>, Vec<_>> = ImageBuffer::from_vec(frame.width(),frame.height(),frame.get_image().to_vec()).ok_or("解析webp失败")?;
+                    img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+                    ret_vec.push(self_t.build_bin(bytes));
+                },
+                webp::PixelLayout::Rgba => {
+                    let img_buf: ImageBuffer<image::Rgba<u8>, Vec<_>> = ImageBuffer::from_vec(frame.width(),frame.height(),frame.get_image().to_vec()).ok_or("解析webp失败")?;
+                    img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+                    ret_vec.push(self_t.build_bin(bytes))
+                }
+            }
+        }
+        let ret = self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect());
+        return Ok(Some(ret));
+    });
+
+    add_fun(vec!["WEBP合成"],|self_t,params|{
+        let text1 = self_t.get_param(params, 0)?;
+        let text2 = self_t.get_param(params, 1)?;
+        let delay = text2.parse::<i32>()?;
+        let img_arr_str = RedLang::parse_arr(&text1)?;
+        let mut frame_vec:Vec<webp::AnimFrame> = vec![];
+        let mut img_buf_vec = vec![];
+        for it in img_arr_str {
+            let img_bin = RedLang::parse_bin(it)?;
+            let img_buf = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
+            img_buf_vec.push(img_buf);
+            
+        }
+        for it in &img_buf_vec {
+            let fm = webp::AnimFrame::from_rgba(&it,it.width() ,it.height() , delay);
+            frame_vec.push(fm);
+        }
+        let width;
+        let height;
+        if frame_vec.len() != 0 {
+            width = frame_vec[0].width();
+            height = frame_vec[0].height();
+        }else {
+            return Err(RedLang::make_err("0张图片不能进行WEBP合成"));
+        }
+        let mut config = webp::WebPConfig::new().unwrap();
+        config.lossless = 1;
+        config.quality = 100f32;
+        let mut wp = webp::AnimEncoder::new(width, height, &config);
+        for frame in frame_vec {
+            wp.add_frame(frame);
+        }
+        let binding = wp.encode();
+        let v = binding.as_bytes();
+        let ret = self_t.build_bin(v.to_vec());
+        return Ok(Some(ret));
+    });
+
     add_fun(vec!["图片变圆","图像变圆"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let img_vec = RedLang::parse_bin(&text1)?;

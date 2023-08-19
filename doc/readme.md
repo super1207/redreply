@@ -1054,7 +1054,7 @@ QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信
 ### 图片遮罩
 
 
-【图片覆盖@<font color="red">大图片字节集</font>@<font color="red">小图片字节集</font>@<font color="red">x</font>@<font color="red">y</font>】
+【图片遮罩@<font color="red">大图片字节集</font>@<font color="red">小图片字节集</font>@<font color="red">x</font>@<font color="red">y</font>】
 
 以小图片为遮罩层，对大图片的指定位置进行遮罩。规则：大图片透明度 = 最大透明度 - 小图片透明度
 
@@ -1093,7 +1093,7 @@ QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信
 例如：
 ```
 【定义变量@img1@【访问【取元素【取图片】@0】】】
-【图片【图片嵌字@【变量@img1】@舔舔？@0@0@30@【数组@255@0@0@255】@宋体】】
+【图片【图片嵌字@【变量@img1】@舔舔？@0@0@30@【数组@255@0@0@255】@【变量@字体字节集】】】
 ```
 
 ### 创建图片
@@ -1140,6 +1140,22 @@ QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信
 【GIF分解@<font color="red">gif图片字节集</font>】
 
 将gif分解为png图片字节集数组。
+
+
+### WEBP合成
+
+
+【WEBP合成@<font color="red">图片字节集数组</font>@<font color="red">延时</font>】
+
+合成webp，延时的单位为毫秒，用于确定webp的播放速度。
+
+
+### WEBP分解
+
+
+【WEBP分解@<font color="red">webp图片字节集</font>】
+
+将webp分解为png图片字节集数组。
 
 
 ### 图片变圆
