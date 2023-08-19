@@ -1876,6 +1876,15 @@ onebot事件json对应的RedLang对象。
 积分的最小值是0。
 
 
+### 积分-设置
+
+【积分-设置@<font color="red">分数</font>】
+
+将发送者在当前群的积分设置为<font color="red">分数</font>。
+
+积分的最小值是0。
+
+
 ### 积分-排行
 
 【积分-排行@<font color="red">数目</font>】

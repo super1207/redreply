@@ -804,6 +804,25 @@ pub fn init_cq_ex_fun_map() {
         return Ok(Some("".to_string()));
     });
 
+    add_fun(vec!["积分-设置"],|self_t,params|{
+        let key0 = self_t.get_exmap("子频道ID");
+        let key1 = self_t.get_exmap("群ID");
+        let group_id = format!("{}{}",key0,key1);
+        let user_id = self_t.get_exmap("发送者ID").to_string();
+        let set_score = self_t.get_param(params, 0)?.parse::<u32>()?;
+
+        // 创建表
+        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+        let sql_file = app_dir + "reddat.db";
+        let conn = rusqlite::Connection::open(sql_file)?;
+        conn.execute("CREATE TABLE IF NOT EXISTS SCORE_TABLE (GROUP_ID TEXT,USER_ID TEXT,VALUE INTEGER DEFAULT 0,PRIMARY KEY(GROUP_ID,USER_ID));", [])?;
+        
+        // 积分设置
+        conn.execute("REPLACE INTO SCORE_TABLE (GROUP_ID,USER_ID,VALUE) VALUES (?,?,?)", [group_id,user_id,set_score.to_string()])?;
+        
+        return Ok(Some("".to_string()));
+    });
+
 
     add_fun(vec!["积分"],|self_t,_params|{
         let key0 = self_t.get_exmap("子频道ID");
