@@ -246,6 +246,14 @@ hellohellohellohellohello
 根据<font color="red">数字</font>来选择要执行的内容，从1开始数。如果越界，则返回空文本。如果<font color="red">数字</font>为空，则表示随机选择一个。
 
 
+### 逻辑选择
+
+
+【逻辑选择@<font color="red">只包含真、假值的逻辑数组</font>@<font color="red">内容1</font>@<font color="red">内容2</font>@...】
+
+根据<font color="red">数组中第一个`真`的位置</font>来选择要执行的内容。
+
+
 ### 循环
 
 

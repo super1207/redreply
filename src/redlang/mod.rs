@@ -1504,6 +1504,18 @@ pub fn init_core_fun_map() {
             return Ok(Some("".to_string()));
         }
     });
+    add_fun(vec!["逻辑选择"],|self_t,params|{
+        let loge_arr_str = self_t.get_param(params, 0)?;
+        let loge_arr = RedLang::parse_arr(&loge_arr_str)?;
+        let mut index = 0;
+        for it in loge_arr {
+            if it == "真" {
+                return Ok(Some(self_t.get_param(params, index + 1)?));
+            }
+            index += 1;
+        }
+        return Ok(Some("".to_string()));
+    });
 }
 
 impl RedLang {
