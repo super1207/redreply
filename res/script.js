@@ -38,7 +38,8 @@ const app = createApp({
             version:"",
             new_pkg_name:"",
             rename_pkg_name:"",
-            rename_pkg_process:[]
+            rename_pkg_process:[],
+            can_emit_select:true
         }
     },
     mounted () {
@@ -294,5 +295,41 @@ const app = createApp({
                 document.getElementById('other_dlg').close()
             }
         },
+        select_text(event){
+            if(this.can_emit_select == false) {
+                return;
+            }
+            console.log(script_content.selectionStart,script_content.selectionEnd)
+            let p1 = script_content.selectionStart;
+            let p2 = script_content.selectionEnd;
+            let selected = this.script_content.slice(p1,p2) 
+            if(selected != '【') {
+                return
+            }
+            let p = 1;
+            let i = script_content.selectionStart + 1;
+            for(;i <  this.script_content.length;++i){
+                if(this.script_content[i] == '\\' ){
+                    i += 1;
+                }else if(this.script_content[i] == '】') {
+                    p -= 1;
+                }else if(this.script_content[i] == '【') {
+                    p += 1;
+                }
+                if(p == 0) {
+                    this.can_emit_select = false;
+                    script_content.setSelectionRange(p1,i+1);
+                    t = setTimeout(()=>{
+                        clearTimeout(t);
+                        t1 = setTimeout(()=>{
+                            clearTimeout(t1);
+                            this.can_emit_select = true;
+                        },1000);
+                        document.getElementById("script_content").setSelectionRange(p1,p2);
+                    }, 1000);
+                    break;
+                }
+            }
+        }
     }
 }).mount('#app')
