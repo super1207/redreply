@@ -1228,11 +1228,20 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["图像大小调整","图片大小调整"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
-        let text2 = self_t.get_param(params, 1)?;
-        let text3 = self_t.get_param(params, 2)?;
+        let mut width = self_t.get_param(params, 1)?.parse::<u32>()?;
+        let mut height = self_t.get_param(params, 2)?.parse::<u32>()?;
         let img_vec = RedLang::parse_bin(&text1)?;
         let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
-        let img_out = image::imageops::resize(&img, text2.parse::<u32>()?, text3.parse::<u32>()?, image::imageops::FilterType::Nearest);
+        if width == 0 && height != 0 {
+            let k = (height as f64) / (img.height() as f64);
+            width = ((img.width() as f64) * k).round() as u32;
+        }else if width != 0 && height == 0 {
+            let k = (width as f64) / (img.width() as f64);
+            height = ((img.height() as f64) * k).round() as u32;
+        }else if width == 0 && height == 0 {
+            return Err(RedLang::make_err("目标图片高和宽均为0，无法调整大小"));
+        }
+        let img_out = image::imageops::resize(&img, width, height, image::imageops::FilterType::Nearest);
         let mut bytes: Vec<u8> = Vec::new();
         img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
