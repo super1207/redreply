@@ -904,7 +904,10 @@ pub fn init_ex_fun_map() {
             for y in 0..height {
                 if (x - r)*(x - r) + (y - r)*(y - r) > r * r {
                     let pix = img.get_pixel_mut(x, y);
-                    pix.0[3] = 0;
+                    pix.0[0] = 0;  //r
+                    pix.0[1] = 0;  //g
+                    pix.0[2] = 0;  //b
+                    pix.0[3] = 0;  //a
                 }
             }
         }
