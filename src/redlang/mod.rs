@@ -496,7 +496,6 @@ pub fn init_core_fun_map() {
         let k1_tp = self_t.get_type(&k1)?;
         let mut ret_str = String::new();
         if k1_tp == "文本"{
-            let k1 = self_t.get_param(params, 0)?;
             let tms = k1.parse::<usize>()?;
             self_t.xh_vec.push([false, false]);
             let mut last_type = 0u8;
