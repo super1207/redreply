@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, BTreeMap, HashSet}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any, sync::Arc, thread};
+use std::{collections::{HashMap, BTreeMap, HashSet, VecDeque}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any, sync::Arc, thread};
 use encoding::Encoding;
 
 use crate::{G_CONST_MAP, CLEAR_UUID, cqevent::do_script, cqapi::cq_add_log_w, G_LOCK};
@@ -318,7 +318,8 @@ pub struct RedLang {
     pub lock_vec:HashSet<String>,
     pub req_tx:Option<tokio::sync::mpsc::Sender<bool>>,
     pub req_rx:Option<tokio::sync::mpsc::Receiver<Vec<u8>>>,
-    pub can_wrong:bool
+    pub can_wrong:bool,
+    stack:VecDeque<String>
 }
 
 #[derive(Debug, Clone)]
@@ -410,6 +411,15 @@ pub fn init_core_fun_map() {
         }else {
             return Ok(Some("".to_string()));
         }
+    });
+    add_fun(vec!["入栈"],|self_t,params|{
+        let text = self_t.get_param(params, 0)?;
+        self_t.stack.push_back(text);
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["出栈"],|self_t,_params|{
+        let ele = self_t.stack.pop_back().unwrap_or_default();
+        return Ok(Some(ele));
     });
     add_fun(vec!["定义变量"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
@@ -1871,7 +1881,8 @@ impl RedLang {
             lock_vec:HashSet::new(),
             req_tx:None,
             req_rx:None,
-            can_wrong:true
+            can_wrong:true,
+            stack:VecDeque::new()
         }
     }
 
