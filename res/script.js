@@ -18,9 +18,11 @@ function randomString(e) {
 }
 
 const { createApp } = Vue
-const { reactive } = Vue
 
-const app = createApp({
+
+last_text = "";
+
+app = createApp({
     data() {
         return {
             // 用于显示
@@ -29,7 +31,6 @@ const app = createApp({
             script_keyword:"关键词",
             script_ppfs:"匹配方式",
             script_cffs:"触发方式",
-            script_content:"脚本内容",
             select_name_index: -1,
             // 用于记录所有数据
             codes: "正在加载内容...",
@@ -97,14 +98,14 @@ const app = createApp({
                 this.script_keyword = this.pkg_codes[this.select_pkg_name][new_select]["content"]["关键词"]
                 this.script_ppfs = this.pkg_codes[this.select_pkg_name][new_select]["content"]["匹配方式"]
                 this.script_cffs = this.pkg_codes[this.select_pkg_name][new_select]["content"]["触发方式"]
-                this.script_content = this.pkg_codes[this.select_pkg_name][new_select]["content"]["code"]
+                this.$refs.child.setText(this.pkg_codes[this.select_pkg_name][new_select]["content"]["code"])
             }else{
                 this.script_name = ""
                 this.script_description = ""
                 this.script_keyword = ""
                 this.script_ppfs = ""
                 this.script_cffs = ""
-                this.script_content = ""
+                this.$refs.child.setText("")
             }
         },
         // 缓存旧数据
@@ -116,7 +117,8 @@ const app = createApp({
                 this.pkg_codes[this.select_pkg_name][old_select]["content"]["关键词"] = this.script_keyword;
                 this.pkg_codes[this.select_pkg_name][old_select]["content"]["匹配方式"] = this.script_ppfs;
                 this.pkg_codes[this.select_pkg_name][old_select]["content"]["触发方式"] = this.script_cffs;
-                this.pkg_codes[this.select_pkg_name][old_select]["content"]["code"] = this.script_content;
+                let k = this.$refs.child.getText();
+                this.pkg_codes[this.select_pkg_name][old_select]["content"]["code"] = k;
             }
         },
         save_code() {
@@ -295,41 +297,53 @@ const app = createApp({
                 document.getElementById('other_dlg').close()
             }
         },
-        select_text(event){
-            if(this.can_emit_select == false) {
-                return;
+        highlight()
+        {
+            let content = this.$refs.child.getQuill().getText();
+            this.$refs.child.getQuill().formatText(0, content.length, 'color', 'black');
+            let range = this.$refs.child.getQuill().getSelection();
+            if(range == null) {
+                return
             }
-            console.log(script_content.selectionStart,script_content.selectionEnd)
-            let p1 = script_content.selectionStart;
-            let p2 = script_content.selectionEnd;
-            let selected = this.script_content.slice(p1,p2) 
+            let p1 = range.index;
+            let p2 = p1 + 1;
+            let selected = content.slice(p1,p2);
             if(selected != '【') {
                 return
             }
             let p = 1;
-            let i = script_content.selectionStart + 1;
-            for(;i <  this.script_content.length;++i){
-                if(this.script_content[i] == '\\' ){
+            let i = p1 + 1;
+            for(;i <  content.length;++i){
+                if(content[i] == '\\' ){
                     i += 1;
-                }else if(this.script_content[i] == '】') {
+                }else if(content[i] == '】') {
                     p -= 1;
-                }else if(this.script_content[i] == '【') {
+                }else if(content[i] == '【') {
                     p += 1;
                 }
                 if(p == 0) {
-                    this.can_emit_select = false;
-                    script_content.setSelectionRange(p1,i+1);
-                    t = setTimeout(()=>{
-                        clearTimeout(t);
-                        t1 = setTimeout(()=>{
-                            clearTimeout(t1);
-                            this.can_emit_select = true;
-                        },1000);
-                        document.getElementById("script_content").setSelectionRange(p1,p2);
-                    }, 1000);
+                    this.$refs.child.getQuill().formatText(p1, 1, 'color', 'red');
+                    this.$refs.child.getQuill().formatText(i, 1, 'color', 'red');
                     break;
                 }
             }
+
+        },
+        select_text(event){
+            if (event.source == "user") {
+                this.highlight()
+            }
+            
         }
     }
-}).mount('#app')
+})
+const globalOptions = {
+    modules: {
+      toolbar: ""
+    },
+    placeholder: '脚本内容',
+    theme: 'snow'
+}
+VueQuill.QuillEditor.props.globalOptions.default = () => globalOptions
+app.component('QuillEditor', VueQuill.QuillEditor);
+app.mount('#app')

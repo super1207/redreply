@@ -39,3 +39,47 @@ fn test_cqparse() {
     println!("{:?}",sub_key_obj);
 }
 
+#[test]
+fn test_redformat() {
+    // fn is_black_char(ch: char) -> bool {
+    //     ch == ' ' || ch == '\r' || ch == '\n' || ch == '\t'
+    // }
+    let test_str = "【定义变量@使用情况数组@【数组@0@0@0】】";
+    let content = test_str.chars().collect::<Vec<char>>();
+    let mut out_content = String::new();
+    let mut index = 0;
+    while index < content.len() {
+        if content[index] != '【' {
+            out_content.push(content[index]);
+            index += 1;
+            continue;
+        }
+        else {
+            let next_char = content.get(index + 1).ok_or("syntax error").unwrap();
+            if next_char.to_owned() == '@' {
+                let mut num = 1;
+                for index2 in index..content.len() {
+                    if content[index2] == '【' {
+                        num += 1;
+                    }
+                    else if content[index2] == '】' {
+                        num -= 1;
+                    }
+                    if num == 0 {
+                        let s = content.get(index..index2).unwrap();
+                        out_content.push_str(&String::from_iter(s.iter()));
+                        index = index2 + 1;
+                        break;
+                    }
+                }
+                if num != 0 {
+                    break;
+                }
+            } else {
+
+            }
+        }
+
+    }
+
+}

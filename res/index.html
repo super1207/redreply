@@ -13,6 +13,9 @@
         <title>红色问答控制台</title>
         <!-- 引入样式控制文件 -->
         <link rel="stylesheet" type="text/css" href="style.css">
+        
+        <script src="vue-quill.js"></script>
+        <link rel="stylesheet" href="vue-quill.snow.prod.css">
     </head>
     <body>
         <div id="app">
@@ -72,7 +75,8 @@
                         <option value="群成员增加">群成员增加</option>
                         <option value="网络触发">网络触发</option>
                     </select>
-                    <textarea id="script_content" v-model="script_content" v-on:select="select_text"></textarea>
+                    <quill-editor id = "script_content" ref="child" theme="snow" @text-change="select_text" @selection-change="select_text" spellcheck = false></quill-editor>
+                    <!-- <textarea id="script_content" v-model="script_content" v-on:select="select_text"></textarea> -->
                 </div>
             </div>
             <div id="cmd_content">

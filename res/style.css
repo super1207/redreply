@@ -134,6 +134,7 @@ button,textarea,body,select,input{
     margin: 2px;
 }
 #script_content { /* 包内容右边 */
+    height: 0;
     border-style:solid;
     flex: 1 0 auto;
 }
