@@ -1229,6 +1229,31 @@ pub fn init_ex_fun_map() {
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
+    add_fun(vec!["完整图像旋转","完整图片旋转"],|self_t,params|{
+        let text1 = self_t.get_param(params, 0)?;
+        let text2 = self_t.get_param(params, 1)?;
+        let img_vec = RedLang::parse_bin(&text1)?;
+        let theta = text2.parse::<f32>()? / 360.0 * (2.0 * std::f32::consts::PI);
+        let img_sub = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let img_width = img_sub.width();
+        let img_height = img_sub.height();
+        let (sin_val,cos_val) = theta.sin_cos();
+        let vec1 = (img_width as f32 / 2.0,img_height as f32 / 2.0);
+        let vec2 = (img_width as f32 / 2.0,-(img_height as f32 / 2.0));
+        let vec1_t = (vec1.0 * cos_val - vec1.1 * sin_val,vec1.0 * sin_val + vec1.1 * cos_val);
+        let vec2_t = (vec2.0 * cos_val - vec2.1 * sin_val,vec2.0 * sin_val + vec2.1 * cos_val);
+        let max_width = std::cmp::max(vec1_t.0.abs() as i64,vec2_t.0.abs() as i64) as u32;
+        let max_height = std::cmp::max(vec1_t.1.abs() as i64,vec2_t.1.abs() as i64) as u32;
+        let max_wh = ((img_width * img_width + img_height * img_height) as f64).sqrt() as u32;
+        let mut img_big:ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(max_wh, max_wh);
+        image::imageops::overlay(&mut img_big, &img_sub, ((max_wh - img_width) / 2).into() , ((max_wh - img_height) / 2).into());
+        let mut img_out_t = rotate_about_center(&img_big,theta,Interpolation::Bilinear,Rgba([0,0,0,0]));
+        let img_out = image::imageops::crop(&mut img_out_t,((max_wh - max_width * 2) / 2).into(),((max_wh - max_height * 2) / 2).into(),max_width * 2,max_height * 2).to_image();
+        let mut bytes: Vec<u8> = Vec::new();
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    });
     add_fun(vec!["图像大小调整","图片大小调整"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let mut width = self_t.get_param(params, 1)?.parse::<u32>()?;
