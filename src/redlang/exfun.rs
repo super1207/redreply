@@ -47,7 +47,7 @@ pub fn init_ex_fun_map() {
         }
     }
 
-    async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,proxy_str:&str,is_post:bool) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,proxy_str:&str,is_post:bool) -> Result<(Vec<u8>,String), Box<dyn std::error::Error + Send + Sync>> {
         let client;
         let uri = reqwest::Url::from_str(url)?;
         if proxy_str == "" {
@@ -77,10 +77,29 @@ pub fn init_ex_fun_map() {
         }
         let retbin;
         let ret = client.execute(req).await?;
+        let header_map_obj = ret.headers().iter().map(|(key,val)|{
+            (key.as_str().to_string(),val.to_str().unwrap_or_default().to_string())
+        }).collect::<BTreeMap<String,String>>();
+        let header_map =RedLang::build_obj_with_uid(&crate::REDLANG_UUID, header_map_obj);
         retbin = ret.bytes().await?.to_vec();
-        return Ok(retbin);
+        return Ok((retbin,header_map));
     }
-
+    add_fun(vec!["返回头","取返回头"],|self_t,params|{
+        let ret_headers = self_t.get_coremap("返回头")?.to_string();
+        if ret_headers == "" {
+            return Ok(Some("".to_string())); 
+        }
+        let key = self_t.get_param(params, 0)?;
+        if key == "" {
+            return Ok(Some(ret_headers.to_string()));
+        } 
+        else {
+            let obj = RedLang::parse_obj(&ret_headers)?;
+            let defstr = String::new();
+            let val = obj.get(&key).unwrap_or(&defstr);
+            return Ok(Some(val.to_owned()));
+        }
+    });
     add_fun(vec!["访问"],|self_t,params|{
         fn access(self_t:&mut RedLang,url:&str) -> Result<Option<String>, Box<dyn std::error::Error>> {
             let proxy = self_t.get_coremap("代理")?;
@@ -106,19 +125,21 @@ pub fn init_ex_fun_map() {
                             val
                         } else {
                             cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
-                            vec![]
+                            (vec![],String::new())
                         }
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
                         cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
-                        vec![]
+                        (vec![],String::new())
                     }
                 };
                 return ret;
             });
-            Ok(Some(self_t.build_bin(content)))
+            self_t.set_coremap("返回头",&content.1)?;
+            Ok(Some(self_t.build_bin(content.0)))
         }
         let url = self_t.get_param(params, 0)?;
+        self_t.set_coremap("返回头","")?;
         match access(self_t,&url) {
             Ok(ret) => Ok(ret),
             Err(err) => {
@@ -162,20 +183,22 @@ pub fn init_ex_fun_map() {
                             val
                         } else {
                             cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
-                            vec![]
+                            (vec![],String::new())
                         }
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
                         cq_add_log_w(&format!("POST访问:`{}`超时",url)).unwrap();
-                        vec![]
+                        (vec![],String::new())
                     }
                 };
                 return ret;
             });
-            Ok(Some(self_t.build_bin(content)))
+            self_t.set_coremap("返回头",&content.1)?;
+            Ok(Some(self_t.build_bin(content.0)))
         }
         let url = self_t.get_param(params, 0)?;
         let data_t = self_t.get_param(params, 1)?;
+        self_t.set_coremap("返回头","")?;
         match access(self_t,&url,&data_t) {
             Ok(ret) => Ok(ret),
             Err(err) => {
@@ -2141,17 +2164,17 @@ pub fn init_ex_fun_map() {
                             val
                         } else {
                             cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
-                            vec![]
+                            (vec![],"".to_owned())
                         }
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
                         cq_add_log_w(&format!("POST访问:`{}`超时",url)).unwrap();
-                        vec![]
+                        (vec![],"".to_owned())
                     }
                 };
                 return ret;
             });
-            Ok(String::from_utf8(content)?)
+            Ok(String::from_utf8(content.0)?)
         }
         let bin_text = self_t.get_param(params, 0)?;
         let filename = self_t.get_param(params, 1)?;
