@@ -997,8 +997,9 @@ pub fn init_ex_fun_map() {
         let mut width = 0;
         let mut height = 0;
         for g in font.layout(&text, scale, rusttype::point(0.0, v_metrics.ascent)) {
+            let h_metrics = font.glyph(g.id()).scaled(scale).h_metrics();
+            width = (h_metrics.advance_width + 0.5) as i32;
             if let Some(bb) = g.pixel_bounding_box() {
-                width = bb.max.x;
                 height = bb.max.y;
             }
         }
@@ -1015,10 +1016,8 @@ pub fn init_ex_fun_map() {
         color.0[1] = text_color.get(1).unwrap_or(&"0").parse::<u8>()?;
         color.0[2] = text_color.get(2).unwrap_or(&"0").parse::<u8>()?;
         color.0[3] = text_color.get(3).unwrap_or(&"255").parse::<u8>()?;
-        let scale = Scale {
-            x: text_size,
-            y: text_size,
-        };
+        let scale =  Scale::uniform(text_size);
+       
         let font_text = self_t.get_param(params, 4)?;
         let font_type = self_t.get_type(&font_text)?;
         let font_dat;
@@ -2369,6 +2368,45 @@ def red_out(sw):
             }
         }
         Ok(Some("".to_string()))
+    });
+    add_fun(vec!["运行C"],|self_t,params|{
+        let code = self_t.get_param(params, 0)?;
+        let input = self_t.get_param(params, 1)?;
+        // let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
+        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+        let pip_in = std::process::Stdio::piped();
+
+        let mut p = std::process::Command::new("tcc")
+        .stdin(pip_in)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(app_dir)
+        .arg("-run")
+        .arg("-")
+        // .arg(format!("{code}"))
+        .spawn()?;
+        let s = p.stdin.take();
+        if s.is_none() {
+            p.kill()?;
+        }else {
+            let mut buf:Vec<u8> = vec![];
+            buf.append(code.as_bytes().to_vec().as_mut());
+            buf.push(b'\r');
+            buf.push(b'\n');
+            buf.push(u8::MAX);
+            buf.push(b'\r');
+            buf.push(b'\n');
+            buf.append(input.as_bytes().to_vec().as_mut());
+            s.unwrap().write_all(&buf)?;
+        }
+        let output = p.wait_with_output()?;
+        let out = String::from_utf8_lossy(&output.stdout).to_string();
+        let err = String::from_utf8_lossy(&output.stderr).to_string();
+        if err != "" {
+            cq_add_log_w(&format!("TCC中的警告或错误:{}",err)).unwrap();
+        }
+        cq_add_log_w(&format!("TCC中的输出:`{}`",out)).unwrap();
+        Ok(Some(out))
     });
 }
 
