@@ -29,9 +29,13 @@ pub fn add_ws_log(log_msg:String) {
     });
 }
 
-async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
+async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:bool) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
     let url_path = request.uri().path();
     if url_path == "/get_code" {
+        if !can_read {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
         match crate::read_code_cache() {
             Ok(code) => {
                 let ret = json!({
@@ -49,6 +53,10 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool) -> Result
             },
         }
     }else if url_path == "/get_all_pkg_name" {
+        if !can_read {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
         match crate::get_all_pkg_name_by_cache() {
             Ok(code) => {
                 let ret = json!({
@@ -66,6 +74,10 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool) -> Result
             },
         }
     }else if url_path == "/get_config" {
+        if !can_read {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
         match crate::read_config() {
             Ok(code) => {
                 let ret = json!({
@@ -150,6 +162,10 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool) -> Result
         cq_add_log_w("收到退出指令，正在退出").unwrap();
         crate::wait_for_quit();
     }else if url_path == "/get_version" {
+        if !can_read {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
         let ret = json!({
             "retcode":0,
             "data":crate::get_version()
@@ -172,7 +188,7 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool) -> Result
     else if url_path.starts_with("/user") {
         let (tx, rx) =  tokio::sync::oneshot::channel();
         tokio::task::spawn_blocking(move || {
-            let ret = do_http_event(request);
+            let ret = do_http_event(request,can_write,can_read);
             if ret.is_ok() {
                 let rst = tx.send(ret.unwrap());
                 if rst.is_err() {
@@ -327,6 +343,21 @@ fn http_auth(request: &hyper::Request<hyper::Body>) -> Result<i32, Box<dyn std::
     return Err(RedLang::make_err("password invaild"));
 }
 
+
+fn is_users_api(url_path:&str) -> bool {
+    if url_path.starts_with("/user") {
+        return true;
+    }
+    return false;
+}
+
+fn rout_to_login() -> hyper::Response<hyper::Body> {
+    let mut res = hyper::Response::new(hyper::Body::from(vec![]));
+    *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
+    res.headers_mut().insert("Location", HeaderValue::from_static("/login.html"));
+    return res;
+}
+
 async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
     
     let url_path = request.uri().path();
@@ -335,28 +366,35 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
     if url_path == "/login.html" {
         return deal_file(request).await; 
     }
+
+    // 登录API不进行身份验证
     if url_path == "/login" {
-        return deal_api(request,false).await;
+        return deal_api(request,false,false).await;
     }
     
-    // 身份验证
+    // 获取身份信息
     let can_write;
+    let can_read;
     {
         let http_auth_rst = http_auth(&request);
         if http_auth_rst.is_err() {
-            // 认证失败，跳转登录页面
-            cq_add_log_w(&format!("{}",http_auth_rst.err().unwrap())).unwrap();
-            let mut res = hyper::Response::new(hyper::Body::from(vec![]));
-            *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
-            res.headers_mut().insert("Location", HeaderValue::from_static("/login.html"));
-            return Ok(res);
+            can_read = false;
+            can_write = false;
         }else {
+            can_read = true;
             let auth_code = http_auth_rst.unwrap();
             if auth_code == 2 {
                 can_write = true;
             }else {
                 can_write = false;
             }
+        }
+    }
+
+    // 认证失败,且不是用户API,跳转登录页面
+    if !can_read {
+        if !is_users_api(url_path) {
+            return Ok(rout_to_login());
         }
     }
 
@@ -421,12 +459,22 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
     }else {
         // 处理HTTP协议
         if url_path == "/" {
+
+            // 没有读权限不允许访问主页
+            if !can_read {
+                return Ok(rout_to_login());
+            }
             let mut res = hyper::Response::new(hyper::Body::from(vec![]));
             *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
             res.headers_mut().insert("Location", HeaderValue::from_static("/index.html"));
             return Ok(res);
         }
         if url_path == "/readme.html" {
+
+            // 没有读权限不允许访问帮助
+            if !can_read {
+                return Ok(rout_to_login());
+            }
             let app_dir = cq_get_app_directory1().unwrap();
             let path = PathBuf::from(&app_dir);
             let path = path.join("webui");
@@ -441,6 +489,10 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
             res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
             return Ok(res);
         }else if url_path == "/favicon.ico" {
+            // 没有读权限不允许访问图标
+            if !can_read {
+                return Ok(rout_to_login());
+            }
             let app_dir = cq_get_app_directory1().unwrap();
             let path = PathBuf::from(&app_dir);
             let path = path.join("webui");
@@ -451,8 +503,12 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
             res.headers_mut().insert("Content-Type", HeaderValue::from_static("image/x-icon"));
             return Ok(res);
         } else if !url_path.contains(".") || url_path.starts_with("/user") {
-            return deal_api(request,can_write).await;
+            return deal_api(request,can_write,can_read).await;
         } else {
+            // 没有读权限不允许访问文件
+            if !can_read {
+                return Ok(rout_to_login());
+            }
             return deal_file(request).await;
         }
     }

@@ -52,7 +52,7 @@ fn get_params_from_uri(uri:&hyper::Uri) -> BTreeMap<String,String> {
     ret_map
 }
 
-pub fn do_http_event(mut req:hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error>> {
+pub fn do_http_event(mut req:hyper::Request<hyper::Body>,can_write:bool,can_read:bool) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error>> {
      // 获取pkg_name和pkg_key
     let url_path = req.uri().path();
     let true_url = url_path.get(5..).unwrap();
@@ -88,6 +88,14 @@ pub fn do_http_event(mut req:hyper::Request<hyper::Body>) -> Result<hyper::Respo
             }
         }
     });
+    let web_access;
+    if can_write {
+        web_access = "可写";
+    } else if can_read {
+        web_access = "只读";
+    } else {
+        web_access = "";
+    }
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
         let (keyword,cffs,code,ppfs,name,pkg_name) = get_script_info(&script_json[i])?;
         let mut rl = RedLang::new();
@@ -95,6 +103,7 @@ pub fn do_http_event(mut req:hyper::Request<hyper::Body>) -> Result<hyper::Respo
             rl.set_coremap("网络-访问方法", &method)?;
             rl.set_coremap("网络-访问参数", &rl.build_obj(req_params))?;
             rl.set_coremap("网络-访问头", &rl.build_obj(req_headers))?;
+            rl.set_coremap("网络-权限",web_access)?;
             rl.req_tx = Some(body_tx1);
             rl.req_rx = Some(body_rx2);
             rl.pkg_name = pkg_name.to_owned();
