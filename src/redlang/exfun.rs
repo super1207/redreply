@@ -2369,6 +2369,14 @@ def red_out(sw):
         }
         Ok(Some("".to_string()))
     });
+    add_fun(vec!["正则替换"],|self_t,params|{
+        let text = self_t.get_param(params, 0)?;
+        let re = self_t.get_param(params, 1)?;
+        let out_text = self_t.get_param(params, 2)?;
+        let re_obj = fancy_regex::Regex::new(&re)?;
+        let out = re_obj.replace_all(&text, out_text).to_string();
+        Ok(Some(out))
+    });
 }
 
 

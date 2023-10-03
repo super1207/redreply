@@ -871,6 +871,25 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 
 返回替换结果
 
+
+### 正则替换
+
+
+【正则替换@<font color="red">文本</font>@<font color="red">正则表达式</font>@<font color="red">新文本</font>】
+
+返回替换结果
+
+例如：
+```
+【正则替换
+@(met)1875159423(met)
+@\\(met\\)(?P<qq>(\\d+)|(all))\\(met\\)
+@[CQ:at,qq=$qq]
+】
+```
+将返回`[CQ:at,qq=1875159423]`
+
+
 ### 文本查找
 
 
