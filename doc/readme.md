@@ -437,7 +437,7 @@ hellohellohellohellohello
 | <    | 小于     | 5      |
 | ==   | 等于     | 5      |
 | &&   | 与       | 6      |
-| \|\|   | 或       | 7      |
+| \|\| | 或       | 7      |
 
 优先级数字越小越高。
 
@@ -882,12 +882,12 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 例如：
 ```
 【正则替换
-@(met)1875159423(met)
-@\\(met\\)(?P<qq>(\\d+)|(all))\\(met\\)
-@[CQ:at,qq=$qq]
+@<a>1<b>2<a>3<c>
+@【@<[^><]+>】
+@
 】
 ```
-将返回`[CQ:at,qq=1875159423]`
+将返回`123`
 
 
 ### 文本查找
