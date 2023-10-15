@@ -41,6 +41,7 @@ reqwest = {version = "0.11.18",default-features = false,features = ["rustls-tls"
 time = { version = "0.3.25", features = ["formatting", "macros"] }
 headless_chrome = {version="1.0.5",default-features = false}
 webp = "0.2.5"
+sysinfo = "0.29.10"
 
 
 [target.'cfg(windows)'.dependencies]

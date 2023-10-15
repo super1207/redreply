@@ -2369,45 +2369,24 @@ def red_out(sw):
         }
         Ok(Some("".to_string()))
     });
-    add_fun(vec!["运行C"],|self_t,params|{
-        let code = self_t.get_param(params, 0)?;
-        let input = self_t.get_param(params, 1)?;
-        // let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
-        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
-        let pip_in = std::process::Stdio::piped();
-
-        let mut p = std::process::Command::new("tcc")
-        .stdin(pip_in)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .current_dir(app_dir)
-        .arg("-run")
-        .arg("-")
-        // .arg(format!("{code}"))
-        .spawn()?;
-        let s = p.stdin.take();
-        if s.is_none() {
-            p.kill()?;
-        }else {
-            let mut buf:Vec<u8> = vec![];
-            buf.append(code.as_bytes().to_vec().as_mut());
-            buf.push(b'\r');
-            buf.push(b'\n');
-            buf.push(u8::MAX);
-            buf.push(b'\r');
-            buf.push(b'\n');
-            buf.append(input.as_bytes().to_vec().as_mut());
-            s.unwrap().write_all(&buf)?;
+    add_fun(vec!["内存使用"],|_self_t,_params|{
+        let s = <sysinfo::System as sysinfo::SystemExt>::new_all();
+        if let Some(process) = sysinfo::SystemExt::process(&s, sysinfo::Pid::from(std::process::id() as usize)) {
+            let num = sysinfo::ProcessExt::memory(process) as f32 / (1024 * 1024) as f32;
+            return Ok(Some(num.to_string()))
         }
-        let output = p.wait_with_output()?;
-        let out = String::from_utf8_lossy(&output.stdout).to_string();
-        let err = String::from_utf8_lossy(&output.stderr).to_string();
-        if err != "" {
-            cq_add_log_w(&format!("TCC中的警告或错误:{}",err)).unwrap();
-        }
-        cq_add_log_w(&format!("TCC中的输出:`{}`",out)).unwrap();
-        Ok(Some(out))
+        return Ok(Some("".to_string()));
     });
+
+    add_fun(vec!["CPU使用"],|_self_t,_params|{
+        let mut s = <sysinfo::System as sysinfo::SystemExt>::new_all();
+        std::thread::sleep(<sysinfo::System as sysinfo::SystemExt>::MINIMUM_CPU_UPDATE_INTERVAL);
+        sysinfo::SystemExt::refresh_processes_specifics(&mut s, sysinfo::ProcessRefreshKind::everything());
+        let pid = sysinfo::Pid::from(std::process::id() as usize);
+        let process = sysinfo::SystemExt::process(&s, pid).unwrap();
+        return Ok(Some((sysinfo::ProcessExt::cpu_usage(process) /  sysinfo::SystemExt::cpus(&s).len() as f32).to_string()));
+    });
+
 }
 
 

@@ -445,14 +445,6 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["进程ID"],|_self_t,_params|{
         return Ok(Some(std::process::id().to_string()));
     });
-    add_fun(vec!["CPU使用"],|_self_t,_params|{
-        //let ret = cq_get_cookies("cpu_usage")?;
-        return Ok(Some("0".to_string()));
-    });
-    add_fun(vec!["内存使用"],|_self_t,_params|{
-        //let ret = cq_get_cookies("mem_usage")?;
-        return Ok(Some("0".to_string()));
-    });
     add_fun(vec!["读词库文件"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
         let path_t = path.clone();
