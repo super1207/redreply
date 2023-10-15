@@ -871,6 +871,25 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 
 返回替换结果
 
+
+### 正则替换
+
+
+【正则替换@<font color="red">文本</font>@<font color="red">正则表达式</font>@<font color="red">新文本</font>】
+
+返回替换结果
+
+例如：
+```
+【正则替换
+@(met)1875159423(met)
+@\\(met\\)(?P<qq>(\\d+)|(all))\\(met\\)
+@[CQ:at,qq=$qq]
+】
+```
+将返回`[CQ:at,qq=1875159423]`
+
+
 ### 文本查找
 
 
@@ -2068,6 +2087,11 @@ QQ相关的信息，会复制到错误事件中；在错误事件中再次发生
 
 返回`POST`、`GET`等。
 
+### 网络-权限
+
+【网络-权限】
+
+返回`可写`、`只读`、或空文本。
 
 
 ## 包管理说明(未完全完成)

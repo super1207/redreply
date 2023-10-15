@@ -2369,6 +2369,7 @@ def red_out(sw):
         }
         Ok(Some("".to_string()))
     });
+
     add_fun(vec!["内存使用"],|_self_t,_params|{
         let s = <sysinfo::System as sysinfo::SystemExt>::new_all();
         if let Some(process) = sysinfo::SystemExt::process(&s, sysinfo::Pid::from(std::process::id() as usize)) {
@@ -2376,6 +2377,15 @@ def red_out(sw):
             return Ok(Some(num.to_string()))
         }
         return Ok(Some("".to_string()));
+    });
+
+    add_fun(vec!["正则替换"],|self_t,params|{
+        let text = self_t.get_param(params, 0)?;
+        let re = self_t.get_param(params, 1)?;
+        let out_text = self_t.get_param(params, 2)?;
+        let re_obj = fancy_regex::Regex::new(&re)?;
+        let out = re_obj.replace_all(&text, out_text).to_string();
+        Ok(Some(out))
     });
 
     add_fun(vec!["CPU使用"],|_self_t,_params|{

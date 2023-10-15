@@ -54,6 +54,10 @@ pub fn init_web_ex_fun_map() {
         let ret = self_t.get_coremap("网络-访问头")?;
         return Ok(Some(ret.to_owned()));
     });
+    add_fun(vec!["网络-权限"],|self_t,_params|{
+        let ret = self_t.get_coremap("网络-权限")?;
+        return Ok(Some(ret.to_owned()));
+    });
     add_fun(vec!["网络-访问体"],|self_t,_params|{
         if self_t.req_tx.is_none() ||  self_t.req_rx.is_none() {
             self_t.req_rx = None;
