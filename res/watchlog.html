@@ -18,6 +18,7 @@
    </style>
    <script type="text/javascript">
       var ws;
+      var can_reconnect = true;
       function is_https() {
          return 'https:' == location.protocol ? true : false;
       }
@@ -42,9 +43,12 @@
                ele.innerHTML = "已连接"
             };
             ws.onclose = function () {
-               var ele = document.getElementById("connect_status");
-               ele.innerHTML = "未连接，自动连接中..."
-               setTimeout(WebSocketTest, 1000);
+               if(can_reconnect){
+                  var ele = document.getElementById("connect_status");
+                  ele.innerHTML = "未连接，自动连接中..."
+                  setTimeout(WebSocketTest, 1000);
+               }
+
             }
          }
          else {
@@ -58,6 +62,7 @@
             var btn = document.getElementById("dis");
             btn.hidden = true
             ws.close();
+            can_reconnect = false;
             delete ws
          }
          
