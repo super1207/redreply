@@ -157,8 +157,9 @@ async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error +
             }
             // 获得echo
             let echo = get_str_from_json(&json_dat, "echo").to_owned();
+            let post_type = get_str_from_json(&json_dat, "post_type").to_owned();
             tokio::spawn(async move {
-                if echo != "" { // 是api回复
+                if post_type == "" { // 是api回复
                     let tx;
                     {
                         let echo_lk = G_ECHO_MAP.read().await;
