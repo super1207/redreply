@@ -1,7 +1,9 @@
-use std::{collections::HashMap, sync::{Arc, atomic::AtomicBool}};
+use std::{collections::HashMap, sync::{Arc, atomic::AtomicBool}, str::FromStr};
 
 use futures_util::{StreamExt, SinkExt};
-use tokio_tungstenite::connect_async;
+use hyper::header::HeaderValue;
+use tokio::net::TcpStream;
+use tokio_tungstenite::{connect_async, tungstenite};
 
 use crate::{RT_PTR, cqapi::{cq_add_log_w, cq_add_log}, mytool::read_json_str};
 #[derive(Debug)]
@@ -87,8 +89,27 @@ async fn get_bot_uuid_by_url(url:&str) -> String {
 async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     println!("正在连接ws：{}",url_str);
     let url = url::Url::parse(url_str)?;
-    let (ws_stream, _) = connect_async(url).await?;
-    let (mut write_half,mut read_halt) = ws_stream.split();
+    let mut request = tungstenite::client::IntoClientRequest::into_client_request(url).unwrap();
+    let mp = crate::httpevent::get_params_from_uri(&hyper::Uri::from_str(url_str)?);
+    if let Some(access_token) = mp.get("access_token") {
+        request.headers_mut().insert("Authorization", HeaderValue::from_str(&format!("Bearer {}",access_token)).unwrap());
+    }
+    let ws_rst;
+    if url_str.starts_with("wss://") {
+        let port_opt  = request.uri().port();
+        let port;
+        if port_opt.is_none() {
+            port = 443;
+        }else {
+            port  = port_opt.unwrap().into();
+        }
+        let addr = format!("{}:{}",request.uri().host().unwrap(),port);
+        let socket = TcpStream::connect(addr).await.unwrap();
+        ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
+    }else {
+        ws_rst = connect_async(request).await?;
+    }
+    let (mut write_half,mut read_halt) = ws_rst.0.split();
     let (tx_ay, mut rx_ay) =  tokio::sync::mpsc::channel::<serde_json::Value>(128);
     let ws_uuid = uuid::Uuid::new_v4().to_string();
     let tx_ay_t = tx_ay.clone();
@@ -106,7 +127,7 @@ async fn add_bot_connect(url_str:&str) -> Result<(), Box<dyn std::error::Error +
     let url_str_t = url_str.to_string();
     let ws_uuid_t = ws_uuid.to_string();
     tokio::spawn(async move {
-        while let Some(msg) = read_halt.next().await {  
+        while let Some(msg) = read_halt.next().await { 
             // 判断是否断开连接,bot列表中不存在了，自然要退出循环
             {
                 let exist_uuid = get_bot_uuid_by_url(&url_str_t).await;

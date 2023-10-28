@@ -21,7 +21,7 @@ fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a
     return Ok((keyword,cffs,code,ppfs,name,pkg_name));
 }
 
-fn get_params_from_uri(uri:&hyper::Uri) -> BTreeMap<String,String> {
+pub fn get_params_from_uri(uri:&hyper::Uri) -> BTreeMap<String,String> {
     let mut ret_map = BTreeMap::new();
     if uri.query().is_none() {
         return ret_map;
