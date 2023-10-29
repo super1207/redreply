@@ -574,12 +574,21 @@ pub fn init_core_fun_map() {
     });
     add_fun(vec!["跳出"],|self_t,_params|{
         let xh_vec_len = self_t.xh_vec.len();
-        self_t.xh_vec[xh_vec_len - 1][1] = true;
+        if xh_vec_len != 0 {
+            self_t.xh_vec[xh_vec_len - 1][1] = true;
+        } else {
+            return Err(RedLang::make_err("不在循环中，无法使用`跳出`命令"));
+        }
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["继续"],|self_t,_params|{
         let xh_vec_len = self_t.xh_vec.len();
-        self_t.xh_vec[xh_vec_len - 1][0] = true;
+        if xh_vec_len != 0 {
+            return Err(RedLang::make_err("不在循环中，无法使用`继续`命令"));
+        } else {
+            self_t.xh_vec[xh_vec_len - 1][0] = true;
+        }
+
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["函数定义"],|self_t,params|{
