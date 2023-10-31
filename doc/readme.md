@@ -124,6 +124,11 @@ hellohellohellohellohello
 特别注意，<font color="red">内容</font>里面，不能含有<font color="red">【</font>、<font color="red">】</font>。
 
 
+## 注释
+
+使用`//`，可以使得当前到下一行之前的内容失效，如果你需要打印`//`，你可以在`//`前加`\`，这样，`//`就不会被当作注释。
+
+
 ## 命令格式
 
 

@@ -2063,9 +2063,36 @@ impl RedLang {
         }
         Ok(())
     }
+
+    fn remove_comment(chs:&Vec<char>) -> Result<Vec<char>, Box<dyn std::error::Error>> {
+        let mut ret: Vec<char> = vec![];
+        let mut i = 0usize;
+        let mut mode = 0; // 0:normal 1:comment
+        loop {
+            if i >= chs.len() {
+                break;
+            }
+            if mode == 0 && chs[i] == '\\' {
+                ret.push(chs[i]);
+                i += 1;
+                ret.push(*chs.get(i).ok_or("\\ in the last position of code")?);
+
+            } else if mode == 0 && chs[i] == '/' &&  i + 1 < chs.len() && chs[i+1] == '/'{
+                mode = 1;
+            } else if  chs[i] == '\n' || chs[i] == '\r' {
+                mode = 0;
+                ret.push(chs[i]);
+            } else if mode == 0 {
+                ret.push(chs[i]);
+            }
+            i += 1;
+        }
+        Ok(ret)
+    }
+
     pub fn parse(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
         // 得到utf8字符数组
-        let chs = input.chars().collect::<Vec<char>>();
+        let chs = Self::remove_comment(&input.chars().collect::<Vec<char>>())?;
 
         // 输出
         let mut chs_out: String = String::new();
