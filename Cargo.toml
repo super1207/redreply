@@ -42,6 +42,8 @@ time = { version = "0.3.25", features = ["formatting", "macros"] }
 headless_chrome = {version="1.0.5",default-features = false}
 webp = "0.2.5"
 sysinfo = "0.29.10"
+resvg = { version = "0.36.0", default-features = false, features = [ "text", "raster-images"  ] }
+fontdb = { version = "0.15.0", default-features = false, features = [ "fs" ] }
 
 
 [target.'cfg(windows)'.dependencies]

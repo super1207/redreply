@@ -2077,7 +2077,7 @@ impl RedLang {
                 i += 1;
                 ret.push(*chs.get(i).ok_or("\\ in the last position of code")?);
 
-            } else if mode == 0 && chs[i] == '/' &&  i + 1 < chs.len() && chs[i+1] == '/'{
+            } else if mode == 0 && chs[i] == '#' &&  i + 1 < chs.len() && chs[i+1] == '#'{
                 mode = 1;
             } else if  chs[i] == '\n' || chs[i] == '\r' {
                 mode = 0;

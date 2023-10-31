@@ -4,6 +4,7 @@ use chrono::TimeZone;
 use encoding::Encoding;
 use jsonpath_rust::JsonPathQuery;
 use md5::{Md5, Digest};
+use resvg::usvg::{self, TreeParsing, TreeTextToPath};
 use rusttype::Scale;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 use super::RedLang;
@@ -2402,6 +2403,23 @@ def red_out(sw):
         let process = sysinfo::SystemExt::process(&s, pid).unwrap();
         return Ok(Some((sysinfo::ProcessExt::cpu_usage(process) /  sysinfo::SystemExt::cpus(&s).len() as f32).to_string()));
     });
+    
+    add_fun(vec!["渲染SVG"],|self_t,params|{
+        let svg_text = self_t.get_param(params, 0)?;
+        let usvg_opt = usvg::Options::default();
+        let mut tree = resvg::usvg::Tree::from_str(&svg_text,&usvg_opt)?;
+        let mut font_dat = usvg::fontdb::Database::new();
+        font_dat.load_system_fonts();
+        tree.convert_text(&font_dat);
+        let re_tree = resvg::Tree::from_usvg(&tree);
+        let transform = resvg::tiny_skia::Transform::identity();
+        let width = (tree.size.width()+ 0.5)  as usize;
+        let height = (tree.size.height() + 0.5) as usize;
+        let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).ok_or("create pixmap err")?;
+        re_tree.render(transform, &mut pixmap.as_mut());
+        Ok(Some(self_t.build_bin(pixmap.encode_png()?)))
+    });
+    
 
 }
 
