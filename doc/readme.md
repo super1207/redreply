@@ -5,11 +5,11 @@
 
 作者qq：1875159423
 
-qq群号：920220179(已满) 556515826
+qq群号：920220179 556515826
 
-开源地址：https://github.com/super1207/redreply
+开源地址：[https://github.com/super1207/redreply](https://github.com/super1207/redreply)
 
-开源协议：https://github.com/super1207/redreply
+开源协议：[GNU Affero General Public License](https://en.wikipedia.org/wiki/GNU_Affero_General_Public_License)
 
 使用到的三方库：[Cargo.toml](https://github.com/super1207/redreply/blob/master/Cargo.toml)
 
