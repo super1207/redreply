@@ -1578,9 +1578,15 @@ pub fn init_ex_fun_map() {
         }
         let file_info = fs::metadata(path)?;
         ret_obj.insert("大小".to_string(), file_info.len().to_string());
-        ret_obj.insert("创建时间".to_string(), file_info.created()?.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
-        ret_obj.insert("修改时间".to_string(), file_info.modified()?.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
-        ret_obj.insert("访问时间".to_string(), file_info.accessed()?.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+        if let Ok(val) = file_info.created() {
+            ret_obj.insert("创建时间".to_string(), val.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+        }
+        if let Ok(val) = file_info.modified() {
+            ret_obj.insert("修改时间".to_string(), val.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+        }
+        if let Ok(val) = file_info.accessed() {
+            ret_obj.insert("访问时间".to_string(), val.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+        }
         if file_info.is_dir() {
             ret_obj.insert("类型".to_string(), "目录".to_string());
         }else {
