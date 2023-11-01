@@ -36,13 +36,14 @@ fn do_redlang(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error>
         let (keyword,cffs,code,ppfs,name,pkg_name) = get_script_info(&script_json[i])?;
         let mut rl = RedLang::new();
         if cffs == "频道触发"{
-            rl.set_exmap("内容", &msg)?;
             rl.set_exmap("当前消息",&msg)?;
             super::set_normal_message_info(&mut rl, root)?;
             if is_key_match(&mut rl,&ppfs,keyword,&msg)? {
                 rl.pkg_name = pkg_name.to_owned();
                 rl.script_name = name.to_owned();
-                super::do_script(&mut rl,code)?;
+                if let Err(e) = super::do_script(&mut rl,code) {
+                    cq_add_log_w(format!("err in do_guild_msg:do_redlang:{}", e.to_string()).as_str()).unwrap();
+                }
             }    
         }
     }
