@@ -760,8 +760,8 @@ pub fn init_ex_fun_map() {
                 let ii = x + i as i64;
                 let jj = y + j as i64;
                 if ii >= 0 && (ii as u32) < img_big.width() && jj >= 0 && (jj as u32) < img_big.height() {
-                    let pix = img_big.get_pixel_mut(ii as u32, jj as u32);
-                    let pix_sub = img_sub.get_pixel(i, j);
+                    let pix = img_big.get_pixel_mut_checked(ii as u32, jj as u32).ok_or("image out of bound")?;
+                    let pix_sub = img_sub.get_pixel_checked(i, j).ok_or("image out of bound")?;
                     pix.0[0] = pix_sub.0[0];
                     pix.0[1] = pix_sub.0[1];
                     pix.0[2] = pix_sub.0[2];
@@ -927,7 +927,7 @@ pub fn init_ex_fun_map() {
         for x in 0..width {
             for y in 0..height {
                 if (x - r)*(x - r) + (y - r)*(y - r) > r * r {
-                    let pix = img.get_pixel_mut(x, y);
+                    let pix = img.get_pixel_mut_checked(x, y).ok_or("image out of bound")?;
                     pix.0[0] = 0;  //r
                     pix.0[1] = 0;  //g
                     pix.0[2] = 0;  //b
@@ -935,6 +935,84 @@ pub fn init_ex_fun_map() {
                 }
             }
         }
+        let mut bytes: Vec<u8> = Vec::new();
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    });
+
+    add_fun(vec!["圆角"],|self_t,params|{
+        let text1 = self_t.get_param(params, 0)?;
+        let left_top_t = self_t.get_param(params, 1)?.parse::<u32>()?;
+        let right_top_t = self_t.get_param(params, 2)?.parse::<u32>()?;
+        let right_bottom_t = self_t.get_param(params, 3)?.parse::<u32>()?;
+        let left_bottom_t = self_t.get_param(params, 4)?.parse::<u32>()?;
+        let img_vec = RedLang::parse_bin(&text1)?;
+        let mut img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let width = img.width();
+        let height = img.height();
+
+        for x in 0..left_top_t {
+            for y in 0..left_top_t {
+                let r = left_top_t;
+                let ranoud = (x - r)*(x - r) + (y - r)*(y - r);
+                if ranoud > r * r {
+                    if let Some(pix) = img.get_pixel_mut_checked(x, y) {
+                        pix.0[0] = 0;  //r
+                        pix.0[1] = 0;  //g
+                        pix.0[2] = 0;  //b
+                        pix.0[3] = 0;  //a
+                    }
+                }
+            }
+        }
+
+        for x in (width - right_top_t)..width {
+            for y in 0..right_top_t {
+                let r = right_top_t;
+                let ranoud = (x - (width - r))*(x - (width - r)) + (y - r)*(y - r);
+                if ranoud > r * r {
+                    if let Some(pix) = img.get_pixel_mut_checked(x, y) {
+                        pix.0[0] = 0;  //r
+                        pix.0[1] = 0;  //g
+                        pix.0[2] = 0;  //b
+                        pix.0[3] = 0;  //a
+                    }
+                }
+            }
+        }
+
+
+        for x in (width - right_bottom_t)..width {
+            for y in (height - right_bottom_t)..height {
+                let r = right_bottom_t;
+                let ranoud = (x - (width - r))*(x - (width - r)) + (y - (height - r))*(y - (height - r));
+                if  ranoud > r * r {
+                    if let Some(pix) = img.get_pixel_mut_checked(x, y) {
+                        pix.0[0] = 0;  //r
+                        pix.0[1] = 0;  //g
+                        pix.0[2] = 0;  //b
+                        pix.0[3] = 0;  //a
+                    }
+                }
+            }
+        }
+
+        for x in 0..left_bottom_t {
+            for y in (height - left_bottom_t)..height {
+                let r = left_bottom_t;
+                let ranoud = (x - r)*(x - r) + (y - (height - r))*(y - (height - r));
+                if ranoud > r * r {
+                    if let Some(pix) = img.get_pixel_mut_checked(x, y) {
+                        pix.0[0] = 0;  //r
+                        pix.0[1] = 0;  //g
+                        pix.0[2] = 0;  //b
+                        pix.0[3] = 0;  //a
+                    }
+                }
+            }
+        }
+
         let mut bytes: Vec<u8> = Vec::new();
         img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
         let ret = self_t.build_bin(bytes);
@@ -957,8 +1035,8 @@ pub fn init_ex_fun_map() {
                 let ii = x + i as i64;
                 let jj = y + j as i64;
                 if ii >= 0 && (ii as u32) < img_big.width() && jj >= 0 && (jj as u32) < img_big.height() {
-                    let pix = img_big.get_pixel_mut(ii as u32, jj as u32);
-                    let pix_sub = img_sub.get_pixel(i, j);
+                    let pix = img_big.get_pixel_mut_checked(ii as u32, jj as u32).ok_or("image out of bound")?;
+                    let pix_sub = img_sub.get_pixel_checked(i, j).ok_or("image out of bound")?;
                     pix.0[3] = 255 - pix_sub.0[3];
                 }
             }
@@ -977,7 +1055,7 @@ pub fn init_ex_fun_map() {
         let height = img.height();
         for x in 0..width {
             for y in 0..height {
-                let pix = img.get_pixel_mut(x, y);
+                let pix = img.get_pixel_mut_checked(x, y).ok_or("image out of bound")?;
                 let red = pix.0[0] as f32  * 0.3;
                 let green = pix.0[1] as f32  * 0.589;
                 let blue = pix.0[2] as f32  * 0.11;
@@ -1211,7 +1289,7 @@ pub fn init_ex_fun_map() {
         let mut img:ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(image_width, image_height as u32);
         for x in 0..image_width {
             for y in 0..image_height {
-                let pix = img.get_pixel_mut(x, y);
+                let pix = img.get_pixel_mut_checked(x, y).ok_or("image out of bound")?;
                 pix.0 = color.0;
             }
         }
@@ -2404,7 +2482,7 @@ def red_out(sw):
         return Ok(Some((sysinfo::ProcessExt::cpu_usage(process) /  sysinfo::SystemExt::cpus(&s).len() as f32).to_string()));
     });
     
-    add_fun(vec!["渲染SVG"],|self_t,params|{
+    add_fun(vec!["渲染SVG","SVG渲染"],|self_t,params|{
         let svg_text = self_t.get_param(params, 0)?;
         let usvg_opt = usvg::Options::default();
         let mut tree = resvg::usvg::Tree::from_str(&svg_text,&usvg_opt)?;
@@ -2419,7 +2497,6 @@ def red_out(sw):
         re_tree.render(transform, &mut pixmap.as_mut());
         Ok(Some(self_t.build_bin(pixmap.encode_png()?)))
     });
-    
 
 }
 
