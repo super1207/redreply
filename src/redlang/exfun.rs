@@ -394,6 +394,7 @@ pub fn init_ex_fun_map() {
         }
         let json_data_rst = serde_json::from_str(&json_str);
         if json_data_rst.is_err() {
+            cq_add_log_w("json解析失败").unwrap();
             return Ok(Some("".to_string())); 
         }
         
@@ -401,8 +402,13 @@ pub fn init_ex_fun_map() {
         let jsonpath = self_t.get_param(params, 1)?;
         let json_parse_out;
         if jsonpath != "" {
-            let v = &json_data.path(&jsonpath)?;
-            json_parse_out = do_json_parse(&v,&self_t.type_uuid)?;
+            if let Ok(v) = json_data.path(&jsonpath) {
+                json_parse_out = do_json_parse(&v,&self_t.type_uuid)?;
+            }
+            else{
+                cq_add_log_w("jsonpath解析失败").unwrap();
+                return Ok(Some("".to_string())); 
+            }
         }else {
             json_parse_out = do_json_parse(&json_data,&self_t.type_uuid)?;
         }

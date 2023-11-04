@@ -1268,6 +1268,14 @@ QQ相关的命令依赖的数据，会被复制；而普通变量、序号等信
 将图片变成圆形，通常用于头像处理。
 
 
+### 圆角
+
+
+【圆角@<font color="red">图片字节集</font>@<font color="red">左上</font>@<font color="red">右上</font>@<font color="red">右下</font>@<font color="red">左下</font>】
+
+将图片的编角变圆。其中</font>@<font color="red">左上</font>、<font color="red">右上</font>、<font color="red">右下</font>、<font color="red">左下</font>为图片四个角上的圆的半径。
+
+
 ### 图片变灰
 
 
