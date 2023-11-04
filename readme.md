@@ -25,7 +25,7 @@
 
 ## 开始使用
 
-1：登录一个`onebot11`的协议端，如[go-cqhttp](https://github.com/Mrs4s/go-cqhttp)、[KookOnebot](https://github.com/super1207/KookOneBot)并开启[ws正向连接](https://github.com/botuniverse/onebot-11/tree/master/communication)。<br />
+1：登录一个`onebot11`的协议端，如[Gensokyo](https://github.com/Hoshinonyaruko/Gensokyo)、[KookOnebot](https://github.com/super1207/KookOneBot)并开启[ws正向连接](https://github.com/botuniverse/onebot-11/tree/master/communication)。<br />
 
 2：下载项目release中的`redlang.exe`，并执行。<br />
 
