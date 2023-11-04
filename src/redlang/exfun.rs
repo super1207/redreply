@@ -2520,6 +2520,9 @@ pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String,
     if json_val.is_array() {
         return Ok(do_json_arr(&self_uid,&json_val)?);
     }
+    if json_val.is_null() {
+        return Ok("".to_owned());
+    }
     Err(None.ok_or(err_str)?)
 }
 
