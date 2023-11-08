@@ -1570,6 +1570,27 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some("-1".to_string()));
     });
+
+    add_fun(vec!["数组查找"],|self_t,params|{ 
+        let arr_str = self_t.get_param(params, 0)?;
+        let sub = self_t.get_param(params, 1)?;
+        let pos_str= self_t.get_param(params, 2)?;
+        let mut pos;
+        if pos_str == "" {
+            pos = 0;
+        }else {
+            pos = pos_str.parse::<usize>()?;
+        }
+        let arr = RedLang::parse_arr(&arr_str)?;
+        while pos < arr.len() {
+            if arr[pos] == sub {
+                return Ok(Some(pos.to_string()));
+            }
+            pos += 1;
+        }
+        return Ok(Some("-1".to_string()));
+    });
+
     add_fun(vec!["错误信息"],|self_t,_params|{
         return Ok(Some(self_t.get_coremap("错误信息")?.to_owned()));
     });
