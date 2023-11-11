@@ -1594,6 +1594,7 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["错误信息"],|self_t,_params|{
         return Ok(Some(self_t.get_coremap("错误信息")?.to_owned()));
     });
+    
     add_fun(vec!["运行SQL"],|self_t,params|{
         let sqlfile = self_t.get_param(params, 0)?;
         let sql = self_t.get_param(params, 1)?;
@@ -2326,13 +2327,9 @@ def red_install(pkg_name):
         raise Exception(err)
 
 def red_in():
-    import os
     import base64
-    import sys
-    l = len(sys.argv)
-    if l < 2:
-        return ""
-    sw = base64.b64decode(sys.argv[1]).decode()
+    inn = input()
+    sw = base64.b64decode(inn).decode()
     return sw
 
 def red_out(sw):
