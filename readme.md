@@ -39,6 +39,10 @@
 
 此外，欢迎来我的KOOK群玩！邀请链接：https://kook.top/3SEwQj
 
+5（可选但建议）：使用启动器：`curl -L http://red.super1207.top/redstart.sh | bash`
+
+在windows下，可以使用[git bash](https://git-scm.com/download)
+
 
 ## 访问控制
 
