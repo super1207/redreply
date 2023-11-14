@@ -1472,7 +1472,7 @@ pub fn init_core_fun_map() {
             let rand_num = get_random()?;
             select_num = rand_num % (params_len - 1) + 1;
         }else {
-            select_num = select_num_str.parse::<usize>()?;
+            select_num = select_num_str.parse::<usize>()? + 1;
         }
         let ret_str;
         if select_num == 0 || select_num > params_len {
