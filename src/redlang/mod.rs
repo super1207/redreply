@@ -1468,11 +1468,16 @@ pub fn init_core_fun_map() {
             return Ok(Some("".to_string()));
         }
         let select_num;
-        if select_num_str == "" {
+        if select_num_str == "" { // 空
             let rand_num = get_random()?;
-            select_num = rand_num % (params_len - 1) + 1;
-        }else {
-            select_num = select_num_str.parse::<usize>()? + 1;
+            select_num = rand_num % (params_len - 1) + 1; // 随机取
+        }
+        else if select_num_str.starts_with("-") { // 可能是负数
+            let _foo = select_num_str.parse::<i64>()?;
+            select_num = 0; // 越界
+        } 
+        else {
+            select_num = select_num_str.parse::<usize>()? + 1; //解析正整数
         }
         let ret_str;
         if select_num == 0 || select_num > params_len {
