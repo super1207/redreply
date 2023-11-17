@@ -873,4 +873,14 @@ pub fn init_cq_ex_fun_map() {
         }
         return Ok(Some(self_t.build_arr(vec.iter().map(AsRef::as_ref).collect())));
     });
+    add_fun(vec!["转繁体"],|self_t,params|{
+        let msg = self_t.get_param(params, 0)?;
+        let ret = crate::mytool::str_to_ft(msg.as_str());
+        return Ok(Some(ret));
+    });
+    add_fun(vec!["转简体"],|self_t,params|{
+        let msg = self_t.get_param(params, 0)?;
+        let ret = crate::mytool::str_to_jt(msg.as_str());
+        return Ok(Some(ret));
+    });
 }
