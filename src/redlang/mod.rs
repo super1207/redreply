@@ -1539,6 +1539,30 @@ pub fn init_core_fun_map() {
         }
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["自增"],|self_t,params|{
+        let var_name = self_t.get_param(params, 0)?;
+        let number_str = self_t.get_param(params, 1)?;
+        let number;
+        if number_str == "" {
+            number = 1;
+        } else {
+            number = number_str.parse::<i64>()?;
+        }
+        let var_vec_len = self_t.var_vec.len();
+        for i in 0..var_vec_len {
+            let mp = &mut self_t.var_vec[var_vec_len - i - 1];
+            let v_opt = mp.get_mut(&var_name);
+            if let Some(val) = v_opt {
+                let mut v = (**val).borrow_mut();
+                let v_str: Rc<String> = v.get_string();
+                let mut v_num = v_str.parse::<i64>()?;
+                v_num += number;
+                v.set_string(v_num.to_string())?;
+                break;
+            }
+        }
+        return Ok(Some("".to_string()));
+    });
 }
 
 impl RedLang {
