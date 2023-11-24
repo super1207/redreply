@@ -7,6 +7,7 @@ use md5::{Md5, Digest};
 use resvg::usvg::{self, TreeParsing, TreeTextToPath};
 use rusttype::Scale;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
+use time::UtcOffset;
 use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
@@ -602,12 +603,20 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some("".to_string()));
     });
+
     add_fun(vec!["文本转时间戳"],|self_t,params|{
         let time_str = self_t.get_param(params, 0)?;
-        const FORMAT: &str = "%F-%H-%M-%S";
-        let tm = chrono::Local.datetime_from_str(&time_str, FORMAT)?.timestamp();
+        const FORMAT: &str = "%Y-%m-%d-%H-%M-%S";
+        let utc_offset;
+        if let Ok(v) = UtcOffset::current_local_offset() {
+            utc_offset = v;
+        } else {
+            utc_offset = UtcOffset::from_hms(8,0,0).unwrap();
+        }
+        let tm = chrono::NaiveDateTime::parse_from_str(&time_str, FORMAT)?.timestamp() - utc_offset.whole_seconds() as i64;
         return Ok(Some(tm.to_string()));
     });
+
     add_fun(vec!["MD5编码"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
         let bin = RedLang::parse_bin(&text)?;
