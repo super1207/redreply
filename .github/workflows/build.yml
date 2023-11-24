@@ -28,14 +28,11 @@ jobs:
         cargo install cross --git https://github.com/cross-rs/cross
     - name: build
       run: |
-        cross build --target aarch64-linux-android --release
-        strip target/aarch64-linux-android/release/redlang
         cross build --target i686-pc-windows-gnu --release
         strip target/i686-pc-windows-gnu/release/redlang.exe
+        cross build --target aarch64-linux-android --release
         cross build --target aarch64-unknown-linux-musl --release
-        strip target/aarch64-unknown-linux-musl/release/redlang
         cross build --target i686-unknown-linux-musl --release
-        strip target/i686-unknown-linux-musl/release/redlang
         
     - name: before_upload
       run: |
