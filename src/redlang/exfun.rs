@@ -2491,6 +2491,54 @@ def red_out(sw):
         }
         Ok(Some(String::from_utf8(content_rst.unwrap())?))
     });
+    add_fun(vec!["默认字体"],|self_t,_params|{
+        let ft = self_t.get_coremap("默认字体")?;
+        if ft != "" {
+            return Ok(Some(ft.to_owned()));
+        }
+        let proxy = self_t.get_coremap("代理")?;
+        let mut timeout_str = self_t.get_coremap("访问超时")?;
+        if timeout_str == "" {
+            timeout_str = "60000";
+        }
+        let mut http_header = BTreeMap::new();
+        let http_header_str = self_t.get_coremap("访问头")?;
+        if http_header_str != "" {
+            http_header = RedLang::parse_obj(&http_header_str)?;
+            if !http_header.contains_key("User-Agent"){
+                http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
+            }
+        }else {
+            http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
+        }
+        let url = "https://fonts.gstatic.com/s/notosanssc/v36/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYxNbPzS5HE.ttf";
+        let timeout = timeout_str.parse::<u64>()?;
+        let content = RT_PTR.block_on(async { 
+            let ret = tokio::select! {
+                val_rst = http_post(url,vec![],&http_header,proxy,false) => {
+                    if let Ok(val) = val_rst {
+                        val
+                    } else {
+                        cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
+                        (vec![],String::new())
+                    }
+                },
+                _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
+                    cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
+                    (vec![],String::new())
+                }
+            };
+            return ret;
+        });
+        if content.0.len() == 10560380 {
+            let ft = self_t.build_bin(content.0);
+            self_t.set_coremap("默认字体", &ft)?;
+            return Ok(Some(ft));
+        }else {
+            cq_add_log_w(&format!("默认字体下载失败！")).unwrap();
+            return Ok(Some(self_t.build_bin(vec![])));
+        }
+    });
     add_fun(vec!["快速运行PY"],|self_t,params|{
         let code = self_t.get_param(params, 0)?;
         let input = self_t.get_param(params, 1)?;
