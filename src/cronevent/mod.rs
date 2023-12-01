@@ -25,7 +25,7 @@ fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a
 
 fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
     let mut to_deal_time: Vec<i64> = vec![];
-    let now_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+    let now_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64 - 1;
     {
         let mut last_time_lk = G_LAST_RUN_TIME.lock()?;
         if last_time_lk.is_none() {
