@@ -1,7 +1,7 @@
-use std::{path::Path, time::{SystemTime, Duration}, collections::{BTreeMap, HashMap}, vec, fs, str::FromStr};
-
+use std::{path::Path, time::{SystemTime, Duration}, collections::{BTreeMap, HashMap}, vec, fs, str::FromStr, io::Read};
 use chrono::TimeZone;
 use encoding::Encoding;
+use flate2::{read::{GzDecoder, ZlibDecoder}, write::{GzEncoder, ZlibEncoder}, Compression};
 use jsonpath_rust::JsonPathQuery;
 use md5::{Md5, Digest};
 use resvg::usvg::{self, TreeParsing, TreeTextToPath};
@@ -554,6 +554,38 @@ pub fn init_ex_fun_map() {
             &base64::alphabet::STANDARD,
             base64::engine::general_purpose::PAD), b64_str)?;
         return Ok(Some(self_t.build_bin(content)));
+    });
+    add_fun(vec!["GZIP解码"],|self_t,params|{
+        let gzip_str = self_t.get_param(params, 0)?;
+        let gzip_bin = RedLang::parse_bin(&gzip_str)?;
+        let mut d = GzDecoder::new(gzip_bin.as_slice());
+        let mut buf = vec![];
+        d.read_to_end(&mut buf)?;
+        return Ok(Some(self_t.build_bin(buf)));
+    });
+    add_fun(vec!["GZIP编码"],|self_t,params|{
+        let gzip_str = self_t.get_param(params, 0)?;
+        let gzip_bin = RedLang::parse_bin(&gzip_str)?;
+        let mut e = GzEncoder::new(vec![],Compression::default());
+        e.write_all(&gzip_bin)?;
+        let buf = e.finish()?;
+        return Ok(Some(self_t.build_bin(buf)));
+    });
+    add_fun(vec!["ZLIB解码"],|self_t,params|{
+        let zlib_str = self_t.get_param(params, 0)?;
+        let zlib_bin = RedLang::parse_bin(&zlib_str)?;
+        let mut d = ZlibDecoder::new(zlib_bin.as_slice());
+        let mut buf = vec![];
+        d.read_to_end(&mut buf)?;
+        return Ok(Some(self_t.build_bin(buf)));
+    });
+    add_fun(vec!["ZLIB编码"],|self_t,params|{
+        let zlib_str = self_t.get_param(params, 0)?;
+        let zlib_bin = RedLang::parse_bin(&zlib_str)?;
+        let mut e = ZlibEncoder::new(vec![],Compression::default());
+        e.write_all(&zlib_bin)?;
+        let buf = e.finish()?;
+        return Ok(Some(self_t.build_bin(buf)));
     });
     add_fun(vec!["延时"],|self_t,params|{
         let mill = self_t.get_param(params, 0)?.parse::<u64>()?;
@@ -1608,7 +1640,7 @@ pub fn init_ex_fun_map() {
         let sqlfile = self_t.get_param(params, 0)?;
         let sql = self_t.get_param(params, 1)?;
         let sql_params_str = self_t.get_param(params, 2)?;
-        let sql_params;
+                let sql_params;
         if sql_params_str == "" {
             sql_params = vec![];
         }else{

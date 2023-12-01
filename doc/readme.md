@@ -986,6 +986,46 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 注意，只有base64编码的文本才能进行BASE64解码
 
 
+### GZIP编码
+
+
+【GZIP编码@<font color="red">字节集</font>】
+
+将字节集转为GZIP编码的字节集
+
+注意，只有字节集才能进行GZIP编码
+
+
+### GZIP解码
+
+
+【GZIP解码@<font color="red">字节集</font>】
+
+将GZIP编码的字节集解码，返回解码后的字节集
+
+注意，只有GZIP编码的字节集才能进行GZIP解码
+
+
+### ZLIB编码
+
+
+【ZLIB编码@<font color="red">字节集</font>】
+
+将字节集转为ZLIB编码的字节集
+
+注意，只有字节集才能进行ZLIB编码
+
+
+### ZLIB解码
+
+
+【ZLIB解码@<font color="red">字节集</font>】
+
+将ZLIB编码的字节集解码，返回解码后的字节集
+
+注意，只有GZIP编码的字节集才能进行ZLIB解码
+
+
 ### 延时
 
 
