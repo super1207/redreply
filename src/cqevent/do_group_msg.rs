@@ -1,6 +1,6 @@
-use std::collections::VecDeque;
+use std::{collections::VecDeque, rc::Rc, cell::RefCell};
 
-use crate::{cqapi::*, redlang::RedLang, mytool::{json_to_cq_str, read_json_str}, read_code_cache, G_INPUTSTREAM_VEC};
+use crate::{cqapi::*, redlang::RedLang, mytool::{json_to_cq_str, read_json_str}, read_code_cache, G_INPUTSTREAM_VEC, RT_PTR};
 
 use super::{is_key_match, get_script_info, set_normal_message_info};
 
@@ -83,11 +83,19 @@ fn do_redlang(root: &serde_json::Value) -> Result< (), Box<dyn std::error::Error
                 rl.set_exmap("当前消息",&msg)?;
             }
             if is_key_match(&mut rl,&ppfs,keyword,&msg)? {
-                rl.pkg_name = pkg_name.to_owned();
-                rl.script_name = name.to_owned();
-                if let Err(e) = super::do_script(&mut rl,code) {
-                    cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e.to_string()).as_str()).unwrap();
-                }
+                let exmap = (*rl.exmap).borrow().clone();
+                let code_t = code.to_owned();
+                let pkg_name_t = pkg_name.to_owned();
+                let script_name_t = name.to_owned();
+                RT_PTR.spawn_blocking(move ||{
+                    let mut rl = RedLang::new();
+                    rl.exmap = Rc::new(RefCell::new(exmap));
+                    rl.pkg_name = pkg_name_t.to_owned();
+                    rl.script_name = script_name_t.to_owned();
+                    if let Err(e) = super::do_script(&mut rl,&code_t) {
+                        cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e.to_string()).as_str()).unwrap();
+                    }
+                });
             }    
         }
     }
