@@ -45,6 +45,7 @@ sysinfo = "0.29.10"
 resvg = { version = "0.36.0", default-features = false, features = [ "text", "raster-images"  ] }
 fontdb = { version = "0.15.0", default-features = false, features = [ "fs" ] }
 flate2 = { version = "1.0.26",default-features = false}
+zhconv = "0.3.0"
 
 
 [target.'cfg(windows)'.dependencies]

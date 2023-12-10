@@ -362,8 +362,8 @@ pub fn init_core_fun_map() {
     fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
         let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
         for it in k_vec {
-            let k = it.to_string();
-            let k_t = crate::mytool::cmd_to_jt(&k);
+            let k = it.to_string().to_uppercase();
+            let k_t = crate::mytool::str_to_ft(&k);
             if k == k_t {
                 if w.contains_key(&k) {
                     let err_opt:Option<String> = None;
@@ -1563,6 +1563,82 @@ pub fn init_core_fun_map() {
         }
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["进制转化","进制转换"],|self_t,params|{
+        let num_text = self_t.get_param(params, 0)?.to_uppercase();
+        let from = self_t.get_param(params, 1)?.parse::<u32>()?;
+        let to = self_t.get_param(params, 2)?.parse::<u32>()?;
+        // 你好，这是Bing。我可以尝试用Rust语言写一个函数，实现任意进制的转化。请看下面的代码：
+        // 定义一个函数，接受一个十进制数和一个目标进制，返回一个字符串表示转换后的结果
+        fn convert_base(num: u32, base: u32) -> String {
+            // 定义一个字符数组，用于表示不同的数字
+            let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                        'A', 'B', 'C', 'D', 'E', 'F'];
+            // 定义一个空字符串，用于存储结果
+            let mut result = String::new();
+            // 定义一个临时变量，用于存储余数
+            let mut remainder;
+            // 定义一个副本，用于循环除法
+            let mut quotient = num;
+            // 如果目标进制不在2到16之间，返回错误信息
+            if base < 2 || base > 16 {
+                return "Invalid base".to_string();
+            }
+            // 如果输入的数是0，直接返回0
+            if num == 0 {
+                return "0".to_string();
+            }
+            // 循环进行除法，直到商为0
+            while quotient > 0 {
+                // 计算余数
+                remainder = quotient % base;
+                // 将余数对应的字符插入到结果字符串的开头
+                result.insert(0, digits[remainder as usize]);
+                // 计算商
+                quotient = quotient / base;
+            }
+            // 返回结果字符串
+            result
+        }
+        // 我可以用Rust语言写一个函数，实现任意进制转为10进制的功能。请看下面的代码：
+        // 定义一个函数，接受一个字符串和一个基数，返回一个十进制数
+        fn convert_to_base10(num: &str, base: u32) -> u32 {
+            // 定义一个字符数组，用于表示不同的数字
+            let digits = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9',
+                        'A', 'B', 'C', 'D', 'E', 'F'];
+            // 定义一个哈希表，用于存储字符和数字的对应关系
+            let mut map = std::collections::HashMap::new();
+            for i in 0..16 {
+                map.insert(digits[i], i as u32);
+            }
+            // 定义一个变量，用于存储结果
+            let mut result = 0;
+            // 定义一个变量，用于存储当前的次方
+            let mut power = 0;
+            // 如果基数不在2到16之间，返回0
+            if base < 2 || base > 16 {
+                return 0;
+            }
+            // 从最低位开始遍历字符串
+            for c in num.chars().rev() {
+                // 如果字符不在哈希表中，返回0
+                if let Some(d) = map.get(&c) {
+                    // 将字符对应的数字乘以基数的相应次方，累加到结果中
+                    result += d * base.pow(power);
+                    // 增加次方
+                    power += 1;
+                } else {
+                    return 0;
+                }
+            }
+            // 返回结果
+            result
+        }
+        let ret = convert_base(convert_to_base10(&num_text,from),to);
+        if ret == "Invalid base" {
+            return Err(RedLang::make_err(&ret));
+        }
+        return Ok(Some(ret));
+    });
 }
 
 impl RedLang {
@@ -1751,7 +1827,7 @@ impl RedLang {
         // 执行核心命令与拓展命令
         let exret;
         {
-            let cmd_t = crate::mytool::cmd_to_jt(&cmd.to_uppercase());
+            let cmd_t = cmd.to_uppercase();
             let r = crate::G_CMD_FUN_MAP.read()?;
             exret = match r.get(&cmd_t) {
                 Some(fun) => fun(self,params)?,

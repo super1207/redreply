@@ -1508,6 +1508,13 @@ onedice参数的写法参考[onedice](https://github.com/OlivOS-Team/onedice)。
 将数字按格式进行补0或者确定精度。例如`【补位@12.07@000.0】`将会输出`012.1`；`【补位@12.07@0.000】`将会输出`12.070`。
 
 
+### 进制转换
+
+【进制转换@<font color="red">数字</font>@<font color="red">原进制</font>@<font color="red">目标进制</font>】
+
+将<font color="red">数字</font>从<font color="red">原进制</font>转为<font color="red">目标进制</font>。此命令实现2~16进制之间的转换。
+
+
 ### 排序
 
 【排序@<font color="red">数组</font>@<font color="red">函数或函数名</font>】

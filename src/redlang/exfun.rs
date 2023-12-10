@@ -26,8 +26,8 @@ pub fn init_ex_fun_map() {
     fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
         let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
         for it in k_vec {
-            let k = it.to_string();
-            let k_t = crate::mytool::cmd_to_jt(&k);
+            let k = it.to_string().to_uppercase();
+            let k_t = crate::mytool::str_to_ft(&k);
             if k == k_t {
                 if w.contains_key(&k) {
                     let err_opt:Option<String> = None;
