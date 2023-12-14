@@ -6,7 +6,7 @@ mod do_group_inc;
 
 use std::{rc::Rc, collections::HashMap, sync::Arc, cell::RefCell};
 
-use crate::{redlang::RedLang, mytool::read_json_str, PAGING_UUID, CLEAR_UUID, add_running_script_num, dec_running_script_num, cqapi::cq_add_log_w};
+use crate::{redlang::RedLang, mytool::read_json_str, PAGING_UUID, CLEAR_UUID, add_running_script_num, dec_running_script_num, cqapi::cq_add_log_w, REDLANG_UUID};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -64,6 +64,15 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
     return msg_type;
 }
 
+
+fn do_run_code_and_ret_check(rl:&mut RedLang,code:&str)-> Result<String, Box<dyn std::error::Error>> {
+    let ret = rl.parse(code)?;
+    if ret.contains(&*REDLANG_UUID) {
+        return Err(RedLang::make_err("尝试输出非文本类型"));
+    }
+    return Ok(ret);
+}
+
 pub fn do_script(rl:&mut RedLang,code:&str) -> Result<String, Box<dyn std::error::Error>>{
     // 增加脚本运行计数
     if add_running_script_num(&rl.pkg_name,&rl.script_name) == false {
@@ -76,7 +85,7 @@ pub fn do_script(rl:&mut RedLang,code:&str) -> Result<String, Box<dyn std::error
     });
 
     // 执行脚本
-    let out_str_t_rst = rl.parse(code);
+    let out_str_t_rst = do_run_code_and_ret_check(rl,code);
 
     // 处理脚本执行错误
     if let Err(err) = out_str_t_rst {
