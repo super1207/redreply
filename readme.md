@@ -9,7 +9,7 @@
 
 ## 文档
 
-[语法简述](/doc/readme.md)
+[文档](https://super1207.github.io/redreply)
 
 ## 背景
 
