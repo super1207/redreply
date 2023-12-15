@@ -108,8 +108,8 @@ pub struct Asset;
 
 
 #[derive(RustEmbed)]
-#[folder = "doc/"]
-#[prefix = "doc/"]
+#[folder = "docs/"]
+#[prefix = "docs/"]
 pub struct AssetDoc;
 
 pub fn wait_for_quit() -> ! {
@@ -464,7 +464,11 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
     } 
     for it in AssetDoc::iter() {
         let file = AssetDoc::get(&it.to_string()).ok_or(err)?;
-        fs::write(cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
+        let file_path = cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + &it.to_string();
+        if let Some(path) = PathBuf::from_str(&file_path)?.parent() {
+            fs::create_dir_all(path)?;
+        }
+        fs::write(file_path, file.data)?;
     } 
     Ok(())
 }

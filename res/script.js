@@ -184,7 +184,7 @@ app = createApp({
             }
         },
         help_web() {
-            window.open("/readme.html", "_blank");
+            window.open("/docs/index.html", "_blank");
         },
         watch_log() {
             window.open("/watchlog.html", "_blank");

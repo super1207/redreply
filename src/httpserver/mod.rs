@@ -237,7 +237,10 @@ async fn deal_file(request: hyper::Request<hyper::Body>) -> Result<hyper::Respon
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("image/png"));
     }else if url_path.ends_with(".txt") {
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/plain"));
-    }else {
+    }else if url_path.ends_with(".md") {
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/markdown"));
+    }
+    else {
         *res.status_mut() = hyper::StatusCode::NOT_FOUND;
     }
     // cq_add_log_w(&format!("{:?}",res));
@@ -469,26 +472,7 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
             res.headers_mut().insert("Location", HeaderValue::from_static("/index.html"));
             return Ok(res);
         }
-        if url_path == "/readme.html" {
-
-            // 没有读权限不允许访问帮助
-            if !can_read {
-                return Ok(rout_to_login());
-            }
-            let app_dir = cq_get_app_directory1().unwrap();
-            let path = PathBuf::from(&app_dir);
-            let path = path.join("webui");
-            let url_path_t = "readme.md".to_owned();
-            let file_path = path.join(url_path_t);
-            let file_buf = tokio::fs::read(&file_path).await?;
-            let ret_str = String::from_utf8(file_buf)?;
-            let html = markdown::to_html_with_options(&ret_str, &markdown::Options::gfm())?;
-            let html = html.replace("&lt;font color=&quot;red&quot;&gt;", "<font color=\"red\">");
-            let html = html.replace("&lt;/font&gt;", "</font>");
-            let mut res = hyper::Response::new(hyper::Body::from(html));
-            res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
-            return Ok(res);
-        }else if url_path == "/favicon.ico" {
+        if url_path == "/favicon.ico" {
             // 没有读权限不允许访问图标
             if !can_read {
                 return Ok(rout_to_login());

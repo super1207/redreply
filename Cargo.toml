@@ -36,7 +36,7 @@ rusqlite = {version = "0.29.0",features = ["bundled"]}
 sevenz-rust = "0.4.3"
 jsonpath-rust = "0.3.1"
 rusttype = "0.9.3"
-markdown = "1.0.0-alpha.7"
+# markdown = "1.0.0-alpha.7"
 reqwest = {version = "0.11.18",default-features = false,features = ["rustls-tls"]}
 time = { version = "0.3.25", features = ["formatting", "macros"] }
 # headless_chrome = {version="1.0.5",default-features = false}
