@@ -1,6 +1,6 @@
 <!-- _coverpage.md -->
 
-![logo](/favicon.ico)
+![logo](/favicon.png)
 
 # 红色问答 <small>base</small>
 
