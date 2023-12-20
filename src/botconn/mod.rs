@@ -14,7 +14,7 @@ use self::{onebot11::OneBot11Connect, onebot115::OneBot115Connect};
 #[async_trait]
 trait BotConnectTrait:Send + Sync {
     fn get_platform(&self) -> Vec<String>;
-    async fn call_api(&mut self,platform:&str,self_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>;
+    async fn call_api(&self,platform:&str,self_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>;
     fn get_self_id(&self) -> Vec<String>;
     fn get_url(&self) -> String;
     fn get_alive(&self) -> bool;
@@ -32,7 +32,7 @@ pub async fn call_api(platform:&str,self_id:&str,json:&mut serde_json::Value) ->
     for bot in &*G_BOT_MAP.read().await {
         if bot.1.read().await.get_platform().contains(&platform.to_owned()) && bot.1.read().await.get_self_id().contains(&self_id.to_owned()) {
             let bot_select = bot.1.clone();
-            let mut bot2 = bot_select.write().await;
+            let bot2 = bot_select.read().await;
             return bot2.call_api(platform,self_id, json).await;
         }
     }
@@ -57,7 +57,16 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                 // 删除所有不在列表中的url和死去的bot
                 {
                     let mut earse_vec = vec![];
-                    let mut bot_map = G_BOT_MAP.write().await;
+                    let mut botmap_lk;
+                    loop {
+                        botmap_lk = G_BOT_MAP.try_write();
+                        if botmap_lk.is_ok(){
+                            break;
+                        } else {
+                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                        }
+                    }
+                    let mut bot_map = botmap_lk.unwrap();
                     for (url,bot) in &*bot_map {
                         if !config_urls.contains(url) || bot.read().await.get_alive() == false {
                             bot.write().await.disconnect().await;
