@@ -97,6 +97,8 @@ lazy_static! {
     pub static ref G_LOCK:Mutex<HashMap<String,HashMap<String, i32>>> = Mutex::new(HashMap::new());
     // 记录与某条消息相关的脚本输出
     pub static ref G_SCRIPT_RELATE_MSG:RwLock<HashMap<String,ScriptRelatMsg>> = RwLock::new(HashMap::new());
+    // 用于自动关闭进程
+    pub static ref G_AUTO_CLOSE:Mutex<bool> = Mutex::new(false);
 }
 
 
@@ -218,6 +220,35 @@ pub fn initialize() -> i32 {
         cq_add_log_w(&err.to_string()).unwrap();
     }
     cq_add_log_w("资源初始化完成！").unwrap();
+
+    
+    // 用于自动退出（嵌入的时候可能需要这个功能）
+    let config_json = read_config().unwrap();
+    if let Some(auto_close_opt) = config_json.get("auto_close") {
+        if let Some(auto_close) = auto_close_opt.as_bool() {
+            if auto_close {
+                thread::spawn(move || {
+                    cq_add_log_w("自动退出已经开启，请每5秒提供一次心跳").unwrap();
+                    loop {
+                        {
+                            let mut lk = G_AUTO_CLOSE.lock().unwrap();
+                            (*lk) = true;
+                        }
+                        std::thread::sleep( std::time::Duration::from_secs(10));
+                        {
+                            let lk = G_AUTO_CLOSE.lock().unwrap();
+                            if *lk == true {
+                                cq_add_log_w("未及时提供心跳，程序退出！").unwrap();
+                                std::thread::sleep( std::time::Duration::from_secs(1));
+                                std::process::exit(-1);
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    }
+    
     return 0;
 }
 

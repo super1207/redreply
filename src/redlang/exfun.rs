@@ -2610,7 +2610,16 @@ def red_out(sw):
         re_tree.render(transform, &mut pixmap.as_mut());
         Ok(Some(self_t.build_bin(pixmap.encode_png()?)))
     });
-
+    add_fun(vec!["转繁体"],|self_t,params|{
+        let msg = self_t.get_param(params, 0)?;
+        let ret = crate::mytool::str_to_ft(msg.as_str());
+        return Ok(Some(ret));
+    });
+    add_fun(vec!["转简体"],|self_t,params|{
+        let msg = self_t.get_param(params, 0)?;
+        let ret = crate::mytool::str_to_jt(msg.as_str());
+        return Ok(Some(ret));
+    });
 }
 
 

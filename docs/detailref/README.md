@@ -1892,7 +1892,7 @@ CQ码**外部**的字符需要CQ转义，以上三个命令的作用可以参考
 
 红色问答中脚本的执行输出，会自动根据来源发送到指定群、频道、用户。
 
-支持的键包括：<font color="red">机器人ID</font>、<font color="red">机器人频道ID</font>、<font color="red">频道ID</font>、<font color="red">子频道ID</font>、<font color="red">群ID</font>、<font color="red">发送者ID</font>。
+支持的键包括：<font color="red">机器人ID</font>、<font color="red">机器人频道ID</font>、<font color="red">频道ID</font>、<font color="red">子频道ID</font>、<font color="red">群ID</font>、<font color="red">发送者ID</font>，<font color="red">机器人平台</font>。
 
 受此命令影响的命令有：文档待补充.jpg
 
@@ -1903,6 +1903,13 @@ CQ码**外部**的字符需要CQ转义，以上三个命令的作用可以参考
 【事件内容】
 
 onebot事件json对应的RedLang对象。
+
+
+### 机器人平台
+
+【机器人平台】
+
+返回产生onebot事件的机器人平台。
 
 
 ### 取艾特

@@ -46,12 +46,14 @@ pub fn cq_get_app_directory2() -> Result<String, Box<dyn std::error::Error>> {
 }
 
 // 用于发送Onebot原始数据，返回OneBot原始数据，utf8编码
-pub fn cq_call_api(self_id:&str,json_str: &str) -> Result<String, Box<dyn std::error::Error>> {
+pub fn cq_call_api(platform:&str,self_id:&str,json_str: &str) -> Result<String, Box<dyn std::error::Error>> {
     let mut js:serde_json::Value = serde_json::from_str(json_str)?;
     let out_str = RT_PTR.block_on(async {
-        let ret = crate::botconn::call_api(self_id,&mut js).await;
+        let ret = crate::botconn::call_api(platform,self_id,&mut js).await;
         if let Ok(ret) =  ret {
             return ret.to_string();
+        } else {
+            cq_add_log_w(&format!("调用api失败:{:?}",ret)).unwrap();
         }
         return "".to_string();
     });

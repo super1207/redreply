@@ -18,6 +18,13 @@ pub fn get_app_dir(pkg_name:&str) -> Result<String, Box<dyn std::error::Error>> 
     return Ok(app_dir)
 }
 
+fn get_platform(self_t:&RedLang) -> String{
+    let platform = self_t.get_exmap("机器人平台");
+    if *platform == "" {
+        return "onebot11".to_string();
+    }
+    return (*platform).to_owned();
+}
 
 fn get_sub_id(rl:& RedLang,msg_type:&str) -> String {
     let sub_id;
@@ -48,7 +55,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
         send_json = serde_json::json!({
             "action":"send_group_msg",
             "params":{
-                "group_id":sub_id.parse::<u64>()?,
+                "group_id":sub_id,
                 "message":msg
             }
         });
@@ -65,7 +72,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
         send_json = serde_json::json!( {
             "action":"send_private_msg",
             "params":{
-                "user_id":rl.get_exmap("发送者ID").parse::<u64>()?,
+                "user_id":(*rl.get_exmap("发送者ID")),
                 "message":msg
             }
         });
@@ -73,7 +80,8 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
         return Err(RedLang::make_err(&("不支持的输出流:".to_string() + msg_type)));
     }
     let self_id = rl.get_exmap("机器人ID");
-    let cq_ret = cq_call_api(&*self_id,send_json.to_string().as_str())?;
+    let platform = get_platform(&rl);
+    let cq_ret = cq_call_api(&platform,&*self_id,send_json.to_string().as_str())?;
     let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
     let err = "输出流调用失败,retcode 不为0";
     if ret_json.get("retcode").ok_or(err)?.as_i64().ok_or(err)? != 0 {
@@ -176,7 +184,8 @@ pub fn init_cq_ex_fun_map() {
             "params":{}
         });
         let self_id = self_t.get_exmap("机器人ID");
-        let cq_ret = cq_call_api(&self_id,&send_json.to_string())?;
+        let platform = get_platform(&self_t);
+        let cq_ret = cq_call_api(&platform,&self_id,&send_json.to_string())?;
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let err = "获机器人名字失败";
         let bot_name = ret_json.get("data").ok_or(err)?.get("nickname").ok_or(err)?.as_str().ok_or(err)?;
@@ -202,9 +211,9 @@ pub fn init_cq_ex_fun_map() {
             ret = msg_id.to_string();
         }else {
             let mp = crate::G_MSG_ID_MAP.read()?;
-            let group_id = self_t.get_exmap("群ID").parse::<i32>()?;
+            let group_id = self_t.get_exmap("群ID");
             let self_id = self_t.get_exmap("机器人ID");
-            let flag = self_id.to_string() + &qq + &group_id.to_string();
+            let flag = self_id.to_string() + &qq + &group_id;
             ret = match mp.get(&flag) {  
                 Some(v) => {
                     let mut vv:Vec<&str> = vec![];
@@ -313,17 +322,18 @@ pub fn init_cq_ex_fun_map() {
                     }
                 });
                 let self_id = self_t.get_exmap("机器人ID");
-                cq_call_api(&self_id,&send_json.to_string())?;
+                let platform = get_platform(&self_t);
+                cq_call_api(&platform,&self_id,&send_json.to_string())?;
             }else{
-                let int32_msg_id = it.parse::<i32>()?;
                 let send_json = serde_json::json!({
                     "action":"delete_msg",
                     "params":{
-                        "message_id":int32_msg_id
+                        "message_id":it
                     }
                 });
                 let self_id = self_t.get_exmap("机器人ID");
-                cq_call_api(&self_id,&send_json.to_string())?;
+                let platform = get_platform(&self_t);
+                cq_call_api(&platform,&self_id,&send_json.to_string())?;
             }
         }  
         return Ok(Some("".to_string()));
@@ -341,7 +351,8 @@ pub fn init_cq_ex_fun_map() {
             }
         });
         let self_id = self_t.get_exmap("机器人ID");
-        cq_call_api(&self_id,&send_json.to_string())?;
+        let platform = get_platform(&self_t);
+        cq_call_api(&platform,&self_id,&send_json.to_string())?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["输出流"],|self_t,params|{
@@ -386,7 +397,8 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["OB调用"],|self_t,params|{
         let content = self_t.get_param(params, 0)?;
         let self_id = self_t.get_exmap("机器人ID");
-        let call_ret = cq_call_api(&*self_id,&content)?;
+        let platform = get_platform(&self_t);
+        let call_ret = cq_call_api(&platform,&*self_id,&content)?;
         let js_v:serde_json::Value = serde_json::from_str(&call_ret)?;
         let ret = do_json_parse(&js_v, &self_t.type_uuid)?;
         return Ok(Some(ret));
@@ -492,15 +504,21 @@ pub fn init_cq_ex_fun_map() {
         let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
         let err = "获取message失败";
         let message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?;
-        let mut ret_vec:Vec<&str> = vec![];
+        let mut ret_vec:Vec<String> = vec![];
         for it in message {
             let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
             if tp == "image" {
-                let url = it.get("data").ok_or(err)?.get("url").ok_or(err)?.as_str().ok_or(err)?;
-                ret_vec.push(url);
+                let data = it.get("data").ok_or("data not found in image cq code")?;
+                let mut url = read_json_str(data, "url");
+                if url == "" {
+                    url = read_json_str(data, "file");
+                }
+                if url.starts_with("http://") || url.starts_with("https://") {
+                    ret_vec.push(url);
+                }
             }
         }
-        let ret = self_t.build_arr(ret_vec);
+        let ret = self_t.build_arr(ret_vec.iter().map(|x| x.as_str()).collect());
         return Ok(Some(ret));
     });
     add_fun(vec!["分页"],|_self_t,_params|{
@@ -532,11 +550,12 @@ pub fn init_cq_ex_fun_map() {
         let send_json = serde_json::json!({
             "action":"get_msg",
             "params":{
-                "message_id":msg_id.parse::<i32>()?
+                "message_id":msg_id
             }
         });
         let self_id = self_t.get_exmap("机器人ID");
-        let cq_ret = cq_call_api(&self_id,&send_json.to_string())?;
+        let platform = get_platform(&self_t);
+        let cq_ret = cq_call_api(&platform,&self_id,&send_json.to_string())?;
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let err = format!("获取消息失败:{ret_json}");
         let raw_message = crate::mytool::json_to_cq_str(ret_json.get("data").ok_or(err)?)?;
@@ -656,7 +675,8 @@ pub fn init_cq_ex_fun_map() {
             }
         });
         let self_id = self_t.get_exmap("机器人ID");
-        let cq_ret = cq_call_api(&self_id,&send_json.to_string())?;
+        let platform = get_platform(&self_t);
+        let cq_ret = cq_call_api(&platform,&self_id,&send_json.to_string())?;
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let err = format!("获取BOT权限失败:{ret_json}");
         let dat_json = ret_json.get("data").ok_or(err)?;
@@ -701,7 +721,8 @@ pub fn init_cq_ex_fun_map() {
                 }
             });
             
-            cq_call_api(&self_id,&send_json.to_string())?;
+            let platform = get_platform(&self_t);
+            cq_call_api(&platform,&self_id,&send_json.to_string())?;
         }else if request_type == "friend"{
             let send_json = serde_json::json!({
                 "action":"set_friend_add_request",
@@ -711,7 +732,8 @@ pub fn init_cq_ex_fun_map() {
                     "remark":remark
                 }
             });
-            cq_call_api(&self_id,&send_json.to_string())?;
+            let platform = get_platform(&self_t);
+            cq_call_api(&platform,&self_id,&send_json.to_string())?;
         }
         return Ok(Some("".to_owned()));
     });
@@ -733,7 +755,8 @@ pub fn init_cq_ex_fun_map() {
                     "reason":reason
                 }
             });
-            cq_call_api(&self_id,&send_json.to_string())?;
+            let platform = get_platform(&self_t);
+            cq_call_api(&platform,&self_id,&send_json.to_string())?;
         }else if request_type == "friend"{
             let send_json = serde_json::json!({
                 "action":"set_friend_add_request",
@@ -743,7 +766,8 @@ pub fn init_cq_ex_fun_map() {
                     "remark":"".to_owned()
                 }
             });
-            cq_call_api(&self_id,&send_json.to_string())?;
+            let platform = get_platform(&self_t);
+            cq_call_api(&platform,&self_id,&send_json.to_string())?;
         }
         return Ok(Some("".to_owned()));
     });
@@ -873,14 +897,8 @@ pub fn init_cq_ex_fun_map() {
         }
         return Ok(Some(self_t.build_arr(vec.iter().map(AsRef::as_ref).collect())));
     });
-    add_fun(vec!["转繁体"],|self_t,params|{
-        let msg = self_t.get_param(params, 0)?;
-        let ret = crate::mytool::str_to_ft(msg.as_str());
-        return Ok(Some(ret));
-    });
-    add_fun(vec!["转简体"],|self_t,params|{
-        let msg = self_t.get_param(params, 0)?;
-        let ret = crate::mytool::str_to_jt(msg.as_str());
-        return Ok(Some(ret));
+    add_fun(vec!["机器人平台"],|self_t,_params|{
+        let platform = get_platform(&self_t);
+        return Ok(Some(platform));
     });
 }

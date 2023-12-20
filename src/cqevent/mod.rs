@@ -14,7 +14,9 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
         cq_add_log_w(&format!("输入出现内部字符，放弃处理本条消息：`{}`",onebot_json_str)).unwrap();
         return Ok(0)
     }
+
     let mut root:serde_json::Value = serde_json::from_str(onebot_json_str)?;
+
     if let Some(msg) = root.get("message") {
         if msg.is_string() {
             let arrmsg = crate::mytool::str_msg_to_arr(&msg)?;
@@ -163,6 +165,7 @@ fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Bo
     rl.set_exmap("频道ID", &read_json_str(root,"guild_id"))?;
     rl.set_exmap("子频道ID", &read_json_str(root,"channel_id"))?;
     rl.set_exmap("机器人频道ID", &read_json_str(root,"self_tiny_id"))?;
+    rl.set_exmap("机器人平台", &read_json_str(root,"platform"))?;
     Ok(())
 }
 

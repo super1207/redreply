@@ -5,13 +5,14 @@ use std::sync::atomic::AtomicBool;
 use crate::cqapi::{cq_get_app_directory1, get_history_log, cq_add_log};
 use crate::httpevent::do_http_event;
 use crate::mytool::read_json_str;
-use crate::read_config;
+use crate::{read_config, G_AUTO_CLOSE};
 use crate::redlang::RedLang;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 use futures_util::{SinkExt, StreamExt};
 use hyper::http::HeaderValue;
 use hyper::service::make_service_fn;
 use serde_json::json;
+use net2::TcpBuilder;
 
 lazy_static! {
     static ref G_LOG_MAP:tokio::sync::RwLock<HashMap<String,tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(HashMap::new());
@@ -374,6 +375,15 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
     if url_path == "/login" {
         return deal_api(request,false,false).await;
     }
+
+    // 心跳接口无须身份验证
+    if url_path == "/heartbeat" {
+        let mut lk = G_AUTO_CLOSE.lock().unwrap();
+        (*lk) = false;
+        let res = hyper::Response::new(hyper::Body::from("ok"));
+        return Ok(res);
+    }
+
     
     // 获取身份信息
     let can_write;
@@ -509,9 +519,16 @@ pub fn init_http_server() -> Result<(), Box<dyn std::error::Error>> {
     }
     let web_uri = format!("{host}:{port}");
     cq_add_log_w(&format!("webui访问地址：http://{web_uri}")).unwrap();
-    let addr = web_uri.parse::<std::net::SocketAddr>()?;
+    let addr1 = web_uri.parse::<std::net::SocketAddr>().unwrap();
+
+    #[cfg(not(windows))]
+    let listener = TcpBuilder::new_v4()?.reuse_address(true)?.bind(addr1)?.listen(20)?;
+    
+    #[cfg(windows)]
+    let listener = TcpBuilder::new_v4()?.bind(addr1)?.listen(20)?;
+
     RT_PTR.clone().spawn(async move {
-        let bd_rst = hyper::Server::try_bind(&addr);
+        let bd_rst = hyper::Server::from_tcp(listener);
         if bd_rst.is_ok() {
             // 启动服务
             let ret = bd_rst.unwrap().serve(make_service_fn(|_conn| async {
