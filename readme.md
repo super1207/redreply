@@ -1,11 +1,12 @@
-# 强大的聊天自定义问答系统-红色问答
 <div align=center>
-	<a href="http://red.super1207.top" />官网：http://red.super1207.top</a>
+	<h1> 红色问答 </h1>
 </div>
 
 <div align=center>
-	<a href="https://imgse.com/i/pPkld9x"><img src="https://s1.ax1x.com/2023/08/04/pPkld9x.png" alt="OM7U3D.png" border="0" /></a>
+	<a href="res/favicon.ico"><img src="res/favicon.ico" alt="favicon.ico" border="0" /></a>
 </div>
+
+> 强大的聊天自定义问答系统
 
 ## 文档
 
