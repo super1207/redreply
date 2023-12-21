@@ -13,9 +13,8 @@ use self::{onebot11::OneBot11Connect, onebot115::OneBot115Connect};
 
 #[async_trait]
 trait BotConnectTrait:Send + Sync {
-    fn get_platform(&self) -> Vec<String>;
     async fn call_api(&self,platform:&str,self_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>;
-    fn get_self_id(&self) -> Vec<String>;
+    fn get_platform_and_self_id(&self) -> Vec<(String,String)>;
     fn get_url(&self) -> String;
     fn get_alive(&self) -> bool;
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
@@ -34,8 +33,12 @@ pub async fn call_api(platform:&str,self_id:&str,json:&mut serde_json::Value) ->
     let self_id_t = self_id.to_owned();
     // 挑选出对应的bot
     for bot in &*G_BOT_MAP.read().await {
-        if bot.1.read().await.get_platform().contains(&platform_t) && bot.1.read().await.get_self_id().contains(&self_id_t) {
-            bot_select = Some(bot.1.clone());
+        let platform_and_self_id = bot.1.read().await.get_platform_and_self_id();
+        for (platform,self_id) in platform_and_self_id {
+            if platform == platform_t && self_id == self_id_t {
+                bot_select = Some(bot.1.clone());
+                break;
+            }
         }
     }
     // 使用挑选出来的bot发送消息

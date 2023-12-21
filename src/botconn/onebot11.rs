@@ -15,7 +15,6 @@ pub struct OneBot11Connect {
     pub self_id:Arc<std::sync::RwLock<String>>,
     pub url:String,
     pub tx:Option<tokio::sync::mpsc::Sender<serde_json::Value>>,
-    pub platforms:Vec<String>,
     pub is_stop:Arc<AtomicBool>,
     pub stop_tx :Option<tokio::sync::mpsc::Sender<bool>>,
 }
@@ -67,7 +66,6 @@ impl OneBot11Connect {
             self_id:Arc::new(RwLock::new("".to_owned())),
             url:url.to_owned(),
             tx:None,
-            platforms:vec!["onebot11".to_string()],
             is_stop:Arc::new(AtomicBool::new(false)),
             stop_tx: None
 
@@ -239,10 +237,6 @@ impl BotConnectTrait for OneBot11Connect {
         Ok(())
     }
 
-    fn get_platform(&self) -> Vec<String> {
-        return self.platforms.clone();
-    }
-
     fn get_url(&self) -> String {
         return self.url.clone();
     }
@@ -304,9 +298,10 @@ impl BotConnectTrait for OneBot11Connect {
         }
     }
 
-    fn get_self_id(&self) -> Vec<String> {
+    fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
         let lk = self.self_id.read().unwrap();
         let self_id = (*lk).clone();
-        return vec![self_id];
+        let platform = "onebot11".to_owned();
+        return vec![(platform,self_id)];
     }
 }

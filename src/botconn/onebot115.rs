@@ -1,4 +1,4 @@
-use std::{sync::{atomic::AtomicBool, Arc, RwLock}, collections::HashSet, str::FromStr};
+use std::{sync::{atomic::AtomicBool, Arc, RwLock}, str::FromStr};
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, SinkExt};
@@ -11,10 +11,9 @@ use super::BotConnectTrait;
 
 #[derive(Debug)]
 pub struct OneBot115Connect {
-    pub self_ids:Arc<std::sync::RwLock<HashSet<String>>>,
     pub url:String,
     pub tx:Option<tokio::sync::mpsc::Sender<serde_json::Value>>,
-    pub platforms:Arc<std::sync::RwLock<HashSet<String>>>,
+    pub platforms:Arc<std::sync::RwLock<Vec<(String,String)>>>,
     pub is_stop:Arc<AtomicBool>,
     pub stop_tx :Option<tokio::sync::mpsc::Sender<bool>>,
 }
@@ -70,10 +69,9 @@ fn get_json_dat(msg:Result<hyper_tungstenite::tungstenite::Message, hyper_tungst
 impl OneBot115Connect {
     pub fn build(url:&str) -> Self {
         OneBot115Connect {
-            self_ids:Arc::new(RwLock::new(HashSet::new())),
             url:url.to_owned(),
             tx:None,
-            platforms:Arc::new(RwLock::new(HashSet::new())),
+            platforms:Arc::new(RwLock::new(Vec::new())),
             is_stop:Arc::new(AtomicBool::new(false)),
             stop_tx: None
 
@@ -109,12 +107,9 @@ impl BotConnectTrait for OneBot115Connect {
             cq_add_log_w(&format!("收到数据：{}",myself.to_string())).unwrap();
             let bot_arr = myself.get("data").ok_or("data not found")?.as_array().ok_or("data not array")?;
             for bot in bot_arr {
-                if let Some(self_id) = bot.get("bot_id") {
-                    self.self_ids.write().unwrap().insert(self_id.as_str().ok_or("self_id not string")?.to_string());
-                }
-                if let Some(platform) = bot.get("platform") {
-                    self.platforms.write().unwrap().insert(platform.as_str().ok_or("platform not string")?.to_string());
-                }
+                let platform = bot.get("platform").ok_or("platform not found")?.as_str().ok_or("platform not str")?;
+                let bot_id = bot.get("bot_id").ok_or("bot_id not found")?.as_str().ok_or("bot_id not str")?;
+                self.platforms.write().unwrap().push((platform.to_string(),bot_id.to_string()));
             }
         }
         let url_ws = self.url.replacen("ovo://", "ws://", 1);
@@ -225,10 +220,10 @@ impl BotConnectTrait for OneBot115Connect {
         Ok(())
     }
 
-    fn get_platform(&self) -> Vec<String> {
-        let ret_vec = self.platforms.read().unwrap().iter().map(|x| x.to_string()).collect();
-        return ret_vec;
-    }
+    // fn get_platform(&self) -> Vec<String> {
+    //     let ret_vec = self.platforms.read().unwrap().iter().map(|x| x.to_string()).collect();
+    //     return ret_vec;
+    // }
 
     fn get_url(&self) -> String {
         return self.url.clone();
@@ -257,9 +252,9 @@ impl BotConnectTrait for OneBot115Connect {
         return Ok(ret)
     }
 
-    fn get_self_id(&self) -> Vec<String> {
-        let lk = self.self_ids.read().unwrap();
-        let self_ids = (*lk).clone();
-        return self_ids.iter().map(|x| x.to_string()).collect();
+    fn get_platform_and_self_id(&self) -> Vec<(String,String)> {
+        let lk = self.platforms.read().unwrap();
+        let platforms = (*lk).clone();
+        return platforms;
     }
 }
