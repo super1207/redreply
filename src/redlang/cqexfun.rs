@@ -20,9 +20,6 @@ pub fn get_app_dir(pkg_name:&str) -> Result<String, Box<dyn std::error::Error>> 
 
 fn get_platform(self_t:&RedLang) -> String{
     let platform = self_t.get_exmap("机器人平台");
-    if *platform == "" {
-        return "onebot11".to_string();
-    }
     return (*platform).to_owned();
 }
 

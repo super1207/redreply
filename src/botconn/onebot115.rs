@@ -109,7 +109,7 @@ impl BotConnectTrait for OneBot115Connect {
             cq_add_log_w(&format!("收到数据：{}",myself.to_string())).unwrap();
             let bot_arr = myself.get("data").ok_or("data not found")?.as_array().ok_or("data not array")?;
             for bot in bot_arr {
-                if let Some(self_id) = bot.get("self_id") {
+                if let Some(self_id) = bot.get("bot_id") {
                     self.self_ids.write().unwrap().insert(self_id.as_str().ok_or("self_id not string")?.to_string());
                 }
                 if let Some(platform) = bot.get("platform") {
@@ -134,7 +134,6 @@ impl BotConnectTrait for OneBot115Connect {
         self.stop_tx = Some(stoptx);
 
         // 这里使用弱引用，防止可能的循环依赖
-        let self_id_ptr = Arc::<std::sync::RwLock<HashSet<String>>>::downgrade(&self.self_ids);
         let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
         tokio::spawn(async move {
             loop {
@@ -155,18 +154,7 @@ impl BotConnectTrait for OneBot115Connect {
                             continue;
                         }
 
-                        // 设置self_id
-                        let self_id = read_json_str(&json_dat, "self_id");
-                        if self_id != "" {
-                            if let Some(val) = self_id_ptr.upgrade() {
-                                val.write().unwrap().insert(self_id);
-                            }
-                            else{
-                                break;
-                            }
-                        }
                         // 获得echo
-                        //let echo = read_json_str(&json_dat, "echo").to_owned();
                         let post_type = read_json_str(&json_dat, "post_type").to_owned();
                         tokio::spawn(async move {
                             if post_type == "" { // 是api回复

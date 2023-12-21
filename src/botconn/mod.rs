@@ -30,17 +30,19 @@ lazy_static! {
 
 pub async fn call_api(platform:&str,self_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let mut bot_select = None;
+    let platform_t = platform.to_owned();
+    let self_id_t = self_id.to_owned();
     // 挑选出对应的bot
     for bot in &*G_BOT_MAP.read().await {
-        if bot.1.read().await.get_platform().contains(&platform.to_owned()) && bot.1.read().await.get_self_id().contains(&self_id.to_owned()) {
+        if bot.1.read().await.get_platform().contains(&platform_t) && bot.1.read().await.get_self_id().contains(&self_id_t) {
             bot_select = Some(bot.1.clone());
         }
     }
     // 使用挑选出来的bot发送消息
     if bot_select.is_some() {
-        return bot_select.unwrap().read().await.call_api(platform, self_id, json).await;
+        return bot_select.unwrap().read().await.call_api(&platform_t, &self_id_t, json).await;
     }
-    cq_add_log_w(&format!("no such bot:{platform},{self_id}")).unwrap();
+    cq_add_log_w(&format!("no such bot:platform:`{platform}`,self_id:`{self_id}`")).unwrap();
     return Ok(serde_json::json!(""));
 }
 
