@@ -29,12 +29,16 @@ lazy_static! {
 
 
 pub async fn call_api(platform:&str,self_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    let mut bot_select = None;
+    // 挑选出对应的bot
     for bot in &*G_BOT_MAP.read().await {
         if bot.1.read().await.get_platform().contains(&platform.to_owned()) && bot.1.read().await.get_self_id().contains(&self_id.to_owned()) {
-            let bot_select = bot.1.clone();
-            let bot2 = bot_select.read().await;
-            return bot2.call_api(platform,self_id, json).await;
+            bot_select = Some(bot.1.clone());
         }
+    }
+    // 使用挑选出来的bot发送消息
+    if bot_select.is_some() {
+        return bot_select.unwrap().read().await.call_api(platform, self_id, json).await;
     }
     cq_add_log_w(&format!("no such bot:{platform},{self_id}")).unwrap();
     return Ok(serde_json::json!(""));
@@ -56,25 +60,22 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
             RT_PTR.clone().block_on(async move {
                 // 删除所有不在列表中的url和死去的bot
                 {
-                    let mut earse_vec = vec![];
-                    let mut botmap_lk;
-                    loop {
-                        botmap_lk = G_BOT_MAP.try_write();
-                        if botmap_lk.is_ok(){
-                            break;
-                        } else {
-                            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    let mut earse_urls = vec![];
+                    let mut earse_bot = vec![];
+                    // 找到这些bot
+                    {
+                        let bot_map = G_BOT_MAP.read().await;
+                        for (url,bot) in &*bot_map {
+                            if !config_urls.contains(url) || bot.read().await.get_alive() == false {
+                                earse_bot.push(bot.clone());
+                                earse_urls.push(url.clone());
+                            }
                         }
                     }
-                    let mut bot_map = botmap_lk.unwrap();
-                    for (url,bot) in &*bot_map {
-                        if !config_urls.contains(url) || bot.read().await.get_alive() == false {
-                            bot.write().await.disconnect().await;
-                            earse_vec.push(url.clone());
-                        }
-                    }
-                    for url in &earse_vec {
-                        bot_map.remove(url);
+                    // 移除这些bot
+                    for index in 0..earse_urls.len() {
+                        earse_bot[index].write().await.disconnect().await;
+                        G_BOT_MAP.write().await.remove(&earse_urls[index]);
                     }
                 }
                 // 连接未在bot_map中的url
