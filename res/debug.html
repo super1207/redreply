@@ -42,7 +42,15 @@
         </div>
         <div style="height: 0; flex-grow: 1;display: flex;flex-direction: column;flex-grow: 1;">
             <quill-editor id = "script_content"  ref="child" theme="snow" @selection-change="select_text" spellcheck = false style="flex-grow: 1; height: 0;"></quill-editor>
-            <button style="height: 40px;font-size: medium;font-weight: bold;" @click="run_script()">运行</button>
+            <button style="height: 40px;font-size: medium;font-weight: bold;" @click="run_script()">发送到平台</button>
+            <button style="height: 40px;font-size: medium;font-weight: bold;" @click="run_script2()">直接运行</button>
+            <div style="display: flex;flex: 1 0 auto;height: 0;flex-direction: row;overflow: scroll;">
+                <textarea style="flex-grow: 1;min-width: 50%;" disabled>{{result}}</textarea>
+                <div v-if="has_img" style="overflow: scroll;width: 0;flex-grow: 1;">
+                    <img v-bind:src="img_src" object-fit: scale-down></img>
+                </div>
+            </div>
+            
         </div>
         </body>
         
@@ -58,6 +66,9 @@
                 guild_id:"暂不支持",
                 group_id:"920220179",
                 user_id:"",
+                result:"",
+                img_src:"",
+                has_img:false
             }
         },
         methods: {
@@ -71,18 +82,54 @@
                     "user_id":this.user_id,
                     "content":content
                 }
+                this.result = "正在提交..."
                 axios.post("/run_code",script)
                 .then((res) => {
                     if(res.data['retcode'] == 0){
-                        // alert("运行成功")
+                        this.result = "请求已提交"
                     }else {
-                        alert("运行失败：" + res.data)
-                       
+                        this.result = "提交失败：" + res.data
                     }
                 })
                 .catch(function (error) {
-                    console.log(error);
-                    alert("运行失败")
+                    this.result = "提交失败"
+                });
+            },
+            run_script2(){
+                let content = this.$refs.child.getQuill().getText();
+                let script = {
+                    "platform":this.platform,
+                    "bot_id":this.bot_id,
+                    "guild_id":this.guild_id,
+                    "group_id":this.group_id,
+                    "user_id":this.user_id,
+                    "content":content
+                }
+                this.result = "正在执行..."
+                this.has_img = false
+                axios.post("/run_code_and_ret",script)
+                .then((res) => {
+                    if(res.data['retcode'] == 0){
+                        this.result = res.data["data"]
+                        var reg = /\[CQ:image,file=(.*?)(\]|\,)/;
+                        ret = reg.exec(this.result)
+                        if(ret.length > 1) {
+                            img = ret[1].trim()
+                            if(img.startsWith("base64://")) {
+                                this.img_src = "data:image/jpeg;base64," + img.slice(9)
+                                this.has_img = true;
+                            }else {
+                                this.img_src = img
+                                this.has_img = true;
+                            }
+                        }
+                        console.log();
+                    }else {
+                        this.result = "执行失败：" + res.data['data']
+                    }
+                })
+                .catch(function (error) {
+                    this.result = "执行失败"
                 });
             },
             highlight()

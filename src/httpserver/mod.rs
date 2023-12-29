@@ -7,7 +7,7 @@ use crate::cqapi::{cq_get_app_directory1, get_history_log, cq_add_log};
 use crate::cqevent::do_script;
 use crate::httpevent::do_http_event;
 use crate::mytool::read_json_str;
-use crate::{read_config, G_AUTO_CLOSE};
+use crate::{read_config, G_AUTO_CLOSE, CLEAR_UUID};
 use crate::redlang::RedLang;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 use futures_util::{SinkExt, StreamExt};
@@ -186,6 +186,62 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
         let mut res = hyper::Response::new(hyper::Body::from(serde_json::json!({
             "retcode":0,
         }).to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)    
+    }
+    else if url_path == "/run_code_and_ret" {
+        if can_write == false {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
+        let body = hyper::body::to_bytes(request.into_body()).await?;
+        let root:serde_json::Value = serde_json::from_slice(&body)?;
+
+        let bot_id = read_json_str(&root, "bot_id");
+        let platform = read_json_str(&root, "platform");
+        let user_id = read_json_str(&root, "user_id");
+        let group_id = read_json_str(&root, "group_id");
+        let code = read_json_str(&root, "content");
+
+        
+        let (tx, rx) =  tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move ||{
+            let mut rl = RedLang::new();
+            rl.set_exmap("机器人ID", &bot_id).unwrap();
+            rl.set_exmap("群ID", &group_id).unwrap();
+            rl.set_exmap("发送者ID", &user_id).unwrap();
+            rl.set_exmap("机器人平台", &platform).unwrap();
+            rl.pkg_name = "".to_owned(); // 默认包
+            rl.script_name = "网页调试".to_owned();
+            rl.can_wrong = true;
+            let ret_rst = rl.parse(&code);
+            let res;
+            let ret;
+            if let Ok(ret_str) = ret_rst {
+                // 处理清空指令
+                if let Some(pos) = ret_str.rfind(CLEAR_UUID.as_str()) {
+                    ret = ret_str.get((pos + 36)..).unwrap().to_owned();
+                } else {
+                    ret = ret_str;
+                }
+                res = serde_json::json!({
+                    "retcode":0,
+                    "data":ret
+                }).to_string();
+            } else {
+                ret = format!("{}",ret_rst.err().unwrap().to_string());
+                res = serde_json::json!({
+                    "retcode":-1,
+                    "data":ret
+                }).to_string();
+            }
+            let rst = tx.send(res);
+            if rst.is_err() {
+                cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+            }
+        });
+        let ret_str = rx.await?;
+        let mut res = hyper::Response::new(hyper::Body::from(ret_str));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)    
     }
