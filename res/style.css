@@ -10,7 +10,7 @@ html,body{
 
 
 button,textarea,body,select,input{
-    background-color: #C7EDCC;
+    background-color: white;
 }
 
 #app {
@@ -198,5 +198,5 @@ button,textarea,body,select,input{
 }
 
 #other_dlg > div > *{
-    margin: 1em;
+    margin: 0.3em;
 }

@@ -189,6 +189,9 @@ app = createApp({
         watch_log() {
             window.open("/watchlog.html", "_blank");
         },
+        debug_btn() {
+            window.open("/debug.html", "_blank");
+        },
         quit_redreply() {
             let is_quit = confirm("是否真的要退出强大的红色问答？")
             if(is_quit){

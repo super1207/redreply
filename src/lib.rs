@@ -680,15 +680,25 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
             std::fs::create_dir_all(&script_path)?;
         }
 
-        for (pkg_name,code) in &code_map {
-            let cont = serde_json::Value::Array(code.to_vec()).to_string();
-            if pkg_name == "" {
-                fs::write(cq_get_app_directory2()? + "script.json", cont)?;
-            }else { 
-                let script_path = pkg_dir.join(pkg_name);
+        // 保存脚本
+        for pkg_name in &key_vec {
+            let script_path = pkg_dir.join(pkg_name);
+            if code_map.contains_key(pkg_name) {
+                let cont = serde_json::Value::Array(code_map[pkg_name].to_vec()).to_string();
                 std::fs::create_dir_all(&script_path)?;
                 fs::write(script_path.join("script.json"), cont)?;
+            } else {
+                std::fs::create_dir_all(&script_path)?;
+                fs::write(script_path.join("script.json"), "[]")?;
             }
+        }
+
+        // 保存默认脚本
+        if code_map.contains_key("") {
+            let cont = serde_json::Value::Array(code_map[""].to_vec()).to_string();
+            fs::write(cq_get_app_directory2()? + "script.json",cont)?;
+        } else {
+            fs::write(cq_get_app_directory2()? + "script.json", "[]")?;
         }
 
         // 删除目录下多余的包

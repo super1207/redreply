@@ -1,8 +1,10 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
+use std::thread;
 
 use crate::cqapi::{cq_get_app_directory1, get_history_log, cq_add_log};
+use crate::cqevent::do_script;
 use crate::httpevent::do_http_event;
 use crate::mytool::read_json_str;
 use crate::{read_config, G_AUTO_CLOSE};
@@ -153,9 +155,41 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
         let ret = rx.await?;
         let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
-        Ok(res)
-        
-    }else if url_path == "/close" {
+        Ok(res)    
+    }
+    else if url_path == "/run_code" {
+        if can_write == false {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
+        let body = hyper::body::to_bytes(request.into_body()).await?;
+        let root:serde_json::Value = serde_json::from_slice(&body)?;
+
+        let bot_id = read_json_str(&root, "bot_id");
+        let platform = read_json_str(&root, "platform");
+        let user_id = read_json_str(&root, "user_id");
+        let group_id = read_json_str(&root, "group_id");
+        let code = read_json_str(&root, "content");
+        thread::spawn(move ||{
+            let mut rl = RedLang::new();
+            rl.set_exmap("机器人ID", &bot_id).unwrap();
+            rl.set_exmap("群ID", &group_id).unwrap();
+            rl.set_exmap("发送者ID", &user_id).unwrap();
+            rl.set_exmap("机器人平台", &platform).unwrap();
+            rl.pkg_name = "".to_owned(); // 默认包
+            rl.script_name = "网页调试".to_owned();
+            rl.can_wrong = true;
+            if let Err(err) = do_script(&mut rl, &code) {
+                cq_add_log_w(&format!("{}",err)).unwrap();
+            }
+        });
+        let mut res = hyper::Response::new(hyper::Body::from(serde_json::json!({
+            "retcode":0,
+        }).to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)    
+    }
+    else if url_path == "/close" {
         if can_write == false {
             let res = hyper::Response::new(hyper::Body::from("api not found"));
             return Ok(res);
