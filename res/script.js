@@ -40,10 +40,41 @@ app = createApp({
             new_pkg_name:"",
             rename_pkg_name:"",
             rename_pkg_process:[],
-            can_emit_select:true
+            can_emit_select:true,
+            composing:false
         }
     },
     mounted () {
+
+        // 对复制进行hook，解决复制时多余的换行
+        ele = document.getElementById("script_content")
+        ele.oncopy = (e) => {
+            quill = this.$refs.child.getQuill()
+            range = quill.getSelection()
+            e.clipboardData.setData('text/plain', quill.getText(range.index, range.length));
+            e.preventDefault();
+        }
+        
+        // 处理中文输入
+        ele.addEventListener('compositionstart',(e) =>{
+            this.composing = true
+            console.log('compositionstart')
+        })
+        ele.addEventListener('compositionend',(e) =>{    
+            this.composing = false
+            console.log('compositionend')
+            this.highlight()
+        })
+
+        quill = this.$refs.child.getQuill()
+        quill.on('text-change', (delta, oldDelta, source) => {
+            if (source == 'user') {
+                if(!this.composing){
+                    this.highlight()
+                }
+            }
+        });
+
         axios
         .get("/get_version")
         .then(
@@ -99,6 +130,7 @@ app = createApp({
                 this.script_ppfs = this.pkg_codes[this.select_pkg_name][new_select]["content"]["匹配方式"]
                 this.script_cffs = this.pkg_codes[this.select_pkg_name][new_select]["content"]["触发方式"]
                 this.$refs.child.setText(this.pkg_codes[this.select_pkg_name][new_select]["content"]["code"])
+                this.highlight()
             }else{
                 this.script_name = ""
                 this.script_description = ""
@@ -302,42 +334,88 @@ app = createApp({
         },
         highlight()
         {
-            let content = this.$refs.child.getQuill().getText();
-            this.$refs.child.getQuill().formatText(0, content.length, 'color', 'black');
-            let range = this.$refs.child.getQuill().getSelection();
-            if(range == null) {
-                return
+            var current_color = 0;
+            function next_color(){
+                current_color = (current_color + 1) % 4;
             }
-            let p1 = range.index;
-            let p2 = p1 + 1;
-            let selected = content.slice(p1,p2);
-            if(selected != '【') {
-                return
+            function pre_color(){
+                current_color = (current_color + 3) % 4;
             }
-            let p = 1;
-            let i = p1 + 1;
-            for(;i <  content.length;++i){
-                if(content[i] == '\\' ){
-                    i += 1;
-                }else if(content[i] == '】') {
-                    p -= 1;
-                }else if(content[i] == '【') {
-                    p += 1;
+            function make_red_value(quill,index){
+                format = quill.getFormat(index,1)
+                if('color' in format){
+                    if(format['color'] =='red'){
+                        return;
+                    }
                 }
-                if(p == 0) {
-                    this.$refs.child.getQuill().formatText(p1, 1, 'color', 'red');
-                    this.$refs.child.getQuill().formatText(i, 1, 'color', 'red');
-                    break;
+                setTimeout(()=>{
+                    quill.formatText(index,1, 'color','red')
+                },0)
+            }
+            function make_black_value(quill,index){
+                format = quill.getFormat(index,1)
+                if('color' in format){
+                    if(format['color'] =='black'){
+                        return;
+                    }
+                }else {
+                    return;
                 }
+                setTimeout(()=>{
+                    quill.formatText(index,1, 'color','black')
+                },0)
+            }
+            function make_blue_value(quill,index){
+                format = quill.getFormat(index,1)
+                if('color' in format){
+                    if(format['color'] =='blue'){
+                        return;
+                    }
+                }
+                setTimeout(()=>{
+                    quill.formatText(index,1, 'color','blue')
+                },0)
+                
+            }
+            function make_green_value(quill,index){
+                format = quill.getFormat(index,1)
+                if('color' in format){
+                    if(format['color'] =='green'){
+                        return;
+                    }
+                }
+                setTimeout(()=>{
+                    quill.formatText(index,1, 'color','green')
+                },0)
+                
+            }
+            var colorList = [make_black_value,make_red_value,make_green_value,make_blue_value]
+            function out_text(quill,index){
+                colorList[current_color](quill,index)
             }
 
-        },
-        select_text(event){
-            if (event.source == "user") {
-                this.highlight()
+            quill = this.$refs.child.getQuill();
+
+            let code = quill.getText();
+            for(let i = 0;i<code.length;i++){
+                if(code[i] == "【"){
+                    next_color()
+                    out_text(quill,i)
+                }
+                else if(code[i] == "】"){
+                    out_text(quill,i)
+                    pre_color()
+                }
+                else if(code[i] == "\\"){
+                    out_text(quill,i)
+                    i += 1
+                    out_text(quill,i)
+                }
+                else{
+                    out_text(quill,i)
+                }
             }
-            
-        }
+        },
     }
 })
 const globalOptions = {
