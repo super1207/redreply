@@ -389,7 +389,7 @@ app = createApp({
                 },0)
                 
             }
-            var colorList = [make_black_value,make_red_value,make_green_value,make_blue_value]
+            var colorList = [make_black_value,make_red_value,make_blue_value,make_green_value]
             function out_text(quill,index){
                 colorList[current_color](quill,index)
             }

@@ -49,7 +49,7 @@
             }
             #favDialog {
                 margin: auto;
-                height: 5em;
+                /* height: 5em; */
                 width: 20em;
             }
             #dialog_set {
@@ -61,9 +61,13 @@
             }
             
             #dialog_set > div{
+                padding: 3px;
                 display: flex;
             }
             #dialog_set > div > input{
+                flex: 1 0 auto;
+            }
+            #dialog_set > div > select{
                 flex: 1 0 auto;
             }
             
@@ -77,7 +81,23 @@
         <div id="app">
             <dialog id = "favDialog">
                 <div id = "dialog_set">
-                  <div class = "ws_set"><span>ws_url:</span><input id = "ws_url_id" v-model = "ws_url"></input></div>
+                    <div class = "ws_set" ><span>type:&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                        <select v-model = "shame" :disabled="is_add==false">
+                            <option value="onebot11">onebot11</option>
+                            <option value="olivos">olivos</option>
+                            <option value="satori">satori</option>
+                        </select>
+                        <button @click="help_shame()">填写帮助</button>
+                    </div>
+                    <div class = "ws_set" v-show = "use_tls_show"><span>tls:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
+                        <select v-model = "use_tls">
+                            <option value="0">否</option>
+                            <option value="1">是</option>
+                        </select>
+                    </div>
+                    
+                  <div class = "ws_set" v-show = "ws_url_show"><span>uri:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><input id = "ws_url_id" v-model = "ws_url"></input></div>
+                  <div class = "ws_set" v-show = "token_show"><span>token:&nbsp;&nbsp;</span><input id = "token" v-model = "token"></input></div>
                   <form method="dialog">
                     <button @click="dialog_ok">确定</button>
                     <button @click="dialog_cancel">取消</button>
@@ -102,10 +122,36 @@
             createApp({
                 data() {
                     return {
+                        is_add:true,
                         select_name_index: -1,
                         ws_urls : [],
-                        ws_url:""
+                        ws_url:"",
+                        token:"",
+                        shame:"onebot11",
+                        use_tls:"0",
+                        shame_helps:{
+                            "onebot11":"onebot11示例uri: \nws://127.0.0.1:5700\nws://127.0.0.1:5700?access_token=77156\nwss://127.0.0.1:5700",
+                            "olivos":"olivos示例uri:（注意:通常情况下您不应该手动设置这个）\n127.0.0.1:1123",
+                            "satori":"satori（注意，目前后端没有支持satori，这项暂时无效）\ntls：是否使用https/wss，通常情况下选择否\nuri:127.0.0.1:5140/satori/v1\ntoken：通常情况下保持空，除非您使用了satori的token验证"
+                        }
                     }
+                },
+                computed:{
+                    token_show(){
+                        if(this.shame == "satori"){
+                            return true;
+                        }
+                        return false
+                    },
+                    ws_url_show(){
+                        return true;
+                    },
+                    use_tls_show(){
+                        if(this.shame == "satori"){
+                            return true;
+                        }
+                        return false
+                    },
                 },
                 mounted () {
                     axios
@@ -122,15 +168,33 @@
                     });
                 },
                 methods: {
+                    help_shame(){
+                        alert(this.shame_helps[this.shame])
+                    },
                     add_endpoint(event) {
                         this.is_add = true;
                         this.ws_url = ""
+                        this.token = ""
+                        this.use_tls = "0"
                         document.getElementById('favDialog').showModal();
                     },
                     edit_endpoint(event) {
                         if(this.select_name_index != -1){
+                            raw_url = this.ws_urls[this.select_name_index]
+                            if(raw_url.startsWith("satori://")){
+                                jsobj = JSON.parse(raw_url.slice(9))
+                                this.ws_url = jsobj["uri"]
+                                this.token = jsobj["token"]
+                                this.use_tls = jsobj["use_tls"]?"1":0
+                                this.shame = "satori"
+                            }else if(raw_url.startsWith("ovo://")){
+                                this.ws_url = raw_url.slice(6)
+                                this.shame = "olivos"
+                            }else{
+                                this.ws_url = this.ws_urls[this.select_name_index]
+                                this.shame = "onebot11"
+                            }
                             this.is_add = false;
-                            this.ws_url = this.ws_urls[this.select_name_index]
                             document.getElementById('favDialog').showModal();
                         }
                     },
@@ -155,11 +219,25 @@
                             this.select_name_index -= 1;
                         }
                     },
+                    make_ws_url() {
+                        if(this.shame == "onebot11"){
+                            return  this.ws_url
+                        }else if(this.shame == "olivos"){
+                            return  "ovo://" + this.ws_url
+                        }else if(this.shame == "satori"){
+                            json_dat = {
+                                "uri":this.ws_url,
+                                "token":this.token,
+                                "use_tls":(this.use_tls == "1")?true:false
+                            };
+                            return  "satori://" + JSON.stringify(json_dat)
+                        }
+                    },
                     dialog_ok(event) {
                         if(this.is_add){
-                            this.ws_urls.push(this.ws_url)
+                            this.ws_urls.push(this.make_ws_url())
                         }else{
-                            this.ws_urls[this.select_name_index] = this.ws_url;
+                            this.ws_urls[this.select_name_index] = this.make_ws_url();
                         }
                     },
                     dialog_cancel(event) {

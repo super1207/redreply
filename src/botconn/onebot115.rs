@@ -97,7 +97,7 @@ impl BotConnectTrait for OneBot115Connect {
 
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
-        println!("正在连接ovo：{}",self.url);
+        // println!("正在连接ovo：{}",self.url);
 
         {
             let mut to_send = serde_json::json!({
@@ -114,7 +114,7 @@ impl BotConnectTrait for OneBot115Connect {
         }
         let url_ws = self.url.replacen("ovo://", "ws://", 1);
         let url = url::Url::parse(&format!("{url_ws}/v1/events"))?;
-        let mut request = tungstenite::client::IntoClientRequest::into_client_request(url).unwrap();
+        let mut request = tungstenite::client::IntoClientRequest::into_client_request(url)?;
         let mp = crate::httpevent::get_params_from_uri(&hyper::Uri::from_str(&self.url)?);
         if let Some(access_token) = mp.get("access_token") {
             request.headers_mut().insert("Authorization", HeaderValue::from_str(&format!("Bearer {}",access_token)).unwrap());
@@ -219,11 +219,6 @@ impl BotConnectTrait for OneBot115Connect {
         });
         Ok(())
     }
-
-    // fn get_platform(&self) -> Vec<String> {
-    //     let ret_vec = self.platforms.read().unwrap().iter().map(|x| x.to_string()).collect();
-    //     return ret_vec;
-    // }
 
     fn get_url(&self) -> String {
         return self.url.clone();

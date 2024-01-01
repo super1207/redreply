@@ -39,6 +39,8 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
     if msg == "" {
         return Ok("".to_string());
     }
+
+    let arr_msg = crate::mytool::str_msg_to_arr(&serde_json::json!(msg))?;
     let msg_type:&'static str = crate::cqevent::get_msg_type(&rl);
     let sub_id = get_sub_id(rl,msg_type);
     let guild_id_str = rl.get_exmap("频道ID").to_string();
@@ -53,7 +55,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
             "action":"send_group_msg",
             "params":{
                 "group_id":sub_id,
-                "message":msg
+                "message":arr_msg
             }
         });
     }else if msg_type == "channel" {
@@ -62,7 +64,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
             "params":{
                 "guild_id": guild_id_str,
                 "channel_id": sub_id,
-                "message":msg
+                "message":arr_msg
             }
         });
     }else if msg_type == "private" {
@@ -70,7 +72,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
             "action":"send_private_msg",
             "params":{
                 "user_id":(*rl.get_exmap("发送者ID")),
-                "message":msg
+                "message":arr_msg
             }
         });
     }else{

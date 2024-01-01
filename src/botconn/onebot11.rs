@@ -91,9 +91,9 @@ impl BotConnectTrait for OneBot11Connect {
 
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
-        println!("正在连接ws：{}",self.url);
+        // println!("正在连接ws：{}",self.url);
         let url = url::Url::parse(&self.url)?;
-        let mut request = tungstenite::client::IntoClientRequest::into_client_request(url).unwrap();
+        let mut request = tungstenite::client::IntoClientRequest::into_client_request(url)?;
         let mp = crate::httpevent::get_params_from_uri(&hyper::Uri::from_str(&self.url)?);
         if let Some(access_token) = mp.get("access_token") {
             request.headers_mut().insert("Authorization", HeaderValue::from_str(&format!("Bearer {}",access_token)).unwrap());
