@@ -48,6 +48,8 @@ flate2 = { version = "1.0.26",default-features = false}
 zhconv = "0.3.0"
 async-trait = "0.1.74"
 net2 = "0.2.39"
+tl = "0.7.7"
+html-escape = "0.2.13"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.50.0"

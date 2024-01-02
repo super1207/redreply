@@ -367,7 +367,7 @@ pub fn init_cq_ex_fun_map() {
         if user_id == "" {
             return Ok(Some("".to_string()));
         }else{
-            return Ok(Some(format!("[CQ:at,qq={}]",user_id)));
+            return Ok(Some(format!("[CQ:at,qq={}]",cq_params_encode(&user_id))));
         }
     });
     add_fun(vec!["CQ码转义"],|self_t,params|{

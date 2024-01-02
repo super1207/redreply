@@ -61,7 +61,7 @@ fn get_json_dat(msg:Result<hyper_tungstenite::tungstenite::Message, hyper_tungst
     }else{
         return None;
     }
-    crate::cqapi::cq_add_log(format!("收到数据:{}", json_dat.to_string()).as_str()).unwrap();
+    crate::cqapi::cq_add_log(format!("OVO收到数据:{}", json_dat.to_string()).as_str()).unwrap();
     return Some(json_dat);
 }
 
