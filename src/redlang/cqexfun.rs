@@ -27,8 +27,6 @@ fn get_sub_id(rl:& RedLang,msg_type:&str) -> String {
     let sub_id;
     if msg_type == "group" {
         sub_id = rl.get_exmap("群ID").to_string();
-    } else if msg_type == "channel" {
-        sub_id = rl.get_exmap("子频道ID").to_string();
     } else {
         sub_id = "".to_owned();
     }
@@ -43,7 +41,6 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
     let arr_msg = crate::mytool::str_msg_to_arr(&serde_json::json!(msg))?;
     let msg_type:&'static str = crate::cqevent::get_msg_type(&rl);
     let sub_id = get_sub_id(rl,msg_type);
-    let guild_id_str = rl.get_exmap("频道ID").to_string();
     
     // 没有设置输出流类型，所以不输出
     if msg_type == "" {
@@ -55,15 +52,6 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
             "action":"send_group_msg",
             "params":{
                 "group_id":sub_id,
-                "message":arr_msg
-            }
-        });
-    }else if msg_type == "channel" {
-        send_json = serde_json::json!( {
-            "action":"send_guild_channel_msg",
-            "params":{
-                "guild_id": guild_id_str,
-                "channel_id": sub_id,
                 "message":arr_msg
             }
         });
@@ -152,6 +140,64 @@ pub fn init_cq_ex_fun_map() {
             }
         }
     }
+    add_fun(vec!["取群列表","群列表"],|self_t,_params|{
+        let groups_id = &*self_t.get_exmap("群组ID");
+        let send_json;
+        if groups_id == "" {
+            send_json = serde_json::json!({
+                "action":"get_group_list",
+                "params":{}
+            });
+        }else {
+            send_json = serde_json::json!({
+                "action":"get_group_list",
+                "params":{
+                    "groups_id":groups_id
+                }
+            });
+        }
+        let self_id = self_t.get_exmap("机器人ID");
+        let platform = get_platform(&self_t);
+        let cq_ret = cq_call_api(&platform,&self_id,&send_json.to_string())?;
+        let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
+        let err = format!("获取群列表失败:{ret_json}");
+        
+        let group_list = ret_json.get("data").ok_or(err)?;
+
+        let mut to_ret: Vec<serde_json::Value> = vec![];
+        for group in group_list.as_array().ok_or("获取群列表失败")?{
+            to_ret.push(serde_json::json!({
+                "群ID":read_json_str(group, "group_id"),
+                "群名":read_json_str(group, "group_name"),
+            }));
+        }
+        let ret = do_json_parse(&serde_json::json!(to_ret), &self_t.type_uuid)?;
+        return Ok(Some(ret));
+    });
+    add_fun(vec!["取发送者信息"],|self_t,_params|{
+
+        let user_id = &*self_t.get_exmap("发送者ID");
+        let send_json;
+        send_json = serde_json::json!({
+            "action":"get_stranger_info",
+            "params":{
+                "user_id":user_id
+            }
+        });
+
+        let self_id = self_t.get_exmap("机器人ID");
+        let platform = get_platform(&self_t);
+        let cq_ret = cq_call_api(&platform,&self_id,&send_json.to_string())?;
+        let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
+        let err = format!("获取发送者信息失败:{ret_json}");
+        let data = ret_json.get("data").ok_or(err)?;
+        let to_ret = serde_json::json!({
+            "用户ID":read_json_str(data, "user_id"),
+            "用户名":read_json_str(data, "nickname")
+        });
+        let ret = do_json_parse(&to_ret, &self_t.type_uuid)?;
+        return Ok(Some(ret));
+    });
     add_fun(vec!["发送者ID","发送者QQ"],|self_t,_params|{
         let qq = self_t.get_exmap("发送者ID");
         return Ok(Some(qq.to_string()));
@@ -159,6 +205,10 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["当前群号","群号","群ID"],|self_t,_params|{
         let group = self_t.get_exmap("群ID");
         return Ok(Some(group.to_string()));
+    });
+    add_fun(vec!["当前群组","群组号","群组ID"],|self_t,_params|{
+        let groups = self_t.get_exmap("群组ID");
+        return Ok(Some(groups.to_string()));
     });
     add_fun(vec!["发送者昵称"],|self_t,_params|{
         let nickname = self_t.get_exmap("发送者昵称");
@@ -170,11 +220,7 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["机器人ID"],|self_t,_params|{
         let qq:String;
-        if *self_t.get_exmap("子频道ID") != "" {
-            qq = self_t.get_exmap("机器人频道ID").to_string();
-        }else{
-            qq = self_t.get_exmap("机器人ID").to_string();
-        }
+        qq = self_t.get_exmap("机器人ID").to_string();
         return Ok(Some(qq));
     });
     add_fun(vec!["机器人名字"],|self_t,_params|{
@@ -225,14 +271,6 @@ pub fn init_cq_ex_fun_map() {
             };
         }
         return Ok(Some(ret));
-    });
-    add_fun(vec!["当前频道ID"],|self_t,_params|{
-        let guild_id = self_t.get_exmap("频道ID");
-        return Ok(Some(guild_id.to_string()));
-    });
-    add_fun(vec!["当前子频道ID"],|self_t,_params|{
-        let channel_id = self_t.get_exmap("子频道ID");
-        return Ok(Some(channel_id.to_string()));
     });
     add_fun(vec!["图片"],|self_t,params|{
         let pic = self_t.get_param(params, 0)?;
@@ -313,27 +351,15 @@ pub fn init_cq_ex_fun_map() {
             _ => vec![]
         };
         for it in msg_id_vec {
-            if *self_t.get_exmap("子频道ID") != "" {
-                let send_json = serde_json::json!({
-                    "action":"delete_msg",
-                    "params":{
-                        "message_id":it
-                    }
-                });
-                let self_id = self_t.get_exmap("机器人ID");
-                let platform = get_platform(&self_t);
-                cq_call_api(&platform,&self_id,&send_json.to_string())?;
-            }else{
-                let send_json = serde_json::json!({
-                    "action":"delete_msg",
-                    "params":{
-                        "message_id":it
-                    }
-                });
-                let self_id = self_t.get_exmap("机器人ID");
-                let platform = get_platform(&self_t);
-                cq_call_api(&platform,&self_id,&send_json.to_string())?;
-            }
+            let send_json = serde_json::json!({
+                "action":"delete_msg",
+                "params":{
+                    "message_id":it
+                }
+            });
+            let self_id = self_t.get_exmap("机器人ID");
+            let platform = get_platform(&self_t);
+            cq_call_api(&platform,&self_id,&send_json.to_string())?;
         }  
         return Ok(Some("".to_string()));
     });
@@ -525,20 +551,8 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["设置来源"],|self_t,params|{
         let key = self_t.get_param(params, 0)?;
-        if ["机器人ID","机器人频道ID","频道ID","子频道ID","群ID","发送者ID"].contains(&key.as_str()){
-            if key.contains("频道") {
-                self_t.set_exmap("群ID","")?;
-            }else if key.contains("群") {
-                self_t.set_exmap("机器人频道ID","")?;
-                self_t.set_exmap("频道ID","")?;
-                self_t.set_exmap("子频道ID","")?;
-            }
-            let val = self_t.get_param(params, 1)?;
-            self_t.set_exmap(&key, &val)?;
-        }else {
-            let val = self_t.get_param(params, 1)?;
-            self_t.set_exmap(&key, &val)?;
-        }
+        let val = self_t.get_param(params, 1)?;
+        self_t.set_exmap(&key, &val)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["清空"],|_self_t,_params|{
@@ -570,16 +584,12 @@ pub fn init_cq_ex_fun_map() {
         let self_id = self_t.get_exmap("机器人ID");
         let group_id = self_t.get_exmap("群ID");
         let user_id = self_t.get_exmap("发送者ID");
-        let guild_id = self_t.get_exmap("频道ID");
-        let channel_id = self_t.get_exmap("子频道ID");
         let echo = uuid::Uuid::new_v4().to_string();
         let (tx, rx): (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
         let ip = crate::InputStream {
             self_id: self_id.to_string(),
             group_id: group_id.to_string(),
             user_id: user_id.to_string(),
-            guild_id: guild_id.to_string(),
-            channel_id: channel_id.to_string(),
             echo: echo.clone(),
             stream_type:"输入流".to_owned(),
             tx: Some(Arc::new(std::sync::Mutex::new(tx))),
@@ -617,16 +627,12 @@ pub fn init_cq_ex_fun_map() {
         let self_id = self_t.get_exmap("机器人ID");
         let group_id = self_t.get_exmap("群ID");
         let user_id = self_t.get_exmap("发送者ID");
-        let guild_id = self_t.get_exmap("频道ID");
-        let channel_id = self_t.get_exmap("子频道ID");
         let echo = uuid::Uuid::new_v4().to_string();
         let (tx, rx): (std::sync::mpsc::Sender<String>, std::sync::mpsc::Receiver<String>) = std::sync::mpsc::channel();
         let ip = crate::InputStream {
             self_id: self_id.to_string(),
             group_id: group_id.to_string(),
             user_id: user_id.to_string(),
-            guild_id: guild_id.to_string(),
-            channel_id: channel_id.to_string(),
             echo: echo.clone(),
             stream_type:"群输入流".to_owned(),
             tx: Some(Arc::new(std::sync::Mutex::new(tx))),
@@ -786,9 +792,8 @@ pub fn init_cq_ex_fun_map() {
         }
     });
     add_fun(vec!["积分-增加"],|self_t,params|{
-        let key0 = self_t.get_exmap("子频道ID");
         let key1 = self_t.get_exmap("群ID");
-        let group_id = format!("{}{}",key0,key1);
+        let group_id = format!("{}",key1);
         let user_id = self_t.get_exmap("发送者ID").to_string();
         let add_score = self_t.get_param(params, 0)?.parse::<i64>()?;
 
@@ -820,9 +825,8 @@ pub fn init_cq_ex_fun_map() {
     });
 
     add_fun(vec!["积分-设置"],|self_t,params|{
-        let key0 = self_t.get_exmap("子频道ID");
         let key1 = self_t.get_exmap("群ID");
-        let group_id = format!("{}{}",key0,key1);
+        let group_id = format!("{}",key1);
         let user_id = self_t.get_exmap("发送者ID").to_string();
         let set_score = self_t.get_param(params, 0)?.parse::<u32>()?;
 
@@ -840,9 +844,8 @@ pub fn init_cq_ex_fun_map() {
 
 
     add_fun(vec!["积分"],|self_t,_params|{
-        let key0 = self_t.get_exmap("子频道ID");
         let key1 = self_t.get_exmap("群ID");
-        let group_id = format!("{}{}",key0,key1);
+        let group_id = format!("{}",key1);
         let user_id = self_t.get_exmap("发送者ID").to_string();
         // 查询积分
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
@@ -860,9 +863,8 @@ pub fn init_cq_ex_fun_map() {
     });
 
     add_fun(vec!["积分-排行"],|self_t,params|{
-        let key0 = self_t.get_exmap("子频道ID");
         let key1 = self_t.get_exmap("群ID");
-        let group_id = format!("{}{}",key0,key1);
+        let group_id = format!("{}",key1);
 
         let limit = self_t.get_param(params, 0)?;
         let limit_num;

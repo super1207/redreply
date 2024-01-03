@@ -35,7 +35,7 @@
             <div style="display: flex;flex-direction: column;flex-grow: 1;">
                 <input v-model = "platform"></input>
                 <input v-model = "bot_id"></input>
-                <input v-model = "guild_id" disabled></input>
+                <input v-model = "groups_id" disabled></input>
                 <input v-model = "group_id"></input>
                 <input v-model = "user_id"></input>
             </div>
@@ -63,7 +63,7 @@
                 // 用于显示
                 platform:"onebot11",
                 bot_id:"1736293901",
-                guild_id:"暂不支持",
+                groups_id:"暂不支持",
                 group_id:"920220179",
                 user_id:"",
                 result:"",
@@ -107,7 +107,7 @@
                 let script = {
                     "platform":this.platform,
                     "bot_id":this.bot_id,
-                    "guild_id":this.guild_id,
+                    "groups_id":this.groups_id,
                     "group_id":this.group_id,
                     "user_id":this.user_id,
                     "content":content
@@ -130,7 +130,7 @@
                 let script = {
                     "platform":this.platform,
                     "bot_id":this.bot_id,
-                    "guild_id":this.guild_id,
+                    "groups_id":this.groups_id,
                     "group_id":this.group_id,
                     "user_id":this.user_id,
                     "content":content

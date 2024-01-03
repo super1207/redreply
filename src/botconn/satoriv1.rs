@@ -23,6 +23,7 @@ pub struct Satoriv1Connect {
     pub is_stop:Arc<AtomicBool>,
     pub stop_tx :Option<tokio::sync::mpsc::Sender<bool>>,
     pub user_channel_map:Arc<std::sync::RwLock<std::collections::HashMap<String,String>>>,
+    pub group_groups_map:Arc<std::sync::RwLock<std::collections::HashMap<String,String>>>,
 }
 
 
@@ -90,6 +91,7 @@ impl Satoriv1Connect {
             is_stop:Arc::new(AtomicBool::new(false)),
             stop_tx: None,
             user_channel_map:Arc::new(RwLock::new(std::collections::HashMap::new())),
+            group_groups_map:Arc::new(RwLock::new(std::collections::HashMap::new())),
         }
     }
 
@@ -158,7 +160,7 @@ impl Satoriv1Connect {
     }
 
 
-    async fn conv_event(json_data:serde_json::Value,platforms:std::sync::Weak<std::sync::RwLock<Vec<(String,String)>>>,user_channel_map:std::sync::Weak<std::sync::RwLock<std::collections::HashMap<String,String>>>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn conv_event(json_data:serde_json::Value,platforms:std::sync::Weak<std::sync::RwLock<Vec<(String,String)>>>,user_channel_map:std::sync::Weak<std::sync::RwLock<std::collections::HashMap<String,String>>>,group_groups_map:std::sync::Weak<std::sync::RwLock<std::collections::HashMap<String,String>>>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let op = read_json_str(&json_data, "op");
         if op == "2"{
             // 心跳回复
@@ -224,6 +226,7 @@ impl Satoriv1Connect {
                     let guild_id = read_json_str(guild, "id");
                     let member = read_json_obj_or_null(body, "user"); // 可以没有member
                     let card =  read_json_str(&member, "nick");
+                    group_groups_map.upgrade().ok_or("upgrade group_groups_map失败")?.write().unwrap().insert(channel_id.to_owned(),guild_id.to_owned());
                     let event_json = serde_json::json!({
                         "time":tm,
                         "self_id":self_id,
@@ -233,9 +236,9 @@ impl Satoriv1Connect {
                         "sub_type":"normal",
                         "message_id":message_id,
                         "group_id":channel_id,
-                        "guild_id":guild_id,
+                        "groups_id":guild_id,
                         "user_id":user_id,
-                        "message":cq_msg, // todo
+                        "message":cq_msg,
                         "raw_message":content,
                         "font":0,
                         "sender":{
@@ -266,7 +269,7 @@ impl Satoriv1Connect {
                         "sub_type":"friend",
                         "message_id":message_id,
                         "user_id":user_id,
-                        "message":cq_msg, // todo
+                        "message":cq_msg,
                         "raw_message":content,
                         "font":0,
                         "sender":{
@@ -282,9 +285,300 @@ impl Satoriv1Connect {
                         }
                     });
                 }
+            }else if type_t == "guild-member-added" {
+                let tm = body.get("timestamp").ok_or("timestamp 不存在")?.as_u64().ok_or("timestamp不是数字")? / 1000;
+                let self_id = read_json_str(body, "self_id");
+                let platform = read_json_str(body, "platform");
+                let guild = read_json_obj(body, "guild").ok_or("guild 不存在")?;
+                let guild_id = read_json_str(guild, "id");
+                let user = read_json_obj_or_null(body, "user");
+                let user_id = read_json_str(&user, "id");
+
+                let event_json = serde_json::json!({
+                    "time":tm,
+                    "self_id":self_id,
+                    "platform":platform,
+                    "post_type":"notice",
+                    "notice_type":"group_increase",
+                    "groups_id":guild_id,
+                    "user_id":user_id
+                });
+
+                tokio::task::spawn_blocking(move ||{
+                    if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
+                        crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                    }
+                });
             }
         }
         Ok(())
+    }
+
+    async fn send_group_msg(self_t:&Satoriv1Connect,json:&serde_json::Value,platform:&str,self_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        let params = read_json_obj_or_null(json, "params");
+            
+        let group_id = read_json_str(&params, "group_id");
+        let message = params.get("message").ok_or("message is not exist")?;
+        let to_send;
+        if message.is_array() {
+            let satori_content = Self::cq_msg_to_satori(message)?;
+            to_send = serde_json::json!({
+                "channel_id":group_id,
+                "content":satori_content
+            });
+            
+        }else{
+            
+            let msg_arr_rst = str_msg_to_arr(message);
+            if let Ok(msg_arr) = msg_arr_rst {
+                let satori_content = Self::cq_msg_to_satori(&msg_arr)?;
+                to_send = serde_json::json!({
+                    "channel_id":group_id,
+                    "content":satori_content
+                });
+            }else{
+                return None.ok_or("call str_msg_to_arr err")?;
+            }
+            
+        }
+        
+        // 处理日志
+        {
+            let js_str = to_send.to_string();
+            let out_str = js_str.get(0..2000);
+            if out_str.is_some() {
+                crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}...", out_str.unwrap()).as_str()).unwrap();
+            }else {
+                crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}", js_str).as_str()).unwrap();
+            }
+        }
+
+        let ret = http_post(&format!("{}/message.create",self_t.http_url),platform,self_id,&self_t.token,&to_send).await?;
+        let msg_id = BASE64_CUSTOM_ENGINE.encode(ret.to_string());
+        return Ok(serde_json::json!({
+            "retcode":0,
+            "status":"ok",
+            "data":{
+                "message_id":msg_id
+            }
+        }));
+    }
+    async fn send_private_msg(self_t:&Satoriv1Connect,json:&serde_json::Value,platform:&str,self_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        let params = read_json_obj_or_null(json, "params");
+        let user_id = read_json_str(&params, "user_id");
+        let channel_id = self_t.user_channel_map.read().unwrap().get(&user_id).ok_or("user_id not match any channel")?.to_owned();
+        let message = params.get("message").ok_or("message is not exist")?;
+        let to_send;
+        if message.is_array() {
+            let satori_content = Self::cq_msg_to_satori(message)?;
+            to_send = serde_json::json!({
+                "channel_id":channel_id,
+                "content":satori_content
+            });
+            
+        }else{
+            
+            let msg_arr_rst = str_msg_to_arr(message);
+            if let Ok(msg_arr) = msg_arr_rst {
+                let satori_content = Self::cq_msg_to_satori(&msg_arr)?;
+                to_send = serde_json::json!({
+                    "channel_id":channel_id,
+                    "content":satori_content
+                });
+            }else{
+                return None.ok_or("call str_msg_to_arr err")?;
+            }
+            
+        }
+        
+        // 处理日志
+        {
+            let js_str = to_send.to_string();
+            let out_str = js_str.get(0..2000);
+            if out_str.is_some() {
+                crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}...", out_str.unwrap()).as_str()).unwrap();
+            }else {
+                crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}", js_str).as_str()).unwrap();
+            }
+        }
+
+        let ret = http_post(&format!("{}/message.create",self_t.http_url),platform,self_id,&self_t.token,&to_send).await?;
+        let msg_id = BASE64_CUSTOM_ENGINE.encode(ret.to_string());
+        return Ok(serde_json::json!({
+            "retcode":0,
+            "status":"ok",
+            "data":{
+                "message_id":msg_id
+            }
+        }));
+   
+    }
+    async fn get_login_info(self_t:&Satoriv1Connect,_json:&serde_json::Value,platform:&str,self_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+
+        let to_send = serde_json::json!({
+        });
+        
+        // 处理日志
+        {
+            let js_str = to_send.to_string();
+            let out_str = js_str.get(0..2000);
+            if out_str.is_some() {
+                crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}...", out_str.unwrap()).as_str()).unwrap();
+            }else {
+                crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}", js_str).as_str()).unwrap();
+            }
+        }
+
+        let ret = http_post(&format!("{}/login.get",self_t.http_url),platform,self_id,&self_t.token,&to_send).await?;
+        
+        let user = read_json_obj_or_null(&ret, "user");
+        let mut nickname = read_json_str(&user, "name");
+        if nickname == "" {
+            nickname = read_json_str(&user, "nick");
+        }
+
+        return Ok(serde_json::json!({
+            "retcode":0,
+            "status":"ok",
+            "data":{
+                "user_id":self_id,
+                "nickname":nickname
+            }
+        }));
+   
+    }
+
+    async fn get_group_list(self_t:&Satoriv1Connect,json:&serde_json::Value,platform:&str,self_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+
+        let params = read_json_obj_or_null(json, "params");
+            
+        let groups_id = read_json_str(&params, "groups_id");
+        let to_send = serde_json::json!({
+            "guild_id":groups_id
+        });
+
+
+        let mut cl = vec![];
+
+        let ret = http_post(&format!("{}/channel.list",self_t.http_url),platform,self_id,&self_t.token,&to_send).await?;
+
+        let channel_list = ret.get("data").ok_or("data is not exist")?.as_array().ok_or("data is not array")?;
+        for channel in channel_list {
+            cl.push(channel.to_owned());
+        }
+        let mut next = read_json_str(&ret, "next");
+        while next != "" {
+            let to_send = serde_json::json!({
+                "guild_id":groups_id,
+                "next":next
+            });
+            let ret = http_post(&format!("{}/channel.list",self_t.http_url),platform,self_id,&self_t.token,&to_send).await?;
+            let channel_list = ret.get("data").ok_or("data is not exist")?.as_array().ok_or("data is not array")?;
+            for channel in channel_list {
+                cl.push(channel.to_owned());
+            }
+            next = read_json_str(&ret, "next");
+        }
+        
+        let mut ret_group: Vec<serde_json::Value> = vec![];
+        for channel in cl {
+            let id = channel.get("id").ok_or("id is not exist")?.as_str().ok_or("id is not string")?;
+            self_t.group_groups_map.write().unwrap().insert(id.to_owned(),groups_id.to_owned());
+            ret_group.push(serde_json::json!({
+                "group_id":id,
+                "group_name":read_json_str(&channel,"name")
+            }));
+        }
+
+        return Ok(serde_json::json!({
+            "retcode":0,
+            "status":"ok",
+            "data":ret_group
+        }));
+   
+    }
+
+    async fn get_group_member_info(self_t:&Satoriv1Connect,json:&serde_json::Value,platform:&str,self_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+
+        let params = read_json_obj_or_null(json, "params");
+
+        let mut groups_id = read_json_str(&params, "groups_id");
+        let group_id = read_json_str(&params, "group_id");
+        if groups_id == "" {
+            groups_id = self_t.group_groups_map.read().unwrap().get(&group_id).ok_or("groups_id is not exist")?.to_owned();
+        }
+        let user_id = read_json_str(&params, "user_id");
+            
+        let to_send = serde_json::json!({
+            "guild_id":groups_id,
+            "user_id":user_id
+        });
+
+
+        let ret = http_post(&format!("{}/guild.member.get",self_t.http_url),platform,self_id,&self_t.token,&to_send).await?;
+        let card = read_json_str(&ret, "nick");
+        let user = read_json_obj_or_null(&ret, "user");
+        let join_time_str = read_json_str(&ret, "joined_at");
+        let mut join_time = None;
+        if join_time_str != "" {
+            join_time = Some(join_time_str.parse::<u64>()? / 1000);
+        }
+        let mut nickname = read_json_str(&user, "name");
+        if nickname == "" {
+            nickname = read_json_str(&user, "nick");
+        }
+        let mut avatar = read_json_str(&ret, "avatar");
+        if avatar == "" {
+            avatar = read_json_str(&user, "avatar");
+        }
+        return Ok(serde_json::json!({
+            "retcode":0,
+            "status":"ok",
+            "data":{
+                "group_id":group_id,
+                "user_id":user_id,
+                "groups_id":groups_id,
+                "nickname":nickname,
+                "card":card,
+                "join_time":join_time,
+                "avatar":avatar,
+                "role":"member"
+            }
+        }));
+   
+    }
+
+    async fn get_stranger_info(self_t:&Satoriv1Connect,json:&serde_json::Value,platform:&str,self_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+
+        let params = read_json_obj_or_null(json, "params");
+
+        let user_id = read_json_str(&params, "user_id");
+            
+        let to_send = serde_json::json!({
+            "user_id":user_id
+        });
+
+
+        let user = http_post(&format!("{}/user.get",self_t.http_url),platform,self_id,&self_t.token,&to_send).await?;
+
+        let mut nickname = read_json_str(&user, "name");
+        if nickname == "" {
+            nickname = read_json_str(&user, "nick");
+        }
+        let mut avatar = read_json_str(&user, "avatar");
+        if avatar == "" {
+            avatar = read_json_str(&user, "avatar");
+        }
+        return Ok(serde_json::json!({
+            "retcode":0,
+            "status":"ok",
+            "data":{
+                "user_id":user_id,
+                "nickname":nickname,
+                "avatar":avatar,
+            }
+        }));
+   
     }
 }
 
@@ -358,6 +652,7 @@ impl BotConnectTrait for Satoriv1Connect {
         let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
         let platforms = Arc::<std::sync::RwLock<Vec<(String,String)>>>::downgrade(&self.platforms);
         let user_channel_map = Arc::<std::sync::RwLock<HashMap<String,String>>>::downgrade(&self.user_channel_map);
+        let group_groups_map = Arc::<std::sync::RwLock<HashMap<String,String>>>::downgrade(&self.group_groups_map);
         tokio::spawn(async move {
             loop {
                 if let Some(val) = is_stop.upgrade() {
@@ -378,8 +673,9 @@ impl BotConnectTrait for Satoriv1Connect {
                         }
                         let platforms_t = platforms.clone();
                         let user_channel_map_t = user_channel_map.clone();
+                        let group_groups_map_t = group_groups_map.clone();
                         tokio::spawn(async move {
-                            if let Err(e) = Satoriv1Connect::conv_event(json_dat,platforms_t,user_channel_map_t).await {
+                            if let Err(e) = Satoriv1Connect::conv_event(json_dat,platforms_t,user_channel_map_t,group_groups_map_t).await {
                                 crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
                             }
                         });
@@ -446,105 +742,25 @@ impl BotConnectTrait for Satoriv1Connect {
     }
 
     async fn call_api(&self,platform:&str,self_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-
         let action = read_json_str(json, "action");
 
         if action == "send_group_msg" {
-            let params = read_json_obj_or_null(json, "params");
-            
-            let group_id = read_json_str(&params, "group_id");
-            let message = params.get("message").ok_or("message is not exist")?;
-            let to_send;
-            if message.is_array() {
-                let satori_content = Self::cq_msg_to_satori(message)?;
-                to_send = serde_json::json!({
-                    "channel_id":group_id,
-                    "content":satori_content
-                });
-                
-            }else{
-                
-                let msg_arr_rst = str_msg_to_arr(message);
-                if let Ok(msg_arr) = msg_arr_rst {
-                    let satori_content = Self::cq_msg_to_satori(&msg_arr)?;
-                    to_send = serde_json::json!({
-                        "channel_id":group_id,
-                        "content":satori_content
-                    });
-                }else{
-                    return None.ok_or("call str_msg_to_arr err")?;
-                }
-                
-            }
-            
-            // 处理日志
-            {
-                let js_str = to_send.to_string();
-                let out_str = js_str.get(0..2000);
-                if out_str.is_some() {
-                    crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}...", out_str.unwrap()).as_str()).unwrap();
-                }else {
-                    crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}", js_str).as_str()).unwrap();
-                }
-            }
-
-            let ret = http_post(&format!("{}/message.create",self.http_url),platform,self_id,&self.token,&to_send).await?;
-            let msg_id = BASE64_CUSTOM_ENGINE.encode(ret.to_string());
-            return Ok(serde_json::json!({
-                "retcode":0,
-                "status":"ok",
-                "data":{
-                    "message_id":msg_id
-                }
-            }));
-        }else if action == "send_private_msg" {
-            let params = read_json_obj_or_null(json, "params");
-            let user_id = read_json_str(&params, "user_id");
-            let channel_id = self.user_channel_map.read().unwrap().get(&user_id).ok_or("user_id not match any channel")?.to_owned();
-            let message = params.get("message").ok_or("message is not exist")?;
-            let to_send;
-            if message.is_array() {
-                let satori_content = Self::cq_msg_to_satori(message)?;
-                to_send = serde_json::json!({
-                    "channel_id":channel_id,
-                    "content":satori_content
-                });
-                
-            }else{
-                
-                let msg_arr_rst = str_msg_to_arr(message);
-                if let Ok(msg_arr) = msg_arr_rst {
-                    let satori_content = Self::cq_msg_to_satori(&msg_arr)?;
-                    to_send = serde_json::json!({
-                        "channel_id":channel_id,
-                        "content":satori_content
-                    });
-                }else{
-                    return None.ok_or("call str_msg_to_arr err")?;
-                }
-                
-            }
-            
-            // 处理日志
-            {
-                let js_str = to_send.to_string();
-                let out_str = js_str.get(0..2000);
-                if out_str.is_some() {
-                    crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}...", out_str.unwrap()).as_str()).unwrap();
-                }else {
-                    crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}", js_str).as_str()).unwrap();
-                }
-            }
-
-            let ret = http_post(&format!("{}/message.create",self.http_url),platform,self_id,&self.token,&to_send).await?;
-            let msg_id = BASE64_CUSTOM_ENGINE.encode(ret.to_string());
-            return Ok(serde_json::json!({
-                "retcode":0,
-                "status":"ok",
-                "data":{
-                    "message_id":msg_id
-                }
-            }));
+            return Self::send_group_msg(self,json,platform,self_id).await;
+        }
+        else if action == "send_private_msg" {
+            return Self::send_private_msg(self,json,platform,self_id).await;
+        }
+        else if action == "get_login_info" {
+            return Self::get_login_info(self,json,platform,self_id).await;
+        }
+        else if action == "get_group_list" {
+            return Self::get_group_list(self,json,platform,self_id).await;
+        }
+        else if action == "get_group_member_info" {
+            return Self::get_group_member_info(self,json,platform,self_id).await;
+        }
+        else if action == "get_stranger_info" {
+            return Self::get_stranger_info(self,json,platform,self_id).await;
         }
         return Ok(serde_json::json!({
             "retcode":1404,

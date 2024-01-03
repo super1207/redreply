@@ -1,6 +1,5 @@
 pub(crate) mod do_group_msg;
 mod do_private_msg;
-mod do_guild_msg;
 mod do_other_evt;
 mod do_group_inc;
 
@@ -28,8 +27,6 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
             do_group_msg::do_group_msg(&root)?;
         }else if message_type == "private"{
             do_private_msg::do_private_msg(&root)?;
-        }else if message_type == "guild"{
-            do_guild_msg::do_guild_msg(&root)?;
         }
     }
 
@@ -51,13 +48,9 @@ pub fn do_paging(outstr:&str) -> Result<Vec<&str>, Box<dyn std::error::Error>> {
 pub fn get_msg_type(rl:& RedLang) -> &'static str {
     let user_id_str = rl.get_exmap("发送者ID").to_string();
     let group_id_str = rl.get_exmap("群ID").to_string();
-    let guild_id_str = rl.get_exmap("频道ID").to_string();
-    let channel_id_str = rl.get_exmap("子频道ID").to_string();
     let msg_type:&str;
     if group_id_str != "" {
         msg_type = "group";
-    }else if channel_id_str != "" && guild_id_str != ""{
-        msg_type = "channel";
     }else if user_id_str  != "" {
         msg_type = "private";
     }else{
@@ -160,11 +153,9 @@ fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Bo
     rl.set_exmap("机器人ID", &read_json_str(root,"self_id"))?;
     rl.set_exmap("发送者ID", &read_json_str(root,"user_id"))?;
     rl.set_exmap("群ID", &read_json_str(root,"group_id"))?;
+    rl.set_exmap("群组ID", &read_json_str(root,"groups_id"))?;
     rl.set_exmap("机器人名字", "露娜sama")?;
     rl.set_exmap("原始事件", &root.to_string())?;
-    rl.set_exmap("频道ID", &read_json_str(root,"guild_id"))?;
-    rl.set_exmap("子频道ID", &read_json_str(root,"channel_id"))?;
-    rl.set_exmap("机器人频道ID", &read_json_str(root,"self_tiny_id"))?;
     rl.set_exmap("机器人平台", &read_json_str(root,"platform"))?;
     Ok(())
 }

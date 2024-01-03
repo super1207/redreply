@@ -46,8 +46,6 @@ pub struct InputStream {
     pub self_id:String,
     pub group_id:String,
     pub user_id:String,
-    pub guild_id:String,
-    pub channel_id:String,
     pub echo:String,
     pub stream_type:String,
     pub tx:Option<Arc<Mutex<std::sync::mpsc::Sender<String>>>>
