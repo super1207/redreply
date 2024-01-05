@@ -174,8 +174,8 @@ pub fn init_cq_ex_fun_map() {
         let ret = do_json_parse(&serde_json::json!(to_ret), &self_t.type_uuid)?;
         return Ok(Some(ret));
     });
-    add_fun(vec!["取发送者信息"],|self_t,_params|{
 
+    fn get_stranger_info(self_t:&mut RedLang) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         let user_id = &*self_t.get_exmap("发送者ID");
         let send_json;
         send_json = serde_json::json!({
@@ -191,9 +191,15 @@ pub fn init_cq_ex_fun_map() {
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let err = format!("获取发送者信息失败:{ret_json}");
         let data = ret_json.get("data").ok_or(err)?;
+        return Ok(data.to_owned());
+    }
+    add_fun(vec!["取发送者信息"],|self_t,_params|{
+        let data = get_stranger_info(self_t)?;
+        let nickname = read_json_str(&data, "nickname");
+        self_t.set_exmap("发送者昵称", &nickname)?;
         let to_ret = serde_json::json!({
-            "用户ID":read_json_str(data, "user_id"),
-            "用户名":read_json_str(data, "nickname")
+            "用户ID":read_json_str(&data, "user_id"),
+            "用户名":nickname
         });
         let ret = do_json_parse(&to_ret, &self_t.type_uuid)?;
         return Ok(Some(ret));
@@ -211,7 +217,20 @@ pub fn init_cq_ex_fun_map() {
         return Ok(Some(groups.to_string()));
     });
     add_fun(vec!["发送者昵称"],|self_t,_params|{
-        let nickname = self_t.get_exmap("发送者昵称");
+        let mut nickname = &*self_t.get_exmap("发送者昵称");
+        let card = &*self_t.get_exmap("发送者名片");
+        if card != "" {
+            nickname = card;
+        }
+        if nickname == "" {
+            if let Ok(data) = get_stranger_info(self_t) {
+                let name = read_json_str(&data, "nickname");
+                if name != "" {
+                    self_t.set_exmap("发送者昵称", &name)?;
+                    return Ok(Some(name));
+                }
+            } 
+        }
         return Ok(Some(nickname.to_string()));
     });
     add_fun(vec!["机器人QQ"],|self_t,_params|{

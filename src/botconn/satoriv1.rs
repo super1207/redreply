@@ -224,9 +224,10 @@ impl Satoriv1Connect {
                 if guild_opt.is_some(){ //group
                     let guild = guild_opt.unwrap();
                     let guild_id = read_json_str(guild, "id");
-                    let member = read_json_obj_or_null(body, "user"); // 可以没有member
+                    let member = read_json_obj_or_null(body, "member"); // 可以没有member
                     let card =  read_json_str(&member, "nick");
-                    group_groups_map.upgrade().ok_or("upgrade group_groups_map失败")?.write().unwrap().insert(channel_id.to_owned(),guild_id.to_owned());
+                    let key = format!("{platform} {self_id} {channel_id}");
+                    group_groups_map.upgrade().ok_or("upgrade group_groups_map失败")?.write().unwrap().insert(key,guild_id.to_owned());
                     let event_json = serde_json::json!({
                         "time":tm,
                         "self_id":self_id,
@@ -259,7 +260,8 @@ impl Satoriv1Connect {
                         }
                     });
                 }else { //private
-                    user_channel_map.upgrade().ok_or("upgrade user_channel_map失败")?.write().unwrap().insert(user_id.to_owned(),channel_id);
+                    let key = format!("{platform} {self_id} {user_id}");
+                    user_channel_map.upgrade().ok_or("upgrade user_channel_map失败")?.write().unwrap().insert(key,channel_id);
                     let event_json = serde_json::json!({
                         "time":tm,
                         "self_id":self_id,
@@ -366,7 +368,8 @@ impl Satoriv1Connect {
     async fn send_private_msg(self_t:&Satoriv1Connect,json:&serde_json::Value,platform:&str,self_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let params = read_json_obj_or_null(json, "params");
         let user_id = read_json_str(&params, "user_id");
-        let channel_id = self_t.user_channel_map.read().unwrap().get(&user_id).ok_or("user_id not match any channel")?.to_owned();
+        let key = format!("{platform} {self_id} {user_id}");
+        let channel_id = self_t.user_channel_map.read().unwrap().get(&key).ok_or("user_id not match any channel")?.to_owned();
         let message = params.get("message").ok_or("message is not exist")?;
         let to_send;
         if message.is_array() {
@@ -483,7 +486,8 @@ impl Satoriv1Connect {
         let mut ret_group: Vec<serde_json::Value> = vec![];
         for channel in cl {
             let id = channel.get("id").ok_or("id is not exist")?.as_str().ok_or("id is not string")?;
-            self_t.group_groups_map.write().unwrap().insert(id.to_owned(),groups_id.to_owned());
+            let key = format!("{platform} {self_id} {id}");
+            self_t.group_groups_map.write().unwrap().insert(key,groups_id.to_owned());
             ret_group.push(serde_json::json!({
                 "group_id":id,
                 "group_name":read_json_str(&channel,"name")
@@ -505,7 +509,8 @@ impl Satoriv1Connect {
         let mut groups_id = read_json_str(&params, "groups_id");
         let group_id = read_json_str(&params, "group_id");
         if groups_id == "" {
-            groups_id = self_t.group_groups_map.read().unwrap().get(&group_id).ok_or("groups_id is not exist")?.to_owned();
+            let key = format!("{platform} {self_id} {group_id}");
+            groups_id = self_t.group_groups_map.read().unwrap().get(&key).ok_or("groups_id is not exist")?.to_owned();
         }
         let user_id = read_json_str(&params, "user_id");
             

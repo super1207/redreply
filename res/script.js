@@ -41,10 +41,22 @@ app = createApp({
             rename_pkg_name:"",
             rename_pkg_process:[],
             can_emit_select:true,
-            composing:false
+            composing:false,
+            last_code:"",
+            last_change_time:(new Date()).valueOf(),
         }
     },
     mounted () {
+
+        setInterval(() => {
+            quill = this.$refs.child.getQuill();
+            let code = quill.getText();
+            tm = (new Date()).valueOf()
+            if (code!= this.last_code && !this.composing && tm - this.last_change_time > 300) {
+                this.highlight()
+                this.last_code = code
+            }
+        }, 500)
 
         // 对复制进行hook，解决复制时多余的换行
         ele = document.getElementById("script_content")
@@ -63,17 +75,18 @@ app = createApp({
         ele.addEventListener('compositionend',(e) =>{    
             this.composing = false
             console.log('compositionend')
-            this.highlight()
+            this.last_change_time = (new Date()).valueOf()
         })
 
         quill = this.$refs.child.getQuill()
         quill.on('text-change', (delta, oldDelta, source) => {
             if (source == 'user') {
                 if(!this.composing){
-                    this.highlight()
+                    this.last_change_time = (new Date()).valueOf()
                 }
             }
         });
+
 
         axios
         .get("/get_version")
@@ -130,7 +143,7 @@ app = createApp({
                 this.script_ppfs = this.pkg_codes[this.select_pkg_name][new_select]["content"]["匹配方式"]
                 this.script_cffs = this.pkg_codes[this.select_pkg_name][new_select]["content"]["触发方式"]
                 this.$refs.child.setText(this.pkg_codes[this.select_pkg_name][new_select]["content"]["code"])
-                this.highlight()
+                //this.highlight()
             }else{
                 this.script_name = ""
                 this.script_description = ""
@@ -216,7 +229,7 @@ app = createApp({
             }
         },
         help_web() {
-            window.open("/docs/index.html", "_blank");
+            window.open("/docs/index.html#/?id=%e5%8f%82%e8%80%83%e6%96%87%e6%a1%a3", "_blank");
         },
         watch_log() {
             window.open("/watchlog.html", "_blank");
@@ -341,80 +354,47 @@ app = createApp({
             function pre_color(){
                 current_color = (current_color + 3) % 4;
             }
-            function make_red_value(quill,index){
-                format = quill.getFormat(index,1)
-                if('color' in format){
-                    if(format['color'] =='red'){
-                        return;
-                    }
-                }
-                setTimeout(()=>{
-                    quill.formatText(index,1, 'color','red')
-                },0)
-            }
-            function make_black_value(quill,index){
-                format = quill.getFormat(index,1)
-                if('color' in format){
-                    if(format['color'] =='black'){
-                        return;
-                    }
-                }else {
-                    return;
-                }
-                setTimeout(()=>{
-                    quill.formatText(index,1, 'color','black')
-                },0)
-            }
-            function make_blue_value(quill,index){
-                format = quill.getFormat(index,1)
-                if('color' in format){
-                    if(format['color'] =='blue'){
-                        return;
-                    }
-                }
-                setTimeout(()=>{
-                    quill.formatText(index,1, 'color','blue')
-                },0)
-                
-            }
-            function make_green_value(quill,index){
-                format = quill.getFormat(index,1)
-                if('color' in format){
-                    if(format['color'] =='green'){
-                        return;
-                    }
-                }
-                setTimeout(()=>{
-                    quill.formatText(index,1, 'color','green')
-                },0)
-                
-            }
-            var colorList = [make_black_value,make_red_value,make_blue_value,make_green_value]
+            var colorList = ["black","red","blue","green"]
             function out_text(quill,index){
                 colorList[current_color](quill,index)
             }
 
             quill = this.$refs.child.getQuill();
 
+            select = quill.getSelection()
+
             let code = quill.getText();
+            content = []
             for(let i = 0;i<code.length;i++){
                 if(code[i] == "【"){
                     next_color()
-                    out_text(quill,i)
+                    content.push({
+                        "insert":code[i],attributes:{color:colorList[current_color]}
+                    })
                 }
                 else if(code[i] == "】"){
-                    out_text(quill,i)
+                    content.push({
+                        "insert":code[i],attributes:{color:colorList[current_color]}
+                    })
                     pre_color()
                 }
                 else if(code[i] == "\\"){
-                    out_text(quill,i)
+                    content.push({
+                        "insert":code[i],attributes:{color:colorList[current_color]}
+                    })
                     i += 1
-                    out_text(quill,i)
+                    content.push({
+                        "insert":code[i],attributes:{color:colorList[current_color]}
+                    })
                 }
                 else{
-                    out_text(quill,i)
+                    content.push({
+                        "insert":code[i],attributes:{color:colorList[current_color]}
+                    })
                 }
             }
+            quill.setContents(content)
+            quill.setSelection(select)
         },
     }
 })

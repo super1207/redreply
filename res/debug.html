@@ -68,10 +68,24 @@
                 user_id:"",
                 result:"",
                 img_src:"",
-                has_img:false
+                has_img:false,
+                last_code:"",
+                last_change_time:(new Date()).valueOf(),
             }
         },
         mounted () {
+
+            setInterval(() => {
+                quill = this.$refs.child.getQuill();
+                let code = quill.getText();
+                tm = (new Date()).valueOf()
+                if (code!= this.last_code && !this.composing && tm - this.last_change_time > 300) {
+                    this.highlight()
+                    this.last_code = code
+                }
+            }, 500)
+
+
             // 对复制进行hook，解决复制时多余的换行
             ele = document.getElementById("script_content")
             ele.oncopy = (e) => {
@@ -81,7 +95,7 @@
                 e.preventDefault();
             }
             
-            // 处理中文输入
+             // 处理中文输入
             ele.addEventListener('compositionstart',(e) =>{
                 this.composing = true
                 console.log('compositionstart')
@@ -89,14 +103,14 @@
             ele.addEventListener('compositionend',(e) =>{    
                 this.composing = false
                 console.log('compositionend')
-                this.highlight()
+                this.last_change_time = (new Date()).valueOf()
             })
 
             quill = this.$refs.child.getQuill()
             quill.on('text-change', (delta, oldDelta, source) => {
                 if (source == 'user') {
                     if(!this.composing){
-                        this.highlight()
+                        this.last_change_time = (new Date()).valueOf()
                     }
                 }
             });
@@ -171,70 +185,47 @@
                 function pre_color(){
                     current_color = (current_color + 3) % 4;
                 }
-                function make_red_value(quill,index){
-                    format = quill.getFormat(index,1)
-                    if('color' in format){
-                        if(format['color'] =='red'){
-                            return;
-                        }
-                    }
-                    quill.formatText(index,1, 'color','red')
-                }
-                function make_black_value(quill,index){
-                    format = quill.getFormat(index,1)
-                    if('color' in format){
-                        if(format['color'] =='black'){
-                            return;
-                        }
-                    }else {
-                        return;
-                    }
-                    quill.formatText(index,1, 'color','black')
-                }
-                function make_blue_value(quill,index){
-                    format = quill.getFormat(index,1)
-                    if('color' in format){
-                        if(format['color'] =='blue'){
-                            return;
-                        }
-                    }
-                    quill.formatText(index,1, 'color','blue')
-                }
-                function make_green_value(quill,index){
-                    format = quill.getFormat(index,1)
-                    if('color' in format){
-                        if(format['color'] =='green'){
-                            return;
-                        }
-                    }
-                    quill.formatText(index,1, 'color','green')
-                }
-                var colorList = [make_black_value,make_red_value,make_green_value,make_blue_value]
+                var colorList = ["black","red","blue","green"]
                 function out_text(quill,index){
                     colorList[current_color](quill,index)
                 }
 
                 quill = this.$refs.child.getQuill();
 
+                select = quill.getSelection()
+
                 let code = quill.getText();
+                content = []
                 for(let i = 0;i<code.length;i++){
                     if(code[i] == "【"){
                         next_color()
-                        out_text(quill,i)
+                        content.push({
+                            "insert":code[i],attributes:{color:colorList[current_color]}
+                        })
                     }
                     else if(code[i] == "】"){
-                        out_text(quill,i)
+                        content.push({
+                            "insert":code[i],attributes:{color:colorList[current_color]}
+                        })
                         pre_color()
                     }
                     else if(code[i] == "\\"){
-                        out_text(quill,i)
+                        content.push({
+                            "insert":code[i],attributes:{color:colorList[current_color]}
+                        })
                         i += 1
-                        out_text(quill,i)
+                        content.push({
+                            "insert":code[i],attributes:{color:colorList[current_color]}
+                        })
                     }
                     else{
-                        out_text(quill,i)
+                        content.push({
+                            "insert":code[i],attributes:{color:colorList[current_color]}
+                        })
                     }
                 }
+                quill.setContents(content)
+                quill.setSelection(select)
             },
         }
     })
