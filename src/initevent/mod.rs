@@ -15,17 +15,19 @@ fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a
 }
 
 // 处理init事件
-pub fn do_init_event() -> Result<i32, Box<dyn std::error::Error>> {
+pub fn do_init_event(pkg_name_opt:Option<&str>) -> Result<i32, Box<dyn std::error::Error>> {
     let script_json = read_code_cache()?;
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
         let (cffs,code,name,pkg_name) = get_script_info(&script_json[i])?;
         let mut rl = crate::redlang::RedLang::new();
         if cffs == "框架初始化" {
-            rl.script_name = name.to_owned();
             rl.pkg_name = pkg_name.to_owned();
-            let ret = crate::cqevent::do_script(&mut rl,&code);
-            if let Err(err) = ret{
-                cq_add_log_w(&format!("{}",err)).unwrap();
+            if pkg_name_opt.is_none() || pkg_name_opt.unwrap() == rl.pkg_name {
+                rl.script_name = name.to_owned();
+                let ret = crate::cqevent::do_script(&mut rl,&code);
+                if let Err(err) = ret{
+                    cq_add_log_w(&format!("{}",err)).unwrap();
+                }
             }
         }
     }

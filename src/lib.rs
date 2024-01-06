@@ -613,7 +613,7 @@ pub fn init_code() -> Result<(), Box<dyn std::error::Error>>{
     }
 
     // 执行初始化脚本
-    if let Err(err) = initevent::do_init_event(){
+    if let Err(err) = initevent::do_init_event(None){
         cq_add_log_w(&err.to_string()).unwrap();
     }
 
@@ -716,6 +716,81 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+
+fn save_one_pkg(contents: &str) -> Result<(), Box<dyn std::error::Error>>{
+    // 解析网络数据
+    let js_t:serde_json::Value = serde_json::from_str(contents)?;
+    let pkg_name = read_json_str(&js_t, "pkg_name");
+    let scripts = js_t.get("data").ok_or("read script err")?.as_array().ok_or("script is not arr")?;
+
+    // 保存脚本
+    if pkg_name == "" {
+        let cont = js_t.get("data").unwrap().to_string();
+        fs::write(cq_get_app_directory2()? + "script.json",cont)?;
+    }else {
+        let plus_dir_str = cq_get_app_directory1()?;
+        let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
+        let script_path = pkg_dir.join(pkg_name.to_owned());
+        let cont = js_t.get("data").unwrap().to_string();
+        std::fs::create_dir_all(&script_path)?;
+        fs::write(script_path.join("script.json"), cont)?;
+    }
+
+    // 更新内存中的脚本
+    {
+        let mut new_script = vec![];
+        let mut wk = G_SCRIPT.write()?;
+        for it in wk.as_array().ok_or("read G_SCRIPT err")? {
+            let it_name = read_json_str(it, "pkg_name");
+            if it_name != pkg_name {
+                new_script.push(it.to_owned());
+            }
+        }
+        for it in scripts {
+            new_script.push(it.to_owned());
+        }
+        (*wk) = serde_json::Value::Array(new_script);
+    }
+
+    // 执行初始化脚本
+    if let Err(err) = initevent::do_init_event(Some(&pkg_name)){
+        cq_add_log_w(&err.to_string()).unwrap();
+    }
+
+    Ok(())
+}
+
+fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std::error::Error>> {
+    let plus_dir_str = cq_get_app_directory1()?;
+    let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
+    fs::rename(pkg_dir.join(old_pkg_name), pkg_dir.join(new_pkg_name))?;
+    Ok(())
+}
+
+
+fn del_one_pkg(pkg_name:&str) -> Result<(), Box<dyn std::error::Error>> {
+    // 删除pkg文件
+    if pkg_name != "" {
+        let plus_dir_str = cq_get_app_directory1()?;
+        let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
+        let script_path = pkg_dir.join(pkg_name.to_owned());
+        let _ = fs::remove_dir_all(script_path);
+    }
+    // 删除内存中的脚本
+    {
+        let mut new_script = vec![];
+        let mut wk = G_SCRIPT.write()?;
+        for it in wk.as_array().ok_or("read G_SCRIPT err")? {
+            let it_name = read_json_str(it, "pkg_name");
+            if it_name != pkg_name {
+                new_script.push(it.to_owned());
+            }
+        }
+        (*wk) = serde_json::Value::Array(new_script);
+    }
+    Ok(())
+}
+
 
 pub fn read_code_cache() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let wk = G_SCRIPT.read()?;

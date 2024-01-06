@@ -396,15 +396,18 @@ app = createApp({
             quill.setContents(content)
             quill.setSelection(select)
         },
+        undo(){
+            quill = this.$refs.child.getQuill();
+            let history = quill.history;
+            return history.undo();
+        },
+        redo(){
+            quill = this.$refs.child.getQuill();
+            let history = quill.history;
+            return history.redo();
+        }
     }
 })
-const globalOptions = {
-    modules: {
-      toolbar: ""
-    },
-    placeholder: '脚本内容',
-    theme: 'snow'
-}
-VueQuill.QuillEditor.props.globalOptions.default = () => globalOptions
+
 app.component('QuillEditor', VueQuill.QuillEditor);
 app.mount('#app')
