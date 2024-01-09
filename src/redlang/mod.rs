@@ -1228,6 +1228,7 @@ pub fn init_core_fun_map() {
         // 获得变量类型
         let tp =(*data).borrow().get_type();
         if tp == "数组" {
+            if k_name.starts_with("-"){return Ok(Some("".to_string()));}
             let index = k_name.parse::<usize>()?;
             let mut v = (*data).borrow_mut();
             v.rv_arr(index)?;
@@ -1236,11 +1237,13 @@ pub fn init_core_fun_map() {
             v.rv_obj(&k_name)?;
             
         }else if tp == "文本" { 
+            if k_name.starts_with("-"){return Ok(Some("".to_string()));}
             let index = k_name.parse::<usize>()?;
             let mut v = (*data).borrow_mut();
             v.rv_str(index)?;
 
         }else if tp == "字节集" {
+            if k_name.starts_with("-"){return Ok(Some("".to_string()));}
             let index = k_name.parse::<usize>()?;
             let mut v = (*data).borrow_mut();
             v.rv_bin(index)?;
