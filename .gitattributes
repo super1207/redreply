@@ -2,3 +2,4 @@
 *.css linguist-language=rust
 *.html linguist-language=rust
 *.htm linguist-language=rust
+*.py linguist-language=rust
