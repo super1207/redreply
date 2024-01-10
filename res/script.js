@@ -388,9 +388,15 @@ app = createApp({
                     })
                 }
                 else{
-                    content.push({
-                        "insert":code[i],attributes:{color:colorList[current_color]}
-                    })
+                    if(code[i] == '\xa0'){
+                        content.push({
+                            "insert":" ",attributes:{color:colorList[current_color]}
+                        })
+                    }else {
+                        content.push({
+                            "insert":code[i],attributes:{color:colorList[current_color]}
+                        })
+                    }
                 }
             }
             quill.setContents(content)
