@@ -12,6 +12,7 @@ use crate::redlang::RedLang;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 use futures_util::{SinkExt, StreamExt};
 use hyper::http::HeaderValue;
+use hyper::server::conn::AddrStream;
 use hyper::service::make_service_fn;
 use serde_json::json;
 use net2::TcpBuilder;
@@ -452,7 +453,7 @@ fn rout_to_login() -> hyper::Response<hyper::Body> {
     return res;
 }
 
-async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
+async fn connect_handle(request: hyper::Request<hyper::Body>,addr: std::net::SocketAddr) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
     
     let url_path = request.uri().path();
 
@@ -478,7 +479,7 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
     // 获取身份信息
     let can_write;
     let can_read;
-    {
+    if !addr.ip().is_loopback() {
         let http_auth_rst = http_auth(&request);
         if http_auth_rst.is_err() {
             can_read = false;
@@ -492,6 +493,9 @@ async fn connect_handle(request: hyper::Request<hyper::Body>) -> Result<hyper::R
                 can_write = false;
             }
         }
+    }else{ // 本机地址不进行身份验证
+        can_write = true;
+        can_read = true;
     }
 
     // 认证失败,且不是用户API,跳转登录页面
@@ -621,9 +625,14 @@ pub fn init_http_server() -> Result<(), Box<dyn std::error::Error>> {
         let bd_rst = hyper::Server::from_tcp(listener);
         if bd_rst.is_ok() {
             // 启动服务
-            let ret = bd_rst.unwrap().serve(make_service_fn(|_conn| async {
-                Ok::<_, std::convert::Infallible>(hyper::service::service_fn(connect_handle))
-            })).await;
+            let make_service =
+            make_service_fn(move |conn: &AddrStream|{
+                let addr = conn.remote_addr();
+                async move {
+                    let addr=addr.clone();
+                Ok::<_, std::convert::Infallible>(hyper::service::service_fn(move |req| connect_handle(req, addr.clone())))
+            }});
+            let ret = bd_rst.unwrap().serve(make_service).await;
             if let Err(err)  = ret{
                 cq_add_log_w(&format!("绑定端口号失败：{}",err)).unwrap();
             }
