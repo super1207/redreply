@@ -316,14 +316,17 @@ impl Satoriv1Connect {
         Ok(())
     }
 
-    async fn send_group_msg(self_t:&Satoriv1Connect,json:&serde_json::Value,platform:&str,self_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    async fn send_group_msg(self_t:&Satoriv1Connect,json:&serde_json::Value,platform:&str,self_id:&str,passive_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let params = read_json_obj_or_null(json, "params");
             
         let group_id = read_json_str(&params, "group_id");
         let message = params.get("message").ok_or("message is not exist")?;
         let to_send;
         if message.is_array() {
-            let satori_content = Self::cq_msg_to_satori(message)?;
+            let mut satori_content = Self::cq_msg_to_satori(message)?;
+            if passive_id != "" {
+                satori_content = format!("<passive id={} />{}", serde_json::json!(passive_id),satori_content)
+            }
             to_send = serde_json::json!({
                 "channel_id":group_id,
                 "content":satori_content
@@ -333,7 +336,10 @@ impl Satoriv1Connect {
             
             let msg_arr_rst = str_msg_to_arr(message);
             if let Ok(msg_arr) = msg_arr_rst {
-                let satori_content = Self::cq_msg_to_satori(&msg_arr)?;
+                let mut satori_content = Self::cq_msg_to_satori(&msg_arr)?;
+                if passive_id != "" {
+                    satori_content = format!("<passive id={} />{}", serde_json::json!(passive_id),satori_content)
+                }
                 to_send = serde_json::json!({
                     "channel_id":group_id,
                     "content":satori_content
@@ -365,7 +371,7 @@ impl Satoriv1Connect {
             }
         }));
     }
-    async fn send_private_msg(self_t:&Satoriv1Connect,json:&serde_json::Value,platform:&str,self_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    async fn send_private_msg(self_t:&Satoriv1Connect,json:&serde_json::Value,platform:&str,self_id:&str,passive_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let params = read_json_obj_or_null(json, "params");
         let user_id = read_json_str(&params, "user_id");
         let key = format!("{platform} {self_id} {user_id}");
@@ -373,7 +379,10 @@ impl Satoriv1Connect {
         let message = params.get("message").ok_or("message is not exist")?;
         let to_send;
         if message.is_array() {
-            let satori_content = Self::cq_msg_to_satori(message)?;
+            let mut satori_content = Self::cq_msg_to_satori(message)?;
+            if passive_id != "" {
+                satori_content = format!("<passive id={} />{}", serde_json::json!(passive_id),satori_content)
+            }
             to_send = serde_json::json!({
                 "channel_id":channel_id,
                 "content":satori_content
@@ -383,7 +392,10 @@ impl Satoriv1Connect {
             
             let msg_arr_rst = str_msg_to_arr(message);
             if let Ok(msg_arr) = msg_arr_rst {
-                let satori_content = Self::cq_msg_to_satori(&msg_arr)?;
+                let mut satori_content = Self::cq_msg_to_satori(&msg_arr)?;
+                if passive_id != "" {
+                    satori_content = format!("<passive id={} />{}", serde_json::json!(passive_id),satori_content)
+                }
                 to_send = serde_json::json!({
                     "channel_id":channel_id,
                     "content":satori_content
@@ -746,14 +758,14 @@ impl BotConnectTrait for Satoriv1Connect {
         return self.url.clone();
     }
 
-    async fn call_api(&self,platform:&str,self_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    async fn call_api(&self,platform:&str,self_id:&str,passive_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let action = read_json_str(json, "action");
 
         if action == "send_group_msg" {
-            return Self::send_group_msg(self,json,platform,self_id).await;
+            return Self::send_group_msg(self,json,platform,self_id,passive_id).await;
         }
         else if action == "send_private_msg" {
-            return Self::send_private_msg(self,json,platform,self_id).await;
+            return Self::send_private_msg(self,json,platform,self_id,passive_id).await;
         }
         else if action == "get_login_info" {
             return Self::get_login_info(self,json,platform,self_id).await;

@@ -56,7 +56,37 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
                 Ok(res)
             },
         }
-    }else if url_path == "/get_all_pkg_name" {
+    }
+    else if url_path == "/read_one_pkg" {
+        if !can_read {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
+        let params = crate::httpevent::get_params_from_uri(request.uri());
+        let pkg_name;
+        if let Some(name) = params.get("pkg_name") {
+            pkg_name = name.to_owned();
+        }else {
+            pkg_name = "".to_owned();
+        }
+        match crate::read_one_pkg(&pkg_name) {
+            Ok(code) => {
+                let ret = json!({
+                    "retcode":0,
+                    "data":code
+                });
+                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+                Ok(res)
+            },
+            Err(err) => {
+                let mut res = hyper::Response::new(hyper::Body::from(err.to_string()));
+                *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
+                Ok(res)
+            },
+        }
+    }
+    else if url_path == "/get_all_pkg_name" {
         if !can_read {
             let res = hyper::Response::new(hyper::Body::from("api not found"));
             return Ok(res);
@@ -134,6 +164,111 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
         let (tx, rx) =  tokio::sync::oneshot::channel();
         tokio::task::spawn_blocking(move || {
             let rst = crate::save_code(&js.to_string());
+            if rst.is_ok() {
+                let ret = json!({
+                    "retcode":0,
+                });
+                let rst = tx.send(ret);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
+            }
+            else {
+                let ret = json!({
+                    "retcode":-1,
+                });
+                let rst = tx.send(ret);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
+            }
+        }).await?;
+        let ret = rx.await?;
+        let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)    
+    }
+    else if url_path == "/save_one_pkg" {
+        if can_write == false {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
+        let body = hyper::body::to_bytes(request.into_body()).await?;
+        let js:serde_json::Value = serde_json::from_slice(&body)?;
+        let (tx, rx) =  tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let rst = crate::save_one_pkg(&js.to_string());
+            if rst.is_ok() {
+                let ret = json!({
+                    "retcode":0,
+                });
+                let rst = tx.send(ret);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
+            }
+            else {
+                let ret = json!({
+                    "retcode":-1,
+                });
+                let rst = tx.send(ret);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
+            }
+        }).await?;
+        let ret = rx.await?;
+        let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)    
+    }
+    else if url_path == "/rename_one_pkg" {
+        if can_write == false {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
+        let body = hyper::body::to_bytes(request.into_body()).await?;
+        let js:serde_json::Value = serde_json::from_slice(&body)?;
+        let old_pkg_name = read_json_str(&js, "old_pkg_name");
+        let new_pkg_name = read_json_str(&js, "new_pkg_name");
+        let (tx, rx) =  tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let rst = crate::rename_one_pkg(&old_pkg_name,&new_pkg_name);
+            if rst.is_ok() {
+                let ret = json!({
+                    "retcode":0,
+                });
+                let rst = tx.send(ret);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
+            }
+            else {
+                let ret = json!({
+                    "retcode":-1,
+                });
+                let rst = tx.send(ret);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
+            }
+        }).await?;
+        let ret = rx.await?;
+        let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)    
+    }
+    else if url_path == "/del_one_pkg" {
+        if can_write == false {
+            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            return Ok(res);
+        }
+        let body = hyper::body::to_bytes(request.into_body()).await?;
+        let js:serde_json::Value = serde_json::from_slice(&body)?;
+        let pkg_name = read_json_str(&js, "pkg_name");
+        let (tx, rx) =  tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let rst = crate::del_one_pkg(&pkg_name);
             if rst.is_ok() {
                 let ret = json!({
                     "retcode":0,

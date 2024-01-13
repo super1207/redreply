@@ -103,7 +103,7 @@ impl BotConnectTrait for OneBot115Connect {
             let mut to_send = serde_json::json!({
                 "action":"get_bot_list"
             });
-            let myself = self.call_api("", "", &mut to_send).await?;
+            let myself = self.call_api("", "","",&mut to_send).await?;
             cq_add_log_w(&format!("收到数据：{}",myself.to_string())).unwrap();
             let bot_arr = myself.get("data").ok_or("data not found")?.as_array().ok_or("data not array")?;
             for bot in bot_arr {
@@ -224,7 +224,7 @@ impl BotConnectTrait for OneBot115Connect {
         return self.url.clone();
     }
 
-    async fn call_api(&self,platform:&str,self_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    async fn call_api(&self,platform:&str,self_id:&str,_passive_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         
         let json_obj = json.as_object_mut().ok_or("json is not object")?;
         json_obj.insert("self_id".to_string(), serde_json::to_value(&self_id)?);

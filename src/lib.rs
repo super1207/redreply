@@ -752,6 +752,10 @@ fn save_one_pkg(contents: &str) -> Result<(), Box<dyn std::error::Error>>{
         (*wk) = serde_json::Value::Array(new_script);
     }
 
+    if pkg_name != "" {
+        G_PKG_NAME.write().unwrap().insert(pkg_name.clone());
+    }
+
     // 执行初始化脚本
     if let Err(err) = initevent::do_init_event(Some(&pkg_name)){
         cq_add_log_w(&err.to_string()).unwrap();
@@ -761,9 +765,18 @@ fn save_one_pkg(contents: &str) -> Result<(), Box<dyn std::error::Error>>{
 }
 
 fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std::error::Error>> {
-    let plus_dir_str = cq_get_app_directory1()?;
-    let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
-    fs::rename(pkg_dir.join(old_pkg_name), pkg_dir.join(new_pkg_name))?;
+    if old_pkg_name != "" && new_pkg_name != ""{
+        let plus_dir_str = cq_get_app_directory1()?;
+        let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
+        fs::rename(pkg_dir.join(old_pkg_name), pkg_dir.join(new_pkg_name))?;
+        // 删除缓存中的包名
+        let mut lk = G_PKG_NAME.write().unwrap();
+        lk.remove(old_pkg_name);
+        lk.insert(new_pkg_name.to_owned());
+    }else{
+        cq_add_log_w("改名错误：old_pkg_name 或 new_pkg_name为空").unwrap();
+        return Err(None.ok_or("rename err")?);
+    }
     Ok(())
 }
 
@@ -775,6 +788,11 @@ fn del_one_pkg(pkg_name:&str) -> Result<(), Box<dyn std::error::Error>> {
         let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
         let script_path = pkg_dir.join(pkg_name.to_owned());
         let _ = fs::remove_dir_all(script_path);
+        // 删除缓存中的包名
+        G_PKG_NAME.write().unwrap().remove(pkg_name);
+    }
+    else {
+        return Err(None.ok_or("default_pkg can't be deleted")?);
     }
     // 删除内存中的脚本
     {
@@ -795,4 +813,19 @@ fn del_one_pkg(pkg_name:&str) -> Result<(), Box<dyn std::error::Error>> {
 pub fn read_code_cache() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     let wk = G_SCRIPT.read()?;
     Ok((*wk).clone())
+}
+
+pub fn read_one_pkg(pkg_name:&str) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
+    let wk = G_SCRIPT.read()?;
+    let mut ret_vec = vec![];
+    for it in wk.as_array().ok_or("read G_SCRIPT err")? {
+        let it_name = read_json_str(it, "pkg_name");
+            if it_name == pkg_name {
+                ret_vec.push(it.to_owned());
+            }
+    }
+    if ret_vec.is_empty() && pkg_name != "" && !G_PKG_NAME.read().unwrap().contains(pkg_name) {
+        return Err(None.ok_or("so such pkg")?);
+    }
+    Ok(ret_vec)
 }

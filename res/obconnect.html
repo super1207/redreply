@@ -86,6 +86,7 @@
                             <option value="onebot11">onebot11</option>
                             <option value="olivos">olivos</option>
                             <option value="satori">satori</option>
+                            <option value="qqguild_private">qqguild_private</option>
                         </select>
                         <button @click="help_shame()">填写帮助</button>
                     </div>
@@ -98,6 +99,11 @@
                     
                   <div class = "ws_set" v-show = "ws_url_show"><span>uri:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><input id = "ws_url_id" v-model = "ws_url"></input></div>
                   <div class = "ws_set" v-show = "token_show"><span>token:&nbsp;&nbsp;</span><input id = "token" v-model = "token"></input></div>
+
+                  <div class = "ws_set" v-show = "qq_AppID_show"><span>AppID:&nbsp;&nbsp;</span><input id = "qq_AppID" v-model = "qq_AppID"></input></div>
+                  <div class = "ws_set" v-show = "qq_AppSecret_show"><span>AppSecret:&nbsp;&nbsp;</span><input id = "qq_AppSecret" v-model = "qq_AppSecret"></input></div>
+                  <div class = "ws_set" v-show = "qq_Token_show"><span>Token:&nbsp;&nbsp;</span><input id = "qq_Token" v-model = "qq_Token"></input></div>
+                  
                   <form method="dialog">
                     <button @click="dialog_ok">确定</button>
                     <button @click="dialog_cancel">取消</button>
@@ -129,10 +135,14 @@
                         token:"",
                         shame:"onebot11",
                         use_tls:"0",
+                        qq_AppID:"",
+                        qq_AppSecret:"",
+                        qq_Token:"",
                         shame_helps:{
                             "onebot11":"onebot11示例uri: \nws://127.0.0.1:5700\nws://127.0.0.1:5700?access_token=77156\nwss://127.0.0.1:5700",
                             "olivos":"olivos示例uri:（注意:通常情况下您不应该手动设置这个）\n127.0.0.1:1123",
-                            "satori":"satori\ntls：是否使用https/wss，通常情况下选择否\nuri:127.0.0.1:8080/v1\ntoken：通常情况下保持空，除非您使用了satori的token验证"
+                            "satori":"satori\ntls：是否使用https/wss，通常情况下选择否\nuri:127.0.0.1:8080/v1\ntoken：通常情况下保持空，除非您使用了satori的token验证",
+                            "qqguild_private":"no show"
                         }
                     }
                 },
@@ -144,7 +154,10 @@
                         return false
                     },
                     ws_url_show(){
-                        return true;
+                        if(this.shame == "satori" || this.shame == "onebot11" || this.shame == "olivos"){
+                            return true;
+                        }
+                        return false;
                     },
                     use_tls_show(){
                         if(this.shame == "satori"){
@@ -152,6 +165,24 @@
                         }
                         return false
                     },
+                    qq_AppID_show(){
+                        if(this.shame == "qqguild_private"){
+                            return true;
+                        }
+                        return false;
+                    },
+                    qq_AppSecret_show(){
+                        if(this.shame == "qqguild_private"){
+                            return true;
+                        }
+                        return false;
+                    },
+                    qq_Token_show(){
+                        if(this.shame == "qqguild_private"){
+                            return true;
+                        }
+                        return false;
+                    }
                 },
                 mounted () {
                     axios
@@ -190,6 +221,12 @@
                             }else if(raw_url.startsWith("ovo://")){
                                 this.ws_url = raw_url.slice(6)
                                 this.shame = "olivos"
+                            }else if(raw_url.startsWith("qqguild_private://")){
+                                jsobj = JSON.parse(raw_url.slice(18))
+                                this.qq_AppID = jsobj["AppID"]
+                                this.qq_AppSecret = jsobj["AppSecret"]
+                                this.qq_Token = jsobj["Token"]
+                                this.shame = "qqguild_private"
                             }else{
                                 this.ws_url = this.ws_urls[this.select_name_index]
                                 this.shame = "onebot11"
@@ -231,6 +268,13 @@
                                 "use_tls":(this.use_tls == "1")?true:false
                             };
                             return  "satori://" + JSON.stringify(json_dat)
+                        }else if(this.shame == "qqguild_private"){
+                            json_dat = {
+                                "AppID":this.qq_AppID,
+                                "AppSecret":this.qq_AppSecret,
+                                "Token":this.qq_Token
+                            };
+                            return  "qqguild_private://" + JSON.stringify(json_dat)
                         }
                     },
                     dialog_ok(event) {

@@ -1,6 +1,7 @@
 mod onebot11;
 mod onebot115;
 mod satoriv1;
+mod qqguild_private;
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -10,11 +11,11 @@ use tokio::sync::RwLock;
 
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 
-use self::{onebot11::OneBot11Connect, onebot115::OneBot115Connect, satoriv1::Satoriv1Connect};
+use self::{onebot11::OneBot11Connect, onebot115::OneBot115Connect, satoriv1::Satoriv1Connect, qqguild_private::QQGuildPrivateConnect};
 
 #[async_trait]
 trait BotConnectTrait:Send + Sync {
-    async fn call_api(&self,platform:&str,self_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>;
+    async fn call_api(&self,platform:&str,self_id:&str,passive_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>;
     fn get_platform_and_self_id(&self) -> Vec<(String,String)>;
     fn get_url(&self) -> String;
     fn get_alive(&self) -> bool;
@@ -28,7 +29,7 @@ lazy_static! {
 }
 
 
-pub async fn call_api(platform:&str,self_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn call_api(platform:&str,self_id:&str,passive_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let mut bot_select = None;
     let platform_t = platform.to_owned();
     let self_id_t = self_id.to_owned();
@@ -44,7 +45,7 @@ pub async fn call_api(platform:&str,self_id:&str,json:&mut serde_json::Value) ->
     }
     // 使用挑选出来的bot发送消息
     if bot_select.is_some() {
-        return bot_select.unwrap().read().await.call_api(&platform_t, &self_id_t, json).await;
+        return bot_select.unwrap().read().await.call_api(&platform_t, &self_id_t, passive_id,json).await;
     }
     cq_add_log_w(&format!("no such bot:platform:`{platform}`,self_id:`{self_id}`")).unwrap();
     return Ok(serde_json::json!(""));
@@ -114,6 +115,14 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                                 let mut bot = Satoriv1Connect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到satori失败:{url_t},{err:?}")).unwrap();
+                                } else {
+                                    G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
+                                }
+                            }
+                            else if url_t.starts_with("qqguild_private://") {
+                                let mut bot = QQGuildPrivateConnect::build(&url_t);
+                                if let Err(err) = bot.connect().await {
+                                    cq_add_log_w(&format!("连接到qqguild_private失败:{url_t},{err:?}")).unwrap();
                                 } else {
                                     G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
                                 }
