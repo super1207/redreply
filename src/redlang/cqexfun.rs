@@ -449,8 +449,26 @@ pub fn init_cq_ex_fun_map() {
         let self_id = self_t.get_exmap("机器人ID");
         let platform = get_platform(&self_t);
         let passive_id = self_t.get_exmap("消息ID");
-        let call_ret = cq_call_api(&platform,&*self_id,&*passive_id,&content)?;
-        let js_v:serde_json::Value = serde_json::from_str(&call_ret)?;
+        let js_v:serde_json::Value = match cq_call_api(&platform,&*self_id,&*passive_id,&content) {
+            Ok(call_ret) => {
+                let mut ret = call_ret;
+                if ret == "" {
+                    ret = serde_json::json!({
+                        "retcode":500,
+                        "status":"failed",
+                        "message":"控制端日志查看错误",
+                    }).to_string();
+                }
+                serde_json::from_str(&ret)?
+            },
+            Err(err) => {
+                serde_json::json!({
+                    "retcode":500,
+                    "status":"failed",
+                    "message":err.to_string(),
+                })
+            },
+        };
         let ret = do_json_parse(&js_v, &self_t.type_uuid)?;
         return Ok(Some(ret));
     });
@@ -480,6 +498,12 @@ pub fn init_cq_ex_fun_map() {
             }
         }
         return Ok(Some(self_t.build_obj(sub_key_obj)));
+    });
+    add_fun(vec!["CQ解析"],|self_t,params|{
+        let data_str = self_t.get_param(params, 0)?;
+        let json_arr = crate::mytool::str_msg_to_arr(&serde_json::json!(data_str))?;
+        let ret = do_json_parse(&json_arr, &self_t.type_uuid)?;
+        return Ok(Some(ret));
     });
     add_fun(vec!["CQ反转义"],|self_t,params|{
         let content = self_t.get_param(params, 0)?;

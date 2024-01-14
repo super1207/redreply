@@ -1826,6 +1826,14 @@ at发送者，如果要at其它人，可以这么写：【艾特@<font color="re
 返回一个RedLang对象。类似这样:<font color="red">{"type":"at","qq":"1875159423"}</font>
 
 
+### CQ解析
+
+
+【CQ解析@<font color="red">CQ文本</font>】
+
+返回一个RedLang数组。类似这样:<font color="red">[{"type":"at","qq":"1875159423"}]</font>
+
+
 ### CQ反转义
 
 

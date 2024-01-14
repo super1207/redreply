@@ -437,7 +437,10 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["分割"],|self_t,params|{
         let data_str = self_t.get_param(params, 0)?;
         let sub_str = self_t.get_param(params, 1)?;
-        let split_ret:Vec<&str> = data_str.split(&sub_str).collect();
+        let mut split_ret:Vec<&str> = data_str.split(&sub_str).collect();
+        if sub_str == "" {
+            split_ret = split_ret.get(1..split_ret.len()-1).ok_or("无法获得分割结果")?.to_vec();
+        }
         let mut ret_str = format!("{}A",self_t.type_uuid);
         for it in split_ret {
             ret_str.push_str(&it.len().to_string());
