@@ -157,11 +157,11 @@ fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Bo
     rl.set_exmap("机器人名字", "露娜sama")?;
     rl.set_exmap("原始事件", &root.to_string())?;
     rl.set_exmap("机器人平台", &read_json_str(root,"platform"))?;
+    rl.set_exmap("消息ID", &read_json_str(root,"message_id"))?;
     Ok(())
 }
 
 fn set_normal_message_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
-    rl.set_exmap("消息ID", &read_json_str(root,"message_id"))?;
     {
         let sender = root.get("sender").ok_or("sender not exists")?;
         if let Some(js_v) = sender.get("nickname") {
