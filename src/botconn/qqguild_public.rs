@@ -270,6 +270,8 @@ async fn conv_event(bot_id:std::sync::Weak<std::sync::RwLock<String>>,self_id:&s
         // 去除开头的空格和/
         if cq_msg.starts_with(" /"){
             cq_msg = cq_msg[2..].to_owned();
+        }else if cq_msg.starts_with("  "){ // 回复是两个空格
+            cq_msg = cq_msg[2..].to_owned();
         }else if cq_msg.starts_with(" "){
             cq_msg = cq_msg[1..].to_owned();
         }
@@ -813,7 +815,7 @@ async fn send_group_msg(self_t:&QQGuildPublicConnect,json:&serde_json::Value,pas
         if id != "" {
             id += "|";
         }
-        id += &json_val.get("msg_id").ok_or("msg_id not found")?.as_str().ok_or("msg_id not a string")?.to_owned();
+        id += &json_val.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
     }
 
     // 然后再发送图片
@@ -828,7 +830,7 @@ async fn send_group_msg(self_t:&QQGuildPublicConnect,json:&serde_json::Value,pas
         if is_event {
             json_data.as_object_mut().unwrap().insert("event_id".to_owned(), serde_json::json!(to_reply_id_opt));
         }else{
-            json_data.as_object_mut().unwrap().insert("msg_id".to_owned(), serde_json::json!(to_reply_id_opt));
+            json_data.as_object_mut().unwrap().insert("id".to_owned(), serde_json::json!(to_reply_id_opt));
         }
         if qq_msg_node.message_reference != None {
             json_data.as_object_mut().unwrap().insert("message_reference".to_owned(), serde_json::json!({
@@ -862,7 +864,7 @@ async fn send_group_msg(self_t:&QQGuildPublicConnect,json:&serde_json::Value,pas
         if id != "" {
             id += "|";
         }
-        id += &json_val.get("msg_id").ok_or("msg_id not found")?.as_str().ok_or("msg_id not a string")?.to_owned();
+        id += &json_val.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
     }
     let event_id;
     {
