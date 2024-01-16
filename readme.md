@@ -24,49 +24,6 @@
 
 以自定义回复为核心，附带群管、监控、词库、语音、图片、调用接口、对接网站、黑白名单、定时任务、网页爬虫、简单编程、入群验证、发言限制、Web服务器、制作接口等功能。<br />
 
-## 开始使用
-
-1：登录一个`onebot11`的协议端，如[Gensokyo](https://github.com/Hoshinonyaruko/Gensokyo)、[KookOnebot](https://github.com/super1207/KookOneBot)并开启[ws正向连接](https://github.com/botuniverse/onebot-11/tree/master/communication)。<br />
-
-2：下载项目release中的`redlang.exe`，并执行。<br />
-
-3：在自动弹出的浏览器界面中，点击`连接ONEBOT`，然后添加第一步中的`ws正向连接`，如：<br />
-
-`ws://127.0.0.1:8080?access_token=77156`
-
-4：如果出现任何疑惑，可以到我们的`QQ`群中随意询问(没有疑惑也可以来玩。
-
-<br /> QQ群：920220179(已满)、556515826
-
-此外，欢迎来我的KOOK群玩！邀请链接：https://kook.top/3SEwQj
-
-5（可选但建议）：使用启动器：`curl -L http://red.super1207.top/redstart.sh | bash`
-
-在windows下，可以使用[git bash](https://git-scm.com/download)
-
-
-## 访问控制
-
-来自本机的访问始终不进行任何身份验证。
-
-在`config.json`中，若存在`web_password`这个字符串字段且不为空字符串，则访问webui时需要先输入密码登录，才能访问，输入此密码，将获得读写权限。
-
-在`config.json`中，若存在`readonly_web_password`这个字符串字段且不为空字符串，则访问webui时需要先输入密码登录，才能访问，输入此密码，将获得只读权限。
-
-如果要完全禁止他人访问，你必须同时设置这两个密码！！！
-
-
-## 自行编译
-
-注意，通常情况下，如果您不打算参与此项目的开发，就无需自行编译，请直接到release(或者github action)中去下载。<br />
-
-1：安装好[rust编译环境](https://www.rust-lang.org/)。<br />
-
-2：<br />
-    在`windows`下，仅需要在项目目录下运行`cargo build`即可。<br />
-    在`linux`下，编译过程参考github action
-
-
 ## 开源说明
 
 [GNU Affero General Public License](https://en.wikipedia.org/wiki/GNU_Affero_General_Public_License)
