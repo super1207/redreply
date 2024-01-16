@@ -202,7 +202,11 @@ async fn conv_event(bot_id:std::sync::Weak<std::sync::RwLock<String>>,self_id:&s
         let nickname =  read_json_str(&user, "username");
         let cq_msg_t = qq_content_to_cqstr(bot_id,self_id,&content)?;
         let cq_msg = deal_attachments(&d)? + &cq_msg_t;
-        let cq_msg = deal_message_reference(&d,id_event_map)? + &cq_msg;
+        let mut cq_msg = deal_message_reference(&d,id_event_map)? + &cq_msg;
+        let pre = format!("[CQ:at,qq={self_id}] ");
+        if cq_msg.starts_with(&pre){
+            cq_msg = cq_msg[pre.len()..].to_owned();
+        }
         let channel_id =read_json_str(&d, "channel_id");
         let guild_id = read_json_str(&d, "guild_id");
         let member = read_json_obj_or_null(&d, "member");
@@ -259,8 +263,13 @@ async fn conv_event(bot_id:std::sync::Weak<std::sync::RwLock<String>>,self_id:&s
         let user_id = read_json_str(&user, "id");
         let cq_msg_t = qq_content_to_cqstr(bot_id,self_id,&content)?;
         let cq_msg = deal_attachments(&d)? + &cq_msg_t;
-        let cq_msg = deal_message_reference(&d,id_event_map)? + &cq_msg;
-        let cq_msg = format!("[CQ:at,qq={self_id}]") + &cq_msg;
+        let mut cq_msg = deal_message_reference(&d,id_event_map)? + &cq_msg;
+        // 去除开头的空格和/
+        if cq_msg.starts_with(" /"){
+            cq_msg = cq_msg[2..].to_owned();
+        }else if cq_msg.starts_with(" "){
+            cq_msg = cq_msg[1..].to_owned();
+        }
         let group_id =read_json_str(&d, "group_openid");
         let event_json = serde_json::json!({
             "time":tm,
