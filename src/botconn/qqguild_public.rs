@@ -203,9 +203,12 @@ async fn conv_event(bot_id:std::sync::Weak<std::sync::RwLock<String>>,self_id:&s
         let cq_msg_t = qq_content_to_cqstr(bot_id,self_id,&content)?;
         let cq_msg = deal_attachments(&d)? + &cq_msg_t;
         let mut cq_msg = deal_message_reference(&d,id_event_map)? + &cq_msg;
-        let pre = format!("[CQ:at,qq={self_id}] ");
-        if cq_msg.starts_with(&pre){
-            cq_msg = cq_msg[pre.len()..].to_owned();
+        let pre1 = format!("[CQ:at,qq={self_id}] /");
+        let pre2 = format!("[CQ:at,qq={self_id}] ");
+        if cq_msg.starts_with(&pre1){
+            cq_msg = cq_msg[pre1.len()..].to_owned();
+        }else if cq_msg.starts_with(&pre2){
+            cq_msg = cq_msg[pre2.len()..].to_owned();
         }
         let channel_id =read_json_str(&d, "channel_id");
         let guild_id = read_json_str(&d, "guild_id");
