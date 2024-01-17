@@ -772,11 +772,26 @@ async fn send_group_msg(self_t:&QQGuildPublicConnect,json:&serde_json::Value,pas
 
     let mut id = String::new();
 
+    // 获取已经发送的消息
+    let mut msg_seq = 0;
+    if passive_id != ""{
+        let lk: std::sync::RwLockReadGuard<'_, HashMap<String, (u64, serde_json::Value)>> =  self_t.id_event_map.read().unwrap();
+        if let Some((_k,v)) = lk.get(passive_id) {
+            let my_msg_seq = read_json_str(v, "my_msg_seq");
+            if my_msg_seq != "" {
+                msg_seq = my_msg_seq.parse::<i32>()?;
+            }
+            
+        }
+    }
+
     // 若有文本，先发送文本
     if qq_msg_node.content != "" {
+        msg_seq += 1;
         let mut json_data = serde_json::json!({
             "content":qq_msg_node.content,
-            "msg_type":0
+            "msg_type":0,
+            "msg_seq":msg_seq
         });
         if is_event {
             json_data.as_object_mut().unwrap().insert("event_id".to_owned(), serde_json::json!(to_reply_id_opt));
@@ -816,13 +831,23 @@ async fn send_group_msg(self_t:&QQGuildPublicConnect,json:&serde_json::Value,pas
             id += "|";
         }
         id += &json_val.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
+
+        // 保存msg_seq
+        {
+            let mut lk = self_t.id_event_map.write().unwrap();
+            if let Some(l) = lk.get_mut(passive_id) {
+                l.1.as_object_mut().ok_or("id_event_map is not object")?.insert("my_msg_seq".to_owned(), serde_json::json!(msg_seq));
+            }
+        }
     }
 
     // 然后再发送图片
     for img_info in &qq_msg_node.img_infos {
+        msg_seq += 1;
         let mut json_data = serde_json::json!({
             "content":" ", // 文档要求发送一个空格
             "msg_type":7, // 富文本
+            "msg_seq":msg_seq,
             "media":{
                 "file_info":img_info
             }
@@ -830,7 +855,7 @@ async fn send_group_msg(self_t:&QQGuildPublicConnect,json:&serde_json::Value,pas
         if is_event {
             json_data.as_object_mut().unwrap().insert("event_id".to_owned(), serde_json::json!(to_reply_id_opt));
         }else{
-            json_data.as_object_mut().unwrap().insert("id".to_owned(), serde_json::json!(to_reply_id_opt));
+            json_data.as_object_mut().unwrap().insert("msg_id".to_owned(), serde_json::json!(to_reply_id_opt));
         }
         if qq_msg_node.message_reference != None {
             json_data.as_object_mut().unwrap().insert("message_reference".to_owned(), serde_json::json!({
@@ -865,6 +890,13 @@ async fn send_group_msg(self_t:&QQGuildPublicConnect,json:&serde_json::Value,pas
             id += "|";
         }
         id += &json_val.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
+        // 保存msg_seq
+        {
+            let mut lk = self_t.id_event_map.write().unwrap();
+            if let Some(l) = lk.get_mut(passive_id) {
+                l.1.as_object_mut().ok_or("id_event_map is not object")?.insert("my_msg_seq".to_owned(), serde_json::json!(msg_seq));
+            }
+        }
     }
     let event_id;
     {
