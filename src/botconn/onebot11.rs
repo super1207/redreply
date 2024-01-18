@@ -55,7 +55,6 @@ fn get_json_dat(msg:Result<hyper_tungstenite::tungstenite::Message, hyper_tungst
     }else{
         return None;
     }
-    crate::cqapi::cq_add_log(format!("OB11收到数据:{}", json_dat.to_string()).as_str()).unwrap();
     return Some(json_dat);
 }
 
@@ -154,8 +153,14 @@ impl BotConnectTrait for OneBot11Connect {
                             }
                         }
                         // 获得echo
-                        let echo = read_json_str(&json_dat, "echo").to_owned();
-                        let post_type = read_json_str(&json_dat, "post_type").to_owned();
+                        let echo = read_json_str(&json_dat, "echo");
+                        let post_type = read_json_str(&json_dat, "post_type");
+                        let meta_event_type = read_json_str(&json_dat, "meta_event_type");
+                        if meta_event_type != "heartbeat" && echo != "CBC949B6-8C9F-8060-A149-A045ED9AD405" {
+                            crate::cqapi::cq_add_log(format!("OB11收到数据:{}", json_dat.to_string()).as_str()).unwrap();
+                        }else{
+                            continue;
+                        }
                         let json_obj = json_dat.as_object_mut().unwrap();
                         json_obj.insert("platform".to_string(), serde_json::to_value("onebot11").unwrap());
                         tokio::spawn(async move {
@@ -211,6 +216,7 @@ impl BotConnectTrait for OneBot11Connect {
                     let rst = tx_ay_t.send(serde_json::json!({
                         "action":"get_version_info",
                         "params":{},
+                        "echo":"CBC949B6-8C9F-8060-A149-A045ED9AD405"
                     })).await;
                     if rst.is_err() {
                         break;

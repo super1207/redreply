@@ -75,7 +75,7 @@ fn get_json_dat(msg:Result<hyper_tungstenite::tungstenite::Message, hyper_tungst
     }else{
         return None;
     }
-    crate::cqapi::cq_add_log(format!("SATORI收到数据:{}", json_dat.to_string()).as_str()).unwrap();
+    
     return Some(json_dat);
 }
 
@@ -162,6 +162,9 @@ impl Satoriv1Connect {
 
     async fn conv_event(json_data:serde_json::Value,platforms:std::sync::Weak<std::sync::RwLock<Vec<(String,String)>>>,user_channel_map:std::sync::Weak<std::sync::RwLock<std::collections::HashMap<String,String>>>,group_groups_map:std::sync::Weak<std::sync::RwLock<std::collections::HashMap<String,String>>>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let op = read_json_str(&json_data, "op");
+        if op != "2"{
+            crate::cqapi::cq_add_log(format!("SATORI收到数据:{}", json_data.to_string()).as_str()).unwrap();
+        }
         if op == "2"{
             // 心跳回复
         }else if op == "4"{

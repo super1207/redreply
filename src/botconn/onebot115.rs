@@ -61,7 +61,6 @@ fn get_json_dat(msg:Result<hyper_tungstenite::tungstenite::Message, hyper_tungst
     }else{
         return None;
     }
-    crate::cqapi::cq_add_log(format!("OVO收到数据:{}", json_dat.to_string()).as_str()).unwrap();
     return Some(json_dat);
 }
 
@@ -151,6 +150,10 @@ impl BotConnectTrait for OneBot115Connect {
 
                         // 获得echo
                         let post_type = read_json_str(&json_dat, "post_type").to_owned();
+                        let meta_event_type = read_json_str(&json_dat, "meta_event_type");
+                        if meta_event_type != "heartbeat"{
+                            crate::cqapi::cq_add_log(format!("OVO收到数据:{}", json_dat.to_string()).as_str()).unwrap();
+                        }
                         tokio::spawn(async move {
                             if post_type == "" { // 是api回复
                                 // 只可能是心跳，do nothing
