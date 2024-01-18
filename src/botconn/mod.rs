@@ -3,6 +3,7 @@ mod onebot115;
 mod satoriv1;
 mod qqguild_private;
 mod qqguild_public;
+mod qq_guild_all;
 
 use std::{collections::HashMap, sync::Arc};
 

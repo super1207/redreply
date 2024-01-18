@@ -228,6 +228,13 @@ pub fn read_json_obj_or_null(root:&serde_json::Value,key:&str) -> serde_json::Va
     return serde_json::json!({});
 }
 
+pub fn read_json_or_default<'a>(root:&'a serde_json::Value,key:&'a str,def_val:&'a serde_json::Value) -> &'a serde_json::Value {
+    if let Some(js_v) = root.get(key) {
+        return js_v;
+    }
+    return def_val;
+}
+
 
 // 将字符串转化为简体
 pub fn str_to_jt(s:&str) -> String {
