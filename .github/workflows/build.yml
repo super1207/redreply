@@ -11,61 +11,56 @@ on:
 jobs:
   test:
     name: build project
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            rid: linux-x64
+            postfix: ""
+
+          # Linux aarch64
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-musl
+            rid: linux-aarch64
+            postfix: ""
+
+          # Windows
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            rid: win-x64
+            postfix: ".exe"
+
     steps:
-    - name: Checkout
-      uses: actions/checkout@master
+      - name: Checkout
+        uses: actions/checkout@v4
 
-    - name: rust_install
-      uses: actions-rs/toolchain@v1
-      with:
-        profile: minimal
-        toolchain: stable
-        override: true
+      - name: Install dependencies (Ubuntu only)
+        if: startsWith(matrix.os, 'ubuntu-') 
+        run: | 
+          sudo apt update
+          sudo apt install -y musl-tools
+      - name: Build executable
+        run: |
+          rustup target add ${{ matrix.target }}
+          cargo build --release --target ${{ matrix.target }}
 
-    - name: install_cross
-      run: |
-        cargo install cross --git https://github.com/cross-rs/cross
-    - name: build
-      run: |
-        cross build --target i686-pc-windows-gnu --release
-        strip target/i686-pc-windows-gnu/release/redlang.exe
-        cross build --target aarch64-linux-android --release
-        cross build --target aarch64-unknown-linux-musl --release
-        cross build --target i686-unknown-linux-musl --release
-        
-    - name: before_upload
-      run: |
-        mkdir Release
-        cp target/aarch64-linux-android/release/redlang Release/redlang_android_aarch64
-        cp target/i686-pc-windows-gnu/release/redlang.exe Release/redlang_windows_i686.exe
-        cp target/aarch64-unknown-linux-musl/release/redlang Release/redlang_linux_aarch64
-        cp target/i686-unknown-linux-musl/release/redlang Release/redlang_linux_i686
+      - name: Pack binary (Ubuntu and macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd target/${{ matrix.target }}/release/
+          zip -r ${{ env.BIN_NAME }}-${{ matrix.rid }}-${{ steps.tag.outputs.tag }}.zip ${{ env.BIN_NAME }}${{ matrix.postfix }}
+  
+      - name: Pack binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: Compress-Archive -CompressionLevel Optimal -Force -Path target/${{ matrix.target }}/release/${{ env.BIN_NAME }}${{ matrix.postfix }} -DestinationPath target/${{ matrix.target }}/release/${{ env.BIN_NAME }}-${{ matrix.rid }}-${{ steps.tag.outputs.tag }}.zip
+        shell: pwsh
 
-    - name: upload file1
-      uses: actions/upload-artifact@v3
-      with:
-        name: redlang_windows_i686.exe
-        path: 
-            Release/redlang_windows_i686.exe
-
-    - name: upload file2
-      uses: actions/upload-artifact@v3
-      with:
-        name: redlang_linux_aarch64
-        path: 
-            Release/redlang_linux_aarch64
-
-    - name: upload file3
-      uses: actions/upload-artifact@v3
-      with:
-        name: redlang_linux_i686
-        path: 
-          Release/redlang_linux_i686
-
-    - name: upload file4
-      uses: actions/upload-artifact@v3
-      with:
-        name: redlang_android_aarch64
-        path: 
-          Release/redlang_android_aarch64
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: compile-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/${{ env.BIN_NAME }}-${{ matrix.rid }}-${{ steps.tag.outputs.tag }}.zip
+   

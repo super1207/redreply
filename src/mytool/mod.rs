@@ -311,7 +311,7 @@ pub fn wav_to_silk(content:&Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Erro
     let mut real_pos = 0f64;
     let mut new_data = vec![];
     loop {
-     let index = ((real_pos as usize) / bits_per_sample as usize) * bits_per_sample as usize;
+     let index = (((real_pos + 0.5) as usize) / bits_per_sample as usize) * bits_per_sample as usize;
      let index2 = index+(bits_per_sample as usize);
      if index2 > wav_info.data.len() {
          break;
