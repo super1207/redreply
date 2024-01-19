@@ -8,6 +8,9 @@ on:
         required: true
         default: 'warning'
 
+env:
+  BIN_NAME: redlang
+
 jobs:
   test:
     name: build project
@@ -19,6 +22,12 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-musl
             rid: linux-x64
+            postfix: ""
+
+          # Linux aarch64
+          - os: ubuntu-latest
+            target: aarch64-linux-gnu-gcc
+            rid: linux-aarch64
             postfix: ""
 
           # Windows
