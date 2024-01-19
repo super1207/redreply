@@ -56,7 +56,7 @@ jobs:
       if: startsWith(matrix.os, 'windows-') 
       run: |
         mkdir Release
-        cp target/i686-pc-windows-gnu/release/redlang.exe Release/redlang_windows_i686.exe
+        cp target/i686-pc-windows-msvc/release/redlang.exe Release/redlang_windows_i686.exe
       shell: pwsh
 
     - name: upload file1
