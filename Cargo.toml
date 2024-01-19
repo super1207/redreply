@@ -20,7 +20,6 @@ rust-embed="6.8.1"
 image = "0.24.6"
 imageproc = "0.23.0"
 gif = "0.12.0"
-ucs2 = "0.3.2"
 cron = "0.12.0"
 hyper = { version = "0.14.27",default-features = false,features = ["server"]}
 tokio = { version = "1.29.1",default-features = false,features = ["macros","fs","rt-multi-thread"] }
@@ -51,6 +50,9 @@ async-trait = "0.1.74"
 net2 = "0.2.39"
 tl = "0.7.7"
 html-escape = "0.2.13"
+silk-rs="0.2.0"
+anyhow = "1.0"
+
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.50.0"

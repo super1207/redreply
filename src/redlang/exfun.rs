@@ -22,6 +22,45 @@ use imageproc::geometric_transformations::Interpolation;
 
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
+
+pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,proxy_str:&str,is_post:bool) -> Result<(Vec<u8>,String), Box<dyn std::error::Error + Send + Sync>> {
+    let client;
+    let uri = reqwest::Url::from_str(url)?;
+    if proxy_str == "" {
+        if uri.scheme() == "http" {
+            client = reqwest::Client::builder().no_proxy().build()?;
+        } else {
+            client = reqwest::Client::builder().danger_accept_invalid_certs(true).no_proxy().build()?;
+        }
+    }else {
+        if uri.scheme() == "http" {
+            let proxy = reqwest::Proxy::http(proxy_str)?;
+            client = reqwest::Client::builder().proxy(proxy).build()?;
+        }else{
+            let proxy = reqwest::Proxy::https(proxy_str)?;
+            client = reqwest::Client::builder().danger_accept_invalid_certs(true).proxy(proxy).build()?;
+        }
+    }
+    
+    let mut req;
+    if is_post {
+        req = client.post(uri).body(reqwest::Body::from(data)).build()?;
+    }else {
+        req = client.get(uri).build()?;
+    }
+    for (key,val) in headers {
+        req.headers_mut().append(HeaderName::from_str(key)?, HeaderValue::from_str(val)?);
+    }
+    let retbin;
+    let ret = client.execute(req).await?;
+    let header_map_obj = ret.headers().iter().map(|(key,val)|{
+        (key.as_str().to_string(),val.to_str().unwrap_or_default().to_string())
+    }).collect::<BTreeMap<String,String>>();
+    let header_map =RedLang::build_obj_with_uid(&crate::REDLANG_UUID, header_map_obj);
+    retbin = ret.bytes().await?.to_vec();
+    return Ok((retbin,header_map));
+}
+
 pub fn init_ex_fun_map() {
     fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
         let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
@@ -49,43 +88,7 @@ pub fn init_ex_fun_map() {
         }
     }
 
-    async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,proxy_str:&str,is_post:bool) -> Result<(Vec<u8>,String), Box<dyn std::error::Error + Send + Sync>> {
-        let client;
-        let uri = reqwest::Url::from_str(url)?;
-        if proxy_str == "" {
-            if uri.scheme() == "http" {
-                client = reqwest::Client::builder().no_proxy().build()?;
-            } else {
-                client = reqwest::Client::builder().danger_accept_invalid_certs(true).no_proxy().build()?;
-            }
-        }else {
-            if uri.scheme() == "http" {
-                let proxy = reqwest::Proxy::http(proxy_str)?;
-                client = reqwest::Client::builder().proxy(proxy).build()?;
-            }else{
-                let proxy = reqwest::Proxy::https(proxy_str)?;
-                client = reqwest::Client::builder().danger_accept_invalid_certs(true).proxy(proxy).build()?;
-            }
-        }
-        
-        let mut req;
-        if is_post {
-            req = client.post(uri).body(reqwest::Body::from(data)).build()?;
-        }else {
-            req = client.get(uri).build()?;
-        }
-        for (key,val) in headers {
-            req.headers_mut().append(HeaderName::from_str(key)?, HeaderValue::from_str(val)?);
-        }
-        let retbin;
-        let ret = client.execute(req).await?;
-        let header_map_obj = ret.headers().iter().map(|(key,val)|{
-            (key.as_str().to_string(),val.to_str().unwrap_or_default().to_string())
-        }).collect::<BTreeMap<String,String>>();
-        let header_map =RedLang::build_obj_with_uid(&crate::REDLANG_UUID, header_map_obj);
-        retbin = ret.bytes().await?.to_vec();
-        return Ok((retbin,header_map));
-    }
+
     add_fun(vec!["返回头","取返回头"],|self_t,params|{
         let ret_headers = self_t.get_coremap("返回头")?.to_string();
         if ret_headers == "" {

@@ -1,11 +1,11 @@
 use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
 
-use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::{read_json_str, cq_params_encode, cq_text_encode}, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC,G_SCRIPT_RELATE_MSG, ScriptRelatMsg};
+use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1, cq_add_log_w}, mytool::{read_json_str, cq_params_encode, cq_text_encode}, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC,G_SCRIPT_RELATE_MSG, ScriptRelatMsg, RT_PTR};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
-
+use crate::redlang::exfun::http_post;
 pub fn get_app_dir(pkg_name:&str) -> Result<String, Box<dyn std::error::Error>> {
     let app_dir;
         if pkg_name == "" {
@@ -263,14 +263,14 @@ pub fn init_cq_ex_fun_map() {
         let role = self_t.get_exmap("发送者权限");
         return Ok(Some(role.to_string()));
     });
-    add_fun(vec!["发送者名片"],|self_t,_params|{
-        let card = self_t.get_exmap("发送者名片");
-        return Ok(Some(card.to_string()));
-    });
-    add_fun(vec!["发送者专属头衔"],|self_t,_params|{
-        let title = self_t.get_exmap("发送者专属头衔");
-        return Ok(Some(title.to_string()));
-    });
+    // add_fun(vec!["发送者名片"],|self_t,_params|{
+    //     let card = self_t.get_exmap("发送者名片");
+    //     return Ok(Some(card.to_string()));
+    // });
+    // add_fun(vec!["发送者专属头衔"],|self_t,_params|{
+    //     let title = self_t.get_exmap("发送者专属头衔");
+    //     return Ok(Some(title.to_string()));
+    // });
     add_fun(vec!["消息ID"],|self_t,params|{
         let qq = self_t.get_param(params, 0)?;
         let ret:String;
@@ -354,13 +354,93 @@ pub fn init_cq_ex_fun_map() {
                     let path_str = format!("{}\\data\\record\\{}",current_exe()?.parent().ok_or("无法获取当前exe目录")?.to_string_lossy(),&pic);
                     let path = Path::new(&path_str);
                     let bin = std::fs::read(path)?;
-                    
                     let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
                     ret = format!("[CQ:record,file=base64://{}]",b64_str);
                 }
             }
         }
         return Ok(Some(ret));
+    });
+    add_fun(vec!["转腾讯语音"],|self_t,params|{
+        let pic = self_t.get_param(params, 0)?;
+        let tp = self_t.get_type(&pic)?;
+        if tp == "字节集" {
+            let mut bin = RedLang::parse_bin(&pic)?;
+            if bin.starts_with(&[82,73,70,70]){
+                bin = crate::mytool::wav_to_silk(&bin)?;
+            }
+            return Ok(Some(self_t.build_bin(bin)));
+        }else if tp == "文本" {
+            if pic.starts_with("http://") || pic.starts_with("https://"){
+                fn access(self_t:&mut RedLang,url:&str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+                    let proxy = self_t.get_coremap("代理")?;
+                    let mut timeout_str = self_t.get_coremap("访问超时")?;
+                    if timeout_str == "" {
+                        timeout_str = "60000";
+                    }
+                    let mut http_header = BTreeMap::new();
+                    let http_header_str = self_t.get_coremap("访问头")?;
+                    if http_header_str != "" {
+                        http_header = RedLang::parse_obj(&http_header_str)?;
+                        if !http_header.contains_key("User-Agent"){
+                            http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
+                        }
+                    }else {
+                        http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
+                    }
+                    let timeout = timeout_str.parse::<u64>()?;
+                    let content = RT_PTR.block_on(async { 
+                        let ret = tokio::select! {
+                            val_rst = http_post(url,Vec::new(),&http_header,proxy,false) => {
+                                if let Ok(val) = val_rst {
+                                    val
+                                } else {
+                                    cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
+                                    (vec![],String::new())
+                                }
+                            },
+                            _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
+                                cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
+                                (vec![],String::new())
+                            }
+                        };
+                        return ret;
+                    });
+                    let mut bin = content.0;
+                    if bin.starts_with(&[82,73,70,70]){
+                        bin = crate::mytool::wav_to_silk(&bin)?;
+                    }
+                    Ok(Some(self_t.build_bin(bin)))
+                }
+                let url = self_t.get_param(params, 0)?;
+                self_t.set_coremap("返回头","")?;
+                return match access(self_t,&url) {
+                    Ok(ret) => Ok(ret),
+                    Err(err) => {
+                        cq_add_log_w(&format!("{:?}",err)).unwrap();
+                        Ok(Some(self_t.build_bin(vec![])))
+                    },
+                }
+            }else{
+                if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
+                    let path = Path::new(&pic);
+                    let mut bin = std::fs::read(path)?;
+                    if bin.starts_with(&[82,73,70,70]){
+                        bin = crate::mytool::wav_to_silk(&bin)?;
+                    }
+                    return Ok(Some(self_t.build_bin(bin)));
+                }else{
+                    let path_str = format!("{}\\data\\record\\{}",current_exe()?.parent().ok_or("无法获取当前exe目录")?.to_string_lossy(),&pic);
+                    let path = Path::new(&path_str);
+                    let mut bin = std::fs::read(path)?;
+                    if bin.starts_with(&[82,73,70,70]){
+                        bin = crate::mytool::wav_to_silk(&bin)?;
+                    }
+                    return Ok(Some(self_t.build_bin(bin)));
+                }
+            }
+        }
+        return Ok(Some(self_t.build_bin(vec![])));
     });
     add_fun(vec!["撤回"],|self_t,params|{
         let mut msg_id_str = self_t.get_param(params, 0)?;

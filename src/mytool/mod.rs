@@ -1,4 +1,6 @@
-use std::collections::HashMap;
+pub mod wav_to_pcm;
+
+use std::{collections::HashMap, io::BufReader};
 
 use crate::redlang::RedLang;
 
@@ -298,6 +300,33 @@ pub fn json_to_cq_str(js: & serde_json::Value) ->Result<String, Box<dyn std::err
         }
     }
     return  Ok(ret);
+}
+
+pub fn wav_to_silk(content:&Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>>{
+    let reader: BufReader<&[u8]> = BufReader::new(&content[..]);
+    let wav_info = crate::mytool::wav_to_pcm::WavFormat::decode(reader)?;
+
+    let bits_per_sample = u16::from_le_bytes(wav_info.bits_per_sample) / 8 * u16::from_le_bytes(wav_info.num_channels);
+    let sample_gap = (u32::from_le_bytes(wav_info.sampling_rate) as f64) / 32000.0;
+    let mut real_pos = 0f64;
+    let mut new_data = vec![];
+    loop {
+     let index = ((real_pos as usize) / bits_per_sample as usize) * bits_per_sample as usize;
+     let index2 = index+(bits_per_sample as usize);
+     if index2 > wav_info.data.len() {
+         break;
+     }
+     let sample = &wav_info.data[index..index2];
+ 
+     for i in 0..bits_per_sample {
+         let d = sample[i as usize];
+         new_data.push(d);
+     }
+     real_pos += bits_per_sample as f64 * sample_gap;
+    }
+
+    let output = silk_rs::encode_silk(new_data, 32000, 32000, true)?;
+    return Ok(output);
 }
 
 

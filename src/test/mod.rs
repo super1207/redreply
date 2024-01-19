@@ -1,3 +1,6 @@
+
+
+
 #[test]
 fn test_cqstr_to_arr() {
 
@@ -83,3 +86,34 @@ fn test_redformat() {
     }
 
 }
+
+// #[test]
+// fn test_wav_to_pcm() {
+//     let wav_info = crate::mytool::wav_to_pcm::WavFormat::decode("D:\\青雀语音\\71201001_cn.wav").unwrap();
+
+//    let bits_per_sample = u16::from_le_bytes(wav_info.bits_per_sample) / 8 * u16::from_le_bytes(wav_info.num_channels);
+//    let sample_gap = (u32::from_le_bytes(wav_info.sampling_rate) as f64) / 32000.0;
+//    let mut real_pos = 0f64;
+//    let mut new_data = vec![];
+//    loop {
+//     let index = ((real_pos as usize) / 2) * 2;
+//     let index2 = index+(bits_per_sample as usize);
+//     if index2 > wav_info.data.len() {
+//         break;
+//     }
+//     let sample = &wav_info.data[index..index2];
+
+//     for i in 0..bits_per_sample {
+//         let d = sample[i as usize];
+//         new_data.push(d);
+//     }
+//     real_pos += bits_per_sample as f64 * sample_gap;
+//    }
+
+//    println!("wav_info:{:?}",new_data.len());
+//    let mut f = std::fs::File::create("D:\\青雀语音\\71201001_cn.pcm").unwrap();
+//     std::io::Write::write_all(&mut f, &new_data).unwrap();
+//     let input = std::fs::read("D:\\青雀语音\\71201001_cn.pcm").unwrap();
+//     let output = silk_rs::encode_silk(input, 32000, 32000, true).unwrap();
+//     std::fs::write("D:\\青雀语音\\71201001_cn.silk", output).unwrap();
+// }
