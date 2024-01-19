@@ -24,19 +24,8 @@ jobs:
     - name: Checkout
       uses: actions/checkout@master
 
-    - name: install_cross
-      if: startsWith(matrix.os, 'ubuntu-') 
-      run: |
-        cargo install cross --git https://github.com/cross-rs/cross
-
     - name: install_ubuntu_dependencies
       if: startsWith(matrix.os, 'ubuntu-') 
-      run: |
-        sudo apt update
-        sudo apt install -y musl-tools
-
-    - name: install_windows_dependencies
-      if: startsWith(matrix.os, 'windows-') 
       run: |
         cargo install cross --git https://github.com/cross-rs/cross
 
