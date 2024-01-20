@@ -51,7 +51,8 @@ net2 = "0.2.39"
 tl = "0.7.7"
 html-escape = "0.2.13"
 silk-rs="0.2.0"
-anyhow = "1.0"
+minimp3 = "0.5"
+claxon = "0.4.3"
 
 
 [target.'cfg(windows)'.dependencies]

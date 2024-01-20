@@ -366,9 +366,7 @@ pub fn init_cq_ex_fun_map() {
         let tp = self_t.get_type(&pic)?;
         if tp == "字节集" {
             let mut bin = RedLang::parse_bin(&pic)?;
-            if bin.starts_with(&[82,73,70,70]){
-                bin = crate::mytool::wav_to_silk(&bin)?;
-            }
+            bin = crate::mytool::all_to_silk(&bin)?;
             return Ok(Some(self_t.build_bin(bin)));
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
@@ -407,9 +405,7 @@ pub fn init_cq_ex_fun_map() {
                         return ret;
                     });
                     let mut bin = content.0;
-                    if bin.starts_with(&[82,73,70,70]){
-                        bin = crate::mytool::wav_to_silk(&bin)?;
-                    }
+                    bin = crate::mytool::all_to_silk(&bin)?;
                     Ok(Some(self_t.build_bin(bin)))
                 }
                 let url = self_t.get_param(params, 0)?;
@@ -425,17 +421,13 @@ pub fn init_cq_ex_fun_map() {
                 if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
                     let path = Path::new(&pic);
                     let mut bin = std::fs::read(path)?;
-                    if bin.starts_with(&[82,73,70,70]){
-                        bin = crate::mytool::wav_to_silk(&bin)?;
-                    }
+                    bin = crate::mytool::all_to_silk(&bin)?;
                     return Ok(Some(self_t.build_bin(bin)));
                 }else{
                     let path_str = format!("{}\\data\\record\\{}",current_exe()?.parent().ok_or("无法获取当前exe目录")?.to_string_lossy(),&pic);
                     let path = Path::new(&path_str);
                     let mut bin = std::fs::read(path)?;
-                    if bin.starts_with(&[82,73,70,70]){
-                        bin = crate::mytool::wav_to_silk(&bin)?;
-                    }
+                    bin = crate::mytool::all_to_silk(&bin)?;
                     return Ok(Some(self_t.build_bin(bin)));
                 }
             }

@@ -1,4 +1,7 @@
-pub mod wav_to_pcm;
+mod deal_flac;
+mod deal_silk;
+mod mp3_deal;
+mod wav_deal;
 
 use std::{collections::HashMap, io::BufReader};
 
@@ -302,31 +305,46 @@ pub fn json_to_cq_str(js: & serde_json::Value) ->Result<String, Box<dyn std::err
     return  Ok(ret);
 }
 
-pub fn wav_to_silk(content:&Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>>{
-    let reader: BufReader<&[u8]> = BufReader::new(&content[..]);
-    let wav_info = crate::mytool::wav_to_pcm::WavFormat::decode(reader)?;
+#[derive(Debug)]
+pub struct PCMStruct{
+    pub channel_num:usize, // 通道数目
+    pub bits_per_sample:usize, // 采样bit节大小
+    pub sample_rate:usize, // 采样率
+    pub data: Vec<f64>,
+}
 
-    let bits_per_sample = u16::from_le_bytes(wav_info.bits_per_sample) / 8 * u16::from_le_bytes(wav_info.num_channels);
-    let sample_gap = (u32::from_le_bytes(wav_info.sampling_rate) as f64) / 32000.0;
-    let mut real_pos = 0f64;
-    let mut new_data = vec![];
-    loop {
-     let index = (((real_pos + 0.5) as usize) / bits_per_sample as usize) * bits_per_sample as usize;
-     let index2 = index+(bits_per_sample as usize);
-     if index2 > wav_info.data.len() {
-         break;
-     }
-     let sample = &wav_info.data[index..index2];
- 
-     for i in 0..bits_per_sample {
-         let d = sample[i as usize];
-         new_data.push(d);
-     }
-     real_pos += bits_per_sample as f64 * sample_gap;
+pub fn get_media_type(input:&Vec<u8>) -> &str{
+    if input.starts_with(&[82,73,70,70]) {
+        return "wav";
+    }else if input.starts_with(&[73,68,51]) || input.starts_with(&[0xFF,0xFA]) || input.starts_with(&[0xFF,0xFB]){
+        return "mp3";
+    }else if input.starts_with(&[0x66,0x41,0x61,0x43]) {
+        return "flac";
+    }else if input.starts_with("#!SILK".as_bytes()){
+        return "silk";
+    }else{
+        return "";
     }
+}
 
-    let output = silk_rs::encode_silk(new_data, 32000, 32000, true)?;
-    return Ok(output);
+
+
+pub fn all_to_silk(input:&Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>>{
+    let tp = get_media_type(input);
+    let pcm;
+    if tp == "wav"{
+        pcm = crate::mytool::wav_deal::deal_wav(BufReader::new(&input[..]))?;
+    }else if tp == "mp3" {
+        pcm = crate::mytool::mp3_deal::deal_mp3(BufReader::new(&input[..]))?;
+    }else if tp == "flac" {
+        pcm = crate::mytool::deal_flac::deal_flac(BufReader::new(&input[..]))?;
+    }else if tp == "silk" {
+        return Ok(input.to_owned());
+    }else {
+        return Err("not support".into());
+    }
+    let silk = deal_silk::to_qq_silk(&pcm);
+    return Ok(silk);
 }
 
 
