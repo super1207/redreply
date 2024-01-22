@@ -1741,6 +1741,17 @@ impl RedLang {
             }
         }
 
+        // 用于处理参数中的返回
+        let fun_ret_vec_len = self.fun_ret_vec.len();
+        if self.fun_ret_vec[fun_ret_vec_len - 1].0 == true {
+            // 如果参数中已经返回，就收集返回值，然后结束函数调用
+            let mut to_ret = String::new();
+            for i in fun_params_t {
+                to_ret += &i;
+            }
+            return Ok(to_ret);
+        }
+
         // 修改参数栈
         self.params_vec.push(fun_params_t);
 
