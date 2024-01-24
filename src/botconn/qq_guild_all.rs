@@ -247,14 +247,12 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
         }
         else if tp == "qmarkdown" {
             let markdown_data = it.get("data").ok_or("data not found")?.get("data").ok_or("markdown data not found")?.as_str().ok_or("markdown data not a string")?;
-            if markdown_data.starts_with("base64://"){
-                let b64_str = markdown_data.split_at(9).1;
-                let markdown_buffer = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
-                    &base64::alphabet::STANDARD,
-                    base64::engine::general_purpose::PAD), b64_str)?;
-                let json:serde_json::Value = serde_json::from_str(&String::from_utf8(markdown_buffer)?)?;
-                msg_node.markdown = Some(json);
-            }
+            let b64_str = markdown_data.split_at(9).1;
+            let markdown_buffer = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+                &base64::alphabet::STANDARD,
+                base64::engine::general_purpose::PAD), b64_str)?;
+            let json:serde_json::Value = serde_json::from_str(&String::from_utf8(markdown_buffer)?)?;
+            msg_node.markdown = Some(json);
         }
     }
     Ok(msg_node)
