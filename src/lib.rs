@@ -97,6 +97,8 @@ lazy_static! {
     pub static ref G_SCRIPT_RELATE_MSG:RwLock<HashMap<String,ScriptRelatMsg>> = RwLock::new(HashMap::new());
     // 用于自动关闭进程
     pub static ref G_AUTO_CLOSE:Mutex<bool> = Mutex::new(false);
+    // 默认字体
+    pub static ref G_DEFAULF_FONT:RwLock<String> = RwLock::new(String::new());
 }
 
 

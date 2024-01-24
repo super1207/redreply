@@ -12,7 +12,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::io::Write;
-use crate::{cqapi::cq_add_log, cq_add_log_w, redlang::get_random, RT_PTR, pyserver::call_py_block};
+use crate::{cq_add_log_w, cqapi::cq_add_log, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -2498,9 +2498,9 @@ def red_out(sw):
         Ok(Some(String::from_utf8(content_rst.unwrap())?))
     });
     add_fun(vec!["默认字体"],|self_t,_params|{
-        let ft = self_t.get_coremap("默认字体")?;
-        if ft != "" {
-            return Ok(Some(ft.to_owned()));
+        let mut ft_lk = G_DEFAULF_FONT.write().unwrap();
+        if *ft_lk != "" {
+            return Ok(Some(ft_lk.clone()));
         }
         let proxy = self_t.get_coremap("代理")?;
         let mut timeout_str = self_t.get_coremap("访问超时")?;
@@ -2538,7 +2538,7 @@ def red_out(sw):
         });
         if content.0.len() == 10560380 {
             let ft = self_t.build_bin(content.0);
-            self_t.set_coremap("默认字体", &ft)?;
+            (*ft_lk) = ft.clone();
             return Ok(Some(ft));
         }else {
             cq_add_log_w(&format!("默认字体下载失败！")).unwrap();

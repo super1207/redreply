@@ -314,6 +314,24 @@ async fn send_qqgroup_msg(self_t:&SelfData,group_id:&str,to_reply_id:&str,passiv
             id += &api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
             set_msg_seq(self_t,passive_id,msg_seq)?;
         }
+        // 发送markdown
+        if qq_msg_node.markdown != None {
+            msg_seq += 1;
+            let mut json_data = serde_json::json!(qq_msg_node.markdown);
+            let obj = json_data.as_object_mut().ok_or("markdown err")?;
+            obj.insert("msg_type".to_owned(), serde_json::json!(2));
+            obj.insert("msg_seq".to_owned(), serde_json::json!(msg_seq));
+            obj.insert("msg_id".to_owned(), serde_json::json!(to_reply_id));
+            crate::cqapi::cq_add_log(format!("发送qq group API数据(`{}`):{}",group_id,json_data.to_string()).as_str()).unwrap();
+            let api_ret = do_qq_json_post(self_t,&format!("/v2/groups/{group_id}/messages"),json_data).await?;
+            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret.to_string()).as_str()).unwrap();
+            // 构造消息id
+            if id != "" {
+                id += "|";
+            }
+            id += &api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
+            set_msg_seq(self_t,passive_id,msg_seq)?;
+        }
         // 再发送图片
         for img_info in &qq_msg_node.img_infos {
             msg_seq += 1;

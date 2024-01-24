@@ -57,7 +57,7 @@ pub struct QQMsgNode{
     pub imgs:Vec<Vec<u8>>,
     pub img_infos:Vec<String>,
     pub message_reference:Option<String>,
-    pub markdown:Option<serde_json::Value>
+    pub markdown:Option<serde_json::Value>,
 }
 
 fn make_qq_text(text:&str) -> String {
@@ -245,20 +245,17 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
             }
         }
-        // else if tp == "markdown" {
-        //     let markdown_data = it.get("data").ok_or("data not found")?.get("data").ok_or("markdown data not found")?.as_str().ok_or("markdown data not a string")?;
-        //     if markdown_data.starts_with("base64://"){
-        //         let b64_str = markdown_data.split_at(9).1;
-        //         let markdown_buffer = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
-        //             &base64::alphabet::STANDARD,
-        //             base64::engine::general_purpose::PAD), b64_str)?;
-        //         let json:serde_json::Value = serde_json::from_str(&String::from_utf8(markdown_buffer)?)?;
-        //         msg_node.markdown = Some(serde_json::json!({
-        //             "custom_template_id": "101993071_1658748972",
-        //             "params":json
-        //         }));
-        //     }
-        // }
+        else if tp == "qmarkdown" {
+            let markdown_data = it.get("data").ok_or("data not found")?.get("data").ok_or("markdown data not found")?.as_str().ok_or("markdown data not a string")?;
+            if markdown_data.starts_with("base64://"){
+                let b64_str = markdown_data.split_at(9).1;
+                let markdown_buffer = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+                    &base64::alphabet::STANDARD,
+                    base64::engine::general_purpose::PAD), b64_str)?;
+                let json:serde_json::Value = serde_json::from_str(&String::from_utf8(markdown_buffer)?)?;
+                msg_node.markdown = Some(json);
+            }
+        }
     }
     Ok(msg_node)
 }
