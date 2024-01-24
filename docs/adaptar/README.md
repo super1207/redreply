@@ -41,7 +41,7 @@
 }
 ```
 以上例子写做CQ码可以这么写：
-`[CQ:qmarkdown=ewogICAgIm1hcmtkb3duIjogewogICAgICAgICJjb250ZW50IjogIiMg5qCH6aKYIFxuIyMg566A5LuL5b6I5byA5b+DIFxu5YaF5a65W+2gve20l+iFvuiur10oaHR0cHM6Ly93d3cucXEuY29tKSIKICAgIH0sCiAgICAia2V5Ym9hcmQiOiB7CiAgICAgICAgImlkIjogIjEyMyIKICAgIH0KfQ==]`
+`[CQ:qmarkdown,data=ewogICAgIm1hcmtkb3duIjogewogICAgICAgICJjb250ZW50IjogIiMg5qCH6aKYIFxuIyMg566A5LuL5b6I5byA5b+DIFxu5YaF5a65W+2gve20l+iFvuiur10oaHR0cHM6Ly93d3cucXEuY29tKSIKICAgIH0sCiAgICAia2V5Ym9hcmQiOiB7CiAgICAgICAgImlkIjogIjEyMyIKICAgIH0KfQ==]`
 
 更详细信息参考QQ的文档[markdown](https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/type/markdown.html)
 、[keyboard](https://bot.q.qq.com/wiki/develop/api-v2/server-inter/message/trans/msg-btn.html)。
