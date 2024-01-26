@@ -1,4 +1,4 @@
-use std::{path::Path, time::{SystemTime, Duration}, collections::{BTreeMap, HashMap}, vec, fs, str::FromStr, io::Read};
+use std::{path::{Path, PathBuf}, time::{SystemTime, Duration}, collections::{BTreeMap, HashMap}, vec, fs, str::FromStr, io::Read};
 use chrono::TimeZone;
 use encoding::Encoding;
 use flate2::{read::{GzDecoder, ZlibDecoder}, write::{GzEncoder, ZlibEncoder}, Compression};
@@ -12,7 +12,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::io::Write;
-use crate::{cq_add_log_w, cqapi::cq_add_log, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
+use crate::{cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -1572,7 +1572,18 @@ pub fn init_ex_fun_map() {
         let cmd_str = self_t.get_param(params, 0)?;
         let currdir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let output = if cfg!(target_os = "windows") {
-            std::process::Command::new("cmd").current_dir(currdir).arg("/c").arg(cmd_str).output()?
+            // cmd 的解析规则too复杂，我不想看了 https://learn.microsoft.com/zh-cn/windows-server/administration/windows-commands/cmd
+            let tmp_dir = get_tmp_dir()?;
+            let tmp_file = uuid::Uuid::new_v4().to_string() + ".cmd";
+            let tmp_file_path = PathBuf::from_str(&tmp_dir)?.join(tmp_file);
+            let mut gbk_cmd:Vec<u8> = vec![];
+            gbk_cmd.append(&mut "@echo off\r\n".as_bytes().to_vec());
+            gbk_cmd.append(&mut encoding::Encoding::encode(encoding::all::GBK, &cmd_str, encoding::EncoderTrap::Ignore)?);
+            fs::write(&tmp_file_path, gbk_cmd)?;
+            let _guard = scopeguard::guard(tmp_file_path.clone(), |tmp_file_path| {
+                let _foo = fs::remove_file(tmp_file_path);
+            });
+            std::process::Command::new("cmd").current_dir(currdir).arg("/c").arg(tmp_file_path).output()?
         } else {
             std::process::Command::new("sh").current_dir(currdir).arg("-c").arg(cmd_str).output()?
         };

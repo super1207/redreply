@@ -24,6 +24,14 @@ pub fn get_history_log() -> VecDeque<String> {
     return VecDeque::new();
 }
 
+// 获取临时目录，绝对路径，末尾有'\',utf8编码
+pub fn get_tmp_dir() -> Result<String, Box<dyn std::error::Error>> {
+    let lib_path = cq_get_app_directory1()? + "tmp";
+    std::fs::create_dir_all(&lib_path)?;
+    let path_str = format!("{}{}",lib_path,std::path::MAIN_SEPARATOR.to_string());
+    Ok(path_str)
+}
+
 
 // 获取插件的目录，绝对路径，末尾有'\',utf8编码
 pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error>> {

@@ -190,6 +190,10 @@ pub fn initialize() -> i32 {
     // 初始化配置文件
     init_config();
 
+    // 初始化库文件
+    let lib_path = cq_get_app_directory1().unwrap() + "lib";
+    std::fs::create_dir_all(&lib_path).unwrap();
+
     redlang::webexfun::init_web_ex_fun_map();
     redlang::cqexfun::init_cq_ex_fun_map();
     redlang::exfun::init_ex_fun_map();
