@@ -3,9 +3,9 @@ mod do_private_msg;
 mod do_other_evt;
 mod do_group_inc;
 
-use std::{rc::Rc, collections::HashMap, sync::Arc, cell::RefCell};
+use std::{rc::Rc, collections::{HashMap, HashSet}, sync::Arc, cell::RefCell};
 
-use crate::{redlang::RedLang, mytool::read_json_str, PAGING_UUID, CLEAR_UUID, add_running_script_num, dec_running_script_num, cqapi::cq_add_log_w, REDLANG_UUID};
+use crate::{add_running_script_num, cqapi::cq_add_log_w, dec_running_script_num, mytool::read_json_str, read_code_cache, redlang::RedLang, CLEAR_UUID, PAGING_UUID, REDLANG_UUID};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -22,20 +22,38 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
             root["message"] = arrmsg;
         }
     }
+
+    // 预处理脚本
+    let script_json = read_code_cache()?;
+    let mut ban_pkgs = HashSet::new();
+    for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
+        let (_keyword,cffs,code,_ppfs,name,pkg_name) = get_script_info(&script_json[i])?;
+        if cffs == "内容过滤" {
+            let mut rl = RedLang::new();
+            set_normal_evt_info(&mut rl, &root)?;
+            rl.pkg_name = pkg_name.to_owned();
+            rl.script_name = name.to_owned();
+            let ret = rl.parse(code)?;
+            if ret == "真" {
+                ban_pkgs.insert(pkg_name.to_owned());
+            }
+        }
+    }
+
     if let Some(message_type) = root.get("message_type") {
         if message_type == "group" {
-            do_group_msg::do_group_msg(&root)?;
+            do_group_msg::do_group_msg(&root,&ban_pkgs)?;
         }else if message_type == "private"{
-            do_private_msg::do_private_msg(&root)?;
+            do_private_msg::do_private_msg(&root,&ban_pkgs)?;
         }
     }
 
     if let Some(notice_type) = root.get("notice_type") {
         if notice_type == "group_increase" {
-            do_group_inc::do_group_inc(&root)?;
+            do_group_inc::do_group_inc(&root,&ban_pkgs)?;
         }
     }
-    do_other_evt::do_other_evt(&root)?;
+    do_other_evt::do_other_evt(&root,&ban_pkgs)?;
     Ok(0)
 }
 
@@ -158,16 +176,15 @@ fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Bo
     rl.set_exmap("原始事件", &root.to_string())?;
     rl.set_exmap("机器人平台", &read_json_str(root,"platform"))?;
     rl.set_exmap("消息ID", &read_json_str(root,"message_id"))?;
-    Ok(())
-}
-
-fn set_normal_message_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
-    {
-        let sender = root.get("sender").ok_or("sender not exists")?;
+    if let Some(sender) = root.get("sender") {
         if let Some(js_v) = sender.get("nickname") {
             rl.set_exmap("发送者昵称", js_v.as_str().unwrap_or(""))?;
         }
     }
+    Ok(())
+}
+
+fn set_normal_message_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
     set_normal_evt_info(rl,root)?;
     Ok(())
 }

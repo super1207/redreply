@@ -1,4 +1,4 @@
-use std::{collections::VecDeque, rc::Rc, cell::RefCell};
+use std::{collections::{HashSet, VecDeque}, rc::Rc, cell::RefCell};
 
 use crate::{cqapi::*, redlang::RedLang, mytool::{json_to_cq_str, read_json_str}, read_code_cache, G_INPUTSTREAM_VEC, RT_PTR};
 
@@ -20,7 +20,7 @@ pub fn msg_id_map_insert(self_id:String,user_id:String,group_id:String,message_i
     Ok(())
 }
 
-fn do_redlang(root: &serde_json::Value) -> Result< (), Box<dyn std::error::Error>>{
+fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result< (), Box<dyn std::error::Error>>{
     let msg = json_to_cq_str(&root)?;
     // 在这里处理输入流
     {
@@ -52,6 +52,9 @@ fn do_redlang(root: &serde_json::Value) -> Result< (), Box<dyn std::error::Error
     let mut is_set_msg_id_map = false;
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
         let (keyword,cffs,code,ppfs,name,pkg_name) = get_script_info(&script_json[i])?;
+        if ban_pkgs.contains(pkg_name) {
+            continue;
+        }
         let mut rl = RedLang::new();
         if cffs == "群聊触发" || cffs == "群、私聊触发"{
             set_normal_message_info(&mut rl, root)?;
@@ -103,9 +106,9 @@ fn do_redlang(root: &serde_json::Value) -> Result< (), Box<dyn std::error::Error
 }
 
 // 处理群聊事件
-pub fn do_group_msg(root: &serde_json::Value) -> Result<i32, Box<dyn std::error::Error>> {
+pub fn do_group_msg(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result<i32, Box<dyn std::error::Error>> {
  
-    if let Err(e) = do_redlang(&root) {
+    if let Err(e) = do_redlang(&root,ban_pkgs) {
         cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e.to_string()).as_str()).unwrap();
     }
     Ok(0)
