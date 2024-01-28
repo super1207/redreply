@@ -24,16 +24,19 @@ fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a
 }
 
 fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
-    let mut to_deal_time: Vec<i64> = vec![];
+    
 
-    // 
-    let now_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64 - 1;
+    // 获得当前时间
+    let now_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+    
+    // 获得当前时间与上一次时间之间经过的时间
+    let mut to_deal_time: Vec<i64> = vec![];
     {
         let mut last_time_lk = G_LAST_RUN_TIME.lock()?;
         if last_time_lk.is_none() {
             to_deal_time.push(now_time);
         }else if now_time > last_time_lk.unwrap() {
-            for i in ((*last_time_lk).unwrap() + 1) .. now_time + 1 {
+            for i in ((*last_time_lk).unwrap()) .. now_time{
                 to_deal_time.push(i);
             }
         }
@@ -48,16 +51,18 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
             for timestamp in to_deal_time.clone() {
                 let datetime_rst = chrono::prelude::Local.timestamp_opt(timestamp, 0);
                 if let chrono::LocalResult::Single(data) = datetime_rst {
+                    // 获得以指定时间为基准，定时器下一次触发的时间
                     let mut timestamp_vec:Vec<i64> = vec![];
                     for datetime in schedule.after(&data).take(1) {
-                        timestamp_vec.push(datetime.timestamp() - 1);
+                        timestamp_vec.push(datetime.timestamp());
                     }
                     if timestamp_vec.len() != 0 {
                         let dst_time = timestamp_vec[0] as i64;
-                        let pkg_name_t = pkg_name.to_string();
-                        let name_t = name.to_string();
-                        let code_t = code.to_string();
-                        if dst_time == timestamp {
+                        // 如果下一次触发时间在当前时间之前，则触发
+                        if dst_time <= now_time {
+                            let pkg_name_t = pkg_name.to_string();
+                            let name_t = name.to_string();
+                            let code_t = code.to_string();
                             thread::spawn(move ||{
                                 let mut rl = crate::redlang::RedLang::new();
                                 rl.pkg_name = pkg_name_t;
