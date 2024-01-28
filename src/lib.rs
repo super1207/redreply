@@ -1,7 +1,10 @@
 use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
+use std::ffi::c_char;
+use std::ffi::CStr;
 use std::fs;
+use std::os::raw::c_int;
 use std::panic;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -19,6 +22,8 @@ use rust_embed::RustEmbed;
 
 use cqapi::cq_add_log_w;
 use cqapi::cq_get_app_directory1;
+
+use crate::cqapi::cq_add_log;
 
 
 mod cqapi;
@@ -56,6 +61,13 @@ pub struct ScriptRelatMsg {
     pub self_id:String,
     pub msg_id_vec:Vec<String>,
     pub create_time:u64
+}
+
+pub struct LibStruct {
+    pub lib:Arc<libloading::os::windows::Library>,
+    pub path:String,
+    pub regist_fun:Vec<String>,
+    pub ac:c_int
 }
 
 lazy_static! {
@@ -99,8 +111,17 @@ lazy_static! {
     pub static ref G_AUTO_CLOSE:Mutex<bool> = Mutex::new(false);
     // 默认字体
     pub static ref G_DEFAULF_FONT:RwLock<String> = RwLock::new(String::new());
+    // 注册的三方插件
+    pub static ref G_LIB_MAP:RwLock<HashMap<c_int,LibStruct>> = RwLock::new(HashMap::new());
+    pub static ref G_LIB_AC:Mutex<c_int> = Mutex::new(0);
 }
 
+
+fn gen_lib_ac() -> c_int {
+    let mut lk = G_LIB_AC.lock().unwrap();
+    *lk += 1;
+    *lk
+}
 
 
 #[derive(RustEmbed)]
@@ -180,6 +201,91 @@ pub fn dec_running_script_num(pkg_name:&str,script_name:&str) {
 }
 
 
+fn init_lib() -> Result<(), Box<dyn std::error::Error>> {
+    let lib_path = cq_get_app_directory1().unwrap() + "lib";
+    std::fs::create_dir_all(&lib_path).unwrap();
+    let dirs = fs::read_dir(lib_path)?;
+    //let mut ret_vec:Vec<String> = vec![];
+    let is_win = std::path::MAIN_SEPARATOR == '\\';
+    let platform_end;
+    if is_win {
+        platform_end = ".dll"
+    }else{
+        platform_end = ".so";
+    }
+    for dir in dirs {
+        let path = dir?.path();
+        if path.is_file() {
+            let file_name = path.file_name().ok_or("获取文件名失败")?;
+            let file_name_str = file_name.to_string_lossy();
+            if !file_name_str.to_lowercase().ends_with(platform_end){
+                continue;
+            }
+            let file_path = path.to_str().ok_or("获取目录文件异常")?.to_owned();
+            unsafe {
+                let lib = Arc::new(libloading::os::windows::Library::new(path)?);
+                // 检查版本号
+                let ac = Box::new(gen_lib_ac());
+                let api_version_fun_rst = lib.get::<libloading::os::windows::Symbol<unsafe extern "system" fn(ac:c_int) -> c_int>>(b"redreply_api_version");
+                if api_version_fun_rst.is_err() {
+                    continue;
+                }
+                let api_version_fun = api_version_fun_rst.unwrap();
+                let api_version:c_int = api_version_fun(*ac);
+                if api_version != 1 {
+                    continue;
+                }
+
+                //执行到这里，说明插件加载成功，应该保存起来了
+                {
+                    let mut lk = G_LIB_MAP.write().unwrap();
+                    lk.insert(*ac,LibStruct{
+                        lib:lib.clone(),
+                        path: file_path,
+                        regist_fun: vec![],
+                        ac:*ac
+                    });
+                }
+                
+                // 注册
+                let regist_fun_rst = lib.get::<libloading::os::windows::Symbol<unsafe extern "system" fn(*const c_int,callback: extern "system" fn (*const c_int,*const c_char))>>(b"redreply_regist_cmd");
+                extern "system" fn callback(ac_ptr:*const c_int,cmdarr:*const c_char) {
+                    let ac = unsafe { *ac_ptr };
+                    let cmdarr_cstr = unsafe { CStr::from_ptr(cmdarr) };
+                    let cmdarr_str_rst = cmdarr_cstr.to_str();
+                    if cmdarr_str_rst.is_err() {
+                        //println!("1");
+                        return;
+                    }
+                    let cmdarr_str = cmdarr_str_rst.unwrap();
+                    let mut lk = G_LIB_MAP.write().unwrap();
+                    let plus_opt = lk.get_mut(&ac);
+                    if plus_opt.is_none() {
+                        //println!("2:ac:{ac}");
+                        return;
+                    }
+                    let plus = plus_opt.unwrap();
+                    let cmd_arr_rst = RedLang::parse_arr2(cmdarr_str,"12331549-6D26-68A5-E192-5EBE9A6EB998");
+                    if cmd_arr_rst.is_err() {
+                        //println!("3");
+                        return;
+                    }
+                    let cmd_arr = cmd_arr_rst.unwrap();
+                    let mut bind = cmd_arr.iter().map(|x|x.to_string()).collect::<Vec<String>>();
+                    cq_add_log(&format!("注入三方命令：{bind:?}")).unwrap();
+                    plus.regist_fun.append(&mut bind);
+                }
+                if regist_fun_rst.is_ok() {
+                    let regist_fun = regist_fun_rst.unwrap();
+                    regist_fun(&*ac,callback);
+                }
+            };
+        }
+    }
+    Ok(())
+}
+
+
 // 这是插件第一个被调用的函数，不要在这里调用任何CQ的API,也不要在此处阻塞
 pub fn initialize() -> i32 {
     cq_add_log_w(&format!("欢迎使用`红色问答{}`,正在进行资源初始化...",get_version())).unwrap();
@@ -190,14 +296,16 @@ pub fn initialize() -> i32 {
     // 初始化配置文件
     init_config();
 
-    // 初始化库文件
-    let lib_path = cq_get_app_directory1().unwrap() + "lib";
-    std::fs::create_dir_all(&lib_path).unwrap();
-
+    // 初始化命令
     redlang::webexfun::init_web_ex_fun_map();
     redlang::cqexfun::init_cq_ex_fun_map();
     redlang::exfun::init_ex_fun_map();
     redlang::init_core_fun_map();
+
+     // 初始化库文件
+     if let Err(err) = init_lib(){
+        cq_add_log_w(&err.to_string()).unwrap();
+    }
 
     if let Err(err) = release_file(){
         cq_add_log_w(&err.to_string()).unwrap();

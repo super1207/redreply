@@ -1,7 +1,9 @@
-use std::{collections::{HashMap, BTreeMap, HashSet, VecDeque}, fmt, error, vec, rc::Rc, cell::RefCell, any::Any, sync::Arc, thread};
+use std::{any::Any, cell::RefCell, collections::{HashMap, BTreeMap, HashSet, VecDeque}, error, ffi::{c_char, c_int, CStr, CString}, fmt, rc::Rc, sync::Arc, thread, vec};
 use encoding::Encoding;
 
 use crate::{G_CONST_MAP, CLEAR_UUID, cqevent::do_script, cqapi::cq_add_log_w, G_LOCK};
+use libloading::os::windows::Symbol;
+
 pub mod exfun;
 pub(crate) mod cqexfun;
 pub(crate) mod webexfun;
@@ -1838,6 +1840,62 @@ impl RedLang {
             return Ok(ret_str);
         }
 
+        // 执行三方命令
+        let mut libret: Box<Option<String>> = Box::new(None);
+        {
+            let cmd_s = cmd.to_owned();
+            let mut lib_ptr_opt = None;
+            for (_ac,plus) in &*crate::G_LIB_MAP.read().unwrap() {
+                if plus.regist_fun.contains(&cmd_s) {
+                    lib_ptr_opt = Some(plus.lib.clone());
+                    break;
+                }
+            }
+            if let Some(lib_ptr) = lib_ptr_opt {
+                
+                let call_cmd_fun_rst = unsafe {lib_ptr.get::<Symbol<extern "system" fn(*mut Option<String>,*const c_char,*const c_char,extern "system" fn(*mut Option<String>,*const c_char,c_int))>>(b"redreply_callcmd")};
+                if call_cmd_fun_rst.is_ok() {
+                    let mut fun_params_t: Vec<String> = vec![];
+                    for f in params {
+                        let ret = self.parse(f)?;
+                        fun_params_t.push(ret);
+                    }
+                    let bind = fun_params_t.iter().map(|x|x.as_str()).collect();
+                    let params_str_t = self.build_arr(bind);
+                    let params_str = format!("12331549-6D26-68A5-E192-5EBE9A6EB998{}",params_str_t.get(36..).unwrap());
+                    let cmd_cstr = CString::new(cmd_s)?;
+                    let params_cstr = CString::new(params_str)?;
+                    extern "system" fn callback(ctx:*mut Option<String>,ret_cstr:*const c_char,retcode:c_int) {
+                        let s = unsafe { CStr::from_ptr(ret_cstr) }.to_str().unwrap().to_owned();   
+                        if retcode == 0 {
+                            let s = unsafe { CStr::from_ptr(ret_cstr) }.to_str().unwrap().to_owned();
+                            unsafe {
+                                *ctx = Some(s);
+                            }
+                        } else {
+                            unsafe {
+                                *ctx = Some("".to_owned());
+                            }
+                            cq_add_log_w(&format!("err,retcode:{retcode},{s}")).unwrap();
+                        }
+                    }
+                    let call_cmd_fun = call_cmd_fun_rst.unwrap();
+                    //unsafe{
+                        call_cmd_fun(&mut *libret,cmd_cstr.as_ptr(),params_cstr.as_ptr(),callback);
+                    //}
+                   
+                }
+            }
+        }
+        if libret.is_some() {
+            let ret = (*libret).unwrap();
+            if ret.starts_with("12331549-6D26-68A5-E192-5EBE9A6EB998"){
+                return Ok(format!("{}{}",crate::REDLANG_UUID.to_string(),ret.get(36..).unwrap()));
+            }else{
+                return Ok(ret);
+            }
+        }
+
         // 执行核心命令与拓展命令
         let exret;
         {
@@ -1848,7 +1906,11 @@ impl RedLang {
                 None => None,
             };
         }
-        
+
+        if let Some(v) = exret{
+            return Ok(v);
+        }
+
         if let Some(v) = exret{
             ret_str = v;
         } else {
@@ -1910,9 +1972,9 @@ impl RedLang {
         }
         return Ok(content2);
     }
-    fn parse_arr<'a>(arr_data: &'a str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {
+    pub fn parse_arr2<'a>(arr_data: &'a str,uuid:&str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {
         let err_str = "不能获得数组类型";
-        if !arr_data.starts_with(&crate::REDLANG_UUID.to_string()) {
+        if !arr_data.starts_with(uuid) {
             return Err(RedLang::make_err(err_str));
         }
         let tp = arr_data.get(36..37).ok_or(err_str)?;
@@ -1935,6 +1997,9 @@ impl RedLang {
             arr = arr.get(spos_num + 1 + num..).ok_or(err_str)?;
         }
         return Ok(ret_arr);
+    }
+    fn parse_arr<'a>(arr_data: &'a str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {
+        Self::parse_arr2(arr_data,&crate::REDLANG_UUID.to_string())
     }
     pub fn parse_obj(obj_data: &str) -> Result<BTreeMap<String,String>, Box<dyn std::error::Error>> {
         let err_str = "不能获得对象类型";
