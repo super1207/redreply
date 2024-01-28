@@ -352,7 +352,7 @@ pub fn get_random() -> Result<usize, getrandom::Error> {
     getrandom::getrandom(&mut rand_buf)?;
     let mut num = 0usize;
     for i in 0..std::mem::size_of::<usize>() {
-        num += (num << 8) + (rand_buf[i] as usize);
+        num = (num << 8) + (rand_buf[i] as usize);
     }
     Ok(num)
 }
