@@ -1843,10 +1843,9 @@ impl RedLang {
         // 执行三方命令
         let mut libret: Box<Option<String>> = Box::new(None);
         {
-            let cmd_s = cmd.to_owned();
             let mut lib_ptr_opt = None;
             for (_ac,plus) in &*crate::G_LIB_MAP.read().unwrap() {
-                if plus.regist_fun.contains(&cmd_s) {
+                if plus.regist_fun.contains(cmd) {
                     lib_ptr_opt = Some(plus.lib.clone());
                     break;
                 }
@@ -1863,7 +1862,7 @@ impl RedLang {
                     let bind = fun_params_t.iter().map(|x|x.as_str()).collect();
                     let params_str_t = self.build_arr(bind);
                     let params_str = format!("12331549-6D26-68A5-E192-5EBE9A6EB998{}",params_str_t.get(36..).unwrap());
-                    let cmd_cstr = CString::new(cmd_s)?;
+                    let cmd_cstr = CString::new(cmd)?;
                     let params_cstr = CString::new(params_str)?;
                     extern "system" fn callback(ctx:*mut Option<String>,ret_cstr:*const c_char,retcode:c_int) {
                         let s = unsafe { CStr::from_ptr(ret_cstr) }.to_str().unwrap().to_owned();   
@@ -1880,9 +1879,7 @@ impl RedLang {
                         }
                     }
                     let call_cmd_fun = call_cmd_fun_rst.unwrap();
-                    //unsafe{
-                        call_cmd_fun(&mut *libret,cmd_cstr.as_ptr(),params_cstr.as_ptr(),callback);
-                    //}
+                    call_cmd_fun(&mut *libret,cmd_cstr.as_ptr(),params_cstr.as_ptr(),callback);
                    
                 }
             }

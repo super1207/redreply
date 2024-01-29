@@ -1,11 +1,10 @@
-use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, env::current_exe, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
+use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
 
-use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1, cq_add_log_w}, mytool::{read_json_str, cq_params_encode, cq_text_encode}, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC,G_SCRIPT_RELATE_MSG, ScriptRelatMsg, RT_PTR};
+use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::{read_json_str, cq_params_encode, cq_text_encode}, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC,G_SCRIPT_RELATE_MSG, ScriptRelatMsg};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
-use crate::redlang::exfun::http_post;
 pub fn get_app_dir(pkg_name:&str) -> Result<String, Box<dyn std::error::Error>> {
     let app_dir;
         if pkg_name == "" {
@@ -312,18 +311,10 @@ pub fn init_cq_ex_fun_map() {
                     ret = format!("[CQ:image,file={}]",cq_params_encode(&pic));
                 }
             }else{
-                if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
-                    let path = Path::new(&pic);
-                    let bin = std::fs::read(path)?;
-                    let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
-                    ret = format!("[CQ:image,file=base64://{}]",b64_str);
-                }else{
-                    let path_str = format!("{}\\data\\image\\{}",current_exe()?.parent().ok_or("无法获取当前exe目录")?.to_string_lossy(),&pic);
-                    let path = Path::new(&path_str);
-                    let bin = std::fs::read(path)?;
-                    let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
-                    ret = format!("[CQ:image,file=base64://{}]",b64_str);
-                }
+                let path = Path::new(&pic);
+                let bin = std::fs::read(path)?;
+                let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
+                ret = format!("[CQ:image,file=base64://{}]",b64_str);
             }
         }
         return Ok(Some(ret));
@@ -345,18 +336,10 @@ pub fn init_cq_ex_fun_map() {
                     ret = format!("[CQ:record,file={}]",cq_params_encode(&pic));
                 }
             }else{
-                if pic.len() > 2 && pic.get(1..2).ok_or("")? == ":" {
-                    let path = Path::new(&pic);
-                    let bin = std::fs::read(path)?;
-                    let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
-                    ret = format!("[CQ:record,file=base64://{}]",b64_str);
-                }else{
-                    let path_str = format!("{}\\data\\record\\{}",current_exe()?.parent().ok_or("无法获取当前exe目录")?.to_string_lossy(),&pic);
-                    let path = Path::new(&path_str);
-                    let bin = std::fs::read(path)?;
-                    let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
-                    ret = format!("[CQ:record,file=base64://{}]",b64_str);
-                }
+                let path = Path::new(&pic);
+                let bin = std::fs::read(path)?;
+                let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
+                ret = format!("[CQ:record,file=base64://{}]",b64_str);
             }
         }
         return Ok(Some(ret));
