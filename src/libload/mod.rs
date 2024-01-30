@@ -31,9 +31,9 @@ pub fn init_lib() -> Result<(), Box<dyn std::error::Error>> {
             }
             let file_path = path.to_str().ok_or("获取目录文件异常")?.to_owned();
             unsafe {
-                let lib = Arc::new(libloading::os::windows::Library::new(path)?);
+                let lib = Arc::new(libloading::Library::new(path)?);
                 // 检查版本号
-                let api_version_fun_rst = lib.get::<libloading::os::windows::Symbol<unsafe extern "system" fn(ac:c_int) -> c_int>>(b"redreply_api_version");
+                let api_version_fun_rst = lib.get::<libloading::Symbol<unsafe extern "system" fn(ac:c_int) -> c_int>>(b"redreply_api_version");
                 if api_version_fun_rst.is_err() {
                     continue;
                 }
@@ -57,7 +57,7 @@ pub fn init_lib() -> Result<(), Box<dyn std::error::Error>> {
                 }
                 
                 // 注册命令
-                let regist_fun_rst = lib.get::<libloading::os::windows::Symbol<unsafe extern "system" fn(*const c_int,callback: extern "system" fn (*const c_int,*const c_char))>>(b"redreply_regist_cmd");
+                let regist_fun_rst = lib.get::<libloading::Symbol<unsafe extern "system" fn(*const c_int,callback: extern "system" fn (*const c_int,*const c_char))>>(b"redreply_regist_cmd");
                 extern "system" fn callback(ac_ptr:*const c_int,cmdarr:*const c_char) {
                     let ac = unsafe { *ac_ptr };
                     let cmdarr_cstr = unsafe { CStr::from_ptr(cmdarr) };

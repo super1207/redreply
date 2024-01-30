@@ -332,7 +332,7 @@ async fn send_qqgroup_msg(self_t:&SelfData,group_id:&str,to_reply_id:&str,passiv
             id += &api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
             set_msg_seq(self_t,passive_id,msg_seq)?;
         }
-        // 再发送图片
+        // 再发送图片、语音、视频、文件
         for img_info in &qq_msg_node.img_infos {
             msg_seq += 1;
             let json_data = serde_json::json!({

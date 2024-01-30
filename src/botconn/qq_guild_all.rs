@@ -245,6 +245,50 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
             }
         }
+        else if tp == "video" {
+            let file = it.get("data").ok_or("data not found")?.get("file").ok_or("file not found")?.as_str().ok_or("file not a string")?;
+            if file.starts_with("http://") ||  file.starts_with("https://") {
+                let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/groups/{group_id}/files"))?;
+                let client = reqwest::Client::builder().no_proxy().build()?;
+                let json_data = serde_json::json!({
+                    "file_type":2, // 视频
+                    "url":file,
+                    "srv_send_msg":false
+                });
+                let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
+                req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+                req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+                req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+                let ret = client.execute(req).await?;
+                let ret_str =  ret.text().await?; 
+                let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
+                crate::cqapi::cq_add_log(format!("接收qq guild API数据:{}", json_val.to_string()).as_str()).unwrap();
+                msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+            }
+        }
+        else if tp == "file" {
+            let file = it.get("data").ok_or("data not found")?.get("file").ok_or("file not found")?.as_str().ok_or("file not a string")?;
+            if file.starts_with("http://") ||  file.starts_with("https://") {
+                let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/groups/{group_id}/files"))?;
+                let client = reqwest::Client::builder().no_proxy().build()?;
+                let json_data = serde_json::json!({
+                    "file_type":4, // 文件（暂不可用）
+                    "url":file,
+                    "srv_send_msg":false
+                });
+                let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
+                req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+                req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+                req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+                let ret = client.execute(req).await?;
+                let ret_str =  ret.text().await?; 
+                let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
+                crate::cqapi::cq_add_log(format!("接收qq guild API数据:{}", json_val.to_string()).as_str()).unwrap();
+                msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+            }
+        }
         else if tp == "qmarkdown" {
             let markdown_data = it.get("data").ok_or("data not found")?.get("data").ok_or("markdown data not found")?.as_str().ok_or("markdown data not a string")?;
             let b64_str = markdown_data.split_at(9).1;

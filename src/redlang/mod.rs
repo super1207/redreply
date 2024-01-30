@@ -2,7 +2,7 @@ use std::{any::Any, cell::RefCell, collections::{HashMap, BTreeMap, HashSet, Vec
 use encoding::Encoding;
 
 use crate::{G_CONST_MAP, CLEAR_UUID, cqevent::do_script, cqapi::cq_add_log_w, G_LOCK};
-use libloading::os::windows::Symbol;
+use libloading::Symbol;
 
 pub mod exfun;
 pub(crate) mod cqexfun;

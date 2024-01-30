@@ -62,7 +62,7 @@ pub struct ScriptRelatMsg {
 }
 
 pub struct LibStruct {
-    pub lib:Arc<libloading::os::windows::Library>,
+    pub lib:Arc<libloading::Library>,
     pub path:String,
     pub regist_fun:HashSet<String>,
     pub ac:c_int
