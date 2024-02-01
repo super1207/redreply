@@ -25,7 +25,7 @@ pub fn get_history_log() -> VecDeque<String> {
 }
 
 // 获取临时目录，绝对路径，末尾有'\',utf8编码
-pub fn get_tmp_dir() -> Result<String, Box<dyn std::error::Error>> {
+pub fn get_tmp_dir() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let lib_path = cq_get_app_directory1()? + "tmp";
     std::fs::create_dir_all(&lib_path)?;
     let path_str = format!("{}{}",lib_path,std::path::MAIN_SEPARATOR.to_string());
@@ -34,7 +34,7 @@ pub fn get_tmp_dir() -> Result<String, Box<dyn std::error::Error>> {
 
 
 // 获取插件的目录，绝对路径，末尾有'\',utf8编码
-pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error>> {
+pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let curexedir = std::env::current_exe()?;
     let curdir = curexedir.parent().ok_or("无法获得当前可执行文件的父目录")?; 
     let path = curdir.join("plus_dir");
@@ -44,7 +44,7 @@ pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error>> {
 }
 
 // 获取应用目录，绝对路径，末尾有'\',utf8编码
-pub fn cq_get_app_directory2() -> Result<String, Box<dyn std::error::Error>> {
+pub fn cq_get_app_directory2() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let curexedir = std::env::current_exe()?;
     let curdir = curexedir.parent().ok_or("无法获得当前可执行文件的父目录")?; 
     let path = curdir.join("plus_dir").join("default_pkg_dir");

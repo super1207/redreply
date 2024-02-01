@@ -45,9 +45,8 @@ fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result<(), 
 }
 
 // 处理私聊事件
-pub fn do_private_msg(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result<i32, Box<dyn std::error::Error>> {
+pub fn do_private_msg(root: &serde_json::Value,ban_pkgs:&HashSet<String>) {
     if let Err(e) = do_redlang(&root,ban_pkgs) {
         cq_add_log_w(format!("err in do_private_msg:do_redlang:{}", e.to_string()).as_str()).unwrap();
     }
-    Ok(0)
 }

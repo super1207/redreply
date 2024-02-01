@@ -1,4 +1,4 @@
-use std::{sync::{atomic::AtomicBool, Arc, RwLock}, collections::HashMap, str::FromStr};
+use std::{sync::{atomic::AtomicBool, Arc, RwLock}, collections::{HashMap, HashSet}, str::FromStr};
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, SinkExt};
@@ -72,6 +72,39 @@ impl OneBot11Connect {
     }
 }
 
+
+
+
+fn change_id_to_str(root:&mut serde_json::Value){
+    lazy_static! {
+        static ref ID_SET:HashSet<String> = {
+            let mut st = HashSet::new();
+            st.insert("target_id".to_owned());
+            st.insert("user_id".to_owned());
+            st.insert("group_id".to_owned());
+            st.insert("self_id".to_owned());
+            st.insert("message_id".to_owned());
+            st
+        };
+
+
+    }
+    if root.is_object() {
+        for (k,v) in root.as_object_mut().unwrap() {
+            if ID_SET.contains(k) {
+                if v.is_i64() {
+                    (*v) = serde_json::to_value(v.as_i64().unwrap().to_string()).unwrap();
+                }
+            }else if v.is_array() || v.is_object() {
+                change_id_to_str(v);
+            }
+        }
+    }else if root.is_array() {
+        for v in root.as_array_mut().unwrap() {
+            change_id_to_str(v);
+        }
+    }
+}
 
 
 #[async_trait]
@@ -163,6 +196,8 @@ impl BotConnectTrait for OneBot11Connect {
                         }
                         let json_obj = json_dat.as_object_mut().unwrap();
                         json_obj.insert("platform".to_string(), serde_json::to_value("onebot11").unwrap());
+                        // 将ID转换为字符串
+                        change_id_to_str(&mut json_dat);
                         tokio::spawn(async move {
                             if post_type == "" { // 是api回复
                                 let tx;

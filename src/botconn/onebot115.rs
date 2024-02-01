@@ -2,7 +2,6 @@ use std::{sync::{atomic::AtomicBool, Arc, RwLock}, str::FromStr};
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, SinkExt};
-use hyper::header::HeaderValue;
 use tokio_tungstenite::{tungstenite, connect_async};
 
 use crate::{cqapi::cq_add_log_w, mytool::read_json_str};
@@ -116,7 +115,7 @@ impl BotConnectTrait for OneBot115Connect {
         let mut request = tungstenite::client::IntoClientRequest::into_client_request(url)?;
         let mp = crate::httpevent::get_params_from_uri(&hyper::Uri::from_str(&self.url)?);
         if let Some(access_token) = mp.get("access_token") {
-            request.headers_mut().insert("Authorization", HeaderValue::from_str(&format!("Bearer {}",access_token)).unwrap());
+            request.headers_mut().insert("Authorization", tungstenite::http::HeaderValue::from_str(&format!("Bearer {}",access_token)).unwrap());
         }
         let ws_rst = connect_async(request).await?;
         let (mut write_half,mut read_halt) = ws_rst.0.split();

@@ -1,9 +1,15 @@
+use std::io::Read;
 use std::{str::FromStr, collections::BTreeMap};
+use http_body_util::BodyExt;
 use hyper::http::{HeaderValue, HeaderName};
+use tokio_util::bytes::Buf;
 use crate::RT_PTR;
 use crate::cqapi::cq_add_log_w;
 use crate::{redlang::RedLang, read_code_cache};
+use hyper::body::Bytes;
 
+type GenericError = Box<dyn std::error::Error + Send + Sync>;
+type BoxBody = http_body_util::combinators::BoxBody<Bytes,GenericError>;
 
 fn get_script_info<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'a str,&'a str,&'a str,&'a str,&'a str), Box<dyn std::error::Error>>{
     let pkg_name_opt = script_json.get("pkg_name");
@@ -52,7 +58,7 @@ pub fn get_params_from_uri(uri:&hyper::Uri) -> BTreeMap<String,String> {
     ret_map
 }
 
-pub fn do_http_event(mut req:hyper::Request<hyper::Body>,can_write:bool,can_read:bool) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error>> {
+pub fn do_http_event(req:hyper::Request<hyper::body::Incoming>,can_write:bool,can_read:bool) -> Result<hyper::Response<BoxBody>, Box<dyn std::error::Error>> {
      // 获取pkg_name和pkg_key
     let url_path = req.uri().path();
     let true_url = url_path.get(5..).unwrap();
@@ -78,10 +84,19 @@ pub fn do_http_event(mut req:hyper::Request<hyper::Body>,can_write:bool,can_read
     RT_PTR.spawn(async move {
         let ret = body_rx1.recv().await;
         if ret.is_some() {
-            let bdy = req.body_mut();
-            let bt_rst: Result<hyper::body::Bytes, hyper::Error> = hyper::body::to_bytes(bdy).await;
+
+            let bt_rst = req.collect().await;
             if let Ok(bt) = bt_rst {
-                let _foo = body_tx2.send(bt.to_vec()).await;
+                let mut body_reader = bt.aggregate().reader();
+                let mut body = Vec::new();
+                let bt2_rst = body_reader.read_to_end(&mut body);
+                if bt2_rst.is_err() {
+                    cq_add_log_w(&format!("获取访问体失败:{bt2_rst:?}")).unwrap();
+                    let _foo = body_tx2.send(vec![]).await;
+                }else {
+                    let _foo = body_tx2.send(body).await;
+                }
+                
             }else {
                 cq_add_log_w(&format!("获取访问体失败:{bt_rst:?}")).unwrap();
                 let _foo = body_tx2.send(vec![]).await;
@@ -110,13 +125,13 @@ pub fn do_http_event(mut req:hyper::Request<hyper::Body>,can_write:bool,can_read
             rl.script_name = name.to_owned();
             let rl_ret = crate::cqevent::do_script(&mut rl,code)?;
             let mut http_header = BTreeMap::new();
-            let mut res:hyper::Response<hyper::Body>;
+            let mut res:hyper::Response<BoxBody>;
             if rl.get_type(&rl_ret)? == "字节集" {
                 http_header.insert("Content-Type", "application/octet-stream");
-                res = hyper::Response::new(hyper::Body::from(RedLang::parse_bin(&rl_ret)?));
+                res = hyper::Response::new(crate::httpserver::full(RedLang::parse_bin(&rl_ret)?));
             } else {
                 http_header.insert("Content-Type", "text/html; charset=utf-8");
-                res = hyper::Response::new(hyper::Body::from(rl_ret));
+                res = hyper::Response::new(crate::httpserver::full(rl_ret));
             }
             let http_header_str = rl.get_coremap("网络-返回头")?;
             if http_header_str != "" {
@@ -131,7 +146,7 @@ pub fn do_http_event(mut req:hyper::Request<hyper::Body>,can_write:bool,can_read
             return Ok(res);
         }
     }
-    let mut res:hyper::Response<hyper::Body> = hyper::Response::new(hyper::Body::from("api not found"));
+    let mut res:hyper::Response<BoxBody> = hyper::Response::new(crate::httpserver::full("api not found"));
     res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
     Ok(res)
 }

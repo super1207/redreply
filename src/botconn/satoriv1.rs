@@ -2,7 +2,6 @@ use std::{sync::{atomic::AtomicBool, Arc, RwLock}, str::FromStr, collections::Ha
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, SinkExt};
-use hyper::header::{HeaderValue, HeaderName};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{tungstenite, connect_async};
 
@@ -32,11 +31,11 @@ async fn http_post(url:&str,platform:&str,self_id:&str,token:&str,json_data:&ser
     let uri = reqwest::Url::from_str(url)?;
     client = reqwest::Client::builder().no_proxy().build()?;
     let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
-    req.headers_mut().append(HeaderName::from_str("X-Platform")?, HeaderValue::from_str(platform)?);
-    req.headers_mut().append(HeaderName::from_str("X-Self-ID")?, HeaderValue::from_str(self_id)?);
-    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Platform")?, reqwest::header::HeaderValue::from_str(platform)?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Self-ID")?, reqwest::header::HeaderValue::from_str(self_id)?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
     if token != "" {
-        req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("Bearer {}",token))?);
+        req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("Bearer {}",token))?);
     }
     let ret = client.execute(req).await?;
     let ret_str =  ret.text().await?;

@@ -27,8 +27,6 @@
 
 use std::{sync::Weak, str::FromStr, time::SystemTime};
 
-use hyper::header::{HeaderName, HeaderValue};
-
 use crate::{mytool::{read_json_obj_or_null, read_json_str, read_json_or_default, cq_text_encode, cq_params_encode, str_msg_to_arr}, cqapi::cq_add_log_w};
 
 #[derive(PartialEq)]
@@ -185,10 +183,10 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                         "srv_send_msg":false
                     });
                     let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
-                    req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-                    req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-                    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-                    req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+                    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+                    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+                    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+                    req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
                     let ret = client.execute(req).await?;
                     let ret_str =  ret.text().await?; 
                     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
@@ -234,10 +232,10 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                     "srv_send_msg":false
                 });
                 let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
-                req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-                req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-                req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-                req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
                 let ret = client.execute(req).await?;
                 let ret_str =  ret.text().await?; 
                 let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
@@ -256,10 +254,10 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                     "srv_send_msg":false
                 });
                 let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
-                req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-                req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-                req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-                req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
                 let ret = client.execute(req).await?;
                 let ret_str =  ret.text().await?; 
                 let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
@@ -278,10 +276,10 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                     "srv_send_msg":false
                 });
                 let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
-                req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-                req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-                req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-                req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
                 let ret = client.execute(req).await?;
                 let ret_str =  ret.text().await?; 
                 let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
@@ -355,7 +353,7 @@ pub async fn token_refresh(appid:&str,client_secret:&str) -> Result<AccessTokenS
         "clientSecret":client_secret
     });
     let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
-    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
     let ret = client.execute(req).await?;
     let ret_str =  ret.text().await?;
     // println!("token_refresh:{}",ret_str);
@@ -524,8 +522,8 @@ pub async fn get_gateway(access_token:&str,appid:&str) -> Result<String, Box<dyn
     let uri = reqwest::Url::from_str("https://api.sgroup.qq.com/gateway")?;
     let client = reqwest::Client::builder().no_proxy().build()?;
     let mut req = client.get(uri).build()?;
-    req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {access_token}"))?);
-    req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(appid)?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {access_token}"))?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(appid)?);
     let ret = client.execute(req).await?;
     let ret_str =  ret.text().await?;
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
@@ -573,10 +571,10 @@ pub async fn do_qq_json_post(self_t:&SelfData,path:&str,json:serde_json::Value) 
     let client = reqwest::Client::builder().no_proxy().build()?;
     let uri= reqwest::Url::from_str(&format!("https://api.sgroup.qq.com{path}"))?;
     let mut req = client.post(uri).body(reqwest::Body::from(json.to_string())).build()?;
-    req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-    req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-    req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
     let ret = client.execute(req).await?;
     let ret_str =  ret.text().await?; 
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
@@ -698,10 +696,10 @@ pub async fn do_qq_form_post(self_t:&SelfData,path:&str,form:reqwest::multipart:
     let client = reqwest::Client::builder().no_proxy().build()?;
     let uri= reqwest::Url::from_str(&format!("https://api.sgroup.qq.com{path}"))?;
     let mut req = client.post(uri.to_owned()).multipart(form).build()?;
-    req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-    req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("multipart/form-data")?);
-    req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("multipart/form-data")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
     let ret = client.execute(req).await?;
     let ret_str =  ret.text().await?; 
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
@@ -791,10 +789,10 @@ pub async fn get_login_info(self_t:&SelfData) -> Result<serde_json::Value, Box<d
     //println!("uri:{}", &uri);
     let client = reqwest::Client::builder().no_proxy().build()?;
     let mut req = client.get(uri).build()?;
-    req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-    req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-    req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
     //crate::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
     let ret = client.execute(req).await?;
     let ret_str =  ret.text().await?; 
@@ -830,10 +828,10 @@ pub async fn get_group_list(self_t:&SelfData,json:&serde_json::Value,passive_id:
     //println!("uri:{}", &uri);
     let client = reqwest::Client::builder().no_proxy().build()?;
     let mut req = client.get(uri).build()?;
-    req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-    req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-    req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
     //crate::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
     let ret = client.execute(req).await?;
     let ret_str =  ret.text().await?; 
@@ -883,10 +881,10 @@ pub async fn get_stranger_info(self_t:&SelfData,json:&serde_json::Value,passive_
     //println!("uri:{}", &uri);
     let client = reqwest::Client::builder().no_proxy().build()?;
     let mut req = client.get(uri).build()?;
-    req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-    req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-    req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
     //crate::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
     let ret = client.execute(req).await?;
     let ret_str =  ret.text().await?; 
@@ -922,10 +920,10 @@ pub async fn delete_msg(self_t:&SelfData,json:&serde_json::Value) -> Result<serd
         let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/channels/{channel_id}/messages/{message_id}?hidetip=false"))?;
         let client = reqwest::Client::builder().no_proxy().build()?;
         let mut req = client.delete(uri).build()?;
-        req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-        req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-        req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-        req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+        req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+        req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+        req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+        req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
         let ret = client.execute(req).await?;
         if ret.status() != 200 {
             let ret_str =  ret.text().await?; 
@@ -940,10 +938,10 @@ pub async fn delete_msg(self_t:&SelfData,json:&serde_json::Value) -> Result<serd
             let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/dms/{guild_id}/messages/{message_id}?hidetip=false"))?;
             let client = reqwest::Client::builder().no_proxy().build()?;
             let mut req = client.delete(uri).build()?;
-            req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-            req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-            req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-            req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+            req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+            req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+            req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+            req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
             let ret = client.execute(req).await?;
             if ret.status() != 200 {
                 let ret_str =  ret.text().await?; 
@@ -956,10 +954,10 @@ pub async fn delete_msg(self_t:&SelfData,json:&serde_json::Value) -> Result<serd
                 let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/dms/{guild_id}/messages/{message_id}?hidetip=false"))?;
                 let client = reqwest::Client::builder().no_proxy().build()?;
                 let mut req = client.delete(uri).build()?;
-                req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-                req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-                req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-                req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
                 let ret = client.execute(req).await?;
                 if ret.status() != 200 {
                     let ret_str =  ret.text().await?; 
@@ -993,10 +991,10 @@ pub async fn get_group_member_info(self_t:&SelfData,json:&serde_json::Value,_pas
     let client = reqwest::Client::builder().no_proxy().build()?;
     let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/channels/{}",group_id))?;
     let mut req = client.get(uri).build()?;
-    req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-    req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-    req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
     let ret = client.execute(req).await?;
     let ret_str =  ret.text().await?; 
     let channel_info: serde_json::Value = serde_json::from_str(&ret_str)?;
@@ -1006,10 +1004,10 @@ pub async fn get_group_member_info(self_t:&SelfData,json:&serde_json::Value,_pas
     //println!("uri:{}", &uri);
     let client = reqwest::Client::builder().no_proxy().build()?;
     let mut req = client.get(uri).build()?;
-    req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-    req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-    req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
     //crate::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
     let ret = client.execute(req).await?;
     let ret_str =  ret.text().await?; 
@@ -1067,10 +1065,10 @@ pub async fn set_group_ban(self_t:&SelfData,json:&serde_json::Value) -> Result<s
     let client = reqwest::Client::builder().no_proxy().build()?;
     let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/channels/{}",group_id))?;
     let mut req = client.get(uri).build()?;
-    req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-    req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-    req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
     let ret = client.execute(req).await?;
     let ret_str =  ret.text().await?; 
     let channel_info: serde_json::Value = serde_json::from_str(&ret_str)?;
@@ -1082,10 +1080,10 @@ pub async fn set_group_ban(self_t:&SelfData,json:&serde_json::Value) -> Result<s
     let mut req = client.patch(uri).body(serde_json::json!({
         "mute_seconds":duration
     }).to_string()).build()?;
-    req.headers_mut().append(HeaderName::from_str("Authorization")?, HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-    req.headers_mut().append(HeaderName::from_str("X-Union-Appid")?, HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-    req.headers_mut().append(HeaderName::from_str("Content-Type")?, HeaderValue::from_str("application/json")?);
-    req.headers_mut().append(HeaderName::from_str("Accept")?, HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+    req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
     //crate::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
     let ret = client.execute(req).await?;
     if ret.status() != 204 {

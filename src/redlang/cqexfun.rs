@@ -8,9 +8,9 @@ const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new
 pub fn get_app_dir(pkg_name:&str) -> Result<String, Box<dyn std::error::Error>> {
     let app_dir;
         if pkg_name == "" {
-            app_dir = cq_get_app_directory2()?;
+            app_dir = cq_get_app_directory2().unwrap();
         }else{
-            let plus_dir_str = cq_get_app_directory1()?;
+            let plus_dir_str = cq_get_app_directory1().unwrap();
             let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
             app_dir = pkg_dir.join(pkg_name).to_str().ok_or("获得应用目录失败")?.to_owned() + &std::path::MAIN_SEPARATOR.to_string();
         }

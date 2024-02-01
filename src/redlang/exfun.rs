@@ -23,7 +23,7 @@ use imageproc::geometric_transformations::Interpolation;
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
 
-pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,proxy_str:&str,is_post:bool) -> Result<(Vec<u8>,String), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,proxy_str:&str,method:&str) -> Result<(Vec<u8>,String), Box<dyn std::error::Error + Send + Sync>> {
     let client;
     let uri = reqwest::Url::from_str(url)?;
     if proxy_str == "" {
@@ -43,10 +43,20 @@ pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,p
     }
     
     let mut req;
-    if is_post {
+    if method == "POST" {
         req = client.post(uri).body(reqwest::Body::from(data)).build()?;
+    }else if method == "GET" {
+        req = client.get(uri).body(reqwest::Body::from(data)).build()?;
+    }else if method == "PUT" {
+        req = client.put(uri).body(reqwest::Body::from(data)).build()?;
+    }else if method == "PATCH" {
+        req = client.patch(uri).body(reqwest::Body::from(data)).build()?;
+    }else if method == "DELETE" {
+        req = client.delete(uri).body(reqwest::Body::from(data)).build()?;
+    }else if method == "HEAD" {
+        req = client.head(uri).body(reqwest::Body::from(data)).build()?;
     }else {
-        req = client.get(uri).build()?;
+        return Err(format!("不支持的访问方法:{method}").into());
     }
     for (key,val) in headers {
         req.headers_mut().append(HeaderName::from_str(key)?, HeaderValue::from_str(val)?);
@@ -125,7 +135,7 @@ pub fn init_ex_fun_map() {
             let timeout = timeout_str.parse::<u64>()?;
             let content = RT_PTR.block_on(async { 
                 let ret = tokio::select! {
-                    val_rst = http_post(url,Vec::new(),&http_header,proxy,false) => {
+                    val_rst = http_post(url,Vec::new(),&http_header,proxy,"GET") => {
                         if let Ok(val) = val_rst {
                             val
                         } else {
@@ -153,8 +163,8 @@ pub fn init_ex_fun_map() {
             },
         }
     });
-    add_fun(vec!["POST访问"],|self_t,params|{
-        fn access(self_t:&mut RedLang,url:&str,data_t:&str) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    fn do_http(method:&str,self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        fn access(method:&str,self_t:&mut RedLang,url:&str,data_t:&str) -> Result<Option<String>, Box<dyn std::error::Error>> {
             let tp = self_t.get_type(&data_t)?;
             let data:Vec<u8>;
             if tp == "字节集" {
@@ -162,7 +172,7 @@ pub fn init_ex_fun_map() {
             }else if tp == "文本" {
                 data = data_t.as_bytes().to_vec();
             }else {
-                return Err(RedLang::make_err(&("不支持的post访问体类型:".to_owned()+&tp)));
+                return Err(RedLang::make_err(&("不支持的访问体类型:".to_owned()+&tp)));
             }
 
             let proxy = self_t.get_coremap("代理")?;
@@ -181,9 +191,10 @@ pub fn init_ex_fun_map() {
                 http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
             }
             let timeout = timeout_str.parse::<u64>()?;
+
             let content = RT_PTR.block_on(async { 
                 let ret = tokio::select! {
-                    val_rst = http_post(url,data,&http_header,proxy,true) => {
+                    val_rst = http_post(url,data,&http_header,proxy,method) => {
                         if let Ok(val) = val_rst {
                             val
                         } else {
@@ -192,7 +203,7 @@ pub fn init_ex_fun_map() {
                         }
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
-                        cq_add_log_w(&format!("POST访问:`{}`超时",url)).unwrap();
+                        cq_add_log_w(&format!("{}访问:`{}`超时",method,url)).unwrap();
                         (vec![],String::new())
                     }
                 };
@@ -204,13 +215,28 @@ pub fn init_ex_fun_map() {
         let url = self_t.get_param(params, 0)?;
         let data_t = self_t.get_param(params, 1)?;
         self_t.set_coremap("返回头","")?;
-        match access(self_t,&url,&data_t) {
+        match access(method,self_t,&url,&data_t) {
             Ok(ret) => Ok(ret),
             Err(err) => {
                 cq_add_log_w(&format!("{:?}",err)).unwrap();
                 Ok(Some(self_t.build_bin(vec![])))
             },
         }
+    }
+    add_fun(vec!["POST访问"],|self_t,params|{
+        do_http("POST", self_t, params)
+    });
+    add_fun(vec!["GET访问"],|self_t,params|{
+        do_http("POST", self_t, params)
+    });
+    add_fun(vec!["PUT访问"],|self_t,params|{
+        do_http("POST", self_t, params)
+    });
+    add_fun(vec!["PATCH访问"],|self_t,params|{
+        do_http("POST", self_t, params)
+    });
+    add_fun(vec!["DELETE访问"],|self_t,params|{
+        do_http("POST", self_t, params)
     });
     add_fun(vec!["设置访问头"],|self_t,params|{
         let http_header = self_t.get_coremap("访问头")?.to_string();
@@ -1573,7 +1599,11 @@ pub fn init_ex_fun_map() {
         let currdir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let output = if cfg!(target_os = "windows") {
             // cmd 的解析规则too复杂，我不想看了 https://learn.microsoft.com/zh-cn/windows-server/administration/windows-commands/cmd
-            let tmp_dir = get_tmp_dir()?;
+            let tmp_dir_rst = get_tmp_dir();
+            if tmp_dir_rst.is_err() {
+                return Err(format!("get_tmp_dir err:{:?}",tmp_dir_rst.err().unwrap()).into());
+            }
+            let tmp_dir = tmp_dir_rst.unwrap();
             let tmp_file = uuid::Uuid::new_v4().to_string() + ".cmd";
             let tmp_file_path = PathBuf::from_str(&tmp_dir)?.join(tmp_file);
             let mut gbk_cmd:Vec<u8> = vec![];
@@ -2329,7 +2359,7 @@ pub fn init_ex_fun_map() {
             let timeout = timeout_str.parse::<u64>()?;
             let content = RT_PTR.block_on(async { 
                 let ret = tokio::select! {
-                    val_rst = http_post(url,data,&http_header,proxy,true) => {
+                    val_rst = http_post(url,data,&http_header,proxy,"POST") => {
                         if let Ok(val) = val_rst {
                             val
                         } else {
@@ -2532,7 +2562,7 @@ def red_out(sw):
         let timeout = timeout_str.parse::<u64>()?;
         let content = RT_PTR.block_on(async { 
             let ret = tokio::select! {
-                val_rst = http_post(url,vec![],&http_header,proxy,false) => {
+                val_rst = http_post(url,vec![],&http_header,proxy,"GET") => {
                     if let Ok(val) = val_rst {
                         val
                     } else {

@@ -1,8 +1,8 @@
 use std::collections::HashMap;
+use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::thread;
-
 use crate::cqapi::{cq_get_app_directory1, get_history_log, cq_add_log};
 use crate::cqevent::do_script;
 use crate::httpevent::do_http_event;
@@ -11,11 +11,20 @@ use crate::{read_config, G_AUTO_CLOSE, CLEAR_UUID};
 use crate::redlang::RedLang;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 use futures_util::{SinkExt, StreamExt};
+use http_body_util::BodyExt;
+use hyper::body::Incoming;
 use hyper::http::HeaderValue;
-use hyper::server::conn::AddrStream;
-use hyper::service::make_service_fn;
+use hyper::service::service_fn;
+use hyper::Response;
 use serde_json::json;
-use net2::TcpBuilder;
+use tokio_util::bytes::Buf;
+use bytes::Bytes;
+use futures_util::TryStreamExt;
+
+
+type GenericError = Box<dyn std::error::Error + Send + Sync>;
+type BoxBody = http_body_util::combinators::BoxBody<Bytes,GenericError>;
+type Result<T> = std::result::Result<T, GenericError>;
 
 lazy_static! {
     static ref G_LOG_MAP:tokio::sync::RwLock<HashMap<String,tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(HashMap::new());
@@ -33,11 +42,11 @@ pub fn add_ws_log(log_msg:String) {
     });
 }
 
-async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:bool) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
+async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,can_read:bool) -> Result<hyper::Response<BoxBody>> {
     let url_path = request.uri().path();
     if url_path == "/get_code" {
         if !can_read {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
         match crate::read_code_cache() {
@@ -46,12 +55,12 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
                     "retcode":0,
                     "data":code
                 });
-                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+                let mut res = hyper::Response::new(full(ret.to_string()));
                 res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
                 Ok(res)
             },
             Err(err) => {
-                let mut res = hyper::Response::new(hyper::Body::from(err.to_string()));
+                let mut res = hyper::Response::new(full(err.to_string()));
                 *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
                 Ok(res)
             },
@@ -59,7 +68,7 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
     }
     else if url_path == "/read_one_pkg" {
         if !can_read {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
         let params = crate::httpevent::get_params_from_uri(request.uri());
@@ -75,12 +84,12 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
                     "retcode":0,
                     "data":code
                 });
-                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+                let mut res = hyper::Response::new(full(ret.to_string()));
                 res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
                 Ok(res)
             },
             Err(err) => {
-                let mut res = hyper::Response::new(hyper::Body::from(err.to_string()));
+                let mut res = hyper::Response::new(full(err.to_string()));
                 *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
                 Ok(res)
             },
@@ -88,7 +97,7 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
     }
     else if url_path == "/get_all_pkg_name" {
         if !can_read {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
         match crate::get_all_pkg_name_by_cache() {
@@ -97,19 +106,19 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
                     "retcode":0,
                     "data":code
                 });
-                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+                let mut res = hyper::Response::new(full(ret.to_string()));
                 res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
                 Ok(res)
             },
             Err(err) => {
-                let mut res = hyper::Response::new(hyper::Body::from(err.to_string()));
+                let mut res = hyper::Response::new(full(err.to_string()));
                 *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
                 Ok(res)
             },
         }
     }else if url_path == "/get_config" {
         if !can_read {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
         match crate::read_config() {
@@ -118,29 +127,29 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
                     "retcode":0,
                     "data":code
                 });
-                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+                let mut res = hyper::Response::new(full(ret.to_string()));
                 res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
                 Ok(res)
             },
             Err(err) => {
-                let mut res = hyper::Response::new(hyper::Body::from(err.to_string()));
+                let mut res = hyper::Response::new(full(err.to_string()));
                 *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
                 Ok(res)
             },
         }
     }else if url_path == "/set_ws_urls" {
         if can_write == false {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
-        let body = hyper::body::to_bytes(request.into_body()).await?;
-        let js:serde_json::Value = serde_json::from_slice(&body)?;
+        let body = request.collect().await?.aggregate().reader();
+        let js:serde_json::Value = serde_json::from_reader(body)?;
         match crate::set_ws_urls(js){
             Ok(_) => {
                 let ret = json!({
                     "retcode":0,
                 });
-                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+                let mut res = hyper::Response::new(full(ret.to_string()));
                 res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
                 Ok(res)
             },
@@ -148,7 +157,7 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
                 let ret = json!({
                     "retcode":-1,
                 });
-                let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+                let mut res = hyper::Response::new(full(ret.to_string()));
                 res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
                 Ok(res)
             },
@@ -156,11 +165,11 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
         
     }else if url_path == "/set_code" {
         if can_write == false {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
-        let body = hyper::body::to_bytes(request.into_body()).await?;
-        let js:serde_json::Value = serde_json::from_slice(&body)?;
+        let body = request.collect().await?.aggregate().reader();
+        let js:serde_json::Value = serde_json::from_reader(body)?;
         let (tx, rx) =  tokio::sync::oneshot::channel();
         tokio::task::spawn_blocking(move || {
             let rst = crate::save_code(&js.to_string());
@@ -184,17 +193,17 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
             }
         }).await?;
         let ret = rx.await?;
-        let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+        let mut res = hyper::Response::new(full(ret.to_string()));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)    
     }
     else if url_path == "/save_one_pkg" {
         if can_write == false {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
-        let body = hyper::body::to_bytes(request.into_body()).await?;
-        let js:serde_json::Value = serde_json::from_slice(&body)?;
+        let body = request.collect().await?.aggregate().reader();
+        let js:serde_json::Value = serde_json::from_reader(body)?;
         let (tx, rx) =  tokio::sync::oneshot::channel();
         tokio::task::spawn_blocking(move || {
             let rst = crate::save_one_pkg(&js.to_string());
@@ -218,17 +227,17 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
             }
         }).await?;
         let ret = rx.await?;
-        let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+        let mut res = hyper::Response::new(full(ret.to_string()));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)    
     }
     else if url_path == "/rename_one_pkg" {
         if can_write == false {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
-        let body = hyper::body::to_bytes(request.into_body()).await?;
-        let js:serde_json::Value = serde_json::from_slice(&body)?;
+        let body = request.collect().await?.aggregate().reader();
+        let js:serde_json::Value = serde_json::from_reader(body)?;
         let old_pkg_name = read_json_str(&js, "old_pkg_name");
         let new_pkg_name = read_json_str(&js, "new_pkg_name");
         let (tx, rx) =  tokio::sync::oneshot::channel();
@@ -254,17 +263,17 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
             }
         }).await?;
         let ret = rx.await?;
-        let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+        let mut res = hyper::Response::new(full(ret.to_string()));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)    
     }
     else if url_path == "/del_one_pkg" {
         if can_write == false {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
-        let body = hyper::body::to_bytes(request.into_body()).await?;
-        let js:serde_json::Value = serde_json::from_slice(&body)?;
+        let body = request.collect().await?.aggregate().reader();
+        let js:serde_json::Value = serde_json::from_reader(body)?;
         let pkg_name = read_json_str(&js, "pkg_name");
         let (tx, rx) =  tokio::sync::oneshot::channel();
         tokio::task::spawn_blocking(move || {
@@ -289,17 +298,17 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
             }
         }).await?;
         let ret = rx.await?;
-        let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+        let mut res = hyper::Response::new(full(ret.to_string()));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)    
     }
     else if url_path == "/run_code" {
         if can_write == false {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
-        let body = hyper::body::to_bytes(request.into_body()).await?;
-        let root:serde_json::Value = serde_json::from_slice(&body)?;
+        let body = request.collect().await?.aggregate().reader();
+        let root:serde_json::Value = serde_json::from_reader(body)?;
 
         let bot_id = read_json_str(&root, "bot_id");
         let platform = read_json_str(&root, "platform");
@@ -319,7 +328,7 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
                 cq_add_log_w(&format!("{}",err)).unwrap();
             }
         });
-        let mut res = hyper::Response::new(hyper::Body::from(serde_json::json!({
+        let mut res = hyper::Response::new(full(serde_json::json!({
             "retcode":0,
         }).to_string()));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
@@ -327,11 +336,11 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
     }
     else if url_path == "/run_code_and_ret" {
         if can_write == false {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
-        let body = hyper::body::to_bytes(request.into_body()).await?;
-        let root:serde_json::Value = serde_json::from_slice(&body)?;
+        let body = request.collect().await?.aggregate().reader();
+        let root:serde_json::Value = serde_json::from_reader(body)?;
 
         let bot_id = read_json_str(&root, "bot_id");
         let platform = read_json_str(&root, "platform");
@@ -377,39 +386,88 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
             }
         });
         let ret_str = rx.await?;
-        let mut res = hyper::Response::new(hyper::Body::from(ret_str));
+        let mut res = hyper::Response::new(full(ret_str));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)    
     }
     else if url_path == "/close" {
         if can_write == false {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
         cq_add_log_w("收到退出指令，正在退出").unwrap();
         crate::wait_for_quit();
     }else if url_path == "/get_version" {
         if !can_read {
-            let res = hyper::Response::new(hyper::Body::from("api not found"));
+            let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
         let ret = json!({
             "retcode":0,
             "data":crate::get_version()
         });
-        let mut res = hyper::Response::new(hyper::Body::from(ret.to_string()));
+        let mut res = hyper::Response::new(full(ret.to_string()));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)
     }else if url_path == "/login" {
         let body_len = request.headers().get("content-length").ok_or("/login 中没有content-length")?.to_str()?.parse::<usize>()?;
-        let mut res = hyper::Response::new(hyper::Body::from(vec![]));
+        let mut res = hyper::Response::new(full(vec![]));
         if body_len < 256 {
-            let body = hyper::body::to_bytes(request.into_body()).await?;
+            let mut body_reader = request.collect().await?.aggregate().reader();
+            let mut body = Vec::new();
+            body_reader.read_to_end(&mut body)?;
+            //let body = hyper::body::to_bytes(request.into_body()).await?;
             *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
             let pass_cookie = format!("{};Max-Age=31536000",String::from_utf8(body.to_vec())?);
             res.headers_mut().append(hyper::header::SET_COOKIE, HeaderValue::from_str(&pass_cookie)?);
         }
         res.headers_mut().insert("Location", HeaderValue::from_static("/index.html"));
+        Ok(res)
+    }
+    else if url_path == "/event" {
+        if can_write == false {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let mp = crate::httpevent::get_params_from_uri(request.uri());
+        let flag;
+        if let Some(f) = mp.get("flag") {
+            flag = f.as_str();
+        }else{
+            flag = "";
+        }
+        let ret_json = crate::openapi::get_event(flag);
+        let mut res = hyper::Response::new(full(ret_json.to_string()));
+        res.headers_mut().append(hyper::header::CONTENT_TYPE,HeaderValue::from_str("application/json")?);
+        Ok(res)
+    }
+    else if url_path == "/api" {
+        if can_write == false {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let whole_body = request.collect().await?.aggregate().reader();
+        let root:serde_json::Value = serde_json::from_reader(whole_body)?;
+        let platform = read_json_str(&root, "platform");
+        let self_id = read_json_str(&root, "self_id");
+        let passive_id = read_json_str(&root, "passive_id");
+        let (tx, rx) =  tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move ||{
+            let rst = crate::cqapi::cq_call_api(&platform,&self_id,&passive_id,&root.to_string());
+            if let Err(e) = rst {
+                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                let _ = tx.send(serde_json::json!({
+                    "retcode":-1,
+                    "data":format!("{e:?}")
+                }).to_string());
+            }else {
+                let ret = rst.unwrap();
+                let _ = tx.send(ret);
+            }
+        });
+        let ret = rx.await?;
+        let mut res = hyper::Response::new(full(ret));
+        res.headers_mut().append(hyper::header::CONTENT_TYPE,HeaderValue::from_str("application/json")?);
         Ok(res)
     }
     else if url_path.starts_with("/user") {
@@ -423,7 +481,7 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
                 }
             }else {
                 let err_str = format!("Error:{:?}",ret);
-                let mut res:hyper::Response<hyper::Body> = hyper::Response::new(hyper::Body::from(err_str));
+                let mut res = hyper::Response::new(full(err_str));
                 res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/html; charset=utf-8"));
                 let rst = tx.send(res);
                 if rst.is_err() {
@@ -432,23 +490,29 @@ async fn deal_api(request: hyper::Request<hyper::Body>,can_write:bool,can_read:b
             }
         }).await?;
         let ret = rx.await?;
-        Ok(ret)    
+        // let t = http_body_util::combinators::BoxBody::new(ret);
+        // let k = ret.map_err(|never| match never {});
+        Ok(ret)
     }
     else{
-        let res = hyper::Response::new(hyper::Body::from("api not found"));
+        let res = hyper::Response::new(full("api not found"));
         Ok(res)
     }
 }
 
-async fn deal_file(request: hyper::Request<hyper::Body>) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
+async fn deal_file(request: hyper::Request<hyper::body::Incoming>) -> Result<hyper::Response<BoxBody>> {
     let url_path = request.uri().path();
     let app_dir = cq_get_app_directory1().unwrap();
     let path = PathBuf::from(&app_dir);
     let path = path.join("webui");
     let url_path_t = url_path.replace("/", &std::path::MAIN_SEPARATOR.to_string());
     let file_path = path.join(url_path_t.get(1..).unwrap());
-    let file_buf = tokio::fs::read(&file_path).await?;
-    let mut res = hyper::Response::new(hyper::Body::from(file_buf));
+    let file = tokio::fs::File::open(file_path).await?;
+    let reader_stream = tokio_util::io::ReaderStream::new(file);
+    let stream_body = http_body_util::StreamBody::new(reader_stream.map_ok(hyper::body::Frame::data));
+    let boxed_body: http_body_util::combinators::BoxBody<tokio_util::bytes::Bytes, std::io::Error> = BodyExt::boxed(stream_body);
+    let kk = boxed_body.map_err(|e|Box::new(e) as Box<dyn std::error::Error + Send + Sync>).boxed();
+    let mut res = hyper::Response::new(kk);
     *res.status_mut() = hyper::StatusCode::OK;
     if url_path.ends_with(".html") {
         res.headers_mut().insert("Cache-Control", HeaderValue::from_static("max-age=300"));
@@ -474,7 +538,7 @@ async fn deal_file(request: hyper::Request<hyper::Body>) -> Result<hyper::Respon
     Ok(res)
 }
 /// 处理ws协议
-async fn serve_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tokio::sync::mpsc::Receiver<String>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn serve_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tokio::sync::mpsc::Receiver<String>) -> Result<()> {
     
     // 获得升级后的ws流
     let ws_stream = websocket.await?;
@@ -489,7 +553,7 @@ async fn serve_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tok
 
 
 /// 处理ws协议
-async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tokio::sync::mpsc::Receiver<String>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tokio::sync::mpsc::Receiver<String>) -> Result<()> {
     
     cq_add_log("connect to pyserver").unwrap();
 
@@ -511,7 +575,7 @@ async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:
         cq_add_log_w("serve send2 of python err").unwrap();
     });
 
-    async fn deal_msg(mut read_half:futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<hyper::upgrade::Upgraded>>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn deal_msg(mut read_half:futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>>) -> Result<()> {
         while let Some(msg_t) = read_half.next().await {
             {
                 let lk = G_PY_HANDER.read().await;
@@ -547,7 +611,7 @@ async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:
 }
 
 
-fn http_auth(request: &hyper::Request<hyper::Body>) -> Result<i32, Box<dyn std::error::Error>> {
+fn http_auth(request: &hyper::Request<Incoming>) -> Result<i32> {
     let web_pass_raw = crate::read_web_password()?;
     if web_pass_raw == "" {
         return Ok(2)
@@ -570,7 +634,7 @@ fn http_auth(request: &hyper::Request<hyper::Body>) -> Result<i32, Box<dyn std::
             return Ok(1)
         }
     }
-    return Err(RedLang::make_err("password invaild"));
+    return Err("password invaild".into());
 }
 
 
@@ -581,14 +645,19 @@ fn is_users_api(url_path:&str) -> bool {
     return false;
 }
 
-fn rout_to_login() -> hyper::Response<hyper::Body> {
-    let mut res = hyper::Response::new(hyper::Body::from(vec![]));
+fn rout_to_login() -> hyper::Response<BoxBody> {
+    let mut res = hyper::Response::new(full(vec![]));
     *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
     res.headers_mut().insert("Location", HeaderValue::from_static("/login.html"));
     return res;
 }
 
-async fn connect_handle(request: hyper::Request<hyper::Body>,addr: std::net::SocketAddr) -> Result<hyper::Response<hyper::Body>, Box<dyn std::error::Error + Send + Sync>> {
+pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody {
+    http_body_util::Full::new(chunk.into())
+        .map_err(|never| match never {})
+        .boxed()
+}
+async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local: bool) -> Result<Response<BoxBody>> {
     
     let url_path = request.uri().path();
 
@@ -606,7 +675,8 @@ async fn connect_handle(request: hyper::Request<hyper::Body>,addr: std::net::Soc
     if url_path == "/heartbeat" {
         let mut lk = G_AUTO_CLOSE.lock().unwrap();
         (*lk) = false;
-        let res = hyper::Response::new(hyper::Body::from("ok"));
+        
+        let res = hyper::Response::new(full("ok"));
         return Ok(res);
     }
 
@@ -614,7 +684,8 @@ async fn connect_handle(request: hyper::Request<hyper::Body>,addr: std::net::Soc
     // 获取身份信息
     let can_write;
     let can_read;
-    if !addr.ip().is_loopback() {
+    if !is_local {
+    // if !addr.ip().is_loopback() {
         let http_auth_rst = http_auth(&request);
         if http_auth_rst.is_err() {
             can_read = false;
@@ -640,13 +711,14 @@ async fn connect_handle(request: hyper::Request<hyper::Body>,addr: std::net::Soc
         }
     }
 
+
     // 升级ws协议
     if hyper_tungstenite::is_upgrade_request(&request) {
         if url_path == "/watch_log" {
 
             // 没有写权限不允许访问log
             if can_write == false {
-                let res = hyper::Response::new(hyper::Body::from("api not found"));
+                let res = hyper::Response::new(full("api not found"));
                 return Ok(res);
             }
 
@@ -673,11 +745,17 @@ async fn connect_handle(request: hyper::Request<hyper::Body>,addr: std::net::Soc
                 let mut lk = G_LOG_MAP.write().await;
                 lk.remove(&uid);
             });
-            return Ok(response);
+            let headers = response.headers();
+            let mut rrr = 
+                Response::builder()
+                .body(full("switching to websocket protocol"))?;
+            (*rrr.status_mut()) = response.status();
+            (*rrr.headers_mut()) = headers.to_owned();
+            return Ok(rrr);
         } else if url_path == "/pyserver" {
             // 没有写权限不允许访问pyserver
             if can_write == false {
-                let res = hyper::Response::new(hyper::Body::from("api not found"));
+                let res = hyper::Response::new(full("api not found"));
                 return Ok(res);
             }
             // ws协议升级返回
@@ -694,9 +772,16 @@ async fn connect_handle(request: hyper::Request<hyper::Body>,addr: std::net::Soc
                     cq_add_log_w(&format!("Error in websocket connection: {}", e)).unwrap();
                 }
             });
-            return Ok(response);
+            
+            let headers = response.headers();
+            let mut rrr = 
+                Response::builder()
+                .body(full("switching to websocket protocol"))?;
+            (*rrr.status_mut()) = response.status();
+            (*rrr.headers_mut()) = headers.to_owned();
+            return Ok(rrr);
         } else {
-            return Ok(hyper::Response::new(hyper::Body::from("broken http")));
+            return Ok(hyper::Response::new(full("broken http")));
         }
     }else {
         // 处理HTTP协议
@@ -706,12 +791,11 @@ async fn connect_handle(request: hyper::Request<hyper::Body>,addr: std::net::Soc
             if !can_read {
                 return Ok(rout_to_login());
             }
-            let mut res = hyper::Response::new(hyper::Body::from(vec![]));
+            let mut res = hyper::Response::new(full(vec![]));
             *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
             res.headers_mut().insert("Location", HeaderValue::from_static("/index.html"));
             return Ok(res);
-        }
-        if url_path == "/favicon.ico" {
+        } else if url_path == "/favicon.ico" {
             // 没有读权限不允许访问图标
             if !can_read {
                 return Ok(rout_to_login());
@@ -722,7 +806,7 @@ async fn connect_handle(request: hyper::Request<hyper::Body>,addr: std::net::Soc
             let url_path_t = "favicon.ico".to_owned();
             let file_path = path.join(url_path_t);
             let file_buf = tokio::fs::read(&file_path).await?;
-            let mut res = hyper::Response::new(hyper::Body::from(file_buf));
+            let mut res = hyper::Response::new(full(file_buf));
             res.headers_mut().insert("Content-Type", HeaderValue::from_static("image/x-icon"));
             return Ok(res);
         } else if !url_path.contains(".") || url_path.starts_with("/user") {
@@ -739,7 +823,7 @@ async fn connect_handle(request: hyper::Request<hyper::Body>,addr: std::net::Soc
     
 }
 
-pub fn init_http_server() -> Result<(), Box<dyn std::error::Error>> {
+pub fn init_http_server() -> Result<()> {
     let config = read_config()?;
     let mut host = config.get("web_host").ok_or("无法获取web_host")?.as_str().ok_or("无法获取web_host")?;
     let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
@@ -750,28 +834,36 @@ pub fn init_http_server() -> Result<(), Box<dyn std::error::Error>> {
     cq_add_log_w(&format!("webui访问地址：http://{web_uri}")).unwrap();
     let addr1 = web_uri.parse::<std::net::SocketAddr>().unwrap();
 
-    #[cfg(not(windows))]
-    let listener = TcpBuilder::new_v4()?.reuse_address(true)?.bind(addr1)?.listen(20)?;
-    
-    #[cfg(windows)]
-    let listener = TcpBuilder::new_v4()?.bind(addr1)?.listen(20)?;
+    RT_PTR.spawn(async move {
+        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+        
+        // win 下不需要设置这个
+        #[cfg(not(windows))]
+        socket.set_reuseaddr(true).unwrap();
 
-    RT_PTR.clone().spawn(async move {
-        let bd_rst = hyper::Server::from_tcp(listener);
-        if bd_rst.is_ok() {
-            // 启动服务
-            let make_service =
-            make_service_fn(move |conn: &AddrStream|{
-                let addr = conn.remote_addr();
-                async move {
-                    let addr=addr.clone();
-                Ok::<_, std::convert::Infallible>(hyper::service::service_fn(move |req| connect_handle(req, addr.clone())))
-            }});
-            let ret = bd_rst.unwrap().serve(make_service).await;
-            if let Err(err)  = ret{
-                cq_add_log_w(&format!("绑定端口号失败：{}",err)).unwrap();
-            }
-        }
+        socket.bind(addr1).unwrap();
+        let listener = socket.listen(20).unwrap();
+        
+
+        loop {
+            let (stream, remote_address) = listener.accept().await.unwrap();
+
+            let io = hyper_util::rt::TokioIo::new(stream);
+            
+            let service = service_fn(move |req| {
+                connect_handle(req,remote_address.ip().is_loopback())
+            });
+            
+            tokio::task::spawn(async move {
+                if let Err(err) = hyper::server::conn::http1::Builder::new()
+                    .serve_connection(io, service)
+                    .with_upgrades()
+                    .await
+                {
+                    cq_add_log_w(&format!("Error serving connection: {:?}", err)).unwrap();
+                }
+            });
+        } 
     });
     
     if let Some(not_open_browser) = config.get("not_open_browser") {

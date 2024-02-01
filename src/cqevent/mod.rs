@@ -23,6 +23,14 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
         }
     }
 
+    // 强行补一个message_id，以符合规范
+    if root.get("message_id").is_none() && root.is_object() {
+        root["message_id"] = serde_json::to_value(uuid::Uuid::new_v4().to_string())?;
+    }
+
+    // 插入openapi事件
+    crate::openapi::insert_event(&root);
+
     // 预处理脚本
     let script_json = read_code_cache()?;
     let mut ban_pkgs = HashSet::new();
@@ -42,18 +50,18 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
 
     if let Some(message_type) = root.get("message_type") {
         if message_type == "group" {
-            do_group_msg::do_group_msg(&root,&ban_pkgs)?;
+            do_group_msg::do_group_msg(&root,&ban_pkgs);
         }else if message_type == "private"{
-            do_private_msg::do_private_msg(&root,&ban_pkgs)?;
+            do_private_msg::do_private_msg(&root,&ban_pkgs);
         }
     }
 
     if let Some(notice_type) = root.get("notice_type") {
         if notice_type == "group_increase" {
-            do_group_inc::do_group_inc(&root,&ban_pkgs)?;
+            do_group_inc::do_group_inc(&root,&ban_pkgs);
         }
     }
-    do_other_evt::do_other_evt(&root,&ban_pkgs)?;
+    do_other_evt::do_other_evt(&root,&ban_pkgs);
     Ok(0)
 }
 

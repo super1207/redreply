@@ -35,6 +35,7 @@ mod httpevent;
 mod pyserver;
 mod test;
 mod libload;
+mod openapi;
 
 #[macro_use]
 extern crate lazy_static; 
@@ -269,7 +270,7 @@ pub fn initialize() -> i32 {
     return 0;
 }
 
-pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let script_path = cq_get_app_directory1()? + "config.json";
     let mut is_file_exists = false;
     if fs::metadata(script_path.clone()).is_ok() {
@@ -292,19 +293,19 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     Ok(serde_json::from_str(&script)?)
 }
 
-fn create_python_env() -> Result<(), Box<dyn std::error::Error>> {
+fn create_python_env() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app_dir = cq_get_app_directory1()?;
     fs::create_dir_all(app_dir.clone() + "pymain")?;
     let foo = std::process::Command::new("python").current_dir(app_dir).arg("-m").arg("venv").arg("pymain").status();
     if foo.is_err() {
-        return Err(RedLang::make_err(&format!("python环境创建失败:{:?}",foo)));
+        return Err(format!("python环境创建失败:{:?}",foo).into());
     }else {
         cq_add_log_w(&format!("python服务创建:{:?}",foo.unwrap())).unwrap();
     }
     Ok(())
 }
 
-pub fn init_python() -> Result<(), Box<dyn std::error::Error>> {
+pub fn init_python() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     create_python_env()?;
     let config = read_config()?;
     let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
@@ -452,9 +453,9 @@ pub fn init_config() {
     }
 }
 
-pub fn read_web_password() -> Result<String, Box<dyn std::error::Error>> {
+pub fn read_web_password() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     {
-        let lk = G_WEB_PASSWORD.read()?;
+        let lk = G_WEB_PASSWORD.read().unwrap();
         if lk.is_some() {
             return Ok(lk.clone().unwrap());
         }
@@ -467,15 +468,15 @@ pub fn read_web_password() -> Result<String, Box<dyn std::error::Error>> {
         }
     }
     {
-        let mut lk = G_WEB_PASSWORD.write()?;
+        let mut lk = G_WEB_PASSWORD.write().unwrap();
         *lk = Some(ret_str.clone());
     }
     return Ok(ret_str);
 }
 
-pub fn read_readonly_web_password() -> Result<String, Box<dyn std::error::Error>> {
+pub fn read_readonly_web_password() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     {
-        let lk = G_READONLY_WEB_PASSWORD.read()?;
+        let lk = G_READONLY_WEB_PASSWORD.read().unwrap();
         if lk.is_some() {
             return Ok(lk.clone().unwrap());
         }
@@ -488,13 +489,13 @@ pub fn read_readonly_web_password() -> Result<String, Box<dyn std::error::Error>
         }
     }
     {
-        let mut lk = G_READONLY_WEB_PASSWORD.write()?;
+        let mut lk = G_READONLY_WEB_PASSWORD.write().unwrap();
         *lk = Some(ret_str.clone());
     }
     return Ok(ret_str);
 }
 
-pub fn set_ws_urls(ws_urls:serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
+pub fn set_ws_urls(ws_urls:serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut config = read_config()?;
     config["ws_urls"] = ws_urls;
     let script_path = cq_get_app_directory1()? + "config.json";
@@ -539,7 +540,7 @@ pub fn get_all_pkg_name_by_cache() -> Result<Vec<String>, Box<dyn std::error::Er
 }
 
 
-fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error>> {
+fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
     let plus_dir_str = cq_get_app_directory1()?;
     let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
     std::fs::create_dir_all(&pkg_dir)?;
@@ -558,7 +559,7 @@ fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn std::error::Error>> {
     Ok(pkg_names)
 }
 
-fn get_all_pkg_code() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
+fn get_all_pkg_code() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
     let plus_dir_str = cq_get_app_directory1()?;
     let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
     let pkg_names = get_all_pkg_name()?;
@@ -591,7 +592,7 @@ fn get_all_pkg_code() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Erro
     Ok(arr_val)
 }
 
-pub fn init_code() -> Result<(), Box<dyn std::error::Error>>{
+pub fn init_code() -> Result<(), Box<dyn std::error::Error + Send + Sync>>{
     let script_path = cq_get_app_directory2()? + "script.json";
     // 判断文件是否存在
     let mut is_file_exists = false;
@@ -617,14 +618,14 @@ pub fn init_code() -> Result<(), Box<dyn std::error::Error>>{
 
     // 保存代码到内存
     {
-        let mut wk = G_SCRIPT.write()?;
+        let mut wk = G_SCRIPT.write().unwrap();
         (*wk) = serde_json::Value::Array(arr_val);
     }
 
     {
         // 刷新包名
         let pkg_names = get_all_pkg_name()?;
-        let mut lk = G_PKG_NAME.write()?;
+        let mut lk = G_PKG_NAME.write().unwrap();
         lk.clear();
         for it in &pkg_names {
             lk.insert(it.to_owned());
@@ -640,7 +641,7 @@ pub fn init_code() -> Result<(), Box<dyn std::error::Error>>{
 }
 
 
-pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // 解析网络数据
     let mut code_map:HashMap<String,Vec<serde_json::Value>> = HashMap::new();
@@ -736,7 +737,7 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn save_one_pkg(contents: &str) -> Result<(), Box<dyn std::error::Error>>{
+fn save_one_pkg(contents: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>>{
     // 解析网络数据
     let js_t:serde_json::Value = serde_json::from_str(contents)?;
     let pkg_name = read_json_str(&js_t, "pkg_name");
@@ -758,7 +759,7 @@ fn save_one_pkg(contents: &str) -> Result<(), Box<dyn std::error::Error>>{
     // 更新内存中的脚本
     {
         let mut new_script = vec![];
-        let mut wk = G_SCRIPT.write()?;
+        let mut wk = G_SCRIPT.write().unwrap();
         for it in wk.as_array().ok_or("read G_SCRIPT err")? {
             let it_name = read_json_str(it, "pkg_name");
             if it_name != pkg_name {
@@ -783,7 +784,7 @@ fn save_one_pkg(contents: &str) -> Result<(), Box<dyn std::error::Error>>{
     Ok(())
 }
 
-fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std::error::Error>> {
+fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if old_pkg_name != "" && new_pkg_name != ""{
         let plus_dir_str = cq_get_app_directory1()?;
         let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
@@ -800,7 +801,7 @@ fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std
 }
 
 
-fn del_one_pkg(pkg_name:&str) -> Result<(), Box<dyn std::error::Error>> {
+fn del_one_pkg(pkg_name:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 删除pkg文件
     if pkg_name != "" {
         let plus_dir_str = cq_get_app_directory1()?;
@@ -816,7 +817,7 @@ fn del_one_pkg(pkg_name:&str) -> Result<(), Box<dyn std::error::Error>> {
     // 删除内存中的脚本
     {
         let mut new_script = vec![];
-        let mut wk = G_SCRIPT.write()?;
+        let mut wk = G_SCRIPT.write().unwrap();
         for it in wk.as_array().ok_or("read G_SCRIPT err")? {
             let it_name = read_json_str(it, "pkg_name");
             if it_name != pkg_name {

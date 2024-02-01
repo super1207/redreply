@@ -632,6 +632,38 @@ GET访问网页，返回字节集，失败返回空字节集。
 POST访问网页，访问体必须是字节集或文本，返回字节集，失败返回空字节集。
 
 
+### GET访问
+
+
+【GET访问@<font color="red">网址</font>@<font color="red">访问体</font>】
+
+GET访问网页，访问体必须是字节集或文本，返回字节集，失败返回空字节集。
+
+
+### PUT访问
+
+
+【PUT访问@<font color="red">网址</font>@<font color="red">访问体</font>】
+
+PUT访问网页，访问体必须是字节集或文本，返回字节集，失败返回空字节集。
+
+
+### DELETE访问
+
+
+【DELETE访问@<font color="red">网址</font>@<font color="red">访问体</font>】
+
+DELETE访问网页，访问体必须是字节集或文本，返回字节集，失败返回空字节集。
+
+
+### PATCH访问
+
+
+【PATCH访问@<font color="red">网址</font>@<font color="red">访问体</font>】
+
+PATCH访问网页，访问体必须是字节集或文本，返回字节集，失败返回空字节集。
+
+
 ### 设置访问头
 
 
