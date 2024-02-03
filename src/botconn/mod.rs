@@ -32,10 +32,50 @@ lazy_static! {
 }
 
 
+// pub async fn rand_platform_and_id() -> Option<(String,String)> {
+    
+//     let lk = G_BOT_MAP.read().await;
+//     let mut all = vec![];
+
+//     for bot in &*lk {
+//         let platform_and_self_id = bot.1.read().await.get_platform_and_self_id();
+//         for (platform,self_id) in platform_and_self_id {
+//             all.push((platform,self_id))
+//         }
+//     }
+
+//     if all.len() == 0 {
+//         return None;
+//     }
+
+//     let rand_num = crate::redlang::get_random().unwrap();
+
+//     let target = &all[rand_num % all.len()];
+
+//     return Some(target.to_owned());
+
+// }
+
 pub async fn call_api(platform:&str,self_id:&str,passive_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let mut bot_select = None;
-    let platform_t = platform.to_owned();
-    let self_id_t = self_id.to_owned();
+    let mut platform_t = platform.to_owned();
+    let mut self_id_t = self_id.to_owned();
+
+    // 处理单账号情况
+    {
+        let lk = G_BOT_MAP.read().await;
+        if platform_t == "" && self_id_t == "" && lk.len() == 1 {
+            for (_k,v) in &*lk {
+                let p = v.read().await.get_platform_and_self_id();
+                if p.len() == 1 {
+                    platform_t = p[0].0.clone();
+                    self_id_t = p[0].1.clone();
+                }
+            }
+        }
+    }
+    
+
     // 挑选出对应的bot
     for bot in &*G_BOT_MAP.read().await {
         let platform_and_self_id = bot.1.read().await.get_platform_and_self_id();
