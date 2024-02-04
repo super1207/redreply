@@ -317,6 +317,25 @@ impl BotConnectTrait for NTQQV1Connect {
                         }));
                     }
                 }
+                else if tp == "face" {
+                    let id: String = read_json_str(data, "id");
+                    if id == "392" || id == "393" || id == "394"{
+                        nt_msg.push(serde_json::json!({
+                            "type": "face",
+                            "faceIndex":id.parse::<i32>().unwrap(),
+                            "faceType":"super",
+                            "stickerId":"38",
+                            "stickerType":3,
+                            "faceText":"[龙]"
+                        }));
+                    }else{
+                        nt_msg.push(serde_json::json!({
+                            "type": "face",
+                            "faceIndex":id,
+                            "faceType":"normal",
+                        }));
+                    }
+                }
                 else if tp == "image" {
                     let file = read_json_str(data, "file");
                     let file_dir;

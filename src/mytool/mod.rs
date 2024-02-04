@@ -1,7 +1,8 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, str::FromStr};
 
-use crate::redlang::RedLang;
+use crate::{cqapi::cq_add_log, redlang::RedLang};
 
+use tokio::io::AsyncWriteExt;
 use zhconv::{zhconv, Variant};
 
 pub fn cq_text_encode(data:&str) -> String {
@@ -311,4 +312,61 @@ pub fn deal_path_str(path_str:&str) -> &str {
     }
 }
 
+
+async fn github_proxy() -> Option<String> {
+
+    let urls_to_test = ["https://mirror.ghproxy.com/", "https://ghproxy.net/", "https://moeyy.cn/gh-proxy/", ""];
+
+    let (tx, mut rx) =  tokio::sync::mpsc::channel(urls_to_test.len() + 1);
+    
+    for url in urls_to_test {
+        let tx = tx.clone();
+        tokio::spawn(async move{
+            let client = reqwest::Client::builder().danger_accept_invalid_certs(true).no_proxy().build().unwrap();
+            let uri = reqwest::Url::from_str(&(url.to_owned() + "https://raw.githubusercontent.com/super1207/redreply/master/res/version.txt")).unwrap();
+            let req = client.get(uri).build().unwrap();
+            if let Ok(ret) = client.execute(req).await {
+                if ret.status() == reqwest::StatusCode::OK {
+                    let _err = tx.send(url).await;
+                }
+            }; 
+        });
+    }
+    tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_secs(10)).await;
+        let _err = tx.send("timeout").await;
+    });
+    let ret = rx.recv().await;
+    if let Some(r) = ret {
+        if r != "timeout" {
+            return Some(r.to_owned());
+        }
+    }
+    None
+}
+
+pub async fn download_github(url:&str,path:&str) -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
+    let proxy = github_proxy().await;
+    if proxy.is_none() {
+        return Err("cann't connect to github".into());
+    }
+    cq_add_log(&format!("proxy:{proxy:?}")).unwrap();
+    let proxy = proxy.unwrap();
+    let url = proxy + url;
+    let uri = reqwest::Url::from_str(&url)?;
+    let mut resp: reqwest::Response  = reqwest::get(uri).await?;
+    let mut dest = tokio::fs::File::create(path).await?;
+    let mut content_len_str = "?".to_owned();
+    if let Some(content_len) = resp.content_length(){
+        content_len_str = content_len.to_string();
+    }
+    let mut download_len = 0;
+    cq_add_log(&format!("download:{download_len} all:{content_len_str}")).unwrap();
+    while let Some(mut chunk) = resp.chunk().await? {
+        download_len += chunk.len();
+        cq_add_log(&format!("download:{download_len} all:{content_len_str}")).unwrap();
+        dest.write(&mut chunk).await?;
+    }
+    Ok(())
+}
 

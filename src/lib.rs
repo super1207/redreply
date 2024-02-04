@@ -14,6 +14,7 @@ use cqapi::cq_get_app_directory2;
 use httpserver::init_http_server;
 
 use libload::init_lib;
+use mytool::download_github;
 use mytool::read_json_str;
 use redlang::RedLang;
 use serde_json;
@@ -198,6 +199,12 @@ pub fn initialize() -> i32 {
     panic::set_hook(Box::new(|e| {
         cq_add_log_w(e.to_string().as_str()).unwrap();
     }));
+
+    // 下载必要文件
+    // RT_PTR.block_on(async{
+    //     cq_add_log_w("开始下载...").unwrap();
+    //     cq_add_log_w("下载完成...").unwrap();
+    // });
 
     // 初始化配置文件
     init_config();
