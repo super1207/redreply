@@ -51,7 +51,7 @@ jobs:
       if: startsWith(matrix.os, 'ubuntu-') 
       run: |
         mkdir Release
-        cp target/x86_64-linux-android/release/redlang Release/redlang_android_x86_64
+        cp target/x86_64-unknown-linux-musl/release/redlang Release/redlang_linux_x86_64
         cp target/aarch64-linux-android/release/redlang Release/redlang_android_aarch64
         cp target/aarch64-unknown-linux-musl/release/redlang Release/redlang_linux_aarch64
         cp target/i686-unknown-linux-musl/release/redlang Release/redlang_linux_i686
@@ -108,6 +108,6 @@ jobs:
       if: startsWith(matrix.os, 'ubuntu-') 
       uses: actions/upload-artifact@v3
       with:
-        name: redlang_android_x86_64
+        name: redlang_linux_x86_64
         path: 
-          Release/redlang_android_x86_64
+          Release/redlang_linux_x86_64
