@@ -237,6 +237,9 @@ app = createApp({
         debug_btn() {
             window.open("/debug.html", "_blank");
         },
+        pluscenter_btn(){
+            window.open("/pluscenter.html", "_blank");
+        },
         quit_redreply() {
             let is_quit = confirm("是否真的要退出强大的红色问答？")
             if(is_quit){

@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <!-- 指明页面编码为utf-8 -->
+        <meta charset="UTF-8">
+        <!-- 适应手机 -->
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <!-- 引入vue，用于前端渲染 -->
+        <script src="vue.js"></script>
+        <!-- 引入axios，http客户端 -->
+        <script src="axios.js"></script>
+        <!-- 网站标题 -->
+        <title>红色问答插件中心</title>
+        
+    </head>
+    <body>
+        <div id="app" style="display: flex;flex-direction: column;">
+            <h1 style="color: red;text-align: center;">红色问答脚本中心</h1>
+            <button @click="get_plus_list()">{{query_status}}</button>
+            <HR width="100%" color=#987cb9 SIZE=1>
+            <div id="plus_list">
+                <div v-for="plus in plus_list">
+                    <HR width="100%" color=#987cb9 SIZE=1>
+                    <a target="_blank" :href="'https://github.com/'+plus.repo">{{plus.name}}</a><br/>
+                    <div> {{plus.version}}</div>
+                    <div>by&nbsp;{{plus.author}}</div>
+                    <div>{{plus.description}}</div>
+                    <button @click="install_plus(plus.name,plus.repo,plus.version)">{{install_status}}</button>
+                    <HR  width="100%" color=#987cb9 SIZE=1>
+                </div>
+            </div>
+        </div>
+    </body>
+    <script>
+        const { createApp,ref } = Vue
+        app = createApp({
+            data() {
+                return {
+                    query_status:"发起查询",
+                    install_status:"点我安装",
+                    plus_list:ref([]),
+                }
+            },
+            methods: {
+                async install_plus(name,repo,version){
+                    if(this.install_status == "正在安装...") {
+                        alert("有插件正在安装,请等待安装完成")
+                        return
+                    }
+                    var res = await axios.get(`/get_all_pkg_name`)
+                    res = res["data"]["data"]
+                    if(res.includes(name)) {
+                        var r = confirm("本地已有同名插件，是否覆盖安装！！！？");
+                        if(r == false) {
+                            return
+                        }
+                    }
+                    this.install_status = "正在安装..."
+                    var name = encodeURI(name)
+                    var repo = encodeURI(repo)
+                    var version = encodeURI(version)
+                    var res = await axios.get(`/install_plus?name=${name}&repo=${repo}&version=${version}`)
+                    res = res["data"]
+                    if(res["retcode"] != 0) {
+                        alert(`安装失败：${res["data"]}`)
+                        this.install_status = "点我安装"
+                        return
+                    }else{
+                        this.install_status = "点我安装"
+                        alert("安装成功，请立刻手动刷新插件页面查看您的安装成果")
+                    }
+                },
+                async get_plus_list() {
+                    if(this.query_status == "正在查询...") {
+                        return
+                    }
+                    this.plus_list = []
+                    this.query_status = "正在查询..."
+                    var res = await axios.get("/get_pluscenter_list")
+                    res = res["data"]
+                    if(res["retcode"] != 0) {
+                        alert("查询失败，可能网络未连接")
+                        this.query_status = "发起查询"
+                        return
+                    }
+                    var retarr = res["data"]
+                    
+                    for(var obj of retarr) {
+                        var branch = encodeURI(obj["branch"])
+                        var repo = encodeURI(obj["repo"])
+                        var res = await axios.get(`/get_pluscenter_info?branch=${branch}&repo=${repo}`)
+                        var res = res["data"]
+                        if(res["retcode"] != 0) {
+                            alert("查询失败，可能网络未连接")
+                            this.query_status = "发起查询"
+                            return
+                        }
+                        var plus_info = res["data"]
+                        this.plus_list.push(plus_info)
+                        //ret_ar
+                    }
+                    this.query_status = "刷新"
+                    // alert("查询完成")
+                    
+                }
+            }
+
+        })
+        app.mount('#app')
+    </script>
+</html>

@@ -11,6 +11,8 @@ encoding = "0.2.33"
 getrandom = "0.2.8"
 base64 = "0.21.2"
 serde_json = "1.0.104"
+serde_derive = "1.0.166"
+serde = {version = "1.0.166",features = ["derive"]}
 uuid = {version = "1.4.1",features = ["v4","fast-rng"]}
 lazy_static = "1.4.0"
 chrono = "0.4.26"
@@ -54,6 +56,7 @@ tokio-util = { version = "0.7.10", default-features = false, features = [ "io" ]
 http-body-util = "0.1"
 hyper-util = { version = "0.1", features = ["full"] }
 bytes = "1.5.0"
+zip = "0.6.6"
 
 
 [target.'cfg(windows)'.dependencies]
@@ -62,7 +65,9 @@ screenshots = "0.7.1"
 
 
 [profile.release]
-# panic = 'abort'
-lto = true
-opt-level = 'z'
+panic = "abort" # Strip expensive panic clean-up logic
+codegen-units = 1 # Compile crates one after another so the compiler can optimize better
+lto = true # Enables link to optimizations
+opt-level = "s" # Optimize for binary size
+strip = true # Remove debug symbols
 

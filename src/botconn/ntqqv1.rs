@@ -1,9 +1,10 @@
-use std::{collections::HashMap, path::Path, str::FromStr, sync::{atomic::AtomicBool, Arc, Mutex, RwLock, Weak}};
+use std::{collections::HashMap, ffi::{c_char, c_int, CStr, CString}, path::Path, str::FromStr, sync::{atomic::AtomicBool, Arc, Mutex, RwLock, Weak}};
 
 use async_trait::async_trait;
+use libloading::Symbol;
 use reqwest::header::{HeaderName, HeaderValue};
 
-use crate::{cqapi::cq_add_log_w, mytool::{cq_text_encode, read_json_obj, read_json_or_default, read_json_str, str_msg_to_arr}};
+use crate::{cqapi::cq_add_log_w, mytool::{cq_text_encode, read_json_obj, read_json_or_default, read_json_str, str_msg_to_arr}, redlang::RedLang, G_LIB_MAP, REDLANG_UUID};
 
 use super::BotConnectTrait;
 
@@ -390,48 +391,118 @@ impl BotConnectTrait for NTQQV1Connect {
                     let file = read_json_str(data, "file");
                     let file_dir;
                     use md5::{Md5, Digest};
+                    let mut file_bin;
                     if file.starts_with("base64://") {
                         let b64_str = file.split_at(9).1;
                         let content = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
                             &base64::alphabet::STANDARD,
                             base64::engine::general_purpose::PAD), b64_str)?;
-                        let tmpdir = crate::cqapi::get_tmp_dir()?;
-                        let mut hasher = Md5::new();
-                        hasher.update(content.clone());
-                        let result = hasher.finalize();
-                        let mut filename = String::new();
-                        for ch in result {
-                            filename.push_str(&format!("{:02x}",ch));
-                        }
-                        file_dir = tmpdir + &filename + ".ptt";
-                        let path = Path::new(&file_dir);
-                        if !path.is_file() {
-                            tokio::fs::write(file_dir.clone(), content).await?;
-                        }
+                        file_bin = content;
+                        // let tmpdir = crate::cqapi::get_tmp_dir()?;
+                        // let mut hasher = Md5::new();
+                        // hasher.update(content.clone());
+                        // let result = hasher.finalize();
+                        // let mut filename = String::new();
+                        // for ch in result {
+                        //     filename.push_str(&format!("{:02x}",ch));
+                        // }
+                        // file_dir = tmpdir + &filename + ".ptt";
+                        // let path = Path::new(&file_dir);
+                        // if !path.is_file() {
+                        //     tokio::fs::write(file_dir.clone(), content).await?;
+                        // }
                         
                     }else if file.starts_with("http"){
                         let content = http_get(&file).await?;
-                        let tmpdir = crate::cqapi::get_tmp_dir()?;
-                        let mut hasher = Md5::new();
-                        hasher.update(content.clone());
-                        let result = hasher.finalize();
-                        let mut filename = String::new();
-                        for ch in result {
-                            filename.push_str(&format!("{:02x}",ch));
-                        }
-                        file_dir = tmpdir + &filename + ".ptt";
-                        let path = Path::new(&file_dir);
-                        if !path.is_file() {
-                            tokio::fs::write(file_dir.clone(), content).await?;
-                        }
+                        file_bin = content;
+                        // let tmpdir = crate::cqapi::get_tmp_dir()?;
+                        // let mut hasher = Md5::new();
+                        // hasher.update(content.clone());
+                        // let result = hasher.finalize();
+                        // let mut filename = String::new();
+                        // for ch in result {
+                        //     filename.push_str(&format!("{:02x}",ch));
+                        // }
+                        // file_dir = tmpdir + &filename + ".ptt";
+                        // let path = Path::new(&file_dir);
+                        // if !path.is_file() {
+                        //     tokio::fs::write(file_dir.clone(), content).await?;
+                        // }
                     }else {
                         let sp = std::path::MAIN_SEPARATOR.to_string();
+                        let file_dir;
                         if sp == "\\" { // windows file = file:///
                             file_dir = file.split_at(8).1.to_owned();
                         }else{ // linux file = file://
                             file_dir = file.split_at(7).1.to_owned();
                         }
-                    } 
+                        file_bin = tokio::fs::read(file_dir).await?;
+                    }
+                    let mut lib_ptr_opt = None;
+                    // 获得转换库
+                    {
+                        let lk = G_LIB_MAP.read().unwrap();
+                        for (_ac,it) in &*lk {
+                            if it.regist_fun.contains("__TXSILK") {
+                                lib_ptr_opt = Some(it.lib.clone());
+                            }
+                        }
+                    }
+                    // 调用转换库
+                    let mut libret: Box<Option<String>> = Box::new(None);
+                    if let Some(lib_ptr) = lib_ptr_opt {
+                        let call_cmd_fun_rst = unsafe {lib_ptr.get::<Symbol<extern "system" fn(*mut Option<String>,*const c_char,*const c_char,extern "system" fn(*mut Option<String>,*const c_char,c_int))>>(b"redreply_callcmd")};
+                        if call_cmd_fun_rst.is_ok() {
+                            let autio_bin_str_t = RedLang::build_bin_with_uid(&REDLANG_UUID, file_bin.clone());
+                            let autio_bin_str = format!("12331549-6D26-68A5-E192-5EBE9A6EB998{}",autio_bin_str_t.get(36..).unwrap());
+                            let params_str_t = vec![autio_bin_str.as_str()];
+                            let params_str_t = RedLang::build_arr_with_uid(&REDLANG_UUID,params_str_t);
+                            let params_str = format!("12331549-6D26-68A5-E192-5EBE9A6EB998{}",params_str_t.get(36..).unwrap());
+                            let cmd_cstr = CString::new("__TXSILK")?;
+                            let params_cstr = CString::new(params_str)?;
+                            extern "system" fn callback(ctx:*mut Option<String>,ret_cstr:*const c_char,retcode:c_int) {
+                                let s = unsafe { CStr::from_ptr(ret_cstr) }.to_str().unwrap().to_owned();   
+                                if retcode == 0 {
+                                    let s = unsafe { CStr::from_ptr(ret_cstr) }.to_str().unwrap().to_owned();
+                                    unsafe {
+                                        *ctx = Some(s);
+                                    }
+                                } else {
+                                    unsafe {
+                                        *ctx = Some("".to_owned());
+                                    }
+                                    cq_add_log_w(&format!("err,retcode:{retcode},{s}")).unwrap();
+                                }
+                            }
+                            let call_cmd_fun = call_cmd_fun_rst.unwrap();
+                            call_cmd_fun(&mut *libret,cmd_cstr.as_ptr(),params_cstr.as_ptr(),callback);
+                        }
+                    }
+
+                    if libret.is_some() {
+                        let ret = (*libret).unwrap();
+                        if ret.starts_with("12331549-6D26-68A5-E192-5EBE9A6EB998"){
+                            let bin_str = format!("{}{}",crate::REDLANG_UUID.to_string(),ret.get(36..).unwrap());
+                            if let Ok(v) = RedLang::parse_bin(&bin_str) {
+                                file_bin = v;
+                            }
+                        }
+                    }
+
+                    let tmpdir = crate::cqapi::get_tmp_dir()?;
+                    let mut hasher = Md5::new();
+                    hasher.update(file_bin.clone());
+                    let result = hasher.finalize();
+                    let mut filename = String::new();
+                    for ch in result {
+                        filename.push_str(&format!("{:02x}",ch));
+                    }
+                    file_dir = tmpdir + &filename + ".ptt";
+                    let path = Path::new(&file_dir);
+                    if !path.is_file() {
+                        tokio::fs::write(file_dir.clone(), file_bin).await?;
+                    }
+                    
                     nt_msg.push(serde_json::json!({
                         "type": "ptt",
                         "file":file_dir,

@@ -2179,7 +2179,7 @@ impl RedLang {
     pub fn build_bin(&self,bin:Vec<u8>) ->String {
         return Self::build_bin_with_uid(&self.type_uuid,bin);
     }
-    fn build_bin_with_uid(uid:&str,bin:Vec<u8>) -> String {
+    pub fn build_bin_with_uid(uid:&str,bin:Vec<u8>) -> String {
         let mut ret_str = String::new();
         ret_str.push_str(uid);
         ret_str.push('B');
@@ -2193,7 +2193,7 @@ impl RedLang {
     fn build_arr(&self,arr:Vec<&str>) -> String {
         return Self::build_arr_with_uid(&self.type_uuid,arr);
     }
-    fn build_arr_with_uid(uid:&str,arr:Vec<&str>) -> String {
+    pub fn build_arr_with_uid(uid:&str,arr:Vec<&str>) -> String {
         let mut ret_str = String::new();
         ret_str.push_str(uid);
         ret_str.push('A');

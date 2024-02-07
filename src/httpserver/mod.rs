@@ -7,6 +7,7 @@ use crate::cqapi::{cq_get_app_directory1, get_history_log, cq_add_log};
 use crate::cqevent::do_script;
 use crate::httpevent::do_http_event;
 use crate::mytool::read_json_str;
+use crate::pluscenter::PlusCenterPlusBase;
 use crate::{read_config, G_AUTO_CLOSE, CLEAR_UUID};
 use crate::redlang::RedLang;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
@@ -65,6 +66,69 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
                 Ok(res)
             },
         }
+    }
+    else if url_path == "/get_pluscenter_list" {
+        if !can_read {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let info = crate::pluscenter::get_plus_list().await?;
+        let ret = serde_json::json!({
+            "retcode":0,
+            "data":info
+        });
+        let mut res = hyper::Response::new(full(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)
+    }
+    else if url_path == "/get_pluscenter_info" {
+        if !can_read {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let def_str = String::new();
+        let params = crate::httpevent::get_params_from_uri(request.uri());
+        let repo = params.get("repo").unwrap_or(&def_str);
+        let branch = params.get("branch").unwrap_or(&def_str);
+        let info = crate::pluscenter::get_plus_info(&PlusCenterPlusBase{
+            repo:repo.to_owned(),
+            branch:branch.to_owned()
+        }).await?;
+        let ret = serde_json::json!({
+            "retcode":0,
+            "data":info
+        });
+        let mut res = hyper::Response::new(full(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)
+    } 
+    else if url_path == "/install_plus" {
+        if !can_read {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let def_str = String::new();
+        let params = crate::httpevent::get_params_from_uri(request.uri());
+        let repo = params.get("repo").unwrap_or(&def_str);
+        let name = params.get("name").unwrap_or(&def_str);
+        let version = params.get("version").unwrap_or(&def_str);
+        let info_rst = crate::pluscenter::install_plus(repo,name,version).await;
+        let ret;
+        if info_rst.is_err() {
+            ret = serde_json::json!({
+                "retcode":-1,
+                "data":info_rst.err().unwrap().to_string()
+            });
+        }else{
+            ret = serde_json::json!({
+                "retcode":0,
+                "data":{}
+            });
+        }
+        
+        let mut res = hyper::Response::new(full(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)
     }
     else if url_path == "/read_one_pkg" {
         if !can_read {
@@ -587,7 +651,7 @@ async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:
 
             if msg_text == "opened" {
                 G_PYSER_OPEN.store(true,std::sync::atomic::Ordering::Relaxed);
-                cq_add_log_w("python环境已经连接！").unwrap();
+                cq_add_log("python环境已经连接！").unwrap();
                 continue;
             }
 
@@ -831,7 +895,7 @@ pub fn init_http_server() -> Result<()> {
         host = "127.0.0.1";
     }
     let web_uri = format!("{host}:{port}");
-    cq_add_log_w(&format!("webui访问地址：http://{web_uri}")).unwrap();
+    cq_add_log(&format!("webui访问地址：http://{web_uri}")).unwrap();
     let addr1 = web_uri.parse::<std::net::SocketAddr>().unwrap();
 
     RT_PTR.spawn(async move {

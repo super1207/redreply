@@ -10,11 +10,11 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 use std::thread;
+use cqapi::cq_add_log;
 use cqapi::cq_get_app_directory2;
 use httpserver::init_http_server;
 
 use libload::init_lib;
-use mytool::download_github;
 use mytool::read_json_str;
 use redlang::RedLang;
 use serde_json;
@@ -37,6 +37,7 @@ mod pyserver;
 mod test;
 mod libload;
 mod openapi;
+mod pluscenter;
 
 #[macro_use]
 extern crate lazy_static; 
@@ -195,7 +196,7 @@ pub fn dec_running_script_num(pkg_name:&str,script_name:&str) {
 
 // 这是插件第一个被调用的函数，不要在这里调用任何CQ的API,也不要在此处阻塞
 pub fn initialize() -> i32 {
-    cq_add_log_w(&format!("欢迎使用`红色问答{}`,正在进行资源初始化...",get_version())).unwrap();
+    cq_add_log(&format!("欢迎使用`红色问答{}`,正在进行资源初始化...",get_version())).unwrap();
     panic::set_hook(Box::new(|e| {
         cq_add_log_w(e.to_string().as_str()).unwrap();
     }));
@@ -244,7 +245,7 @@ pub fn initialize() -> i32 {
     if let Err(err) = cronevent::do_cron_event(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
-    cq_add_log_w("资源初始化完成！").unwrap();
+    cq_add_log("资源初始化完成！").unwrap();
 
     
     // 用于自动退出（嵌入的时候可能需要这个功能）
@@ -307,7 +308,7 @@ fn create_python_env() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     if foo.is_err() {
         return Err(format!("python环境创建失败:{:?}",foo).into());
     }else {
-        cq_add_log_w(&format!("python服务创建:{:?}",foo.unwrap())).unwrap();
+        cq_add_log(&format!("python服务创建:{:?}",foo.unwrap())).unwrap();
     }
     Ok(())
 }
@@ -583,12 +584,19 @@ fn get_all_pkg_code() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Erro
             }
             // 不存在就创建文件
             if !is_file_exists{
-                fs::write(script_path.clone(), "[]")?;
+                fs::write(&script_path, "[]")?;
             }
         }
         
-        let script = fs::read_to_string(script_path)?;
-        let mut pkg_script_vec:Vec<serde_json::Value> = serde_json::from_str(&script)?;
+        let script = fs::read_to_string(&script_path)?;
+        let mut pkg_script_vec:Vec<serde_json::Value>;
+        match serde_json::from_str(&script) {
+            Ok(v) => pkg_script_vec = v,
+            Err(err) => {
+                let sc = script_path.as_os_str().to_string_lossy();
+                return Err(format!("解析脚本文件`{sc}`失败(不是合法的json)：{err:?}").into());
+            },
+        };
         for js in &mut pkg_script_vec {
             if let Some(obj) = js.as_object_mut() {
                 obj.insert("pkg_name".to_string(),serde_json::Value::String(it.to_string()));
@@ -854,5 +862,6 @@ pub fn read_one_pkg(pkg_name:&str) -> Result<Vec<serde_json::Value>, Box<dyn std
     if ret_vec.is_empty() && pkg_name != "" && !G_PKG_NAME.read().unwrap().contains(pkg_name) {
         return Err(None.ok_or("so such pkg")?);
     }
+    
     Ok(ret_vec)
 }

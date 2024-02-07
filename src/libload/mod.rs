@@ -1,6 +1,6 @@
 use std::{collections::HashSet, ffi::{c_char, c_int, CStr}, fs, sync::Arc};
 
-use crate::{cqapi::{cq_add_log, cq_get_app_directory1}, redlang::RedLang, LibStruct, G_LIB_AC, G_LIB_MAP};
+use crate::{cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory1}, mytool::download_github, redlang::RedLang, LibStruct, G_LIB_AC, G_LIB_MAP, RT_PTR};
 
 fn gen_lib_ac() -> c_int {
     let mut lk = G_LIB_AC.lock().unwrap();
@@ -9,18 +9,43 @@ fn gen_lib_ac() -> c_int {
 }
 
 
-pub fn init_lib() -> Result<(), Box<dyn std::error::Error>> {
-    let lib_path = cq_get_app_directory1().unwrap() + "lib";
-    std::fs::create_dir_all(&lib_path).unwrap();
-    let dirs = fs::read_dir(lib_path)?;
-    //let mut ret_vec:Vec<String> = vec![];
-    let is_win = std::path::MAIN_SEPARATOR == '\\';
-    let platform_end;
-    if is_win {
-        platform_end = ".dll"
-    }else{
-        platform_end = ".so";
+pub fn get_sys_and_arch() -> String {
+    let mut arch = std::env::consts::ARCH;
+    if arch == "x86" {
+        arch = "i686";
     }
+    return format!("{}_{}",std::env::consts::OS,arch);
+}
+
+pub fn init_lib() -> Result<(), Box<dyn std::error::Error>> {
+
+
+    // 创建lib目录
+    let lib_path = cq_get_app_directory1().unwrap() + "lib";
+    std::fs::create_dir_all(&lib_path)?;
+    let sys_arch = get_sys_and_arch();
+    let dll_extension = std::env::consts::DLL_EXTENSION;
+
+    // 下载tx_silk，tx_silk用于将语音(mp3、flac、wav)转换为tx支持的silk语音
+    let file_name = format!("redlib_tx_silk_{sys_arch}.{dll_extension}");
+    let file_url = format!("https://github.com/super1207/redlib_tx_silk/releases/latest/download/{file_name}");
+    let file_path = lib_path.clone() + &std::path::MAIN_SEPARATOR.to_string() + &file_name;
+     
+    RT_PTR.block_on(async {
+        // 只有windows和android才能直接从网络下载动态库
+        if std::env::consts::OS == "windows" || std::env::consts::OS == "android"{
+            cq_add_log(&format!("download {file_url} ...")).unwrap();
+            if let Err(err) = download_github(&file_url, &file_path).await {
+                cq_add_log_w(&format!("Err:{err:?}")).unwrap();
+            } else {
+                cq_add_log(&format!("download {file_path} ok")).unwrap();
+            }
+        }
+    });
+    
+    // 加载三方库
+    let dirs = fs::read_dir(lib_path)?;
+    let platform_end = &format!(".{dll_extension}");
     for dir in dirs {
         let path = dir?.path();
         if path.is_file() {
@@ -63,20 +88,17 @@ pub fn init_lib() -> Result<(), Box<dyn std::error::Error>> {
                     let cmdarr_cstr = unsafe { CStr::from_ptr(cmdarr) };
                     let cmdarr_str_rst = cmdarr_cstr.to_str();
                     if cmdarr_str_rst.is_err() {
-                        //println!("1");
                         return;
                     }
                     let cmdarr_str = cmdarr_str_rst.unwrap();
                     let mut lk = G_LIB_MAP.write().unwrap();
                     let plus_opt = lk.get_mut(&ac);
                     if plus_opt.is_none() {
-                        //println!("2:ac:{ac}");
                         return;
                     }
                     let plus = plus_opt.unwrap();
                     let cmd_arr_rst = RedLang::parse_arr2(cmdarr_str,"12331549-6D26-68A5-E192-5EBE9A6EB998");
                     if cmd_arr_rst.is_err() {
-                        //println!("3");
                         return;
                     }
                     let cmd_arr = cmd_arr_rst.unwrap();
