@@ -148,9 +148,9 @@ fn change_event_at_and_reply(root:&mut serde_json::Value) -> Result<(),Box<dyn s
             if let Err(_) = qq_str.parse::<i64>() {
                 let cksum = mycrc64(qq_str);
                 OB_RED_UID_MAP.lock().unwrap().insert(cksum,qq_str.to_owned());
-                (*qq) = serde_json::to_value(cksum).unwrap();
+                (*qq) = serde_json::to_value(cksum.to_string()).unwrap();
             }else{
-                (*qq) = serde_json::to_value(qq_str.parse::<i64>().unwrap()).unwrap();
+                (*qq) = serde_json::to_value(qq_str.parse::<i64>().unwrap().to_string()).unwrap();
             }
         }else if tp == "reply" {
             let data = node.get_mut("data").ok_or("no data in reply node")?;
@@ -242,19 +242,24 @@ fn change_params_at_and_reply(root:&mut serde_json::Value) -> Result<(),Box<dyn 
         let tp = node.get_mut("type").ok_or("type not in node")?;
         if tp == "at" {
             let data = node.get_mut("data").ok_or("no data in at node")?;
-            let qq = data.get_mut("qq").ok_or("no qq in at data node")?;
-            let qq_str = qq.as_str().ok_or("qq in at node not str")?;
+            let qq_str = read_json_str(data, "qq");
             let qq_int = qq_str.parse::<i64>()?;
             let lk = OB_RED_UID_MAP.lock().unwrap();
-            let red_id = lk.get(&qq_int).ok_or("qq in at node not found")?;
-            (*qq) = serde_json::json!(red_id);
+            let red_id_opt = lk.get(&qq_int);
+            let qq = data.get_mut("qq").ok_or("no qq in at data node")?;
+            if let Some(red_id) = red_id_opt {
+                (*qq) = serde_json::json!(red_id);
+            }else{
+                (*qq) = serde_json::json!(qq_int.to_string());
+            }
+            
         }
         else if tp == "reply" {
             let data = node.get_mut("data").ok_or("no data in reply node")?;
-            let id = data.get_mut("id").ok_or("no id in data reply node")?;
-            let id_str = id.as_str().ok_or("id in reply node not str")?;
+            let id_str = read_json_str(data, "id");
             let id_int = id_str.parse::<i32>()?;
             let red_id = ob_id_to_red(id_int).ok_or("id in reply node not found")?;
+            let id = data.get_mut("id").ok_or("no id in data reply node")?;
             (*id) = serde_json::json!(red_id);
         }
     }
