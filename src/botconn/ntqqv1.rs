@@ -143,6 +143,8 @@ async fn deal_group_event(self_t:&SelfData,root:serde_json::Value) -> Result<(),
         let k = bot_id_t.read().unwrap();
         bot_id = (*k).to_owned();
     }
+
+    // role
     let event_json = serde_json::json!({
         "time":tm,
         "self_id":bot_id,
@@ -178,7 +180,7 @@ async fn deal_group_event(self_t:&SelfData,root:serde_json::Value) -> Result<(),
 }
 
 async fn conv_event(self_t:&SelfData,root:serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    println!("ret_json:{}",root.to_string());
+    // println!("ret_json:{}",root.to_string());
     let event_name = read_json_str(&root, "event_name");
     if event_name == "new-messages" {
         let peer_opt = read_json_obj(&root, "peer");
@@ -288,7 +290,18 @@ impl BotConnectTrait for NTQQV1Connect {
         let config_json_str = self.url.get(9..).ok_or("ntqqv1 url格式错误")?.to_owned();
         let url_t = format!("http://{config_json_str}");
         let params = read_json_or_default(json, "params",&serde_json::Value::Null);
-        if action == "send_group_msg" {
+        if action == "get_login_info"{
+            let id = self.self_id.read().unwrap().to_owned();
+            return Ok(serde_json::json!({
+                "retcode":0,
+                "status":"ok",
+                "data":{
+                    "user_id":id,
+                    "nickname":id,
+                }
+            }));
+        }
+        else if action == "send_group_msg" {
             let group_id = read_json_str(&params, "group_id");
             // 获得消息(数组格式)
             let mut message = params.get("message").ok_or("message is not exist")?.to_owned();

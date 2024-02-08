@@ -54,8 +54,16 @@ pub fn cq_get_app_directory2() -> Result<String, Box<dyn std::error::Error + Sen
 }
 
 // 用于发送Onebot原始数据，返回OneBot原始数据，utf8编码
-pub fn cq_call_api(platform:&str,self_id:&str,passive_id:&str,json_str: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let mut js:serde_json::Value = serde_json::from_str(json_str)?;
+pub fn cq_call_api(platform:&str,self_id:&str,passive_id:&str,json_str: &str) -> String {
+    let js_rst = serde_json::from_str(json_str);
+    if let Err(err) = js_rst {
+        return serde_json::json!({
+            "retcode":-1,
+            "status":"failed",
+            "data":format!("parse input json err:{:?}",err)
+        }).to_string();
+    }
+    let mut js = js_rst.unwrap();
     let out_str = RT_PTR.block_on(async {
         let ret = crate::botconn::call_api(platform,self_id,passive_id,&mut js).await;
         if let Ok(ret) =  ret {
@@ -63,9 +71,13 @@ pub fn cq_call_api(platform:&str,self_id:&str,passive_id:&str,json_str: &str) ->
         } else {
             cq_add_log_w(&format!("调用api失败:{:?}",ret)).unwrap();
         }
-        return "".to_string();
+        return serde_json::json!({
+            "retcode":-1,
+            "status":"failed",
+            "data":format!("call api error:{:?}",ret.err().unwrap())
+        }).to_string();
     });
-    Ok(out_str)
+    out_str
 }
 
 

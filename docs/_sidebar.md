@@ -4,4 +4,5 @@
 * [下载](/download/)
 * [一些例子](/example/)
 * [协议说明](/adaptar/)
+* [onebot网络接口](/onebot/)
 * [语法详细参考](/detailref/)

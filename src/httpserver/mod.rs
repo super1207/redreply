@@ -3,10 +3,12 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use std::thread;
-use crate::cqapi::{cq_get_app_directory1, get_history_log, cq_add_log};
+use std::time::SystemTime;
+use crate::cqapi::{cq_add_log, cq_call_api, cq_get_app_directory1, get_history_log};
 use crate::cqevent::do_script;
 use crate::httpevent::do_http_event;
 use crate::mytool::read_json_str;
+use crate::onebot11s::event_to_onebot;
 use crate::pluscenter::PlusCenterPlusBase;
 use crate::{read_config, G_AUTO_CLOSE, CLEAR_UUID};
 use crate::redlang::RedLang;
@@ -32,6 +34,7 @@ lazy_static! {
     pub static ref G_PY_ECHO_MAP:tokio::sync::RwLock<HashMap<String,tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(HashMap::new());
     pub static ref G_PY_HANDER:tokio::sync::RwLock<Option<tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(None);
     pub static ref G_PYSER_OPEN:AtomicBool = AtomicBool::new(false);
+    pub static ref G_ONEBOT_WS_MAP:tokio::sync::RwLock<HashMap<String,(tokio::sync::mpsc::Sender<String>,String,String)>> = tokio::sync::RwLock::new(HashMap::new());
 }
 
 pub fn add_ws_log(log_msg:String) {
@@ -517,17 +520,8 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         let passive_id = read_json_str(&root, "passive_id");
         let (tx, rx) =  tokio::sync::oneshot::channel();
         tokio::task::spawn_blocking(move ||{
-            let rst = crate::cqapi::cq_call_api(&platform,&self_id,&passive_id,&root.to_string());
-            if let Err(e) = rst {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
-                let _ = tx.send(serde_json::json!({
-                    "retcode":-1,
-                    "data":format!("{e:?}")
-                }).to_string());
-            }else {
-                let ret = rst.unwrap();
-                let _ = tx.send(ret);
-            }
+            let ret = crate::cqapi::cq_call_api(&platform,&self_id,&passive_id,&root.to_string());
+            let _ = tx.send(ret);
         });
         let ret = rx.await?;
         let mut res = hyper::Response::new(full(ret));
@@ -674,6 +668,125 @@ async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:
     Ok(())
 }
 
+pub async fn send_onebot_event(root:serde_json::Value) {
+    let rst = event_to_onebot(&root);
+    if rst.is_err() {
+        cq_add_log_w(&format!("convert to onebot event err:{:?}",rst.err().unwrap())).unwrap();
+        return;
+    } 
+    let (root,platform,self_id) = rst.unwrap();
+    let lk = G_ONEBOT_WS_MAP.read().await;
+    for (_uid,sender) in &*lk {
+        if platform == sender.1 && self_id == sender.2{
+            let _ = sender.0.send(root.to_string()).await;
+        }
+    }
+}
+
+pub async fn send_onebot_api_ret(root:serde_json::Value,platform:String,self_id:String) {
+    let lk = G_ONEBOT_WS_MAP.read().await;
+    for (_uid,sender) in &*lk {
+        if platform == sender.1 && self_id == sender.2{
+            let _ = sender.0.send(root.to_string()).await;
+        }
+    }
+}
+
+
+/// 处理ws协议
+async fn serve_onebot_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tokio::sync::mpsc::Receiver<String>,platform:String,self_id:String) -> Result<()> {
+    
+    cq_add_log("connect to onebot").unwrap();
+
+    // 获得升级后的ws流
+    let ws_stream = websocket.await?;
+    let (mut write_half, read_half ) = futures_util::StreamExt::split(ws_stream);
+    
+    // 发送生命周期事件
+    let tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs();
+    let connect_event = serde_json::json!({
+        "time":tm,
+        "self_id":self_id,
+        "post_type":"meta_event",
+        "meta_event_type":"lifecycle",
+        "sub_type":"connect"
+    }).to_string();
+
+    write_half.send(hyper_tungstenite::tungstenite::Message::Text(connect_event)).await?;
+
+    tokio::spawn(async move {
+        while let Some(msg) = rx.recv().await { // 当所有tx被释放时,tx.recv会返回None
+            // log::info!("recive:{}",msg);
+            let rst = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string())).await;
+            if rst.is_err() {
+                let mut lk = G_PY_HANDER.write().await;
+                (*lk) = None;
+                cq_add_log_w("serve send1 of onebot err").unwrap();
+                break;
+            }
+        }
+        cq_add_log_w("serve send2 of onebot err").unwrap();
+    });
+
+    async fn deal_msg(mut read_half:futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>>,platform: String,self_id:String) -> Result<()> {
+        while let Some(msg_t) = read_half.next().await {
+            // 转json
+            let msg_text = msg_t?.to_text()?.to_owned();
+            let req_json_rst = serde_json::from_str(&msg_text);
+            if req_json_rst.is_err() {
+                cq_add_log_w(&format!("req json err:{:?}",req_json_rst.err().unwrap())).unwrap();
+                continue;
+            }
+            // 转red请求
+            let mut req_json = req_json_rst.unwrap();
+            let root_rst = crate::onebot11s::request_to_red(&mut req_json);
+            if root_rst.is_err() {
+                cq_add_log_w(&format!("can't convert to red req:{:?}",root_rst.err().unwrap())).unwrap();
+                continue;
+            }
+            let (root,passive_id) = root_rst.unwrap();
+
+            
+            let self_id_t = self_id.clone();
+            let platform_t = platform.clone();
+            
+            tokio::spawn(async move {
+
+                let self_id = self_id_t.clone();
+                let platform = platform_t.clone();
+
+                let root_str = root.to_string();
+                
+                let echo_t = root.get("echo");
+                let echo;
+                if echo_t.is_some() {
+                    echo = Some(echo_t.unwrap().to_owned());
+                }else{
+                    echo = None;
+                }
+                let ret = tokio::task::spawn_blocking(move ||{
+                    let ret = cq_call_api(&platform.clone(), &self_id.clone(), &passive_id, &root_str);
+                    let ret_red_json:serde_json::Value = serde_json::from_str(&ret).unwrap();
+                    let ret_ob_json = crate::onebot11s::red_ret_to_ob(ret_red_json,echo);
+                    ret_ob_json
+                }).await;
+                if ret.is_ok() {
+                    send_onebot_api_ret(ret.unwrap(),platform_t,self_id_t).await;
+                }else{
+                    cq_add_log_w(&format!("err:{:?}",ret.err().unwrap())).unwrap();
+                }
+            });
+        }
+        Ok(())
+    }
+    let ret = deal_msg(read_half,platform,self_id).await;
+    if ret.is_err() {
+        cq_add_log_w(&format!("serve recv of onebot err:{:?}",ret.err().unwrap())).unwrap();
+    }
+    
+    Ok(())
+}
+
 
 fn http_auth(request: &hyper::Request<Incoming>) -> Result<i32> {
     let web_pass_raw = crate::read_web_password()?;
@@ -724,7 +837,7 @@ pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody {
 async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local: bool) -> Result<Response<BoxBody>> {
     
     let url_path = request.uri().path();
-
+    cq_add_log_w(&format!("url:{url_path}")).unwrap();
     // 登录页面不进行身份验证
     if url_path == "/login.html" {
         return deal_file(request).await; 
@@ -742,6 +855,75 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
         
         let res = hyper::Response::new(full("ok"));
         return Ok(res);
+    }
+    
+    // onebot 接口走专有身份验证
+    if url_path.starts_with("/onebot") {
+        if hyper_tungstenite::is_upgrade_request(&request){
+
+            
+            let mut access_token = String::new();
+            let params = crate::httpevent::get_params_from_uri(request.uri());
+            if params.contains_key("access_token"){
+                let ac = params.get("access_token").unwrap();
+                access_token = ac.to_owned();
+            }else if request.headers().contains_key("Authorization") {
+                let au = request.headers().get("Authorization").unwrap();
+                access_token = au.to_str()?.to_owned();
+            }
+
+            let web_pass_raw = crate::read_web_password()?;
+
+            // 需要鉴权
+            if web_pass_raw != "" && !is_local {
+                if access_token.contains(&web_pass_raw) {
+                    // 鉴权通过
+                }else {
+                    // 鉴权不通过
+                    return Ok(hyper::Response::new(full("broken http")));
+                }
+            }
+            
+            let parts = url_path.split("/").collect::<Vec<&str>>();
+            let platform_opt = parts.get(2);
+            let mut platform = String::new();
+            if platform_opt.is_some() {
+                platform = platform_opt.unwrap().to_string();
+            }
+            let self_id_opt = parts.get(3);
+            let mut self_id = String::new();
+            if self_id_opt.is_some() {
+                self_id = self_id_opt.unwrap().to_string();
+            }
+            
+            let (response, websocket) = hyper_tungstenite::upgrade(request, None)?;
+            // 开启一个线程来处理ws
+            tokio::spawn(async move {
+                let (tx, rx) =  tokio::sync::mpsc::channel::<String>(60);
+                let ws_uid = uuid::Uuid::new_v4().to_string();
+                {
+                    let mut lk = G_ONEBOT_WS_MAP.write().await;
+                    lk.insert(ws_uid.to_owned(), (tx,platform.clone(),self_id.clone()));
+                }
+                if let Err(e) = serve_onebot_websocket(websocket,rx,platform,self_id).await {
+                    cq_add_log_w(&format!("Error in websocket connection: {}", e)).unwrap();
+                }
+                {
+                    let mut lk = G_ONEBOT_WS_MAP.write().await;
+                    lk.remove(&ws_uid)
+                }
+            });
+            
+            let headers = response.headers();
+            let mut rrr = 
+                Response::builder()
+                .body(full("switching to websocket protocol"))?;
+            (*rrr.status_mut()) = response.status();
+            (*rrr.headers_mut()) = headers.to_owned();
+            return Ok(rrr);
+        }else{
+            return Ok(hyper::Response::new(full("broken http")));
+        }
     }
 
     
@@ -844,7 +1026,8 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
             (*rrr.status_mut()) = response.status();
             (*rrr.headers_mut()) = headers.to_owned();
             return Ok(rrr);
-        } else {
+        }
+        else {
             return Ok(hyper::Response::new(full("broken http")));
         }
     }else {

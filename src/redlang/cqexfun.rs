@@ -68,7 +68,7 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
     let self_id = rl.get_exmap("机器人ID");
     let platform = get_platform(&rl);
     let passive_id = rl.get_exmap("消息ID");
-    let cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str())?;
+    let cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str());
     let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
     let err = "输出流调用失败,retcode 不为0";
     if ret_json.get("retcode").ok_or(err)?.as_i64().ok_or(err)? != 0 {
@@ -159,7 +159,7 @@ pub fn init_cq_ex_fun_map() {
         let self_id = self_t.get_exmap("机器人ID");
         let platform = get_platform(&self_t);
         let passive_id = self_t.get_exmap("消息ID");
-        let cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str())?;
+        let cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str());
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let err = format!("获取群列表失败:{ret_json}");
         
@@ -189,7 +189,7 @@ pub fn init_cq_ex_fun_map() {
         let self_id = self_t.get_exmap("机器人ID");
         let platform = get_platform(&self_t);
         let passive_id = self_t.get_exmap("消息ID");
-        let cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str())?;
+        let cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str());
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let err = format!("获取发送者信息失败:{ret_json}");
         let data = ret_json.get("data").ok_or(err)?;
@@ -252,7 +252,7 @@ pub fn init_cq_ex_fun_map() {
         let self_id = self_t.get_exmap("机器人ID");
         let platform = get_platform(&self_t);
         let passive_id = self_t.get_exmap("消息ID");
-        let cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str())?;
+        let cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str());
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let err = "获机器人名字失败";
         let bot_name = ret_json.get("data").ok_or(err)?.get("nickname").ok_or(err)?.as_str().ok_or(err)?;
@@ -365,7 +365,7 @@ pub fn init_cq_ex_fun_map() {
             let self_id = self_t.get_exmap("机器人ID");
             let platform = get_platform(&self_t);
             let passive_id = self_t.get_exmap("消息ID");
-            let _cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str())?;
+            let _cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str());
         }  
         return Ok(Some("".to_string()));
     });
@@ -384,7 +384,7 @@ pub fn init_cq_ex_fun_map() {
         let self_id = self_t.get_exmap("机器人ID");
         let platform = get_platform(&self_t);
         let passive_id = self_t.get_exmap("消息ID");
-        let _cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str())?;
+        let _cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str());
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["输出流"],|self_t,params|{
@@ -431,26 +431,8 @@ pub fn init_cq_ex_fun_map() {
         let self_id = self_t.get_exmap("机器人ID");
         let platform = get_platform(&self_t);
         let passive_id = self_t.get_exmap("消息ID");
-        let js_v:serde_json::Value = match cq_call_api(&platform,&*self_id,&*passive_id,&content) {
-            Ok(call_ret) => {
-                let mut ret = call_ret;
-                if ret == "" {
-                    ret = serde_json::json!({
-                        "retcode":500,
-                        "status":"failed",
-                        "message":"控制端日志查看错误",
-                    }).to_string();
-                }
-                serde_json::from_str(&ret)?
-            },
-            Err(err) => {
-                serde_json::json!({
-                    "retcode":500,
-                    "status":"failed",
-                    "message":err.to_string(),
-                })
-            },
-        };
+        let call_ret = cq_call_api(&platform,&*self_id,&*passive_id,&content);
+        let js_v = serde_json::from_str(&call_ret)?;
         let ret = do_json_parse(&js_v, &self_t.type_uuid)?;
         return Ok(Some(ret));
     });
@@ -601,7 +583,7 @@ pub fn init_cq_ex_fun_map() {
         let self_id = self_t.get_exmap("机器人ID");
         let platform = get_platform(&self_t);
         let passive_id = self_t.get_exmap("消息ID");
-        let cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string())?;
+        let cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string());
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let err = format!("获取消息失败:{ret_json}");
         let raw_message = crate::mytool::json_to_cq_str(ret_json.get("data").ok_or(err)?)?;
@@ -715,7 +697,7 @@ pub fn init_cq_ex_fun_map() {
         let self_id = self_t.get_exmap("机器人ID");
         let platform = get_platform(&self_t);
         let passive_id = self_t.get_exmap("消息ID");
-        let cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string())?;
+        let cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string());
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let err = format!("获取BOT权限失败:{ret_json}");
         let dat_json = ret_json.get("data").ok_or(err)?;
@@ -762,7 +744,7 @@ pub fn init_cq_ex_fun_map() {
             
             let platform = get_platform(&self_t);
             let passive_id = self_t.get_exmap("消息ID");
-            let _cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string())?;
+            let _cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string());
         }else if request_type == "friend"{
             let send_json = serde_json::json!({
                 "action":"set_friend_add_request",
@@ -774,7 +756,7 @@ pub fn init_cq_ex_fun_map() {
             });
             let platform = get_platform(&self_t);
             let passive_id = self_t.get_exmap("消息ID");
-            let _cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string())?;
+            let _cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string());
         }
         return Ok(Some("".to_owned()));
     });
@@ -798,7 +780,7 @@ pub fn init_cq_ex_fun_map() {
             });
             let platform = get_platform(&self_t);
             let passive_id = self_t.get_exmap("消息ID");
-            let _cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string())?;
+            let _cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string());
         }else if request_type == "friend"{
             let send_json = serde_json::json!({
                 "action":"set_friend_add_request",
@@ -810,7 +792,7 @@ pub fn init_cq_ex_fun_map() {
             });
             let platform = get_platform(&self_t);
             let passive_id = self_t.get_exmap("消息ID");
-            let _cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string())?;
+            let _cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string());
         }
         return Ok(Some("".to_owned()));
     });

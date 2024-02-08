@@ -5,7 +5,7 @@ mod do_group_inc;
 
 use std::{rc::Rc, collections::{HashMap, HashSet}, sync::Arc, cell::RefCell};
 
-use crate::{add_running_script_num, cqapi::cq_add_log_w, dec_running_script_num, mytool::read_json_str, read_code_cache, redlang::RedLang, CLEAR_UUID, PAGING_UUID, REDLANG_UUID};
+use crate::{add_running_script_num, cqapi::cq_add_log_w, dec_running_script_num, httpserver::send_onebot_event, mytool::read_json_str, read_code_cache, redlang::RedLang, CLEAR_UUID, PAGING_UUID, REDLANG_UUID, RT_PTR};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -31,6 +31,11 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
     // 插入openapi事件
     crate::openapi::insert_event(&root);
 
+    let root_t = root.clone();
+    RT_PTR.spawn(async {
+        send_onebot_event(root_t).await;
+    });
+    
     // 预处理脚本
     let script_json = read_code_cache()?;
     let mut ban_pkgs = HashSet::new();
