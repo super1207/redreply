@@ -117,6 +117,8 @@ lazy_static! {
     // 注册的三方插件
     pub static ref G_LIB_MAP:RwLock<HashMap<c_int,LibStruct>> = RwLock::new(HashMap::new());
     pub static ref G_LIB_AC:Mutex<c_int> = Mutex::new(0);
+    // sqlite锁
+    pub static ref G_SQLITE_MX:std::sync::Mutex<bool> = std::sync::Mutex::new(true);
 }
 
 

@@ -12,7 +12,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::io::Write;
-use crate::{cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
+use crate::{cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, G_SQLITE_MX, RT_PTR};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -1693,6 +1693,9 @@ pub fn init_ex_fun_map() {
         }else{
             sql_params = RedLang::parse_arr(&sql_params_str)?;
         }
+
+        let _lk = G_SQLITE_MX.lock().unwrap();
+        
         let conn = rusqlite::Connection::open(sqlfile)?;
         let mut stmt = conn.prepare(&sql)?;
         let count = stmt.column_count();
@@ -1716,8 +1719,12 @@ pub fn init_ex_fun_map() {
         return Ok(Some(self_t.build_arr(vec.iter().map(AsRef::as_ref).collect())));
     });
     add_fun(vec!["定义持久常量"],|self_t,params|{
+        
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
+        
+        let _lk = G_SQLITE_MX.lock().unwrap();
+        
         let conn = rusqlite::Connection::open(sql_file)?;
         conn.execute("CREATE TABLE IF NOT EXISTS CONST_TABLE (KEY TEXT PRIMARY KEY,VALUE TEXT);", [])?;
         let mut key = self_t.get_param(params, 0)?;
@@ -1734,6 +1741,9 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["持久常量"],|self_t,params|{
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
+        
+        let _lk = G_SQLITE_MX.lock().unwrap();
+        
         let conn = rusqlite::Connection::open(sql_file)?;
         let mut key = self_t.get_param(params, 0)?;
         if self_t.get_type(&key)? !=  "文本" {

@@ -1,6 +1,6 @@
 use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
 
-use crate::{cqapi::{cq_call_api, cq_get_app_directory2, cq_get_app_directory1}, mytool::{read_json_str, cq_params_encode, cq_text_encode}, PAGING_UUID, redlang::{get_const_val, set_const_val}, CLEAR_UUID, G_INPUTSTREAM_VEC,G_SCRIPT_RELATE_MSG, ScriptRelatMsg};
+use crate::{cqapi::{cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, mytool::{cq_params_encode, cq_text_encode, read_json_str}, redlang::{get_const_val, set_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, G_SQLITE_MX, PAGING_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -817,6 +817,7 @@ pub fn init_cq_ex_fun_map() {
         let user_id = self_t.get_exmap("发送者ID").to_string();
         let add_score = self_t.get_param(params, 0)?.parse::<i64>()?;
 
+        let _lk = G_SQLITE_MX.lock().unwrap();
         // 创建表
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
@@ -850,6 +851,8 @@ pub fn init_cq_ex_fun_map() {
         let user_id = self_t.get_exmap("发送者ID").to_string();
         let set_score = self_t.get_param(params, 0)?.parse::<u32>()?;
 
+        let _lk = G_SQLITE_MX.lock().unwrap();
+
         // 创建表
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
@@ -867,6 +870,9 @@ pub fn init_cq_ex_fun_map() {
         let key1 = self_t.get_exmap("群ID");
         let group_id = format!("{}",key1);
         let user_id = self_t.get_exmap("发送者ID").to_string();
+        
+        let _lk = G_SQLITE_MX.lock().unwrap();
+        
         // 查询积分
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
@@ -893,6 +899,8 @@ pub fn init_cq_ex_fun_map() {
         }else{
             limit_num = limit.parse::<i32>()?;
         }
+
+        let _lk = G_SQLITE_MX.lock().unwrap();
 
         // 查询积分
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;

@@ -269,7 +269,7 @@ impl BotConnectTrait for NTQQV1Connect {
                         });
                     }
                 }
-                std::thread::sleep(std::time::Duration::from_secs(1));
+                // std::thread::sleep(std::time::Duration::from_secs(1));
             }
             // 移除conn
             if let Some(val) = is_stop.upgrade() {
