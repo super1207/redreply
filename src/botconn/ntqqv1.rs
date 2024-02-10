@@ -21,6 +21,7 @@ pub struct NTQQV1Connect {
 
 lazy_static!{
     static ref G_UIN_UID_MAP:RwLock<HashMap<String,String>> = RwLock::new(HashMap::new());
+    static ref G_GROUP_UIN_CARD:RwLock<HashMap<String,String>> = RwLock::new(HashMap::new());
 }
 
 pub fn str_msg_to_arr_safe(js:&serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
@@ -110,6 +111,11 @@ async fn deal_group_event(self_t:&SelfData,root:serde_json::Value) -> Result<(),
         lk.insert(user_id.to_owned(), user_uid);
     }
     let card = read_json_str(&raw, "sendMemberName");
+    {
+        let mut lk = G_GROUP_UIN_CARD.write().unwrap();
+        let key = format!("{group_id}{user_id}");
+        lk.insert(key, card.clone());
+    }
     let nickname = read_json_str(&raw, "sendNickName");
     let tm_str = read_json_str(&raw, "msgTime");
     let tm = tm_str.parse::<i64>()?;
@@ -290,14 +296,99 @@ impl BotConnectTrait for NTQQV1Connect {
         let config_json_str = self.url.get(9..).ok_or("ntqqv1 url格式错误")?.to_owned();
         let url_t = format!("http://{config_json_str}");
         let params = read_json_or_default(json, "params",&serde_json::Value::Null);
+        
         if action == "get_login_info"{
-            let id = self.self_id.read().unwrap().to_owned();
+            let uin = self.self_id.read().unwrap().to_owned();
+            let mut uid = String::new();
+            {
+                let lk = G_UIN_UID_MAP.read().unwrap();
+                if let Some(uid_t) = lk.get(&uin) {
+                    uid = uid_t.to_owned();
+                }
+            }
+            let ret = http_post(&url_t, &serde_json::json!({
+                "action":"getUserInfo",
+                "params":[uid],
+                "timeout":5000
+            }), true,Weak::new()).await?;
+
+            let nick = read_json_str(&ret, "nickName");
+            
             return Ok(serde_json::json!({
                 "retcode":0,
                 "status":"ok",
                 "data":{
-                    "user_id":id,
-                    "nickname":id,
+                    "user_id":uin,
+                    "nickname":nick,
+                }
+            }));
+        }
+        else if action == "get_group_member_info" {
+            let uin = read_json_str(params, "user_id");
+            let group_id = read_json_str(params, "group_id");
+            let mut uid = String::new();
+            {
+                let lk = G_UIN_UID_MAP.read().unwrap();
+                if let Some(uid_t) = lk.get(&uin) {
+                    uid = uid_t.to_owned();
+                }
+            }
+            let ret = http_post(&url_t, &serde_json::json!({
+                "action":"getUserInfo",
+                "params":[uid],
+                "timeout":5000
+            }), true,Weak::new()).await?;
+
+            let nickname = read_json_str(&ret, "nickName");
+            let mut card = String::new();
+            {
+                let lk = G_GROUP_UIN_CARD.read().unwrap();
+                let key = format!("{group_id}{uin}");
+                if let Some(card_t) = lk.get(&key) {
+                    card = card_t.to_owned();
+                }
+            }
+            if card == "" {
+                card = nickname.clone();
+            }
+            return Ok(serde_json::json!({
+                "retcode":0,
+                "status":"ok",
+                "data":{
+                    "group_id":group_id,
+                    "user_id":uin,
+                    // "groups_id":groups_id,
+                    "nickname":nickname,
+                    "card":card,
+                    // "join_time":join_time,
+                    // "avatar":avatar,
+                    "role":"member"
+                }
+            }));
+        }
+        else if action == "get_stranger_info" {
+            let uin = read_json_str(params, "user_id");
+            let mut uid = String::new();
+            {
+                let lk = G_UIN_UID_MAP.read().unwrap();
+                if let Some(uid_t) = lk.get(&uin) {
+                    uid = uid_t.to_owned();
+                }
+            }
+            let ret = http_post(&url_t, &serde_json::json!({
+                "action":"getUserInfo",
+                "params":[uid],
+                "timeout":5000
+            }), true,Weak::new()).await?;
+
+            let nickname = read_json_str(&ret, "nickName");
+            
+            return Ok(serde_json::json!({
+                "retcode":0,
+                "status":"ok",
+                "data":{
+                    "user_id":uin,
+                    "nickname":nickname
                 }
             }));
         }
