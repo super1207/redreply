@@ -21,7 +21,8 @@ pub struct NTQQV1Connect {
 
 lazy_static!{
     static ref G_UIN_UID_MAP:RwLock<HashMap<String,String>> = RwLock::new(HashMap::new());
-    static ref G_GROUP_UIN_CARD:RwLock<HashMap<String,String>> = RwLock::new(HashMap::new());
+    //group_id-infolist
+    static ref G_GROUP_MEMBERS:RwLock<HashMap<String,Vec<serde_json::Value>>> = RwLock::new(HashMap::new());
 }
 
 pub fn str_msg_to_arr_safe(js:&serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
@@ -68,6 +69,49 @@ async fn http_get(url:&str) -> Result<Vec<u8>, Box<dyn std::error::Error + Send 
     return Ok(ret_str);
 }
 
+async fn update_group_members(url:&str,group_id:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let ret = http_post(&url, &serde_json::json!({
+        "action":"getGroupMemberList",
+        "params":[group_id,3000],
+        "timeout":15000
+    }), true,Weak::new()).await?;
+    
+    let infos = &ret["result"]["infos"];
+    // cq_add_log_w(&format!("ret:{ret:?}"));
+    //infos.l
+    let mut obmembers = vec![];
+    for (uid,info) in infos.as_object().ok_or("info not object")? {
+        let mut v = serde_json::json!({});
+        v["group_id"] = serde_json::json!(group_id);
+        v["user_id"] = serde_json::json!(info["uin"]);
+        {
+            let mut lk = G_UIN_UID_MAP.write().unwrap();
+            let user_id = read_json_str(info, "uin");
+            lk.insert(user_id, uid.to_owned());
+        }
+        v["nickname"] = serde_json::json!(info["nick"]);
+        v["card"] = serde_json::json!(info["cardName"]);
+        v["sex"] = serde_json::json!("unknown");
+        v["level"] = serde_json::json!("0");
+        let role_r = read_json_str(info, "role");
+        let role;
+        if role_r == "4" {
+            role = "owner";
+        } else if role_r == "3" {
+            role = "admin";
+        } else {
+            role = "member";
+        }
+        v["role"] = serde_json::json!(role);
+        obmembers.push(v);
+    }
+    {
+        let mut lk = G_GROUP_MEMBERS.write().unwrap();
+        lk.insert(group_id.to_owned(), obmembers.clone());
+    }
+    return Ok(());
+}
+
 
 
 impl NTQQV1Connect {
@@ -111,11 +155,6 @@ async fn deal_group_event(self_t:&SelfData,root:serde_json::Value) -> Result<(),
         lk.insert(user_id.to_owned(), user_uid);
     }
     let card = read_json_str(&raw, "sendMemberName");
-    {
-        let mut lk = G_GROUP_UIN_CARD.write().unwrap();
-        let key = format!("{group_id}{user_id}");
-        lk.insert(key, card.clone());
-    }
     let nickname = read_json_str(&raw, "sendNickName");
     let tm_str = read_json_str(&raw, "msgTime");
     let tm = tm_str.parse::<i64>()?;
@@ -324,47 +363,70 @@ impl BotConnectTrait for NTQQV1Connect {
             }));
         }
         else if action == "get_group_member_info" {
-            let uin = read_json_str(params, "user_id");
+            let user_id = read_json_str(params, "user_id");
             let group_id = read_json_str(params, "group_id");
-            let mut uid = String::new();
-            {
-                let lk = G_UIN_UID_MAP.read().unwrap();
-                if let Some(uid_t) = lk.get(&uin) {
-                    uid = uid_t.to_owned();
-                }
+            let no_cache_r = read_json_or_default(params, "no_cache", &serde_json::Value::Bool(false));
+            let no_cache;
+            if no_cache_r.is_boolean() {
+                no_cache =  no_cache_r.as_bool().unwrap();
+            }else{
+                no_cache = false;
             }
-            let ret = http_post(&url_t, &serde_json::json!({
-                "action":"getUserInfo",
-                "params":[uid],
-                "timeout":5000
-            }), true,Weak::new()).await?;
 
-            let nickname = read_json_str(&ret, "nickName");
-            let mut card = String::new();
+            let has_cache;
+
             {
-                let lk = G_GROUP_UIN_CARD.read().unwrap();
-                let key = format!("{group_id}{uin}");
-                if let Some(card_t) = lk.get(&key) {
-                    card = card_t.to_owned();
+                let lk = G_GROUP_MEMBERS.read().unwrap();
+                let gp = lk.get(&group_id);
+                if gp.is_none() {
+                    has_cache = false;
+                }else{
+                    has_cache = true;
                 }
             }
-            if card == "" {
-                card = nickname.clone();
+
+            if no_cache || !has_cache {
+                update_group_members(&url_t, &group_id).await?;
             }
+
+            {
+                let lk = G_GROUP_MEMBERS.read().unwrap();
+                let v = lk.get(&group_id).ok_or("can't get group_members")?;
+                for member in v {
+                    let user_id2 = member["user_id"].as_str().ok_or("user_id not str")?;
+                    if user_id == user_id2 {
+                        return Ok(serde_json::json!({
+                            "retcode":0,
+                            "status":"ok",
+                            "data":member
+                        }));
+                    }
+                }
+            }
+
             return Ok(serde_json::json!({
-                "retcode":0,
-                "status":"ok",
-                "data":{
-                    "group_id":group_id,
-                    "user_id":uin,
-                    // "groups_id":groups_id,
-                    "nickname":nickname,
-                    "card":card,
-                    // "join_time":join_time,
-                    // "avatar":avatar,
-                    "role":"member"
-                }
+                "retcode":-1,
+                "status":"failed",
+                "data":"member not found"
             }));
+        }
+        else if action == "get_group_member_list" {
+            let group_id = read_json_str(params, "group_id");
+            update_group_members(&url_t,&group_id).await?;
+            let lk = G_GROUP_MEMBERS.read().unwrap();
+            if let Some(obmembers) = lk.get(&group_id) {
+                return Ok(serde_json::json!({
+                    "retcode":0,
+                    "status":"ok",
+                    "data":obmembers
+                }));
+            }else{
+                return Ok(serde_json::json!({
+                    "retcode":-1,
+                    "status":"failed",
+                    "data":"can't get group_members"
+                }));
+            }
         }
         else if action == "get_stranger_info" {
             let uin = read_json_str(params, "user_id");
@@ -502,36 +564,9 @@ impl BotConnectTrait for NTQQV1Connect {
                             &base64::alphabet::STANDARD,
                             base64::engine::general_purpose::PAD), b64_str)?;
                         file_bin = content;
-                        // let tmpdir = crate::cqapi::get_tmp_dir()?;
-                        // let mut hasher = Md5::new();
-                        // hasher.update(content.clone());
-                        // let result = hasher.finalize();
-                        // let mut filename = String::new();
-                        // for ch in result {
-                        //     filename.push_str(&format!("{:02x}",ch));
-                        // }
-                        // file_dir = tmpdir + &filename + ".ptt";
-                        // let path = Path::new(&file_dir);
-                        // if !path.is_file() {
-                        //     tokio::fs::write(file_dir.clone(), content).await?;
-                        // }
-                        
                     }else if file.starts_with("http"){
                         let content = http_get(&file).await?;
                         file_bin = content;
-                        // let tmpdir = crate::cqapi::get_tmp_dir()?;
-                        // let mut hasher = Md5::new();
-                        // hasher.update(content.clone());
-                        // let result = hasher.finalize();
-                        // let mut filename = String::new();
-                        // for ch in result {
-                        //     filename.push_str(&format!("{:02x}",ch));
-                        // }
-                        // file_dir = tmpdir + &filename + ".ptt";
-                        // let path = Path::new(&file_dir);
-                        // if !path.is_file() {
-                        //     tokio::fs::write(file_dir.clone(), content).await?;
-                        // }
                     }else {
                         let sp = std::path::MAIN_SEPARATOR.to_string();
                         let file_dir;
