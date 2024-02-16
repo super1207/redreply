@@ -106,7 +106,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         Ok(res)
     } 
     else if url_path == "/install_plus" {
-        if !can_read {
+        if !can_write {
             let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
