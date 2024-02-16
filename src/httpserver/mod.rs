@@ -184,7 +184,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
             },
         }
     }else if url_path == "/get_config" {
-        if !can_read {
+        if !can_write {
             let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }

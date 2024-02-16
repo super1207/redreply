@@ -70,13 +70,26 @@ async fn http_get(url:&str) -> Result<Vec<u8>, Box<dyn std::error::Error + Send 
 }
 
 async fn update_group_members(url:&str,group_id:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let ret = http_post(&url, &serde_json::json!({
+    let mut ret = http_post(&url, &serde_json::json!({
         "action":"getGroupMemberList",
         "params":[group_id,3000],
         "timeout":15000
     }), true,Weak::new()).await?;
     
-    let infos = &ret["result"]["infos"];
+    let mut infos = &ret["result"]["infos"];
+
+    let infos_obj = infos.as_object().ok_or("info not object")?;
+    
+    // 第一次获取有概率返回空，原因未知，这里先适配下，以后再找原因。
+    if infos_obj.len() == 0 {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        ret = http_post(&url, &serde_json::json!({
+            "action":"getGroupMemberList",
+            "params":[group_id,3000],
+            "timeout":15000
+        }), true,Weak::new()).await?;
+        infos = &ret["result"]["infos"];
+    }
     // cq_add_log_w(&format!("ret:{ret:?}"));
     //infos.l
     let mut obmembers = vec![];
@@ -105,7 +118,7 @@ async fn update_group_members(url:&str,group_id:&str) -> Result<(), Box<dyn std:
         v["role"] = serde_json::json!(role);
         obmembers.push(v);
     }
-    {
+    if obmembers.len() != 0 {
         let mut lk = G_GROUP_MEMBERS.write().unwrap();
         lk.insert(group_id.to_owned(), obmembers.clone());
     }
