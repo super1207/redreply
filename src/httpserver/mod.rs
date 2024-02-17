@@ -588,6 +588,8 @@ async fn deal_file(request: hyper::Request<hyper::body::Incoming>) -> Result<hyp
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/plain"));
     }else if url_path.ends_with(".md") {
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/markdown"));
+    }else if url_path.ends_with(".woff2") {
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("font/woff2"));
     }
     else {
         *res.status_mut() = hyper::StatusCode::NOT_FOUND;
