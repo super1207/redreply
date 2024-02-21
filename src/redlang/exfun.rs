@@ -1613,7 +1613,30 @@ pub fn init_ex_fun_map() {
             let _guard = scopeguard::guard(tmp_file_path.clone(), |tmp_file_path| {
                 let _foo = fs::remove_file(tmp_file_path);
             });
-            std::process::Command::new("cmd").current_dir(currdir).arg("/c").arg(tmp_file_path).output()?
+
+            // 记录title
+            lazy_static! {
+                static ref CMD_TITLE:std::sync::RwLock<String> = std::sync::RwLock::new("".to_owned());
+            }
+            static START: std::sync::Once = std::sync::Once::new();
+            START.call_once(|| {
+                if let Ok(console_title) = winconsole::console::get_title() {
+                    let mut lk = CMD_TITLE.write().unwrap();
+                    *lk = console_title;
+                }
+            });
+            
+            
+            let mut command = std::process::Command::new("cmd");
+            let out = command.current_dir(currdir).arg("/c").arg(tmp_file_path).output()?;
+            // 恢复title
+            {
+                let lk = CMD_TITLE.read().unwrap();
+                if lk.len() != 0 {
+                    let _ = winconsole::console::set_title(&lk);
+                }
+            }
+            out
         } else {
             std::process::Command::new("sh").current_dir(currdir).arg("-c").arg(cmd_str).output()?
         };

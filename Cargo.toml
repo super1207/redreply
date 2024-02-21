@@ -63,6 +63,7 @@ crc64 = "2.0.0"
 [target.'cfg(windows)'.dependencies]
 winreg = "0.50.0"
 screenshots = "0.7.1"
+winconsole = "0.11.1"
 
 
 [profile.release]
