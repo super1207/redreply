@@ -97,7 +97,7 @@ pub fn init_lib() -> Result<(), Box<dyn std::error::Error>> {
                         return;
                     }
                     let plus = plus_opt.unwrap();
-                    let cmd_arr_rst = RedLang::parse_arr2(cmdarr_str,"12331549-6D26-68A5-E192-5EBE9A6EB998");
+                    let cmd_arr_rst = RedLang::parse_arr(cmdarr_str);
                     if cmd_arr_rst.is_err() {
                         return;
                     }

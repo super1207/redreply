@@ -839,7 +839,7 @@ pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody {
 async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local: bool) -> Result<Response<BoxBody>> {
     
     let url_path = request.uri().path();
-    cq_add_log_w(&format!("url:{url_path}")).unwrap();
+    // cq_add_log_w(&format!("url:{url_path}")).unwrap();
     // 登录页面不进行身份验证
     if url_path == "/login.html" {
         return deal_file(request).await; 

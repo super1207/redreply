@@ -1860,8 +1860,7 @@ impl RedLang {
                         fun_params_t.push(ret);
                     }
                     let bind = fun_params_t.iter().map(|x|x.as_str()).collect();
-                    let params_str_t = self.build_arr(bind);
-                    let params_str = format!("12331549-6D26-68A5-E192-5EBE9A6EB998{}",params_str_t.get(36..).unwrap());
+                    let params_str = self.build_arr(bind);
                     let cmd_cstr = CString::new(cmd)?;
                     let params_cstr = CString::new(params_str)?;
                     extern "system" fn callback(ctx:*mut Option<String>,ret_cstr:*const c_char,retcode:c_int) {
@@ -1886,11 +1885,7 @@ impl RedLang {
         }
         if libret.is_some() {
             let ret = (*libret).unwrap();
-            if ret.starts_with("12331549-6D26-68A5-E192-5EBE9A6EB998"){
-                return Ok(format!("{}{}",crate::REDLANG_UUID.to_string(),ret.get(36..).unwrap()));
-            }else{
-                return Ok(ret);
-            }
+            return Ok(ret);
         }
 
         // 执行核心命令与拓展命令
@@ -1995,7 +1990,7 @@ impl RedLang {
         }
         return Ok(ret_arr);
     }
-    fn parse_arr<'a>(arr_data: &'a str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {
+    pub fn parse_arr<'a>(arr_data: &'a str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {
         Self::parse_arr2(arr_data,&crate::REDLANG_UUID.to_string())
     }
     pub fn parse_obj(obj_data: &str) -> Result<BTreeMap<String,String>, Box<dyn std::error::Error>> {

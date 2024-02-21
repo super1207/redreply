@@ -12,7 +12,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::io::Write;
-use crate::{cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, G_SQLITE_MX, RT_PTR};
+use crate::{cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -1694,7 +1694,7 @@ pub fn init_ex_fun_map() {
             sql_params = RedLang::parse_arr(&sql_params_str)?;
         }
 
-        let _lk = G_SQLITE_MX.lock().unwrap();
+        // let _lk = G_SQLITE_MX.lock().unwrap();
         
         let conn = rusqlite::Connection::open(sqlfile)?;
         let mut stmt = conn.prepare(&sql)?;
@@ -1723,18 +1723,12 @@ pub fn init_ex_fun_map() {
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
         
-        let _lk = G_SQLITE_MX.lock().unwrap();
+        // let _lk = G_SQLITE_MX.lock().unwrap();
         
         let conn = rusqlite::Connection::open(sql_file)?;
         conn.execute("CREATE TABLE IF NOT EXISTS CONST_TABLE (KEY TEXT PRIMARY KEY,VALUE TEXT);", [])?;
-        let mut key = self_t.get_param(params, 0)?;
-        let mut value = self_t.get_param(params, 1)?;
-        if self_t.get_type(&key)? !=  "文本" {
-            key = String::from("12331549-6D26-68A5-E192-5EBE9A6EB998") + key.get(36..).unwrap();
-        }
-        if self_t.get_type(&value)? !=  "文本" {
-            value = String::from("12331549-6D26-68A5-E192-5EBE9A6EB998") + value.get(36..).unwrap();
-        }
+        let key = self_t.get_param(params, 0)?;
+        let value = self_t.get_param(params, 1)?;
         conn.execute("REPLACE INTO CONST_TABLE (KEY,VALUE) VALUES (?,?)", [key,value])?;
         return Ok(Some("".to_string()));
     });
@@ -1742,21 +1736,14 @@ pub fn init_ex_fun_map() {
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
         
-        let _lk = G_SQLITE_MX.lock().unwrap();
+        // let _lk = G_SQLITE_MX.lock().unwrap();
         
         let conn = rusqlite::Connection::open(sql_file)?;
-        let mut key = self_t.get_param(params, 0)?;
-        if self_t.get_type(&key)? !=  "文本" {
-            key = String::from("12331549-6D26-68A5-E192-5EBE9A6EB998") + key.get(36..).unwrap();
-        }
+        let key = self_t.get_param(params, 0)?;
         let ret_rst:Result<String,rusqlite::Error> = conn.query_row("SELECT VALUE FROM CONST_TABLE WHERE KEY = ?", [key], |row| row.get(0));
         let ret_str;
         if let Ok(ret) =  ret_rst {
-            if ret.starts_with("12331549-6D26-68A5-E192-5EBE9A6EB998") {
-                ret_str = crate::REDLANG_UUID.to_owned() + ret.get(36..).unwrap();
-            }else {
-                ret_str = ret;
-            }
+            ret_str = ret;
         }else {
             ret_str =  self_t.get_param(params, 1)?;
         }

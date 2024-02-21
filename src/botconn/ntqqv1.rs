@@ -605,11 +605,9 @@ impl BotConnectTrait for NTQQV1Connect {
                     if let Some(lib_ptr) = lib_ptr_opt {
                         let call_cmd_fun_rst = unsafe {lib_ptr.get::<Symbol<extern "system" fn(*mut Option<String>,*const c_char,*const c_char,extern "system" fn(*mut Option<String>,*const c_char,c_int))>>(b"redreply_callcmd")};
                         if call_cmd_fun_rst.is_ok() {
-                            let autio_bin_str_t = RedLang::build_bin_with_uid(&REDLANG_UUID, file_bin.clone());
-                            let autio_bin_str = format!("12331549-6D26-68A5-E192-5EBE9A6EB998{}",autio_bin_str_t.get(36..).unwrap());
+                            let autio_bin_str = RedLang::build_bin_with_uid(&REDLANG_UUID, file_bin.clone());
                             let params_str_t = vec![autio_bin_str.as_str()];
-                            let params_str_t = RedLang::build_arr_with_uid(&REDLANG_UUID,params_str_t);
-                            let params_str = format!("12331549-6D26-68A5-E192-5EBE9A6EB998{}",params_str_t.get(36..).unwrap());
+                            let params_str = RedLang::build_arr_with_uid(&REDLANG_UUID,params_str_t);
                             let cmd_cstr = CString::new("__TXSILK")?;
                             let params_cstr = CString::new(params_str)?;
                             extern "system" fn callback(ctx:*mut Option<String>,ret_cstr:*const c_char,retcode:c_int) {
@@ -633,9 +631,8 @@ impl BotConnectTrait for NTQQV1Connect {
 
                     if libret.is_some() {
                         let ret = (*libret).unwrap();
-                        if ret.starts_with("12331549-6D26-68A5-E192-5EBE9A6EB998"){
-                            let bin_str = format!("{}{}",crate::REDLANG_UUID.to_string(),ret.get(36..).unwrap());
-                            if let Ok(v) = RedLang::parse_bin(&bin_str) {
+                        if ret.starts_with(&crate::REDLANG_UUID.to_string()){
+                            if let Ok(v) = RedLang::parse_bin(&ret) {
                                 file_bin = v;
                             }
                         }

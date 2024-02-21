@@ -1,43 +1,47 @@
 # 强大的聊天自定义问答系统-红色问答
 
-## 参考文档
+## 开始使用
+
+1：下载项目release中的`redlang.exe`，双击并执行，会自动弹出一个网页。<br />
+
+2：在自动弹出的浏览器界面中，点击`连接平台协议`，然后按需求添加协议。 <br />
+
+3：然后，你可以开始写脚本了，你可以查看[一些例子](/example/)。
+
+4：有个交流群：920220179，有一大堆好看的。
+
+## 平台协议推荐
+
+| 平台 | 协议 |
+|---|---|
+| 官方QQ频道私域 | 内置(推荐)、基于Gensokyo/onebot(其次推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐)、基于satoricq/satori(不推荐) |
+| 官方QQ频道公域/群 | 内置(推荐)、基于Gensokyo/onebot(同样推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐)、基于satoricq/satori(不推荐) |
+| 开黑啦kook | 基于kookonebot(推荐)、基于satoricq/satori(同样推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐) |
+| 三方QQ | 基于openshamrock(推荐)、基于llonebot(同样推荐)、基于Lagrange.Core/onebot(其次推荐)、基于opqonebot(不推荐)、基于go-cqhttp(不推荐)、基于chronocat(无测试) |
+| 米哈游大别野 | 基于satoricq/satori(推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐) |
+| 其它 | 基于koishi/satori（无测试）、基于OlivOS（无测试） |
+
+[推荐]：经过super1207仔细测试，使用/部署体验良好。
+
+[同样推荐]：经过其它人仔细测试，使用/部署体验良好、或super1207希望进行更多测试。
+
+[其次推荐]：经过仔细测试，使用/部署体验不那么好。
+
+[不推荐]：经过仔细测试但体验不好、或者未仔细测试、或者长时间未测试。
+
+[无测试]：没有经过测试，但是理论上可以运行。
+
+
+
+
+## 语法参考文档
 
 [语法详细参考](/detailref/)
 
-## 背景
-
-受`铃心自定义`的启发，制作一个类似的自定义系统。 <br />
-
-随着`酷Q`、`先驱`等机器人平台的停运，其上运行的`铃心自定义`也逐渐不再被其作者很好的维护。再加上各种跨平台的开源机器人平台的逐渐流行，一个全开源、跨平台的自定义问答系统被期待着。<br />
-
-`红色问答`因此而出现。
-
-## 主要功能
-
-以自定义回复为核心，附带群管、监控、词库、语音、图片、调用接口、对接网站、黑白名单、定时任务、网页爬虫、简单编程、入群验证、发言限制、Web服务器、制作接口等功能。<br />
-
-## 开始使用
-
-1：登录一个`onebot11`的协议端，如[Gensokyo](https://github.com/Hoshinonyaruko/Gensokyo)、[KookOnebot](https://github.com/super1207/KookOneBot)并开启[ws正向连接](https://github.com/botuniverse/onebot-11/tree/master/communication)。<br />
-
-2：下载项目release中的`redlang.exe`，并执行。<br />
-
-3：在自动弹出的浏览器界面中，点击`连接ONEBOT`，然后添加第一步中的`ws正向连接`，如：<br />
-
-`ws://127.0.0.1:8080?access_token=77156`
-
-4：如果出现任何疑惑，可以到我们的`QQ`群中随意询问(没有疑惑也可以来玩。
-
-<br /> QQ群：920220179(已满)、556515826
-
-此外，欢迎来我的KOOK群玩！邀请链接：https://kook.top/3SEwQj
-
-5（可选但建议）：使用启动器：`curl -L http://red.super1207.top/redstart.sh | bash`
-
-在windows下，可以使用[git bash](https://git-scm.com/download)
-
 
 ## 访问控制
+
+访问控制对来自本机的访问无效。
 
 在`config.json`中，若存在`web_password`这个字符串字段且不为空字符串，则访问webui时需要先输入密码登录，才能访问，输入此密码，将获得读写权限。
 
