@@ -154,9 +154,12 @@ fn change_event_at_and_reply(root:&mut serde_json::Value) -> Result<(),Box<dyn s
             }
         }else if tp == "reply" {
             let data = node.get_mut("data").ok_or("no data in reply node")?;
+            let id_str = read_json_str(data, "id");
+            if id_str == "" {
+                return Err("id in node not str".into());
+            }
             let id = data.get_mut("id").ok_or("no id in data node")?;
-            let id_str = id.as_str().ok_or("id in node not str")?;
-            let ob_id = red_id_to_ob(id_str);
+            let ob_id = red_id_to_ob(&id_str);
             (*id) = serde_json::to_value(ob_id.to_string()).unwrap();
         }
     }

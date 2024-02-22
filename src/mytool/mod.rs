@@ -2,6 +2,7 @@ use std::{collections::HashMap, str::FromStr};
 
 use crate::{cqapi::cq_add_log, redlang::RedLang};
 
+use serde_json::Value;
 use tokio::io::AsyncWriteExt;
 use zhconv::{zhconv, Variant};
 
@@ -269,6 +270,15 @@ pub fn cq_params_encode(data:&str) -> String {
     return ret_str;
 }
 
+fn json_as_str(json:&Value) -> Result<String, Box<dyn std::error::Error>> {
+    if json.is_number() {
+        return Ok(json.as_number().unwrap().to_string());
+    }
+    let ret = json.as_str().ok_or(format!("can't convert json:`{json:?}` to str"))?;
+    Ok(ret.to_owned())
+}
+
+
 pub fn json_to_cq_str(js: & serde_json::Value) ->Result<String, Box<dyn std::error::Error>> {
     let msg_json = js.get("message").ok_or("json中缺少message字段")?;
     let mut ret:String = String::new();
@@ -286,10 +296,10 @@ pub fn json_to_cq_str(js: & serde_json::Value) ->Result<String, Box<dyn std::err
             if nodes.is_object() {
                 for j in nodes.as_object().ok_or("msg nodes 不是object")? {
                     let k = j.0;
-                    let v = j.1.as_str().ok_or("j.1.as_str() err")?;
+                    let v = json_as_str(j.1)?;
                     cqcode.push_str(k);
                     cqcode.push('=');
-                    cqcode.push_str(cq_params_encode(v).as_str());
+                    cqcode.push_str(cq_params_encode(&v).as_str());
                     cqcode.push(',');    
                 }
             }
