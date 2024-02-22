@@ -1620,6 +1620,8 @@ pub fn init_ex_fun_map() {
             }
             static START: std::sync::Once = std::sync::Once::new();
             START.call_once(|| {
+
+                #[cfg(target_os = "windows")]
                 if let Ok(console_title) = winconsole::console::get_title() {
                     let mut lk = CMD_TITLE.write().unwrap();
                     *lk = console_title;
@@ -1633,6 +1635,7 @@ pub fn init_ex_fun_map() {
             {
                 let lk = CMD_TITLE.read().unwrap();
                 if lk.len() != 0 {
+                    #[cfg(target_os = "windows")]
                     let _ = winconsole::console::set_title(&lk);
                 }
             }
