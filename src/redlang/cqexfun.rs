@@ -538,6 +538,20 @@ pub fn init_cq_ex_fun_map() {
         let ret = self_t.build_arr(ret_vec);
         return Ok(Some(ret));
     });
+    add_fun(vec!["取回复ID"],|self_t,_params|{
+        let raw_data = self_t.get_exmap("原始事件");
+        let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+        let err = "获取message失败";
+        let message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?;
+        for it in message {
+            let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
+            if tp == "reply" {
+                let id = it.get("data").ok_or(err)?.get("id").ok_or(err)?.as_str().ok_or(err)?;
+                return Ok(Some(id.to_owned()));
+            }
+        }
+        return Ok(Some("".to_owned()));
+    });
     add_fun(vec!["取图片"],|self_t,_params|{
         let raw_data = self_t.get_exmap("原始事件");
         let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
