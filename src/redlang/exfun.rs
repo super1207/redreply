@@ -12,7 +12,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::io::Write;
-use crate::{cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
+use crate::{cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, G_SQLITE_MX, RT_PTR};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -1720,7 +1720,7 @@ pub fn init_ex_fun_map() {
             sql_params = RedLang::parse_arr(&sql_params_str)?;
         }
 
-        // let _lk = G_SQLITE_MX.lock().unwrap();
+        let _lk = G_SQLITE_MX.lock().unwrap();
         
         let conn = rusqlite::Connection::open(sqlfile)?;
         let mut stmt = conn.prepare(&sql)?;
@@ -1749,24 +1749,31 @@ pub fn init_ex_fun_map() {
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
         
-        // let _lk = G_SQLITE_MX.lock().unwrap();
+        let key = self_t.get_param(params, 0)?;
+        let value = self_t.get_param(params, 1)?;
+
+        let _lk = G_SQLITE_MX.lock().unwrap();
         
         let conn = rusqlite::Connection::open(sql_file)?;
         conn.execute("CREATE TABLE IF NOT EXISTS CONST_TABLE (KEY TEXT PRIMARY KEY,VALUE TEXT);", [])?;
-        let key = self_t.get_param(params, 0)?;
-        let value = self_t.get_param(params, 1)?;
         conn.execute("REPLACE INTO CONST_TABLE (KEY,VALUE) VALUES (?,?)", [key,value])?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["持久常量"],|self_t,params|{
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
-        
-        // let _lk = G_SQLITE_MX.lock().unwrap();
-        
-        let conn = rusqlite::Connection::open(sql_file)?;
+
         let key = self_t.get_param(params, 0)?;
-        let ret_rst:Result<String,rusqlite::Error> = conn.query_row("SELECT VALUE FROM CONST_TABLE WHERE KEY = ?", [key], |row| row.get(0));
+        
+        
+        let ret_rst:Result<String,rusqlite::Error>;
+
+        {
+            let _lk = G_SQLITE_MX.lock().unwrap();
+            let conn = rusqlite::Connection::open(sql_file)?;
+            ret_rst = conn.query_row("SELECT VALUE FROM CONST_TABLE WHERE KEY = ?", [key], |row| row.get(0));
+        }
+        
         let ret_str;
         if let Ok(ret) =  ret_rst {
             ret_str = ret;
