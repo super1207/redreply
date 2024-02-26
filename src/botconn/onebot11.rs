@@ -1,4 +1,4 @@
-use std::{sync::{atomic::AtomicBool, Arc, RwLock}, collections::{HashMap, HashSet}, str::FromStr};
+use std::{collections::{HashMap, HashSet}, ops::{Index, IndexMut}, str::FromStr, sync::{atomic::AtomicBool, Arc, RwLock}};
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, SinkExt};
@@ -107,6 +107,37 @@ fn change_id_to_str(root:&mut serde_json::Value){
 }
 
 
+fn deal_cq_arr(root:&mut serde_json::Value){
+    let message:&serde_json::Value = &root["message"];
+    if message.is_string() {
+        if let Ok(msg) = crate::mytool::str_msg_to_arr(&message) {
+            root["message"] = msg;
+        }   
+    }
+    let message_arr = root.index("message");
+    if !message_arr.is_array() {
+        return;
+    }
+    let message_arr = root.index_mut("message");
+    if message_arr.is_array() {
+        for it in message_arr.as_array_mut().unwrap() {
+            let tp = &it["type"];
+            if tp == "at"{
+                let qq = &it["data"]["qq"];
+                it["data"] = serde_json::json!({
+                    "qq":qq
+                });
+            }else if tp == "image" {
+                let url = &it["data"]["url"];
+                if !url.is_string() {
+                    it["data"]["url"] = it["data"]["http_file"].clone();
+                }
+            }
+        }
+    }
+}
+
+
 #[async_trait]
 impl BotConnectTrait for OneBot11Connect {
 
@@ -194,8 +225,15 @@ impl BotConnectTrait for OneBot11Connect {
                         }else{
                             continue;
                         }
+                        // 添加平台标记
                         let json_obj = json_dat.as_object_mut().unwrap();
                         json_obj.insert("platform".to_string(), serde_json::to_value("onebot11").unwrap());
+
+                        // 处理message,规范化数据
+                        if post_type != "" {
+                            deal_cq_arr(&mut json_dat);
+                        }
+                        
                         // 将ID转换为字符串
                         change_id_to_str(&mut json_dat);
                         tokio::spawn(async move {
