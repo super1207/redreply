@@ -344,6 +344,31 @@ pub fn init_cq_ex_fun_map() {
         }
         return Ok(Some(ret));
     });
+    add_fun(vec!["视频"],|self_t,params|{
+        let pic = self_t.get_param(params, 0)?;
+        let tp = self_t.get_type(&pic)?;
+        let mut ret:String = String::new();
+        if tp == "字节集" {
+            let bin = RedLang::parse_bin(&pic)?;
+            let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
+            ret = format!("[CQ:video,file=base64://{}]",b64_str);
+        }else if tp == "文本" {
+            if pic.starts_with("http://") || pic.starts_with("https://"){
+                let not_use_cache = self_t.get_param(params, 1)?;
+                if  not_use_cache == "假" {
+                    ret = format!("[CQ:video,file={},cache=0]",cq_params_encode(&pic));
+                }else {
+                    ret = format!("[CQ:video,file={}]",cq_params_encode(&pic));
+                }
+            }else{
+                let path = Path::new(&pic);
+                let bin = std::fs::read(path)?;
+                let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
+                ret = format!("[CQ:video,file=base64://{}]",b64_str);
+            }
+        }
+        return Ok(Some(ret));
+    });
     add_fun(vec!["撤回"],|self_t,params|{
         let mut msg_id_str = self_t.get_param(params, 0)?;
         if msg_id_str == "" {

@@ -1,6 +1,6 @@
 use std::{collections::HashSet, ffi::{c_char, c_int, CStr}, fs, sync::Arc};
 
-use crate::{cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory1}, mytool::download_github, redlang::RedLang, LibStruct, G_LIB_AC, G_LIB_MAP, RT_PTR};
+use crate::{cqapi::{cq_add_log, cq_get_app_directory1}, redlang::RedLang, LibStruct, G_LIB_AC, G_LIB_MAP};
 
 fn gen_lib_ac() -> c_int {
     let mut lk = G_LIB_AC.lock().unwrap();
@@ -9,13 +9,13 @@ fn gen_lib_ac() -> c_int {
 }
 
 
-pub fn get_sys_and_arch() -> String {
-    let mut arch = std::env::consts::ARCH;
-    if arch == "x86" {
-        arch = "i686";
-    }
-    return format!("{}_{}",std::env::consts::OS,arch);
-}
+// pub fn get_sys_and_arch() -> String {
+//     let mut arch = std::env::consts::ARCH;
+//     if arch == "x86" {
+//         arch = "i686";
+//     }
+//     return format!("{}_{}",std::env::consts::OS,arch);
+// }
 
 pub fn init_lib() -> Result<(), Box<dyn std::error::Error>> {
 
@@ -23,25 +23,25 @@ pub fn init_lib() -> Result<(), Box<dyn std::error::Error>> {
     // 创建lib目录
     let lib_path = cq_get_app_directory1().unwrap() + "lib";
     std::fs::create_dir_all(&lib_path)?;
-    let sys_arch = get_sys_and_arch();
+    // let sys_arch = get_sys_and_arch();
     let dll_extension = std::env::consts::DLL_EXTENSION;
 
     // 下载tx_silk，tx_silk用于将语音(mp3、flac、wav)转换为tx支持的silk语音
-    let file_name = format!("redlib_tx_silk_{sys_arch}.{dll_extension}");
-    let file_url = format!("https://github.com/super1207/redlib_tx_silk/releases/latest/download/{file_name}");
-    let file_path = lib_path.clone() + &std::path::MAIN_SEPARATOR.to_string() + &file_name;
+    // let file_name = format!("redlib_tx_silk_{sys_arch}.{dll_extension}");
+    // let file_url = format!("https://github.com/super1207/redlib_tx_silk/releases/latest/download/{file_name}");
+    // let file_path = lib_path.clone() + &std::path::MAIN_SEPARATOR.to_string() + &file_name;
      
-    RT_PTR.block_on(async {
-        // 只有windows和android才能直接从网络下载动态库
-        if std::env::consts::OS == "windows" || std::env::consts::OS == "android"{
-            cq_add_log(&format!("download {file_url} ...")).unwrap();
-            if let Err(err) = download_github(&file_url, &file_path).await {
-                cq_add_log_w(&format!("Err:{err:?}")).unwrap();
-            } else {
-                cq_add_log(&format!("download {file_path} ok")).unwrap();
-            }
-        }
-    });
+    // RT_PTR.block_on(async {
+    //     // 只有windows和android才能直接从网络下载动态库
+    //     if std::env::consts::OS == "windows" || std::env::consts::OS == "android"{
+    //         cq_add_log(&format!("download {file_url} ...")).unwrap();
+    //         if let Err(err) = download_github(&file_url, &file_path).await {
+    //             cq_add_log_w(&format!("Err:{err:?}")).unwrap();
+    //         } else {
+    //             cq_add_log(&format!("download {file_path} ok")).unwrap();
+    //         }
+    //     }
+    // });
     
     // 加载三方库
     let dirs = fs::read_dir(lib_path)?;

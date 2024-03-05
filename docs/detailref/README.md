@@ -1394,7 +1394,7 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 返回红色问答的应用目录，应用目录就是包的script.json所在目录，末尾有分隔符。
 
 
-### 网页截图(暂不支持)
+### 网页截图
 
 
 【网页截图@<font color="red">网址</font>@<font color="red">CSS选择器</font>】
@@ -1887,6 +1887,18 @@ CQ码**外部**的字符需要CQ转义，以上三个命令的作用可以参考
 
 
 【语音@<font color="red">文本或字节集</font>@<font color="red">不使用缓存</font>】
+
+支持http/https链接，绝对地址，字节集
+
+当为http/https连接时，如果第二个参数为`假`，则不使用缓存，否则使用缓存。
+
+注意，可能需要给onebot协议端安装ffmpeg，才能正常使用此功能。
+
+
+### 视频
+
+
+【视频@<font color="red">文本或字节集</font>@<font color="red">不使用缓存</font>】
 
 支持http/https链接，绝对地址，字节集
 

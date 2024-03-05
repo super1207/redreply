@@ -1553,46 +1553,46 @@ pub fn init_ex_fun_map() {
         return Ok(Some("".to_string()));
     });
     
-    // add_fun(vec!["网页截图"],|self_t,params|{
-    //     fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
-    //         let path = self_t.get_param(params, 0)?;
-    //         let sec = self_t.get_param(params, 1)?;
-    //         let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
-    //         let proxy_str = self_t.get_coremap("代理")?;
-    //         let proxy:std::ffi::OsString;
-    //         if proxy_str != "" {
-    //             proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + proxy_str);
-    //             arg_vec.push(&proxy);
-    //         }
-    //         let options = headless_chrome::LaunchOptions::default_builder()
-    //             .window_size(Some((1920, 1080)))
-    //             .args(arg_vec)
-    //             .build()?;
-    //             let browser = headless_chrome::Browser::new(options)?;
-    //             let tab = browser.new_tab()?;
-    //             tab.navigate_to(&path)?.wait_until_navigated()?;
-    //         let el_html= tab.wait_for_element("html")?;
-    //         let body_height = el_html.get_box_model()?.height;
-    //         let body_width = el_html.get_box_model()?.width;
-    //         tab.set_bounds(headless_chrome::types::Bounds::Normal { left: Some(0), top: Some(0), width:Some(body_width), height: Some(body_height) })?;
-    //         let mut el = el_html;
-    //         if sec != ""{
-    //             el = tab.wait_for_element(&sec)?;
-    //         }
-    //         let png_data = tab.capture_screenshot(headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
-    //             None,
-    //             Some(el.get_box_model()?.content_viewport()),
-    //             true)?;
-    //         return Ok(Some(self_t.build_bin(png_data)));
-    //     }
-    //     match access(self_t,params) {
-    //         Ok(ret) => return Ok(ret),
-    //         Err(err) => {
-    //             cq_add_log_w(&format!("网页截图失败：`{:?}`",err)).unwrap();
-    //             return Ok(Some(self_t.build_bin(vec![])));
-    //         }
-    //     }
-    // });
+    add_fun(vec!["网页截图"],|self_t,params|{
+        fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
+            let path = self_t.get_param(params, 0)?;
+            let sec = self_t.get_param(params, 1)?;
+            let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
+            let proxy_str = self_t.get_coremap("代理")?;
+            let proxy:std::ffi::OsString;
+            if proxy_str != "" {
+                proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + proxy_str);
+                arg_vec.push(&proxy);
+            }
+            let options = headless_chrome::LaunchOptions::default_builder()
+                .window_size(Some((1920, 1080)))
+                .args(arg_vec)
+                .build()?;
+                let browser = headless_chrome::Browser::new(options)?;
+                let tab = browser.new_tab()?;
+                tab.navigate_to(&path)?.wait_until_navigated()?;
+            let el_html= tab.wait_for_element("html")?;
+            let body_height = el_html.get_box_model()?.height;
+            let body_width = el_html.get_box_model()?.width;
+            tab.set_bounds(headless_chrome::types::Bounds::Normal { left: Some(0), top: Some(0), width:Some(body_width), height: Some(body_height) })?;
+            let mut el = el_html;
+            if sec != ""{
+                el = tab.wait_for_element(&sec)?;
+            }
+            let png_data = tab.capture_screenshot(headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
+                None,
+                Some(el.get_box_model()?.content_viewport()),
+                true)?;
+            return Ok(Some(self_t.build_bin(png_data)));
+        }
+        match access(self_t,params) {
+            Ok(ret) => return Ok(ret),
+            Err(err) => {
+                cq_add_log_w(&format!("网页截图失败：`{:?}`",err)).unwrap();
+                return Ok(Some(self_t.build_bin(vec![])));
+            }
+        }
+    });
     
     add_fun(vec!["命令行"],|self_t,params|{
         let cmd_str = self_t.get_param(params, 0)?;
@@ -1785,11 +1785,12 @@ pub fn init_ex_fun_map() {
 
     #[cfg(target_os = "windows")]
     add_fun(vec!["截屏"],|self_t,_params|{
-        let screens = screenshots::Screen::all()?;
-        if screens.len() > 0 {
-            let image = screens[0].capture()?;
-            let buffer = image.to_png(None)?;
-            return Ok(Some(self_t.build_bin(buffer.to_vec())));
+        let monitors = xcap::Monitor::all()?;
+        if monitors.len() > 0 {
+            let image = monitors[0].capture_image()?;
+            let mut bytes: Vec<u8> = Vec::new();
+            image.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+            return Ok(Some(self_t.build_bin(bytes)));
         }
         return Ok(Some(self_t.build_bin(vec![])));
     });

@@ -4,7 +4,6 @@ mod satoriv1;
 mod qqguild_private;
 mod qqguild_public;
 mod qq_guild_all;
-mod ntqqv1;
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -14,7 +13,7 @@ use tokio::sync::RwLock;
 
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 
-use self::{ntqqv1::NTQQV1Connect, onebot11::OneBot11Connect, onebot115::OneBot115Connect, qqguild_private::QQGuildPrivateConnect, qqguild_public::QQGuildPublicConnect, satoriv1::Satoriv1Connect};
+use self::{onebot11::OneBot11Connect, onebot115::OneBot115Connect, qqguild_private::QQGuildPrivateConnect, qqguild_public::QQGuildPublicConnect, satoriv1::Satoriv1Connect};
 
 #[async_trait]
 trait BotConnectTrait:Send + Sync {
@@ -178,15 +177,6 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                                     G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
                                 }
                             }
-                            else if url_t.starts_with("ntqqv1://") {
-                                let mut bot = NTQQV1Connect::build(&url_t);
-                                if let Err(err) = bot.connect().await {
-                                    cq_add_log_w(&format!("连接到ntqqv1失败:{url_t},{err:?}")).unwrap();
-                                } else {
-                                    G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
-                                }
-                            }
-                            
                         });
                     }
                 }
