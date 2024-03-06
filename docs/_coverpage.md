@@ -11,4 +11,4 @@
 
 
 [GitHub](https://github.com/super1207/redreply/)
-[Get Started](#/detailref/)
+[Get Started](/detailref/)
