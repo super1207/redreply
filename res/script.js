@@ -229,7 +229,7 @@ app = createApp({
             }
         },
         help_web() {
-            window.open("/docs/index.html#/?id=%e5%8f%82%e8%80%83%e6%96%87%e6%a1%a3", "_blank");
+            window.open("/docs/index.html#/detailref/", "_blank");
         },
         watch_log() {
             window.open("/watchlog.html", "_blank");
