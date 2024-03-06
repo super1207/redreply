@@ -514,7 +514,7 @@ impl BotConnectTrait for QQGuildPublicConnect {
             port  = port_opt.unwrap().into();
         }
         let addr = format!("{}:{}",request.uri().host().unwrap(),port);
-        let socket = TcpStream::connect(addr).await.unwrap();
+        let socket = TcpStream::connect(addr).await?;
         ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
 
         let (mut write_half,mut read_halt) = ws_rst.0.split();
