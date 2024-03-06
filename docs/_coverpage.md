@@ -11,4 +11,4 @@
 
 
 [GitHub](https://github.com/super1207/redreply/)
-[Get Started](#参考文档)
+[Get Started](#/detailref/)
