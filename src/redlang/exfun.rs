@@ -1163,6 +1163,117 @@ pub fn init_ex_fun_map() {
         }
         return (width,height);
     }
+    add_fun(vec!["竖文字转图片","竖文字转图像"],|self_t,params|{
+        let image_height = self_t.get_param(params, 0)?.parse::<u32>()?;
+        let text = self_t.get_param(params, 1)?;
+        let text_size = self_t.get_param(params, 2)?.parse::<f32>()?;
+        let text_color_text = self_t.get_param(params, 3)?;
+        let text_color = RedLang::parse_arr(&text_color_text)?;
+        let mut color = Rgba::<u8>([0,0,0,255]);
+        color.0[0] = text_color.get(0).unwrap_or(&"0").parse::<u8>()?;
+        color.0[1] = text_color.get(1).unwrap_or(&"0").parse::<u8>()?;
+        color.0[2] = text_color.get(2).unwrap_or(&"0").parse::<u8>()?;
+        color.0[3] = text_color.get(3).unwrap_or(&"255").parse::<u8>()?;
+        let scale =  Scale::uniform(text_size);
+       
+        let font_text = self_t.get_param(params, 4)?;
+        let font_type = self_t.get_type(&font_text)?;
+        let font_dat;
+        if font_type == "字节集" {
+            font_dat = RedLang::parse_bin(&font_text)?;
+        }else {
+            return Err(RedLang::make_err("字体参数必须是字节集类型"));
+        }
+        let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
+        let font_sep_text = self_t.get_param(params, 5)?;
+        let line_sep_text = self_t.get_param(params, 6)?;
+        let font_sep;
+        if font_sep_text != "" {
+            font_sep = font_sep_text.parse::<usize>()?;
+        } else {
+            font_sep = 0usize;
+        }
+        let line_sep;
+        if line_sep_text != "" {
+            line_sep = line_sep_text.parse::<usize>()?;
+        } else {
+            line_sep = 0usize;
+        }
+        let image_width;
+        {
+            let mut max_x = 0;
+            let text_chars = text.chars().collect::<Vec<char>>();
+            let mut cur_x = 0;
+            let mut cur_y = 0;
+            for ch in text_chars {
+                let (width,height) = get_char_size(&font, scale, ch);
+                if width > max_x {
+                    max_x = width;
+                }
+                if ch == ' '{
+                    if cur_y + ((text_size / 2. + 0.5) as i32)  < image_height as i32{
+                        cur_y += ((text_size / 2. + 0.5) as i32) + font_sep as i32;
+                    } else {
+                        cur_x += max_x + line_sep as i32;
+                        cur_y = 0;
+                        cur_y += (text_size as i32) + font_sep as i32;
+                    }
+                } else if ch == '\n' {
+                    cur_y = 0;
+                    cur_x += max_x + line_sep as i32;
+                }else { 
+                    if cur_y + height  < image_height as i32 {
+                        cur_y += height + font_sep as i32;
+                    } else {
+                        cur_x += max_x + line_sep as i32;
+                        cur_y = 0;
+                        cur_y += height + font_sep as i32;
+                    }
+                }
+            }
+            cur_x += max_x + line_sep as i32;
+            image_width = cur_x;
+        }
+        let mut img = ImageBuffer::new(image_width as u32, image_height);
+        {
+            let mut max_x = 0;
+            let text_chars = text.chars().collect::<Vec<char>>();
+            let mut cur_x = image_width;
+            let mut cur_y = 0;
+            for ch in text_chars {
+                let (width,height) = get_char_size(&font, scale, ch);
+                if width > max_x {
+                    max_x = width;
+                }
+                if ch == ' '{
+                    if cur_y + ((text_size / 2. + 0.5) as i32)  < img.height() as i32{
+                        cur_y += ((text_size / 2. + 0.5) as i32) + font_sep as i32;
+                    } else {
+                        cur_x -= max_x + line_sep as i32;
+                        cur_y = 0;
+                        cur_y += (text_size as i32) + font_sep as i32;
+                    }
+                } else if ch == '\n' {
+                    cur_y = 0;
+                    cur_x -= max_x + line_sep as i32;
+                }else { 
+                    if cur_y + height  < img.height() as i32{
+                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x - width,cur_y,scale,&font,&ch.to_string());
+                        cur_y += height + font_sep as i32;
+                    } else {
+                        cur_x -= max_x + line_sep as i32;
+                        cur_y = 0;
+                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x - width,cur_y,scale,&font,&ch.to_string());
+                        cur_y += height + font_sep as i32;
+                    }
+                }
+            }
+        }
+        let mut bytes: Vec<u8> = Vec::new();
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    });
     add_fun(vec!["文字转图片","文字转图像"],|self_t,params|{
         let image_width = self_t.get_param(params, 0)?.parse::<u32>()?;
         let text = self_t.get_param(params, 1)?;
@@ -2776,6 +2887,17 @@ def red_out(sw):
         let msg = self_t.get_param(params, 0)?;
         let ret = crate::mytool::str_to_jt(msg.as_str());
         return Ok(Some(ret));
+    });
+    add_fun(vec!["github代理"],|_self_t,_params|{
+        let url = RT_PTR.block_on(async{
+            let url = crate::pluscenter::get_proxy().await;
+            if url.is_ok() {
+                url.unwrap()
+            } else {
+                "".to_string()
+            }
+        });
+        return Ok(Some(url));
     });
 }
 

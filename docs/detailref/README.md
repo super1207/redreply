@@ -1298,6 +1298,13 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 字间距和行间距默认为0。
 
 
+### 竖文字转图片
+
+【竖文字转图片@<font color="red">图片的高</font>@<font color="red">文字</font>@<font color="red">字体大小</font>@<font color="red">rgba颜色数组</font>@<font color="red">字体字节集</font>@<font color="red">字间距</font>@<font color="red">列间距</font>】
+
+字间距和列间距默认为0。文字以从右往左，从上往下格式排列。
+
+
 ### 默认字体
 
 【默认字体】
@@ -2187,6 +2194,13 @@ onebot事件json对应的RedLang对象。
 返回示例：`[["2845895279","13"],["1875159423","6"]]`。
 
 如上所示，返回的是个二维数组，表示名次，用户id，分数。
+
+
+### github代理
+
+【github代理】
+
+获取一个可用的github代理，返回的是一个文本，如`https://mirror.ghproxy.com/`，若当前网络环境不需要代理或者没有可用的代理，则返回空文本。此命令有缓存，定期更新，并不会每次都进行连通测试。
 
 
 ## 事件关键词

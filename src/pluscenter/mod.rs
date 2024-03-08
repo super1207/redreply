@@ -30,7 +30,7 @@ pub struct PlusCenterPlusInfo{
 	pub need_python:bool
 }
 
-async fn get_proxy() -> Result<String,Box<dyn Error + Send + Sync>> {
+pub async fn get_proxy() -> Result<String,Box<dyn Error + Send + Sync>> {
     lazy_static! {
         static ref G_PROXY:Mutex<(Option<String>,u64)> = Mutex::new((None,0));
     }
