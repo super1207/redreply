@@ -340,7 +340,7 @@ impl BotConnectTrait for OneBot11Connect {
                 }
                 if let Some(message_id) = params_obj.get_mut("message_id") {
                     if let Some(message_id_str) = message_id.as_str() {
-                        let val = serde_json::to_value(message_id_str.parse::<u64>()?)?;
+                        let val = serde_json::to_value(message_id_str.parse::<i64>()?)?;
                         params_obj["message_id"] = val;
                     }
                 }
