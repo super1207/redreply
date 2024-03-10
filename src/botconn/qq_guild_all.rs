@@ -25,7 +25,7 @@
 //         无msg_id：
 //             不处理(暂时不支持主动创建私聊会话)
 
-use std::{sync::Weak, str::FromStr, time::SystemTime};
+use std::{str::FromStr, sync::Weak, time::SystemTime};
 
 use crate::{mytool::{read_json_obj_or_null, read_json_str, read_json_or_default, cq_text_encode, cq_params_encode, str_msg_to_arr}, cqapi::cq_add_log_w};
 
@@ -502,7 +502,10 @@ pub fn deal_attachments(root:&serde_json::Value) -> Result<String, Box<dyn std::
         if let Some(attachments_t) = attachments.as_array() {
             for it in attachments_t {
                 if read_json_str(it, "content_type").starts_with("image/") {
-                    let url = read_json_str(it, "url");
+                    let mut url = read_json_str(it, "url");
+                    if !url.starts_with("https://") {
+                        url = format!("https://{url}");
+                    }
                     let url_t = cq_params_encode(&url);
                     retstr += format!("[CQ:image,file={url_t},url={url_t}]").as_str();
                 }
