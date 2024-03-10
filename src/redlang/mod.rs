@@ -513,7 +513,7 @@ pub fn init_core_fun_map() {
             let mut last_type = 0u8;
             for _i in 0..tms {
                 let v = self_t.get_param(params, 1)?;
-                RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
+                RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
                 if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
                     break;
                 }
@@ -533,7 +533,7 @@ pub fn init_core_fun_map() {
                 fun_params[1] = i.to_string();
                 fun_params[2] = arr[i].to_owned();
                 let v = self_t.call_fun(&fun_params,true)?;
-                RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
+                RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
                 if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
                     break;
                 }
@@ -551,7 +551,7 @@ pub fn init_core_fun_map() {
                 fun_params[1] = k;
                 fun_params[2] = v;
                 let v = self_t.call_fun(&fun_params,true)?;
-                RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
+                RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
                 if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
                     break;
                 }
@@ -566,7 +566,7 @@ pub fn init_core_fun_map() {
         let mut last_type = 0;
         while self_t.get_param(params, 0)? == "真" {
             let v = self_t.get_param(params, 1)?;
-            RedLang::conect_arr(&mut last_type,&mut ret_str,v)?;
+            RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
             if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
                 break;
             }
@@ -2216,7 +2216,8 @@ impl RedLang {
     pub fn build_obj(&self,obj:BTreeMap<String,String>) -> String {
         return Self::build_obj_with_uid(&self.type_uuid,obj);
     }
-    fn conect_arr(status:&mut u8,chs_out:&mut String,new_str:String) -> Result<(), Box<dyn std::error::Error>>{
+
+    fn conect_arr(status:&mut u8,chs_out:&mut String,new_str:&str) -> Result<(), Box<dyn std::error::Error>>{
         if new_str.starts_with(&(crate::REDLANG_UUID.to_string() + "A")) {
             if *status == 2 {
                 // 这里要进行数组合并，因为之前是数组
@@ -2228,10 +2229,25 @@ impl RedLang {
                 return Err(RedLang::make_err(&format!("数组不能与其它类型`{}`直接连接",chs_out)));
             }
             *status = 2;
-        }else {
+        } else if new_str.starts_with(&(crate::REDLANG_UUID.to_string() + "B")) {
+            if *status == 4 {
+                // 这里要进行字节集合并，因为之前是字节集
+                let arr = new_str.get(37..).ok_or("在合并字节集时获取新字节集失败")?;
+                chs_out.push_str(arr);
+            } else if *status == 0 { // 之前没有
+                chs_out.push_str(&new_str);
+            } else { // 之前是其它类型
+                return Err(RedLang::make_err(&format!("字节集不能与其它类型`{}`直接连接",chs_out)));
+            }
+            *status = 4;
+        }
+        else {
             if new_str.len() != 0 {
                 if *status == 2 {
                     return Err(RedLang::make_err(&format!("`{}`不能与数组类型直接连接",new_str)));
+                }
+                if *status == 4 {
+                    return Err(RedLang::make_err(&format!("`{}`不能与字节集类型直接连接",new_str)));
                 }
                 chs_out.push_str(&new_str);
                 *status = 1;
@@ -2352,7 +2368,7 @@ impl RedLang {
                 if cq_n == 0 {
                     let s = cq_code.iter().collect::<String>();
                     let cqout = self.parsecq(&s)?;
-                    RedLang::conect_arr(&mut cur_type_status,&mut chs_out,cqout)?;
+                    RedLang::conect_arr(&mut cur_type_status,&mut chs_out,&cqout)?;
                     cq_code.clear();
                     cq_n = 0;
                     status = 0;
