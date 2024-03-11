@@ -324,7 +324,7 @@ pub fn deal_path_str(path_str:&str) -> &str {
 
 
 pub async fn github_proxy() -> Option<String> {
-    let urls_to_test = ["https://mirror.ghproxy.com/", "https://github.moeyy.xyz/", ""];
+    let urls_to_test = ["https://mirror.ghproxy.com/", "https://github.moeyy.xyz/","https://github.moeyy.cn/",""];
     let (tx, mut rx) =  tokio::sync::mpsc::channel(urls_to_test.len() + 1);
     for url in urls_to_test {
         let tx = tx.clone();
