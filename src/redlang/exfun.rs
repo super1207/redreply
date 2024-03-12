@@ -2837,9 +2837,9 @@ def red_out(sw):
     });
 
     add_fun(vec!["内存使用"],|_self_t,_params|{
-        let s = <sysinfo::System as sysinfo::SystemExt>::new_all();
-        if let Some(process) = sysinfo::SystemExt::process(&s, sysinfo::Pid::from(std::process::id() as usize)) {
-            let num = sysinfo::ProcessExt::memory(process) as f32 / (1024 * 1024) as f32;
+        let s = sysinfo::System::new_all();
+        if let Some(process) = sysinfo::System::process(&s, sysinfo::Pid::from(std::process::id() as usize)) {
+            let num = sysinfo::Process::memory(process) as f32 / (1024 * 1024) as f32;
             return Ok(Some(num.to_string()))
         }
         return Ok(Some("".to_string()));
@@ -2855,12 +2855,76 @@ def red_out(sw):
     });
 
     add_fun(vec!["CPU使用"],|_self_t,_params|{
-        let mut s = <sysinfo::System as sysinfo::SystemExt>::new_all();
-        std::thread::sleep(<sysinfo::System as sysinfo::SystemExt>::MINIMUM_CPU_UPDATE_INTERVAL);
-        sysinfo::SystemExt::refresh_processes_specifics(&mut s, sysinfo::ProcessRefreshKind::everything());
+        let mut s = sysinfo::System::new_all();
+        std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+        sysinfo::System::refresh_processes_specifics(&mut s, sysinfo::ProcessRefreshKind::everything());
         let pid = sysinfo::Pid::from(std::process::id() as usize);
-        let process = sysinfo::SystemExt::process(&s, pid).unwrap();
-        return Ok(Some((sysinfo::ProcessExt::cpu_usage(process) /  sysinfo::SystemExt::cpus(&s).len() as f32).to_string()));
+        let process = sysinfo::System::process(&s, pid).unwrap();
+        return Ok(Some((sysinfo::Process::cpu_usage(process) /  sysinfo::System::cpus(&s).len() as f32).to_string()));
+    });
+
+    add_fun(vec!["系统信息"],|self_t,_params|{
+        let mut s = sysinfo::System::new_all();
+        std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
+        s.refresh_all();
+        let mut mp = BTreeMap::new();
+
+
+        let mut cpulist = vec![];
+        for cpu in s.cpus() {
+            let mut info = BTreeMap::new();
+            info.insert("CpuUsage".to_owned(), cpu.cpu_usage().to_string());
+            info.insert("Frequency".to_owned(), cpu.frequency().to_string());
+            info.insert("Brand".to_owned(), cpu.brand().to_owned());
+            info.insert("Name".to_owned(), cpu.name().to_owned());
+            info.insert("VendorID".to_owned(), cpu.vendor_id().to_owned());
+            let info_str = self_t.build_obj(info);
+            cpulist.push(info_str);
+        }
+        mp.insert("CpuList".to_owned(),self_t.build_arr(cpulist.iter().map(|x|x.as_str()).collect()));
+
+
+        mp.insert("SystemName".to_owned(), sysinfo::System::name().unwrap_or_default());
+        mp.insert("SystemKernelVersion".to_owned(), sysinfo::System::kernel_version().unwrap_or_default());
+        mp.insert("SystemOSVersion".to_owned(), sysinfo::System::os_version().unwrap_or_default());
+        mp.insert("SystemHostName".to_owned(), sysinfo::System::host_name().unwrap_or_default());
+
+        mp.insert("TotalMemory".to_owned(), s.total_memory().to_string());
+        mp.insert("UsedMemory".to_owned(), s.used_memory().to_string());
+        mp.insert("TotalSwap".to_owned(), s.total_swap().to_string());
+        mp.insert("UsedSwap".to_owned(), s.used_swap().to_string());
+
+        mp.insert("CPUCount".to_owned(), s.cpus().len().to_string());
+
+        let mut disklist = vec![];
+        let disks = sysinfo::Disks::new_with_refreshed_list();
+        for disk in &disks {
+            let mut info = BTreeMap::new();
+            info.insert("MountPoint".to_owned(), disk.mount_point().to_string_lossy().to_string());
+            info.insert("Name".to_owned(), disk.name().to_string_lossy().to_string());
+            info.insert("FileSystem".to_owned(), disk.file_system().to_string_lossy().to_string());
+            info.insert("Kind".to_owned(), disk.kind().to_string());
+            info.insert("TotalSpace".to_owned(), disk.total_space().to_string());
+            info.insert("AvailableSpace".to_owned(), disk.available_space().to_string());
+            let info_str = self_t.build_obj(info);
+            disklist.push(info_str);
+        }
+        mp.insert("DiskList".to_owned(),self_t.build_arr(disklist.iter().map(|x|x.as_str()).collect()));
+
+        let networks = sysinfo::Networks::new_with_refreshed_list();
+        let mut netlist = vec![];
+        for (interface_name, data) in &networks {
+            let mut info = BTreeMap::new();
+            info.insert("TotalReceived".to_owned(), data.total_received().to_string());
+            info.insert("TotalTransmitted".to_owned(), data.total_transmitted().to_string());
+            info.insert("InterfaceName".to_owned(), interface_name.to_owned());
+            let info_str = self_t.build_obj(info);
+            netlist.push(info_str);
+        }
+        mp.insert("NetList".to_owned(),self_t.build_arr(netlist.iter().map(|x|x.as_str()).collect()));
+
+        let ret = self_t.build_obj(mp);
+        return Ok(Some(ret));
     });
     
     add_fun(vec!["渲染SVG","SVG渲染"],|self_t,params|{

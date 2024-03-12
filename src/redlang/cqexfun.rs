@@ -254,9 +254,12 @@ pub fn init_cq_ex_fun_map() {
         let passive_id = self_t.get_exmap("消息ID");
         let cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str());
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
-        let err = "获机器人名字失败";
-        let bot_name = ret_json.get("data").ok_or(err)?.get("nickname").ok_or(err)?.as_str().ok_or(err)?;
-        return Ok(Some(bot_name.to_string()));
+        let bot_name = &ret_json["data"]["nickname"];
+        if bot_name.is_string() {
+            return Ok(Some(bot_name.as_str().unwrap().to_owned()));
+        }else{
+            return Ok(Some("露娜sama".to_owned()));
+        }
     });
     add_fun(vec!["权限","发送者权限"],|self_t,_params|{
         let role = self_t.get_exmap("发送者权限");

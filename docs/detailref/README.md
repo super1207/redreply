@@ -1178,6 +1178,13 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 返回当前进程使用的内存，单位为MB
 
 
+### 系统信息
+
+【系统信息】
+
+返回操作系统、网卡、硬盘、内存、cpu的一些信息。返回的是一个redlang对象，请自行研究具体格式。
+
+
 ### 运行目录
 
 

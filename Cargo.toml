@@ -43,7 +43,7 @@ reqwest = {version = "0.11.18",default-features = false,features = ["rustls-tls"
 time = { version = "0.3.25", features = ["formatting", "macros"] }
 # headless_chrome = {version="1.0.5",default-features = false}
 webp = "0.2.5"
-sysinfo = "0.29.10"
+sysinfo = "0.30.7"
 resvg = { version = "0.36.0", default-features = false, features = [ "text", "raster-images"  ] }
 fontdb = { version = "0.15.0", default-features = false, features = [ "fs" ] }
 flate2 = { version = "1.0.26",default-features = false}

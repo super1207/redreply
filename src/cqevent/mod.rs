@@ -185,7 +185,6 @@ fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Bo
     rl.set_exmap("发送者ID", &read_json_str(root,"user_id"))?;
     rl.set_exmap("群ID", &read_json_str(root,"group_id"))?;
     rl.set_exmap("群组ID", &read_json_str(root,"groups_id"))?;
-    rl.set_exmap("机器人名字", "露娜sama")?;
     rl.set_exmap("原始事件", &root.to_string())?;
     rl.set_exmap("机器人平台", &read_json_str(root,"platform"))?;
     rl.set_exmap("消息ID", &read_json_str(root,"message_id"))?;
