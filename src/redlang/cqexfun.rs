@@ -256,7 +256,11 @@ pub fn init_cq_ex_fun_map() {
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let bot_name = &ret_json["data"]["nickname"];
         if bot_name.is_string() {
-            return Ok(Some(bot_name.as_str().unwrap().to_owned()));
+            let name = bot_name.as_str().unwrap().to_owned();
+            if name == "" {
+                return Ok(Some("露娜sama".to_owned()));
+            }
+            return Ok(Some(name));
         }else{
             return Ok(Some("露娜sama".to_owned()));
         }
