@@ -2883,8 +2883,7 @@ def red_out(sw):
         }
         mp.insert("CpuList".to_owned(),self_t.build_arr(cpulist.iter().map(|x|x.as_str()).collect()));
 
-
-        mp.insert("SystemName".to_owned(), sysinfo::System::name().unwrap_or_default());
+        mp.insert("SystemName".to_owned(), sysinfo::System::long_os_version().unwrap_or_default());
         mp.insert("SystemKernelVersion".to_owned(), sysinfo::System::kernel_version().unwrap_or_default());
         mp.insert("SystemOSVersion".to_owned(), sysinfo::System::os_version().unwrap_or_default());
         mp.insert("SystemHostName".to_owned(), sysinfo::System::host_name().unwrap_or_default());
