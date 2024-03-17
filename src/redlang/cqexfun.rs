@@ -554,13 +554,19 @@ pub fn init_cq_ex_fun_map() {
         app_dir = get_app_dir(&self_t.pkg_name)?;
         return Ok(Some(app_dir));
     });
-    add_fun(vec!["取艾特"],|self_t,_params|{
-        let raw_data = self_t.get_exmap("原始事件");
-        let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+    add_fun(vec!["取艾特"],|self_t,params|{
+        let message;
         let err = "获取message失败";
-        let message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?;
+        if params.len() != 0 {
+            let data_str = self_t.get_param(params, 0)?;
+            message = crate::mytool::str_msg_to_arr(&serde_json::json!(data_str))?.as_array().ok_or(err)?.clone();
+        }else {
+            let raw_data = self_t.get_exmap("原始事件");
+            let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+            message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?.clone();
+        }
         let mut ret_vec:Vec<&str> = vec![];
-        for it in message {
+        for it in &message {
             let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
             if tp == "at" {
                 let qq = it.get("data").ok_or(err)?.get("qq").ok_or(err)?.as_str().ok_or(err)?;
@@ -570,12 +576,18 @@ pub fn init_cq_ex_fun_map() {
         let ret = self_t.build_arr(ret_vec);
         return Ok(Some(ret));
     });
-    add_fun(vec!["取回复ID"],|self_t,_params|{
-        let raw_data = self_t.get_exmap("原始事件");
-        let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+    add_fun(vec!["取回复ID"],|self_t,params|{
+        let message;
         let err = "获取message失败";
-        let message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?;
-        for it in message {
+        if params.len() != 0 {
+            let data_str = self_t.get_param(params, 0)?;
+            message = crate::mytool::str_msg_to_arr(&serde_json::json!(data_str))?.as_array().ok_or(err)?.clone();
+        }else {
+            let raw_data = self_t.get_exmap("原始事件");
+            let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+            message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?.clone();
+        }
+        for it in &message {
             let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
             if tp == "reply" {
                 let id = it.get("data").ok_or(err)?.get("id").ok_or(err)?.as_str().ok_or(err)?;
@@ -584,13 +596,21 @@ pub fn init_cq_ex_fun_map() {
         }
         return Ok(Some("".to_owned()));
     });
-    add_fun(vec!["取图片"],|self_t,_params|{
-        let raw_data = self_t.get_exmap("原始事件");
-        let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+
+    add_fun(vec!["取图片"],|self_t,params|{
+        let message;
         let err = "获取message失败";
-        let message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?;
+        if params.len() != 0 {
+            let data_str = self_t.get_param(params, 0)?;
+            message = crate::mytool::str_msg_to_arr(&serde_json::json!(data_str))?.as_array().ok_or(err)?.clone();
+        }else {
+            let raw_data = self_t.get_exmap("原始事件");
+            let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+            message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?.clone();
+        }
+        
         let mut ret_vec:Vec<String> = vec![];
-        for it in message {
+        for it in &message {
             let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
             if tp == "image" {
                 let data = it.get("data").ok_or("data not found in image cq code")?;
@@ -601,6 +621,29 @@ pub fn init_cq_ex_fun_map() {
                 if url.starts_with("http://") || url.starts_with("https://") {
                     ret_vec.push(url);
                 }
+            }
+        }
+        let ret = self_t.build_arr(ret_vec.iter().map(|x| x.as_str()).collect());
+        return Ok(Some(ret));
+    });
+    add_fun(vec!["取文本"],|self_t,params|{
+        let message;
+        let err = "获取message失败";
+        if params.len() != 0 {
+            let data_str = self_t.get_param(params, 0)?;
+            message = crate::mytool::str_msg_to_arr(&serde_json::json!(data_str))?.as_array().ok_or(err)?.clone();
+        }else {
+            let raw_data = self_t.get_exmap("原始事件");
+            let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+            message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?.clone();
+        }
+        let mut ret_vec:Vec<String> = vec![];
+        for it in &message {
+            let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
+            if tp == "text" {
+                let data = it.get("data").ok_or("data not found in image cq code")?;
+                let text = read_json_str(data, "text");
+                ret_vec.push(text);
             }
         }
         let ret = self_t.build_arr(ret_vec.iter().map(|x| x.as_str()).collect());
