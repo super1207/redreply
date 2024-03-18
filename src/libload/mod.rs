@@ -1,6 +1,6 @@
 use std::{collections::HashSet, ffi::{c_char, c_int, CStr}, fs, sync::Arc};
 
-use crate::{cqapi::{cq_add_log, cq_get_app_directory1}, redlang::RedLang, LibStruct, G_LIB_AC, G_LIB_MAP};
+use crate::{cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory1}, redlang::RedLang, LibStruct, G_LIB_AC, G_LIB_MAP};
 
 fn gen_lib_ac() -> c_int {
     let mut lk = G_LIB_AC.lock().unwrap();
@@ -56,7 +56,14 @@ pub fn init_lib() -> Result<(), Box<dyn std::error::Error>> {
             }
             let file_path = path.to_str().ok_or("获取目录文件异常")?.to_owned();
             unsafe {
-                let lib = Arc::new(libloading::Library::new(path)?);
+                let lib;
+                if let Ok(lib_t) = libloading::Library::new(path.to_owned()) {
+                    lib = Arc::new(lib_t);
+                }else {
+                    cq_add_log_w(&format!("加载库失败:{file_name_str}，不支持的动态库格式")).unwrap();
+                    continue;
+                }
+                
                 // 检查版本号
                 let api_version_fun_rst = lib.get::<libloading::Symbol<unsafe extern "system" fn(ac:c_int) -> c_int>>(b"redreply_api_version");
                 if api_version_fun_rst.is_err() {
@@ -69,6 +76,8 @@ pub fn init_lib() -> Result<(), Box<dyn std::error::Error>> {
                 if api_version != 1 {
                     continue;
                 }
+
+                cq_add_log(&format!("加载库成功:{file_name_str}")).unwrap();
 
                 //执行到这里，说明插件加载成功，应该保存起来了
                 {
