@@ -60,6 +60,9 @@ zip = "0.6.6"
 crc64 = "2.0.0"
 headless_chrome = "1.0.9"
 
+[build-dependencies]
+embed-resource = "2.4.2"
+
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.50.0"
