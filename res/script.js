@@ -44,17 +44,25 @@ app = createApp({
             composing:false,
             last_code:"",
             last_change_time:(new Date()).valueOf(),
+            last_index:0,
         }
     },
     mounted () {
 
         setInterval(() => {
             quill = this.$refs.child.getQuill();
+            let sec = quill.getSelection()
+            let curr_index = 0
+            if(sec){
+                curr_index = sec.index
+            }
+            
             let code = quill.getText();
             tm = (new Date()).valueOf()
-            if (code!= this.last_code && !this.composing && tm - this.last_change_time > 300) {
+            if ((code!= this.last_code || curr_index != this.last_index) && !this.composing && tm - this.last_change_time > 300) {
                 this.highlight()
                 this.last_code = code
+                this.last_index = curr_index
             }
         }, 500)
 
@@ -80,6 +88,14 @@ app = createApp({
 
         quill = this.$refs.child.getQuill()
         quill.on('text-change', (delta, oldDelta, source) => {
+            if (source == 'user') {
+                if(!this.composing){
+                    this.last_change_time = (new Date()).valueOf()
+                }
+            }
+        });
+
+        quill.on('selection-change', (range, oldDelta, source) => {
             if (source == 'user') {
                 if(!this.composing){
                     this.last_change_time = (new Date()).valueOf()
@@ -357,14 +373,23 @@ app = createApp({
             function pre_color(){
                 current_color = (current_color + 3) % 4;
             }
-            var colorList = ["black","red","blue","green"]
+            var colorList = ["#000000","#FF0000","#0000FF","#008000"]
+            function ColorReverse(OldColorValue){
+                var OldColorValue = "0x"+OldColorValue.replace(/#/g,"");
+                var str="000000"+(0xFFFFFF-OldColorValue).toString(16);
+                return '#' + str.substring(str.length-6,str.length);
+            }
             function out_text(quill,index){
                 colorList[current_color](quill,index)
             }
 
             quill = this.$refs.child.getQuill();
-
+            
             select = quill.getSelection()
+            let curr_index = 0
+            if(select){
+                curr_index = select.index
+            }
 
             let code = quill.getText();
             content = []
@@ -402,6 +427,87 @@ app = createApp({
                     }
                 }
             }
+            // 在这里处理光标
+            if(curr_index >= 0 && curr_index < content.length){
+                let t = 0;
+                if(content[curr_index].insert == "【"){
+                    t = 1;
+                    content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                    while(curr_index < content.length){
+                        curr_index += 1
+                        if(curr_index >= content.length)break
+                        if(content[curr_index].insert == "\\"){
+                            curr_index += 1
+                        }else if(content[curr_index].insert == "【"){
+                            t += 1
+                        }else if(content[curr_index].insert == "】"){
+                            t -= 1
+                        }
+                        if(t == 0){
+                            content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                            break
+                        }
+                    }
+                }else if(content[curr_index].insert == "】") {
+                    t = 1;
+                    content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                    while(curr_index >= 0){
+                        curr_index -= 1
+                        if(curr_index < 0)break
+                        if(curr_index - 1 > 0 && content[curr_index - 1].insert == "\\") {
+                            curr_index -= 1
+                        }else if(content[curr_index].insert == "【"){
+                            t -= 1
+                        }else if(content[curr_index].insert == "】"){
+                            t += 1
+                        }
+                        if(t == 0){
+                            content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                            break
+                        }
+                    }
+                }else if(curr_index - 1 >=0){
+                    curr_index -= 1;
+                    if(content[curr_index].insert == "【"){
+                        t = 1;
+                        content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                        while(curr_index < content.length){
+                            curr_index += 1
+                            if(curr_index >= content.length)break
+                            if(content[curr_index].insert == "\\"){
+                                curr_index += 1
+                            }else if(content[curr_index].insert == "【"){
+                                t += 1
+                            }else if(content[curr_index].insert == "】"){
+                                t -= 1
+                            }
+                            if(t == 0){
+                                content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                                break
+                            }
+                        }
+                    }else if(content[curr_index].insert == "】") {
+                        t = 1;
+                        content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                        while(curr_index >= 0){
+                            curr_index -= 1
+                            if(curr_index < 0)break
+                            if(curr_index - 1 > 0 && content[curr_index - 1].insert == "\\") {
+                                curr_index -= 1
+                            }else if(content[curr_index].insert == "【"){
+                                t -= 1
+                            }else if(content[curr_index].insert == "】"){
+                                t += 1
+                            }
+                            if(t == 0){
+                                content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                                break
+                            }
+                        }
+                    }
+                }
+            }
+            
             quill.setContents(content)
             quill.setSelection(select)
         },
