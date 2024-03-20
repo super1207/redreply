@@ -64,7 +64,7 @@ async fn conv_event(self_t:&SelfData,root:serde_json::Value) -> Result<(), Box<d
         let avatar = read_json_str(&user, "avatar");
         let nickname =  read_json_str(&user, "username");
         let cq_msg_t = qq_content_to_cqstr(&self_t.bot_id,&self_id,&content)?;
-        let cq_msg = deal_attachments(&d)? + &cq_msg_t;
+        let cq_msg = cq_msg_t + &deal_attachments(&d)?;
         let cq_msg = deal_message_reference(d,&self_t.id_event_map)? + &cq_msg;
         let channel_id =read_json_str(&d, "channel_id");
         let guild_id = read_json_str(&d, "guild_id");
@@ -123,7 +123,7 @@ async fn conv_event(self_t:&SelfData,root:serde_json::Value) -> Result<(), Box<d
         let avatar = read_json_str(&user, "avatar");
         let nickname =  read_json_str(&user, "username");
         let cq_msg_t = qq_content_to_cqstr(&self_t.bot_id,&self_id,&content)?;
-        let cq_msg = deal_attachments(&d)? + &cq_msg_t;
+        let cq_msg = cq_msg_t + &deal_attachments(&d)?;
         let cq_msg = deal_message_reference(&d,&self_t.id_event_map)? + &cq_msg;
         let  event_json = serde_json::json!({
             "time":tm,
