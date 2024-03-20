@@ -2387,7 +2387,7 @@ pub fn init_ex_fun_map() {
                     if a != 0 {
                         ret += m;
                     }else {
-                        ret += tou_vec.get(tou_vec.len() - 1).ok_or("err10")?;
+                                                ret += tou_vec.get(tou_vec.len() - 1).ok_or("err10")?;
                     }
                     des.push_str(&format!("累计成功骰数:{ret}\n"));
                     if a == 0 {
@@ -2491,6 +2491,10 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["排序"],|self_t,params|{
         let arr_str = self_t.get_param(params, 0)?;
         let mut arr = RedLang::parse_arr(&arr_str)?;
+
+        if arr.len() == 0 {
+            return Ok(Some(self_t.build_arr(vec![])));
+        } 
 
         if params.len() > 1 {
             let func = params.get(1).ok_or("函数获取失败")?.to_string();
