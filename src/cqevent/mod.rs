@@ -28,9 +28,6 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
         root["message_id"] = serde_json::to_value(uuid::Uuid::new_v4().to_string())?;
     }
 
-    // 插入openapi事件
-    crate::openapi::insert_event(&root);
-
     let root_t = root.clone();
     RT_PTR.spawn(async {
         send_onebot_event(root_t).await;

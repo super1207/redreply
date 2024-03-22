@@ -59,6 +59,7 @@ bytes = "1.5.0"
 zip = "0.6.6"
 crc64 = "2.0.0"
 headless_chrome = "1.0.9"
+http-downloader = { version = "0.3" }
 
 [build-dependencies]
 embed-resource = "2.4.2"

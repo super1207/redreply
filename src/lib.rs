@@ -37,7 +37,6 @@ mod httpevent;
 mod pyserver;
 mod test;
 mod libload;
-mod openapi;
 mod pluscenter;
 mod onebot11s;
 
@@ -74,9 +73,9 @@ pub struct LibStruct {
 }
 
 lazy_static! {
-    // 用于记录加载的脚本
+    // 用于记录加载的脚本(x)
     pub static ref G_SCRIPT:RwLock<serde_json::Value> = RwLock::new(serde_json::json!([]));
-    // 用于记录加载的包名
+    // 用于记录加载的包名(x)
     pub static ref G_PKG_NAME:RwLock<HashSet<String>> = RwLock::new(HashSet::new());
     // 用于类型UUID
     pub static ref REDLANG_UUID:String = "12331549-6D26-68A5-E192-5EBE9A6EB998".to_owned();
@@ -84,11 +83,11 @@ lazy_static! {
     pub static ref PAGING_UUID:String = uuid::Uuid::new_v4().to_string();
     // 用于清空命令
     pub static ref CLEAR_UUID:String = uuid::Uuid::new_v4().to_string();
-    // 用于记录常量:包名-常量名-常量值
+    // 用于记录常量:包名-常量名-常量值(x)
     pub static ref G_CONST_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
     // 用于撤回消息
     pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,VecDeque<String>>> = RwLock::new(HashMap::new());
-    // 用于记录自定义的命令
+    // 用于记录自定义的命令(x)
     pub static ref G_CMD_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
     // 用于记录命令
     pub static ref G_CMD_FUN_MAP:RwLock<HashMap<String, fn(&mut RedLang,&[String]) -> Result<Option<String>, Box<dyn std::error::Error>>>> = RwLock::new(HashMap::new());
@@ -106,9 +105,9 @@ lazy_static! {
     pub static ref G_WEB_PASSWORD:RwLock<Option<String>> = RwLock::new(None);
     // webui的访问密码2
     pub static ref G_READONLY_WEB_PASSWORD:RwLock<Option<String>> = RwLock::new(None);
-    // 全局锁
+    // 全局锁(x)
     pub static ref G_LOCK:Mutex<HashMap<String,HashMap<String, i32>>> = Mutex::new(HashMap::new());
-    // 记录与某条消息相关的脚本输出
+    // 记录与某条消息相关的脚本输出(x)
     pub static ref G_SCRIPT_RELATE_MSG:RwLock<HashMap<String,ScriptRelatMsg>> = RwLock::new(HashMap::new());
     // 用于自动关闭进程
     pub static ref G_AUTO_CLOSE:Mutex<bool> = Mutex::new(false);
@@ -119,6 +118,8 @@ lazy_static! {
     pub static ref G_LIB_AC:Mutex<c_int> = Mutex::new(0);
     // sqlite锁
     pub static ref G_SQLITE_MX:std::sync::Mutex<bool> = std::sync::Mutex::new(true);
+    // 历史日志
+    static ref G_HISTORY_LOG:std::sync::RwLock<VecDeque<String>> = std::sync::RwLock::new(VecDeque::new());
 }
 
 
@@ -131,6 +132,30 @@ pub struct Asset;
 #[folder = "docs/"]
 #[prefix = "docs/"]
 pub struct AssetDoc;
+
+// 用于清理一个包使用的内存
+pub fn del_pkg_memory(pkg_name:&str) {
+    // 删除常量
+    G_CONST_MAP.write().unwrap().remove(pkg_name);
+    // 删除自定义命令
+    G_CMD_MAP.write().unwrap().remove(pkg_name);
+    // 删除全局锁
+    G_LOCK.lock().unwrap().remove(pkg_name);
+    // 删除脚本输出记录
+    {
+        let mut lk = G_SCRIPT_RELATE_MSG.write().unwrap();
+        let mut to_remove_key = vec![];
+        for (key,_val) in &*lk {
+            if key.starts_with(&format!("{pkg_name}|")) {
+                to_remove_key.push(key.to_string());
+            }
+        }
+        for key in to_remove_key {
+            lk.remove(&key);
+        }
+    }
+}
+
 
 pub fn wait_for_quit() -> ! {
     (*G_QUIT_FLAG.write().unwrap()) = true;
@@ -744,6 +769,7 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error + Send 
             if !key_vec.contains(name) {
                 let script_path = pkg_dir.join(name);
                 let _ = fs::remove_dir_all(script_path);
+                del_pkg_memory(name);
             }
         }
 
@@ -811,7 +837,10 @@ fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std
         // 删除缓存中的包名
         let mut lk = G_PKG_NAME.write().unwrap();
         lk.remove(old_pkg_name);
+        // 删除旧脚本占用的内存
+        del_pkg_memory(old_pkg_name);
         lk.insert(new_pkg_name.to_owned());
+        
     }else{
         cq_add_log_w("改名错误：old_pkg_name 或 new_pkg_name为空").unwrap();
         return Err(None.ok_or("rename err")?);
@@ -829,6 +858,8 @@ fn del_one_pkg(pkg_name:&str) -> Result<(), Box<dyn std::error::Error + Send + S
         let _ = fs::remove_dir_all(script_path);
         // 删除缓存中的包名
         G_PKG_NAME.write().unwrap().remove(pkg_name);
+        // 删除脚本占用的内存
+        del_pkg_memory(pkg_name);
     }
     else {
         return Err(None.ok_or("default_pkg can't be deleted")?);

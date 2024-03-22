@@ -33,8 +33,8 @@ lazy_static! {
     static ref G_LOG_MAP:tokio::sync::RwLock<HashMap<String,tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(HashMap::new());
     pub static ref G_PY_ECHO_MAP:tokio::sync::RwLock<HashMap<String,tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(HashMap::new());
     pub static ref G_PY_HANDER:tokio::sync::RwLock<Option<tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(None);
-    pub static ref G_PYSER_OPEN:AtomicBool = AtomicBool::new(false);
-    pub static ref G_ONEBOT_WS_MAP:tokio::sync::RwLock<HashMap<String,(tokio::sync::mpsc::Sender<String>,String,String)>> = tokio::sync::RwLock::new(HashMap::new());
+    static ref G_PYSER_OPEN:AtomicBool = AtomicBool::new(false);
+    static ref G_ONEBOT_WS_MAP:tokio::sync::RwLock<HashMap<String,(tokio::sync::mpsc::Sender<String>,String,String)>> = tokio::sync::RwLock::new(HashMap::new());
 }
 
 pub fn add_ws_log(log_msg:String) {
@@ -489,43 +489,6 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
             res.headers_mut().append(hyper::header::SET_COOKIE, HeaderValue::from_str(&pass_cookie)?);
         }
         res.headers_mut().insert("Location", HeaderValue::from_static("/index.html"));
-        Ok(res)
-    }
-    else if url_path == "/event" {
-        if can_write == false {
-            let res = hyper::Response::new(full("api not found"));
-            return Ok(res);
-        }
-        let mp = crate::httpevent::get_params_from_uri(request.uri());
-        let flag;
-        if let Some(f) = mp.get("flag") {
-            flag = f.as_str();
-        }else{
-            flag = "";
-        }
-        let ret_json = crate::openapi::get_event(flag);
-        let mut res = hyper::Response::new(full(ret_json.to_string()));
-        res.headers_mut().append(hyper::header::CONTENT_TYPE,HeaderValue::from_str("application/json")?);
-        Ok(res)
-    }
-    else if url_path == "/api" {
-        if can_write == false {
-            let res = hyper::Response::new(full("api not found"));
-            return Ok(res);
-        }
-        let whole_body = request.collect().await?.aggregate().reader();
-        let root:serde_json::Value = serde_json::from_reader(whole_body)?;
-        let platform = read_json_str(&root, "platform");
-        let self_id = read_json_str(&root, "self_id");
-        let passive_id = read_json_str(&root, "passive_id");
-        let (tx, rx) =  tokio::sync::oneshot::channel();
-        tokio::task::spawn_blocking(move ||{
-            let ret = crate::cqapi::cq_call_api(&platform,&self_id,&passive_id,&root.to_string());
-            let _ = tx.send(ret);
-        });
-        let ret = rx.await?;
-        let mut res = hyper::Response::new(full(ret));
-        res.headers_mut().append(hyper::header::CONTENT_TYPE,HeaderValue::from_str("application/json")?);
         Ok(res)
     }
     else if url_path.starts_with("/user") {

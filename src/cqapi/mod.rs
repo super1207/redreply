@@ -1,10 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::{RT_PTR, httpserver::add_ws_log};
-
-lazy_static! {
-    static ref G_HISTORY_LOG:std::sync::RwLock<VecDeque<String>> = std::sync::RwLock::new(VecDeque::new());
-}
+use crate::{httpserver::add_ws_log, G_HISTORY_LOG, RT_PTR};
 
 fn add_history_log(msg:&str) -> Result<(), Box<dyn std::error::Error>> {
     let mut lk = G_HISTORY_LOG.write()?;

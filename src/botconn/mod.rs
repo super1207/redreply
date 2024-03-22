@@ -140,8 +140,8 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                         RT_PTR.clone().spawn(async move {
                             if url_t.starts_with("ws://") || url_t.starts_with("wss://") {
                                 let mut bot = OneBot11Connect::build(&url_t);
-                                if let Err(_err) = bot.connect().await {
-                                    cq_add_log_w(&format!("连接到onebot失败:{}",url_t)).unwrap();
+                                if let Err(err) = bot.connect().await {
+                                    cq_add_log_w(&format!("连接到onebot失败:{},{}",url_t,err)).unwrap();
                                 } else {
                                     G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
                                 }
