@@ -1,8 +1,7 @@
-use std::{collections::{BTreeMap, HashMap}, fs, io::Read, num::{NonZeroU8, NonZeroUsize}, path::{Path, PathBuf}, str::FromStr, time::{Duration, SystemTime}, vec};
+use std::{collections::{BTreeMap, HashMap}, fs, io::Read, path::{Path, PathBuf}, str::FromStr, time::{Duration, SystemTime}, vec};
 use chrono::TimeZone;
 use encoding::Encoding;
 use flate2::{read::{GzDecoder, ZlibDecoder}, write::{GzEncoder, ZlibEncoder}, Compression};
-use http_downloader::HttpDownloaderBuilder;
 use jsonpath_rust::JsonPathQuery;
 use md5::{Md5, Digest};
 use resvg::usvg::{self, TreeParsing, TreeTextToPath};
@@ -72,55 +71,6 @@ pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,p
     return Ok((retbin,header_map));
 }
 
-
-pub async fn http_download(url:&str,_data:Vec<u8>,headers:&BTreeMap<String, String>,proxy_str:&str,_method:&str) -> Result<(Vec<u8>,String), Box<dyn std::error::Error + Send + Sync>> {
-    let client;
-    let uri = reqwest::Url::from_str(url)?;
-    if proxy_str == "" {
-        if uri.scheme() == "http" {
-            client = reqwest::Client::builder().no_proxy().build()?;
-        } else {
-            client = reqwest::Client::builder().danger_accept_invalid_certs(true).no_proxy().build()?;
-        }
-    }else {
-        if uri.scheme() == "http" {
-            let proxy = reqwest::Proxy::http(proxy_str)?;
-            client = reqwest::Client::builder().proxy(proxy).build()?;
-        }else{
-            let proxy = reqwest::Proxy::https(proxy_str)?;
-            client = reqwest::Client::builder().danger_accept_invalid_certs(true).proxy(proxy).build()?;
-        }
-    }
-    let mut header_map = reqwest::header::HeaderMap::new();
-    for (key,val) in headers {
-        header_map.append(HeaderName::from_str(key)?, HeaderValue::from_str(val)?);
-    }
-    let tmp_dir = get_tmp_dir()?;
-    let tmp_file = uuid::Uuid::new_v4().to_string();
-    let tmp_file_path = PathBuf::from_str(&tmp_dir)?.join(tmp_file.clone());
-    let _guard = scopeguard::guard(tmp_file_path.clone(), |tmp_file_path| {
-        let _foo = fs::remove_file(tmp_file_path);
-    });
-    let save_dir = PathBuf::from(tmp_dir);
-    let (mut downloader, ()) =
-        HttpDownloaderBuilder::new(uri.clone(), save_dir)
-            .client(Some(client))
-            .header_map(header_map)
-            .chunk_size(NonZeroUsize::new(1024 * 1024 * 4).unwrap())
-            .download_connection_count(NonZeroU8::new(16).unwrap())
-            .file_name(Some(tmp_file))
-            .build(());
-    let download_future = downloader.prepare_download()?;
-    let _dec = download_future.await?;
-    let empty_header_map =RedLang::build_obj_with_uid(&crate::REDLANG_UUID, BTreeMap::new());
-    if !tmp_file_path.exists() {
-        return Ok(([].to_vec(),empty_header_map));
-    }
-    let content = std::fs::read(tmp_file_path)?;
-    return Ok((content,empty_header_map));
-}
-
-
 pub fn init_ex_fun_map() {
     fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
         let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
@@ -183,45 +133,23 @@ pub fn init_ex_fun_map() {
                 http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
             }
             let timeout = timeout_str.parse::<u64>()?;
-            let content;
-            if self_t.get_coremap("多线程访问")? == "真" {
-                content = RT_PTR.block_on(async { 
-                    let ret = tokio::select! {
-                        val_rst = http_download(url,Vec::new(),&http_header,proxy,"GET") => {
-                            if let Ok(val) = val_rst {
-                                val
-                            } else {
-                                cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
-                                (vec![],String::new())
-                            }
-                        },
-                        _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
-                            cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
+            let content = RT_PTR.block_on(async { 
+                let ret = tokio::select! {
+                    val_rst = http_post(url,Vec::new(),&http_header,proxy,"GET") => {
+                        if let Ok(val) = val_rst {
+                            val
+                        } else {
+                            cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
                             (vec![],String::new())
                         }
-                    };
-                    return ret;
-                });
-            }
-            else{
-                content = RT_PTR.block_on(async { 
-                    let ret = tokio::select! {
-                        val_rst = http_post(url,Vec::new(),&http_header,proxy,"GET") => {
-                            if let Ok(val) = val_rst {
-                                val
-                            } else {
-                                cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
-                                (vec![],String::new())
-                            }
-                        },
-                        _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
-                            cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
-                            (vec![],String::new())
-                        }
-                    };
-                    return ret;
-                });
-            }
+                    },
+                    _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
+                        cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
+                        (vec![],String::new())
+                    }
+                };
+                return ret;
+            });
             self_t.set_coremap("返回头",&content.1)?;
             Ok(Some(self_t.build_bin(content.0)))
         }
@@ -2882,12 +2810,6 @@ def red_out(sw):
             cq_add_log_w(&format!("默认字体下载失败！")).unwrap();
             return Ok(Some(self_t.build_bin(vec![])));
         }
-    });
-
-    add_fun(vec!["设置多线程访问"],|self_t,params|{
-        let path = self_t.get_param(params, 0)?;
-        self_t.set_coremap("多线程访问", &path)?;
-        Ok(Some("".to_owned()))
     });
     add_fun(vec!["快速运行PY"],|self_t,params|{
         let code = self_t.get_param(params, 0)?;
