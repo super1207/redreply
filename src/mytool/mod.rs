@@ -240,12 +240,12 @@ pub fn read_json_or_default<'a>(root:&'a serde_json::Value,key:&'a str,def_val:&
 
 // 将字符串转化为简体
 pub fn str_to_jt(s:&str) -> String {
-    return zhconv(s, Variant::ZhHans);
+    return zhconv(s, Variant::ZhCN);
 }
 
 // 将字符串转化为繁体
 pub fn str_to_ft(s:&str) -> String {
-    return zhconv(s, Variant::ZhHant);
+    return zhconv(s, Variant::ZhHK);
 }
 
 pub fn cq_params_encode(data:&str) -> String {

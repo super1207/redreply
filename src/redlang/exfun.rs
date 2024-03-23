@@ -677,7 +677,7 @@ pub fn init_ex_fun_map() {
         } else {
             utc_offset = UtcOffset::from_hms(8,0,0).unwrap();
         }
-        let tm = chrono::NaiveDateTime::parse_from_str(&time_str, FORMAT)?.timestamp() - utc_offset.whole_seconds() as i64;
+        let tm = chrono::NaiveDateTime::parse_from_str(&time_str, FORMAT)?.and_utc().timestamp() - utc_offset.whole_seconds() as i64;
         return Ok(Some(tm.to_string()));
     });
 
