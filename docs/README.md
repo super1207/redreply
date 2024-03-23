@@ -1,5 +1,9 @@
 # 强大的聊天自定义问答系统-红色问答
 
+## 软件架构
+
+![alt text](softarch.png)
+
 ## 开始使用
 
 1：下载项目release中的`redlang.exe`，双击并执行，会自动弹出一个网页。<br />

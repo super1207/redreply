@@ -165,18 +165,17 @@ button,textarea,body,select,input{
 
 #pkg_btn_vec {
     display: flex;
-    flex-wrap: wrap;
+    overflow-x:auto;
     margin-left: 0.1em;
     margin-right: 0.1em;
     margin-bottom: 0.15em;
 }
 
 #pkg_btn_vec > div {
+    display: flex;
     padding: 0.1em;
-}
-
-#pkg_btn_vec > div > button {
-    height: 2em;
+    flex: 0 0 auto;
+    
 }
 
 #other_dlg {
