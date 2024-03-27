@@ -59,6 +59,8 @@ bytes = "1.6.0"
 zip = "0.6.6"
 crc64 = "2.0.0"
 headless_chrome = "1.0.9"
+path-clean = "1.0.1"
+rust-ini = "0.21.0"
 
 [build-dependencies]
 embed-resource = "2.4.2"

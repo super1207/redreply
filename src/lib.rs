@@ -17,6 +17,7 @@ use httpserver::init_http_server;
 use libload::init_lib;
 use mytool::read_json_str;
 use onebot11s::gen_lcg_id;
+use path_clean::PathClean;
 use redlang::RedLang;
 use serde_json;
 use rust_embed::RustEmbed;
@@ -116,8 +117,8 @@ lazy_static! {
     // 注册的三方插件
     pub static ref G_LIB_MAP:RwLock<HashMap<c_int,LibStruct>> = RwLock::new(HashMap::new());
     pub static ref G_LIB_AC:Mutex<c_int> = Mutex::new(0);
-    // sqlite锁
-    pub static ref G_SQLITE_MX:std::sync::Mutex<bool> = std::sync::Mutex::new(true);
+    // 文件锁
+    pub static ref G_FILE_MX:std::sync::Mutex<HashMap<String,i32>> = std::sync::Mutex::new(HashMap::new());
     // 历史日志
     static ref G_HISTORY_LOG:std::sync::RwLock<VecDeque<String>> = std::sync::RwLock::new(VecDeque::new());
 }
@@ -132,6 +133,61 @@ pub struct Asset;
 #[folder = "docs/"]
 #[prefix = "docs/"]
 pub struct AssetDoc;
+
+
+// 获取绝对路径
+fn get_apath(filename:&str) -> Option<String> {
+    let fname;
+    match PathBuf::from_str(filename) {
+        Err(_err) => {
+            return None;
+        },
+        Ok(path) => {
+            let apath;
+            if path.is_absolute() {
+                apath = path.clean();
+            }else{
+                apath = std::env::current_dir().unwrap().join(path).clean();
+            }
+            fname = apath.to_string_lossy().to_string();
+        }
+    }
+    // println!("fname:{}",fname);
+    return Some(fname);
+}
+
+
+pub fn add_file_lock(filename:&str) {
+    let fname;
+    if let Some(fname_t) =  get_apath(filename) {
+        fname = fname_t;
+    } else {
+        return;
+    }
+    loop {
+        {
+            let mut lk = G_FILE_MX.lock().unwrap();
+            if !lk.contains_key(&fname) {
+                lk.insert(fname.to_string(), 0);
+                return;
+            }
+        }
+        // 如果这个文件正在被读写的话，就等待
+        let time_struct = core::time::Duration::from_millis(10);
+        std::thread::sleep(time_struct);
+    }
+}
+
+pub fn del_file_lock(filename:&str) {
+    let fname;
+    if let Some(fname_t) =  get_apath(filename) {
+        fname = fname_t;
+    } else {
+        return;
+    }
+    let mut lk = G_FILE_MX.lock().unwrap();
+    lk.remove(&fname);
+}
 
 // 用于清理一个包使用的内存
 pub fn del_pkg_memory(pkg_name:&str) {

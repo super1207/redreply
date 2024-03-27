@@ -1,6 +1,6 @@
 use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
 
-use crate::{cqapi::{cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, mytool::{cq_params_encode, cq_text_encode, read_json_str}, redlang::{get_const_val, set_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, G_SQLITE_MX, PAGING_UUID};
+use crate::{add_file_lock, cqapi::{cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, redlang::{get_const_val, set_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -906,10 +906,15 @@ pub fn init_cq_ex_fun_map() {
         let user_id = self_t.get_exmap("发送者ID").to_string();
         let add_score = self_t.get_param(params, 0)?.parse::<i64>()?;
 
-        let _lk = G_SQLITE_MX.lock().unwrap();
         // 创建表
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
+
+        add_file_lock(&sql_file);
+        let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+            del_file_lock(&sql_file);
+        });
+
         let conn = rusqlite::Connection::open(sql_file)?;
         conn.execute("CREATE TABLE IF NOT EXISTS SCORE_TABLE (GROUP_ID TEXT,USER_ID TEXT,VALUE INTEGER DEFAULT 0,PRIMARY KEY(GROUP_ID,USER_ID));", [])?;
         
@@ -940,11 +945,15 @@ pub fn init_cq_ex_fun_map() {
         let user_id = self_t.get_exmap("发送者ID").to_string();
         let set_score = self_t.get_param(params, 0)?.parse::<u32>()?;
 
-        let _lk = G_SQLITE_MX.lock().unwrap();
-
         // 创建表
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
+
+        add_file_lock(&sql_file);
+        let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+            del_file_lock(&sql_file);
+        });
+
         let conn = rusqlite::Connection::open(sql_file)?;
         conn.execute("CREATE TABLE IF NOT EXISTS SCORE_TABLE (GROUP_ID TEXT,USER_ID TEXT,VALUE INTEGER DEFAULT 0,PRIMARY KEY(GROUP_ID,USER_ID));", [])?;
         
@@ -959,12 +968,16 @@ pub fn init_cq_ex_fun_map() {
         let key1 = self_t.get_exmap("群ID");
         let group_id = format!("{}",key1);
         let user_id = self_t.get_exmap("发送者ID").to_string();
-        
-        let _lk = G_SQLITE_MX.lock().unwrap();
-        
+         
         // 查询积分
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
+
+        add_file_lock(&sql_file);
+        let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+            del_file_lock(&sql_file);
+        });
+
         let conn = rusqlite::Connection::open(sql_file)?;
         let ret_rst:Result<i64,rusqlite::Error> = conn.query_row("SELECT VALUE FROM SCORE_TABLE WHERE GROUP_ID = ? AND USER_ID = ?", [group_id.clone(),user_id.clone()], |row| row.get(0));
         let ret_num:i64;
@@ -989,11 +1002,15 @@ pub fn init_cq_ex_fun_map() {
             limit_num = limit.parse::<i32>()?;
         }
 
-        let _lk = G_SQLITE_MX.lock().unwrap();
-
         // 查询积分
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
+
+        add_file_lock(&sql_file);
+        let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+            del_file_lock(&sql_file);
+        });
+
         let conn = rusqlite::Connection::open(sql_file)?;
         let mut stmt = conn.prepare("SELECT USER_ID,VALUE FROM SCORE_TABLE WHERE GROUP_ID = ? ORDER BY VALUE DESC LIMIT ?")?;
         let mut rows = stmt.query(rusqlite::params_from_iter([group_id,limit_num.to_string()]))?;

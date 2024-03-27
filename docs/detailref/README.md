@@ -789,6 +789,32 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 
 在文件后面追加内容。若路径不存在，会自动创建路径。若文件不存在，则会先创建文件。
 
+
+### 读配置
+
+
+【读配置@<font color="red">INI文件路径</font>@<font color="red">节名</font>@<font color="red">键名</font>】
+
+读一个以UTF-8编码的INI文件的键值。返回文本。若文件不存在或节名或键名不存在则返回空文本。若已有文件解析失败则抛出异常。
+
+
+### 读配置节
+
+
+【读配置@<font color="red">INI文件路径</font>】
+
+读一个以UTF-8编码的INI文件，返回节名数组，若文件不存在或者无节，返回空数组。若已有文件解析失败则抛出异常。
+
+
+### 写配置
+
+
+【读配置@<font color="red">INI文件路径</font>@<font color="red">节名</font>@<font color="red">键名</font>@<font color="red">值</font>】
+
+朝一个以UTF-8编码的INI文件里面写入配置项，文件若不存在则自动创建。若已有文件解析失败或文件创建失败则抛出异常。
+
+
+
 ### 目录分隔符 
 
 

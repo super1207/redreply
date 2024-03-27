@@ -2,6 +2,7 @@ use std::{collections::{BTreeMap, HashMap}, fs, io::Read, path::{Path, PathBuf},
 use chrono::TimeZone;
 use encoding::Encoding;
 use flate2::{read::{GzDecoder, ZlibDecoder}, write::{GzEncoder, ZlibEncoder}, Compression};
+use ini::Ini;
 use jsonpath_rust::JsonPathQuery;
 use md5::{Md5, Digest};
 use resvg::usvg::{self, TreeParsing, TreeTextToPath};
@@ -12,7 +13,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::io::Write;
-use crate::{cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, G_SQLITE_MX, RT_PTR};
+use crate::{add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, del_file_lock, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
 
 use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -450,6 +451,10 @@ pub fn init_ex_fun_map() {
         if !path.exists() {
             return Ok(Some(self_t.build_bin(vec![])));
         }
+        add_file_lock(&file_path);
+        let _guard = scopeguard::guard(file_path.clone(), |file_path| {
+            del_file_lock(&file_path);
+        });
         let content = std::fs::read(path)?;
         return Ok(Some(self_t.build_bin(content)));
     });
@@ -1638,11 +1643,98 @@ pub fn init_ex_fun_map() {
         fs::create_dir_all(path)?;
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["读配置"],|self_t,params|{
+        let path = self_t.get_param(params, 0)?;
+        let section = self_t.get_param(params, 1)?;
+        let key = self_t.get_param(params, 2)?;
+        if Path::new(&path).exists() {
+            add_file_lock(&path);
+            let _guard = scopeguard::guard(path.clone(), |path| {
+                del_file_lock(&path);
+            });
+            let conf = Ini::load_from_file(path)?;
+            let section_t;
+            if section == "" {
+                let section_opt = conf.section(None::<String>);
+                if section_opt.is_none() {
+                    return Ok(Some("".to_string()));
+                }
+                section_t = section_opt.unwrap();
+            }else {
+                let section_opt = conf.section(Some(section));
+                if section_opt.is_none() {
+                    return Ok(Some("".to_string()));
+                }
+                section_t = section_opt.unwrap();
+            }
+            let val_opt = section_t.get(key);
+            if val_opt.is_none() {
+                return Ok(Some("".to_string()));
+            }
+            return Ok(Some(val_opt.unwrap().to_owned()));
+        }else {
+            return Ok(Some("".to_string()));
+        }
+    });
+    add_fun(vec!["读配置节"],|self_t,params|{
+        let path = self_t.get_param(params, 0)?;
+        if Path::new(&path).exists() {
+            add_file_lock(&path);
+            let _guard = scopeguard::guard(path.clone(), |path| {
+                del_file_lock(&path);
+            });
+            let conf = Ini::load_from_file(path)?;
+            let mut to_ret_vec:Vec<&str> = vec![];
+            for (sec, _prop) in &conf {
+                if sec.is_some() {
+                    to_ret_vec.push(sec.unwrap());
+                }
+            }
+            return Ok(Some(self_t.build_arr(to_ret_vec)));
+        }else {
+            return Ok(Some(self_t.build_arr(vec![])));
+        }
+    });
+    
+    add_fun(vec!["写配置"],|self_t,params|{
+        let path = self_t.get_param(params, 0)?;
+        let section = self_t.get_param(params, 1)?;
+        let key = self_t.get_param(params, 2)?;
+        let value = self_t.get_param(params, 3)?;
+        let parent_path = Path::new(&path).parent().ok_or("写文件：无法创建目录或文件")?;
+        fs::create_dir_all(parent_path)?;
+        add_file_lock(&path);
+        let _guard = scopeguard::guard(path.clone(), |path| {
+            del_file_lock(&path);
+        });
+        if Path::new(&path).exists() {
+            let mut conf = Ini::load_from_file(&path)?;
+            if section == "" {
+                conf.with_section(None::<String>).set(key, value);
+            }else{
+                conf.with_section(Some(section)).set(key, value);
+            }
+            conf.write_to_file(path)?;
+        }else {
+            let mut conf = Ini::new();
+            if section == "" {
+                conf.with_section(None::<String>).set(key, value);
+            }else{
+                conf.with_section(Some(section)).set(key, value);
+            }
+            conf.write_to_file(path)?;
+        }
+        return Ok(Some("".to_string()));
+    });
     add_fun(vec!["写文件"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
         let bin_data = self_t.get_param(params, 1)?;
         let parent_path = Path::new(&path).parent().ok_or("写文件：无法创建目录或文件")?;
         fs::create_dir_all(parent_path)?;
+        add_file_lock(&path);
+        let _guard = scopeguard::guard(path.clone(), |path| {
+            del_file_lock(&path);
+        });
         let mut f = fs::File::create(path)?;
         let bin = RedLang::parse_bin(&bin_data)?;
         std::io::Write::write_all(&mut f, bin.as_bytes())?;
@@ -1653,6 +1745,10 @@ pub fn init_ex_fun_map() {
         let bin_data = self_t.get_param(params, 1)?;
         let parent_path = Path::new(&path).parent().ok_or("写文件：无法创建目录或文件")?;
         fs::create_dir_all(parent_path)?;
+        add_file_lock(&path);
+        let _guard = scopeguard::guard(path.clone(), |path| {
+            del_file_lock(&path);
+        });
         let mut f;
         if Path::new(&path).exists() {
             f = fs::OpenOptions::new().append(true).open(path)?
@@ -1900,7 +1996,7 @@ pub fn init_ex_fun_map() {
     });
     
     add_fun(vec!["运行SQL"],|self_t,params|{
-        let sqlfile = self_t.get_param(params, 0)?;
+        let sql_file = self_t.get_param(params, 0)?;
         let sql = self_t.get_param(params, 1)?;
         let sql_params_str = self_t.get_param(params, 2)?;
                 let sql_params;
@@ -1910,9 +2006,12 @@ pub fn init_ex_fun_map() {
             sql_params = RedLang::parse_arr(&sql_params_str)?;
         }
 
-        let _lk = G_SQLITE_MX.lock().unwrap();
+        add_file_lock(&sql_file);
+        let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+            del_file_lock(&sql_file);
+        });
         
-        let conn = rusqlite::Connection::open(sqlfile)?;
+        let conn = rusqlite::Connection::open(sql_file)?;
         let mut stmt = conn.prepare(&sql)?;
         let count = stmt.column_count();
         let mut vec:Vec<String> = vec![];
@@ -1942,7 +2041,10 @@ pub fn init_ex_fun_map() {
         let key = self_t.get_param(params, 0)?;
         let value = self_t.get_param(params, 1)?;
 
-        let _lk = G_SQLITE_MX.lock().unwrap();
+        add_file_lock(&sql_file);
+        let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+            del_file_lock(&sql_file);
+        });
         
         let conn = rusqlite::Connection::open(sql_file)?;
         conn.execute("CREATE TABLE IF NOT EXISTS CONST_TABLE (KEY TEXT PRIMARY KEY,VALUE TEXT);", [])?;
@@ -1959,7 +2061,10 @@ pub fn init_ex_fun_map() {
         let ret_rst:Result<String,rusqlite::Error>;
 
         {
-            let _lk = G_SQLITE_MX.lock().unwrap();
+            add_file_lock(&sql_file);
+            let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+                del_file_lock(&sql_file);
+            });
             let conn = rusqlite::Connection::open(sql_file)?;
             ret_rst = conn.query_row("SELECT VALUE FROM CONST_TABLE WHERE KEY = ?", [key], |row| row.get(0));
         }
