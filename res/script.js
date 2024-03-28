@@ -45,6 +45,7 @@ app = createApp({
             last_code:"",
             last_change_time:(new Date()).valueOf(),
             last_index:0,
+            playbkmusic:"播放背景音乐",
         }
     },
     mounted () {
@@ -197,7 +198,7 @@ app = createApp({
             code.push(keys)
 
             
-            
+
             for(let k in this.pkg_codes) {
                 
                 if(k == "默认包"){
@@ -253,7 +254,18 @@ app = createApp({
         debug_btn() {
             window.open("/debug.html", "_blank");
         },
-        pluscenter_btn(){
+        playmusic_btn(){
+            let audio = this.$refs.mybackmusic
+            if(this.playbkmusic == "播放背景音乐"){
+                audio.play()
+                this.playbkmusic = "暂停播放背景音乐"
+            }else{
+                audio.pause()
+                this.playbkmusic = "播放背景音乐"
+            }
+            
+        },
+        play_music(){
             window.open("/pluscenter.html", "_blank");
         },
         quit_redreply() {

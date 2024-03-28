@@ -181,12 +181,16 @@
                             if(img.startsWith("base64://")) {
                                 this.img_src = "data:image/jpeg;base64," + img.slice(9)
                                 this.has_img = true;
-                            }else {
-                                this.img_src = img
+                            } else {
+                                let img2 = img.replaceAll("&#91;", '[')
+                                    .replaceAll("#93;", ']')
+                                    .replaceAll("&#44;", ',')
+                                    .replaceAll("&amp;", '&')
+                                this.img_src = img2
                                 this.has_img = true;
                             }
                         }
-                        console.log();
+                        
                     }else {
                         this.result = "执行失败：" + res.data['data']
                     }
