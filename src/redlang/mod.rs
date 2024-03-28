@@ -2129,8 +2129,20 @@ impl RedLang {
                     params.push(cq_code.iter().collect::<String>());
                     cq_code.clear();
                 }
-                cq_code.push(ch);
-                cq_n += 1;
+                if i != chs.len() && chs[i] == '@' {
+                    // 处理原始字符串
+                    cq_code.push(ch);
+                    for it in &chs[i..] {
+                        i += 1;
+                        cq_code.push(*it);
+                        if *it == '】' {
+                            break;
+                        }
+                    }
+                }else{
+                    cq_code.push(ch);
+                    cq_n += 1;
+                }
             } else if ch == '】' {
                 if cq_n == 0 {
                     return Err(RedLang::make_err("too much 】 in code"));
@@ -2156,10 +2168,6 @@ impl RedLang {
     }
 
     fn parsecq(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
-
-        if input.starts_with("【@") {
-           return  Ok(input.get(4..(input.len() - 3)).unwrap().to_owned());
-        }
 
         let params = self.parse_params(input)?;
 
@@ -2333,10 +2341,25 @@ impl RedLang {
             i += 1;
             if status == 0 {
                 if ch == '【' {
-                    status = 1;
-                    cq_code.clear();
-                    cq_code.push('【');
-                    cq_n = 1;
+                    if i != chs.len() && chs[i] == '@' {
+                        // 处理原始字符串
+                        for it in &chs[i+1..] {
+                            i += 1;
+                            if *it == '】' {
+                                break;
+                            }else {
+                                chs_out.push(*it);
+                            }
+                        }
+                        i += 1;
+                        cur_type_status = 1;
+
+                    } else {
+                        status = 1;
+                        cq_code.clear();
+                        cq_code.push('【');
+                        cq_n = 1;
+                    }
                 } else {
                     if ch == '\\' {
                         let c = chs.get(i).ok_or("\\ in the last position of code")?;
@@ -2357,8 +2380,20 @@ impl RedLang {
                     cq_code.push(*c);
                     i += 1;
                 } else if ch == '【' {
-                    cq_n += 1;
-                    cq_code.push(ch);
+                    if i != chs.len() && chs[i] == '@' {
+                        // 处理原始字符串
+                        cq_code.push(ch);
+                        for it in &chs[i..] {
+                            i += 1;
+                            cq_code.push(*it);
+                            if *it == '】' {
+                                break;
+                            }
+                        }
+                    }else {
+                        cq_n += 1;
+                        cq_code.push(ch);
+                    }
                 } else if ch == '】' {
                     cq_n -= 1;
                     cq_code.push(ch);
