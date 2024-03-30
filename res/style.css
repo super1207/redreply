@@ -169,6 +169,7 @@ button,textarea,body,select,input{
     margin-left: 0.1em;
     margin-right: 0.1em;
     margin-bottom: 0.15em;
+    flex: 0 0 auto;
 }
 
 #pkg_btn_vec > div {

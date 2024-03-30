@@ -254,6 +254,9 @@ app = createApp({
         debug_btn() {
             window.open("/debug.html", "_blank");
         },
+        pluscenter_btn(){
+            window.open("/pluscenter.html", "_blank");
+        },
         playmusic_btn(){
             let audio = this.$refs.mybackmusic
             if(this.playbkmusic == "播放背景音乐"){
