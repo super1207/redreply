@@ -119,9 +119,9 @@ hellohellohellohellohello
 ## 原始字符串
 
 
-某些情况下，我们希望空格，换行不被忽略，这个时候，可以使用原始字符串的表示方法：`【@内容】`，如`【@select * from tb】`。
+某些情况下，我们希望空格，换行不被忽略，转义符号<font color="red">\\</font>不做转义用途，这个时候，可以使用原始字符串的表示方法：`【@内容】`，如`【@select * from tb】`。
 
-特别注意，<font color="red">内容</font>里面，不能含有<font color="red">【</font>、<font color="red">】</font>。
+特别注意，<font color="red">内容</font>里面，<font color="red">【</font>、<font color="red">】</font>必须成对出现。
 
 
 ## 注释

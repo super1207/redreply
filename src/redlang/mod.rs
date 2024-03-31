@@ -2132,11 +2132,17 @@ impl RedLang {
                 if i != chs.len() && chs[i] == '@' {
                     // 处理原始字符串
                     cq_code.push(ch);
+                    let mut cn = 1;
                     for it in &chs[i..] {
                         i += 1;
                         cq_code.push(*it);
-                        if *it == '】' {
-                            break;
+                        if *it == '【' {
+                            cn += 1;
+                        } else if *it == '】'{
+                            cn -= 1;
+                            if cn == 0 {
+                                break;
+                            }
                         }
                     }
                 }else{
@@ -2342,14 +2348,19 @@ impl RedLang {
             if status == 0 {
                 if ch == '【' {
                     if i != chs.len() && chs[i] == '@' {
+                        let mut cn = 1;
                         // 处理原始字符串
                         for it in &chs[i+1..] {
                             i += 1;
-                            if *it == '】' {
-                                break;
-                            }else {
-                                chs_out.push(*it);
-                            }
+                            if *it == '【' {
+                                cn += 1;
+                            } else if *it == '】' {
+                                cn -= 1;
+                                if cn == 0 {
+                                    break;
+                                }
+                            } 
+                            chs_out.push(*it);
                         }
                         i += 1;
                         cur_type_status = 1;
@@ -2383,11 +2394,17 @@ impl RedLang {
                     if i != chs.len() && chs[i] == '@' {
                         // 处理原始字符串
                         cq_code.push(ch);
+                        let mut cn = 1;
                         for it in &chs[i..] {
                             i += 1;
                             cq_code.push(*it);
-                            if *it == '】' {
-                                break;
+                            if *it == '【' {
+                                cn += 1;
+                            }else if *it == '】' {
+                                cn -= 1;
+                                if cn == 0 {
+                                    break;
+                                }
                             }
                         }
                     }else {
