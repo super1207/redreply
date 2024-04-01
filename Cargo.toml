@@ -70,6 +70,8 @@ embed-resource = "2.4.2"
 winreg = "0.50.0"
 xcap = "0.0.4"
 winconsole = "0.11.1"
+tray-icon = "0.13.0"
+fltk = "1.4.26"
 
 
 [profile.release]

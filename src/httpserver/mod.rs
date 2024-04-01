@@ -1080,10 +1080,10 @@ pub fn init_http_server() -> Result<()> {
     
     if let Some(not_open_browser) = config.get("not_open_browser") {
         if not_open_browser == false {
-            opener::open(format!("http://localhost:{port}"))?;
+            crate::show_ctrl_web()?;
         }
     }else {
-        opener::open(format!("http://localhost:{port}"))?;
+        crate::show_ctrl_web()?;
     }
     
     Ok(())

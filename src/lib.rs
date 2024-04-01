@@ -135,6 +135,21 @@ pub struct Asset;
 pub struct AssetDoc;
 
 
+pub fn show_ctrl_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
+    let config = read_config()?;
+    let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
+    opener::open(format!("http://localhost:{port}"))?;
+    Ok(())
+}
+
+
+pub fn show_help_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
+    let config = read_config()?;
+    let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
+    opener::open(format!("http://localhost:{port}/docs/index.html"))?;
+    Ok(())
+}
+
 // 获取绝对路径
 fn get_apath(filename:&str) -> Option<String> {
     let fname;
@@ -278,19 +293,12 @@ pub fn dec_running_script_num(pkg_name:&str,script_name:&str) {
     }
 }
 
-
 // 这是插件第一个被调用的函数，不要在这里调用任何CQ的API,也不要在此处阻塞
 pub fn initialize() -> i32 {
     cq_add_log(&format!("欢迎使用`红色问答{}`,正在进行资源初始化...",get_version())).unwrap();
     panic::set_hook(Box::new(|e| {
         cq_add_log_w(e.to_string().as_str()).unwrap();
     }));
-
-    // 下载必要文件
-    // RT_PTR.block_on(async{
-    //     cq_add_log_w("开始下载...").unwrap();
-    //     cq_add_log_w("下载完成...").unwrap();
-    // });
 
     // 初始化配置文件
     init_config();
@@ -601,11 +609,11 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
     let err = "get asset err";
     fs::create_dir_all(cq_get_app_directory1().unwrap() + "webui")?;
     for it in Asset::iter() {
-        let file = Asset::get(&it.to_string()).ok_or(err)?;
+                let file = Asset::get(&it.to_string()).ok_or(err)?;
         fs::write(cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
     } 
     for it in AssetDoc::iter() {
-        let file = AssetDoc::get(&it.to_string()).ok_or(err)?;
+                let file = AssetDoc::get(&it.to_string()).ok_or(err)?;
         let file_path = cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + &it.to_string();
         if let Some(path) = PathBuf::from_str(&file_path)?.parent() {
             fs::create_dir_all(path)?;
