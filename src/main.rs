@@ -1,7 +1,3 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-
-
-
 use time::UtcOffset;
 
 
@@ -25,6 +21,33 @@ fn main() {
         time::format_description::parse(format).unwrap(),
     )).with_max_level(tracing::Level::INFO)
     .init();
+
+
+    #[cfg(windows)]
+    unsafe { 
+        let mut lpdwprocesslistl = vec![0,0];
+        let ptr = lpdwprocesslistl.as_mut_ptr();
+        let is_in_cmd = windows_sys::Win32::System::Console::GetConsoleProcessList(ptr,2) > 1;
+        if !is_in_cmd {
+            let cur_process_id = windows_sys::Win32::System::Threading::GetCurrentProcessId();
+            let desk_window = windows_sys::Win32::UI::WindowsAndMessaging::GetDesktopWindow();
+            let mut window = windows_sys::Win32::UI::WindowsAndMessaging::FindWindowExA(desk_window,0,std::ptr::null(),std::ptr::null());
+            while window != 0 {
+                let mut process_id :u32 = 0;
+                windows_sys::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(window,&mut process_id);
+                if process_id == cur_process_id {
+                    //windows_sys::Win32::UI::WindowsAndMessaging::SetWindowLongPtrW(window,windows_sys::Win32::UI::WindowsAndMessaging::GWL_EXSTYLE,windows_sys::Win32::UI::WindowsAndMessaging::WS_EX_TOOLWINDOW as i32);
+                    //windows_sys::Win32::UI::WindowsAndMessaging::SetWindowPos(window,0,0,0,0,0,windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOMOVE | windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOSIZE | windows_sys::Win32::UI::WindowsAndMessaging::SWP_NOZORDER | windows_sys::Win32::UI::WindowsAndMessaging::SWP_FRAMECHANGED);
+                    windows_sys::Win32::UI::WindowsAndMessaging::ShowWindow(window,windows_sys::Win32::UI::WindowsAndMessaging::SW_HIDE);
+                }
+                let window_next = windows_sys::Win32::UI::WindowsAndMessaging::FindWindowExA(desk_window,window,std::ptr::null(),std::ptr::null());
+                windows_sys::Win32::Foundation::CloseHandle(window);
+                window = window_next;
+            }
+            windows_sys::Win32::Foundation::CloseHandle(desk_window);
+        }
+        
+    };
 
     #[cfg(windows)]
     let app = fltk::app::App::default().with_scheme(fltk::app::Scheme::Gtk);
@@ -102,6 +125,7 @@ fn main() {
                 }
                 // println!("Tray event: {:?}", event);
             }
+
             let time_struct = core::time::Duration::from_millis(50);
             std::thread::sleep(time_struct);
         }
