@@ -1429,6 +1429,11 @@ pub fn init_core_fun_map() {
         }
         return Ok(Some(ret_str));
     });
+    add_fun(vec!["反射执行"],|self_t,params|{
+        let code = self_t.get_param(params, 0)?;
+        let ret_str = self_t.parse(&code)?;
+        return Ok(Some(ret_str));
+    });
     add_fun(vec!["后台运行脚本"],|self_t,params|{
         let exmap = (*self_t.exmap).borrow().clone();
         let code = self_t.get_param(params, 0)?;

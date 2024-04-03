@@ -150,6 +150,19 @@ pub fn show_help_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
+pub fn show_log_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
+    let config = read_config()?;
+    let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
+    opener::open(format!("http://localhost:{port}/watchlog.html"))?;
+    Ok(())
+}
+
+pub fn show_dir_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
+    let script_path = cq_get_app_directory1()?;
+    opener::open(script_path)?;
+    Ok(())
+}
+
 // 获取绝对路径
 fn get_apath(filename:&str) -> Option<String> {
     let fname;
@@ -397,7 +410,15 @@ pub fn read_config() -> Result<serde_json::Value, Box<dyn std::error::Error + Se
 fn create_python_env() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app_dir = cq_get_app_directory1()?;
     fs::create_dir_all(app_dir.clone() + "pymain")?;
+
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+    #[cfg(windows)]
+    let foo = std::process::Command::new("python").creation_flags(0x08000000).current_dir(app_dir).arg("-m").arg("venv").arg("pymain").status();
+    
+    #[cfg(not(windows))]
     let foo = std::process::Command::new("python").current_dir(app_dir).arg("-m").arg("venv").arg("pymain").status();
+
     if foo.is_err() {
         return Err(format!("python环境创建失败:{:?}",foo).into());
     }else {
@@ -431,13 +452,22 @@ def red_install(pkg_name):
 
 def deal_msg_t(message):
     try:
-        deal_msg(message)
+        js = json.loads(message)
+        echo = js["echo"]
+        try:
+            scope = deal_msg(message,js)
+            to_send = {"echo":echo,"data":scope["__red_out_data"]}
+        except Exception as e:
+            to_send = {"echo":echo,"data":str(e)}
+        lk.acquire()
+        try:
+            WS_APP.send(json.dumps(to_send))
+        finally:
+            lk.release()
     except Exception as e:
         print(e)
 
-def deal_msg(message):
-    js = json.loads(message)
-    echo = js["echo"]
+def deal_msg(message,js):
     code = js["code"]
     code = """
 __red_out_data = ""
@@ -459,15 +489,11 @@ def red_out(s):
     input_t = js["input"]
     scope = {"__red_in_data":input_t}
     exec(code,scope)
-    to_send = {"echo":echo,"data":scope["__red_out_data"]}
-    lk.acquire()
-    try:
-        WS_APP.send(json.dumps(to_send))
-    finally:
-        lk.release()
+    return scope
+    
 
 def on_message(_, message):
-    threading.Thread(target=deal_msg,args=(message,)).start()
+    threading.Thread(target=deal_msg_t,args=(message,)).start()
 
 def on_open(_):
     WS_APP.send("opened")
@@ -495,7 +521,25 @@ conn_fun()
         format!("{}pymain/bin:{}",cq_get_app_directory1()?,curr_env)
     };
 
+    
+
     thread::spawn(move ||{
+        
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+
+
+        #[cfg(windows)]
+        let foo = std::process::Command::new("python").creation_flags(0x08000000)
+        .env("PATH", new_env)
+        .arg("-c")
+        .arg(code)
+        .env("port", port.to_string())
+        .env("password", password)
+        .status();
+
+
+        #[cfg(not(windows))]
         let foo = std::process::Command::new("python")
         .env("PATH", new_env)
         .arg("-c")
@@ -503,6 +547,7 @@ conn_fun()
         .env("port", port.to_string())
         .env("password", password)
         .status();
+
         if foo.is_err() {
             cq_add_log_w(&format!("python服务启动失败:{:?}",foo)).unwrap();
         }else {

@@ -20,6 +20,7 @@ use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_c
 use std::io::Cursor;
 use image::io::Reader as ImageReader;
 use imageproc::geometric_transformations::Interpolation;
+use std::sync::Arc;
 
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
@@ -1883,6 +1884,10 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["命令行"],|self_t,params|{
         let cmd_str = self_t.get_param(params, 0)?;
         let currdir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+
         let output = if cfg!(target_os = "windows") {
             // cmd 的解析规则too复杂，我不想看了 https://learn.microsoft.com/zh-cn/windows-server/administration/windows-commands/cmd
             let tmp_dir_rst = get_tmp_dir();
@@ -1900,31 +1905,14 @@ pub fn init_ex_fun_map() {
                 let _foo = fs::remove_file(tmp_file_path);
             });
 
-            // 记录title
-            lazy_static! {
-                static ref CMD_TITLE:std::sync::RwLock<String> = std::sync::RwLock::new("".to_owned());
-            }
-            static START: std::sync::Once = std::sync::Once::new();
-            START.call_once(|| {
-
-                #[cfg(target_os = "windows")]
-                if let Ok(console_title) = winconsole::console::get_title() {
-                    let mut lk = CMD_TITLE.write().unwrap();
-                    *lk = console_title;
-                }
-            });
-            
-            
             let mut command = std::process::Command::new("cmd");
+
+            #[cfg(windows)]
+            let out = command.creation_flags(0x08000000).current_dir(currdir).arg("/c").arg(tmp_file_path).output()?;
+
+            #[cfg(not(windows))]
             let out = command.current_dir(currdir).arg("/c").arg(tmp_file_path).output()?;
-            // 恢复title
-            {
-                let lk = CMD_TITLE.read().unwrap();
-                if lk.len() != 0 {
-                    #[cfg(target_os = "windows")]
-                    let _ = winconsole::console::set_title(&lk);
-                }
-            }
+
             out
         } else {
             std::process::Command::new("sh").current_dir(currdir).arg("-c").arg(cmd_str).output()?
@@ -2010,8 +1998,67 @@ pub fn init_ex_fun_map() {
         let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
             del_file_lock(&sql_file);
         });
+
         
+        fn add_regexp_function(db: &rusqlite::Connection) -> rusqlite::Result<()> {
+            use rusqlite::functions::FunctionFlags;
+            use rusqlite::{Error, Result};
+            type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
+            db.create_scalar_function(
+                "regexp",
+                2,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                move |ctx| {
+                    let regexp: Arc<fancy_regex::Regex> = ctx.get_or_create_aux(0, |vr| -> Result<_, BoxError> {
+                        Ok(fancy_regex::Regex::new(vr.as_str()?)?)
+                    })?;
+                    let is_match = {
+                        let text = ctx
+                            .get_raw(1)
+                            .as_str()
+                            .map_err(|e| Error::UserFunctionError(e.into()))?;
+                        regexp.is_match(text).map_err(|e| Error::UserFunctionError(e.into()))?
+                    };
+                    Ok(is_match)
+                },
+            )
+        }
+
+
+        fn add_red_function(self_t:&mut RedLang,db: &rusqlite::Connection) -> rusqlite::Result<()> {
+            use rusqlite::functions::FunctionFlags;
+            use rusqlite::Error;
+            
+            let exmap = (*self_t.exmap).borrow().clone();
+            let pkg_name = self_t.pkg_name.clone();
+            let script_name = self_t.script_name.clone();
+            let can_wrong = self_t.can_wrong;
+
+            db.create_scalar_function(
+                "red",
+                1,
+                FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+                move |ctx| {
+                    let code = ctx.get::<String>(0)?;
+                    
+                    let mut rl = RedLang::new();
+                    rl.exmap = std::rc::Rc::new(std::cell::RefCell::new(exmap.clone()));
+                    rl.pkg_name = pkg_name.clone();
+                    rl.script_name = script_name.clone();
+                    rl.can_wrong = can_wrong;
+                    
+                    let red_out_rst = rl.parse(&code);
+                    match red_out_rst {
+                        Ok(red_out) => Ok(red_out),
+                        Err(e) => Err(Error::UserFunctionError(e.to_string().into())),
+                    }
+                },
+            )
+        }
+
         let conn = rusqlite::Connection::open(sql_file)?;
+        add_regexp_function(&conn)?;
+        add_red_function(self_t,&conn)?;
         let mut stmt = conn.prepare(&sql)?;
         let count = stmt.column_count();
         let mut vec:Vec<String> = vec![];
@@ -2762,7 +2809,16 @@ def red_out(sw):
 
 
         fs::create_dir_all(app_dir.clone() + "pymain")?;
+
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+
+        #[cfg(windows)]
+        let foo = std::process::Command::new("python").creation_flags(0x08000000).current_dir(app_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
+        
+        #[cfg(not(windows))]
         let foo = std::process::Command::new("python").current_dir(app_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
+
         if foo.is_err() {
             return Err(RedLang::make_err(&format!("python环境创建失败:{:?}",foo)));
         }else {
@@ -2780,6 +2836,20 @@ def red_out(sw):
             format!("{}pymain/bin:{}",app_dir,curr_env)
         };
         let pip_in = std::process::Stdio::piped();
+
+        #[cfg(windows)]
+        let mut p = std::process::Command::new("python").creation_flags(0x08000000)
+        .stdin(pip_in)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(app_dir)
+        .env("PATH", new_env)
+        .arg("-c")
+        .arg(format!("{code}{code1}"))
+        .spawn()?;
+
+
+        #[cfg(not(windows))]
         let mut p = std::process::Command::new("python")
         .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
@@ -2789,6 +2859,7 @@ def red_out(sw):
         .arg("-c")
         .arg(format!("{code}{code1}"))
         .spawn()?;
+
         let s = p.stdin.take();
         if s.is_none() {
             p.kill()?;
@@ -2840,6 +2911,10 @@ def red_out(sw):
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let pip_in = std::process::Stdio::piped();
 
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+
+        #[cfg(not(windows))]
         let mut p = std::process::Command::new("python")
         .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
@@ -2848,6 +2923,18 @@ def red_out(sw):
         .arg("-c")
         .arg(format!("{code}{code1}"))
         .spawn()?;
+
+
+        #[cfg(windows)]
+        let mut p = std::process::Command::new("python").creation_flags(0x08000000)
+        .stdin(pip_in)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(app_dir)
+        .arg("-c")
+        .arg(format!("{code}{code1}"))
+        .spawn()?;
+
         let s = p.stdin.take();
         if s.is_none() {
             p.kill()?;

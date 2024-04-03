@@ -1,3 +1,7 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+
+
 use time::UtcOffset;
 
 
@@ -35,6 +39,10 @@ fn main() {
     #[cfg(windows)]
     let help_web = tray_icon::menu::MenuItem::new("帮助文档", true, None);
     #[cfg(windows)]
+    let log_web = tray_icon::menu::MenuItem::new("查看日志", true, None);
+    #[cfg(windows)]
+    let dir_web = tray_icon::menu::MenuItem::new("软件目录", true, None);
+    #[cfg(windows)]
     let quit = tray_icon::menu::MenuItem::new("退出软件", true, None);
 
     #[cfg(windows)]
@@ -49,6 +57,9 @@ fn main() {
         tray_menu.append_items(&[
             &show_web,
             &help_web,
+            &log_web,
+            &dir_web,
+            &tray_icon::menu::PredefinedMenuItem::separator(),
             &quit
         ]).unwrap();
         tray_icon::TrayIconBuilder::new()
@@ -77,8 +88,12 @@ fn main() {
                     let _err = redlang::show_ctrl_web();
                 }else if event.id == quit.id() {
                     redlang::wait_for_quit();
-                }else if event.id == help_web.id() {
+                } else if event.id == help_web.id() {
                     let _err = redlang::show_help_web();
+                } else if event.id == log_web.id() {
+                    let _err = redlang::show_log_web();
+                } else if event.id == dir_web.id() {
+                    let _err = redlang::show_dir_web();
                 }
             }
             if let Ok(event) = tray_channel.try_recv() {
@@ -87,7 +102,7 @@ fn main() {
                 }
                 // println!("Tray event: {:?}", event);
             }
-            let time_struct = core::time::Duration::from_millis(200);
+            let time_struct = core::time::Duration::from_millis(50);
             std::thread::sleep(time_struct);
         }
     }

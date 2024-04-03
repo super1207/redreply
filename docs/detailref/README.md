@@ -1166,6 +1166,14 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 聊天平台相关的命令依赖的数据，会被共享；而普通变量、序号等信息不会保留。
 
 
+### 反射执行
+
+
+【反射执行@<font color="red">脚本内容</font>】
+
+在当前环境中运行RedLang脚本，返回脚本执行结果。
+
+
 ### 后台运行脚本
 
 
@@ -1530,6 +1538,8 @@ CSS选择器可以选择要返回的元素，省略CSS选择器表示返回整�
 使用sqlite3引擎来执行sql语句。其中，<font color="red">参数数组</font>可以省略。命令返回的是一个二维数组。
 
 例子：`【转文本【运行sql@aaa.db@SELECT\ sqlite_version()】】`,返回`[["3.39.2"]]`。
+
+<font color="red">sql语句</font>支持正则函数`REGEXP`，如`【转文本【运行SQL@aaa.db@【@SELECT REGEXP('^aad', 'aadaaeeeiii')】】】`,返回`[["1"]]`
 
 
 ### 压缩
@@ -2399,6 +2409,6 @@ onebot事件json对应的RedLang对象。
 
 不同的包中：自定义命令相互隔离，**暂时**还不能互相访问。包的【应用目录】，为各包的脚本文件`script.json`所在目录。
 
-### 包描述文件(暂未实现，无视即可)
+### 包描述文件
 
 在各包的`script.json`所在的目录下，有一个名为`app.json`的包描述文件，里面包含包的基本信息:版本号、作者、描述、依赖。
