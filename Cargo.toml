@@ -72,7 +72,6 @@ xcap = "0.0.4"
 winconsole = "0.11.1"
 tray-icon = "0.13.0"
 fltk = "1.4.26"
-windows-sys = { version = "0.52.0", features = ["Win32","Win32_System_Console"] }
 
 
 [profile.release]

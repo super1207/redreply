@@ -163,6 +163,32 @@ pub fn show_dir_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
+pub fn add_egg_click() -> Result<i64,Box<dyn std::error::Error + Send + Sync>> {
+    let app_dir = crate::cqapi::cq_get_app_directory1()?;
+    let sql_file = app_dir + "reddat.db";
+
+    add_file_lock(&sql_file);
+    let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+        del_file_lock(&sql_file);
+    });
+
+    let conn = rusqlite::Connection::open(sql_file)?;
+    conn.execute("CREATE TABLE IF NOT EXISTS EGG_TABLE (EGG_NAME TEXT,VALUE TEXT DEFAULT 0,PRIMARY KEY(EGG_NAME));", [])?;
+    let ret_rst:Result<String,rusqlite::Error> = conn.query_row("SELECT VALUE FROM EGG_TABLE WHERE EGG_NAME = ?", ["CLICK"], |row| row.get(0));
+    let mut ret_num:i64;
+    if let Ok(ret) =  ret_rst {
+        ret_num = ret.parse::<i64>()?;
+    }else {
+        ret_num = 0;
+    }
+    ret_num += 1;
+    if ret_num < 0 {
+        ret_num = 0;
+    }
+    conn.execute("REPLACE INTO EGG_TABLE (EGG_NAME,VALUE) VALUES (?,?)", ["CLICK",&ret_num.to_string()])?;
+    return Ok(ret_num);
+}
+
 // 获取绝对路径
 fn get_apath(filename:&str) -> Option<String> {
     let fname;
