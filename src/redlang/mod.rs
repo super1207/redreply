@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, collections::{HashMap, BTreeMap, HashSet, VecDeque}, error, ffi::{c_char, c_int, CStr, CString}, fmt, rc::Rc, sync::Arc, thread, vec};
+use std::{any::Any, cell::RefCell, collections::{BTreeMap, HashMap, HashSet, VecDeque}, error, ffi::{c_char, c_int, CStr, CString}, fmt, rc::Rc, sync::Arc, thread, vec};
 use encoding::Encoding;
 
 use crate::{G_CONST_MAP, CLEAR_UUID, cqevent::do_script, cqapi::cq_add_log_w, G_LOCK};
@@ -321,7 +321,8 @@ pub struct RedLang {
     pub req_tx:Option<tokio::sync::mpsc::Sender<bool>>,
     pub req_rx:Option<tokio::sync::mpsc::Receiver<Vec<u8>>>,
     pub can_wrong:bool,
-    stack:VecDeque<String>
+    stack:VecDeque<String>,
+    scriptcallstackdeep:Rc::<RefCell<usize>>, // 记录脚本调用栈的深度
 }
 
 #[derive(Debug, Clone)]
@@ -1434,6 +1435,10 @@ pub fn init_core_fun_map() {
         let ret_str = self_t.parse(&code)?;
         return Ok(Some(ret_str));
     });
+    add_fun(vec!["崩溃吧"],|self_t,params|{
+        None::<i32>.expect(&self_t.get_param(params, 0)?);
+        return Ok(Some("".to_string()));
+    });
     add_fun(vec!["后台运行脚本"],|self_t,params|{
         let exmap = (*self_t.exmap).borrow().clone();
         let code = self_t.get_param(params, 0)?;
@@ -2072,7 +2077,8 @@ impl RedLang {
             req_tx:None,
             req_rx:None,
             can_wrong:true,
-            stack:VecDeque::new()
+            stack:VecDeque::new(),
+            scriptcallstackdeep: Rc::new(RefCell::new(0)),
         }
     }
 
@@ -2302,6 +2308,20 @@ impl RedLang {
     }
 
     pub fn parse(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
+
+        let cc = &(*self.scriptcallstackdeep);
+
+        if *cc.borrow() > 200 {
+            return Err(RedLang::make_err("too deep call stack"));
+        }
+
+        *cc.borrow_mut() += 1;
+
+        let _guard = scopeguard::guard(self.scriptcallstackdeep.clone(), |v| {
+            let cc = &(*v);
+            *cc.borrow_mut() -= 1;
+        });
+
         // 得到utf8字符数组
         let chs = Self::remove_comment(&input.chars().collect::<Vec<char>>())?;
 

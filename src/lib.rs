@@ -336,6 +336,16 @@ pub fn dec_running_script_num(pkg_name:&str,script_name:&str) {
 pub fn initialize() -> i32 {
     cq_add_log(&format!("欢迎使用`红色问答{}`,正在进行资源初始化...",get_version())).unwrap();
     panic::set_hook(Box::new(|e| {
+        let binding = std::env::current_exe().unwrap();
+        let parent_path = binding.parent().unwrap();
+        let path = parent_path.join("crash.log");
+        let mut f;
+        if path.exists() {
+            f = fs::OpenOptions::new().append(true).open(path).unwrap()
+        }else {
+            f = fs::File::create(path).unwrap();
+        }
+        std::io::Write::write_all(&mut f, e.to_string().as_str().as_bytes()).unwrap();
         cq_add_log_w(e.to_string().as_str()).unwrap();
     }));
 

@@ -950,7 +950,7 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
                     lk.insert(uid.clone(), tx);
                 }
                 if let Err(e) = serve_websocket(websocket,rx).await {
-                    log::warn!("Error in websocket connection: {}", e);
+                    cq_add_log_w(&format!("Error in websocket connection: {}", e)).unwrap();
                 }
                 // 线程结束，删除对应的entry
                 let mut lk = G_LOG_MAP.write().await;
