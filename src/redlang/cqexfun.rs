@@ -1036,4 +1036,47 @@ pub fn init_cq_ex_fun_map() {
         let platform = get_platform(&self_t);
         return Ok(Some(platform));
     });
+    add_fun(vec!["主人"],|self_t,params|{
+        let master;
+        let params_len = params.len();
+        if params_len == 0 {
+            master = self_t.get_exmap("发送者ID").as_str().to_owned();
+        }else {
+            master = self_t.get_param(params, 0)?;
+        }
+        let master_arr_str = get_const_val(&self_t.pkg_name, "0b863263-484c-4447-9990-0469186b3d97")?;
+        if master_arr_str == "" {
+            // 等同于【返回】
+            let fun_ret_vec_len = self_t.fun_ret_vec.len();
+            self_t.fun_ret_vec[fun_ret_vec_len - 1].0 = true;
+        }  else {
+            let master_arr = RedLang::parse_arr(&master_arr_str)?;
+            if !master_arr.contains(&master.as_str()) {
+                // 等同于【返回】
+                let fun_ret_vec_len = self_t.fun_ret_vec.len();
+                self_t.fun_ret_vec[fun_ret_vec_len - 1].0 = true;
+            }
+        }
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["主人数组"],|self_t,_params|{
+        let master_arr_str = get_const_val(&self_t.pkg_name, "0b863263-484c-4447-9990-0469186b3d97")?;
+        if master_arr_str == "" {
+            return Ok(Some(self_t.build_arr(vec![])));
+        }  else {
+            return Ok(Some(master_arr_str));
+        }
+    });
+    add_fun(vec!["设置主人"],|self_t,params|{
+        let master_arr_str = self_t.get_param(params, 0)?;
+        let master_arr = RedLang::parse_arr(&master_arr_str)?;
+        // 这里仅仅为了验证是否规范
+        for it in master_arr {
+            if self_t.get_type(it)? != "文本" {
+                return Err("主人数组的元素必须为全为文本类型".into());
+            }
+        }
+        crate::redlang::set_const_val(&self_t.pkg_name, "0b863263-484c-4447-9990-0469186b3d97", master_arr_str)?;
+        return Ok(Some("".to_string()));
+    });
 }
