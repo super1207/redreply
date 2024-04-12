@@ -14,6 +14,12 @@ button,textarea,body,select,input{
     background-color: #C7EDCC;
     font-family: fusion-pixel-12px-monospaced-zh_hant, serif;
 }
+
+button:hover {
+    background-color: #87CEEB;
+    cursor: pointer;
+}
+
 #app {
     display: flex;
     flex-direction: column;
@@ -65,7 +71,9 @@ button,textarea,body,select,input{
     align-items: stretch;
     border-style:solid;
 }
-
+#pkg_content > div:nth-child(1) > div:nth-child(2) > div:hover { /* 包内容左边-单个名字，让鼠标晃上去变色 */
+    background-color: #87CEEB;
+}
 #pkg_content > div:nth-child(1) > div:nth-child(2) > div > span{ /* 包内容左边-单个名字 */
     text-align: center;
     cursor: pointer;
