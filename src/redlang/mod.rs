@@ -1,7 +1,7 @@
-use std::{any::Any, cell::RefCell, collections::{BTreeMap, HashMap, HashSet, VecDeque}, error, ffi::{c_char, c_int, CStr, CString}, fmt, rc::Rc, sync::Arc, thread, vec};
+use std::{any::Any, cell::RefCell, collections::{BTreeMap, HashMap, HashSet, VecDeque}, error, ffi::{c_char, c_int, CStr, CString}, fmt, rc::Rc, sync::Arc, thread, time::SystemTime, vec};
 use encoding::Encoding;
 
-use crate::{G_CONST_MAP, CLEAR_UUID, cqevent::do_script, cqapi::cq_add_log_w, G_LOCK};
+use crate::{cqapi::cq_add_log_w, cqevent::do_script, CLEAR_UUID, G_CONST_MAP, G_LOCK, G_TEMP_CONST_MAP};
 use libloading::Symbol;
 
 pub mod exfun;
@@ -56,6 +56,37 @@ fn get_const_val(pkg_name:&str,val_name:&str) -> Result<String, Box<dyn std::err
         Some(var_map) => 
             match var_map.get(val_name) {
                 Some(val) => Ok(val.to_owned()),
+                None => Ok("".to_string())
+            }
+        None => Ok("".to_string())
+    }
+}
+
+fn set_temp_const_val(pkg_name:&str,val_name:&str,val:String,expire_time:u128) -> Result<(), Box<dyn std::error::Error>> {
+    let mut g_map = G_TEMP_CONST_MAP.write()?;
+    let val_map = g_map.get_mut(pkg_name);
+    if val_map.is_none() {
+        let mut mp = HashMap::new();
+        mp.insert(val_name.to_owned(), (val,expire_time));
+        g_map.insert(pkg_name.to_owned(), mp);
+    }else {
+        val_map.unwrap().insert(val_name.to_owned(), (val,expire_time));
+    }
+    Ok(())
+}
+
+fn get_temp_const_val(pkg_name:&str,val_name:&str) -> Result<String, Box<dyn std::error::Error>> {
+    match G_TEMP_CONST_MAP.read()?.get(pkg_name) {
+        Some(var_map) => 
+            match var_map.get(val_name) {
+                Some(val) => {
+                    let tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
+                    if val.1 < tm {
+                        Ok("".to_string())
+                    }else {
+                        Ok(val.0.to_owned())
+                    }
+                }
                 None => Ok("".to_string())
             }
         None => Ok("".to_string())
@@ -1528,6 +1559,26 @@ pub fn init_core_fun_map() {
             std::thread::sleep(time_struct);
         }
         return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["尝试加锁"],|self_t,params|{
+        let lock_name = self_t.get_param(params, 0)?;
+        // 当前脚本已经创建了这个锁，则不做任何事
+        if self_t.lock_vec.contains(&lock_name) {
+            return Ok(Some("".to_string()));
+        }
+        {
+            let mut k = crate::G_LOCK.lock()?;
+            if !k.contains_key(&self_t.pkg_name) {
+                k.insert(self_t.pkg_name.clone(), HashMap::new());
+            }
+            if !k[&self_t.pkg_name].contains_key(&lock_name) {
+                k.get_mut(&self_t.pkg_name).unwrap().insert(lock_name.clone(), 0);
+                self_t.lock_vec.insert(lock_name);
+                return Ok(Some("".to_string()));
+            }
+        }
+        let ret = self_t.get_param(params, 1)?;
+        return Ok(Some(ret));
     });
     add_fun(vec!["解锁"],|self_t,params|{
         let lock_name = self_t.get_param(params, 0)?;

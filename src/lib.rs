@@ -86,6 +86,8 @@ lazy_static! {
     pub static ref CLEAR_UUID:String = uuid::Uuid::new_v4().to_string();
     // 用于记录常量:包名-常量名-常量值(x)
     pub static ref G_CONST_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
+    // 用于记录临时常量:包名-常量名-常量值-过期时间(x)
+    pub static ref G_TEMP_CONST_MAP:RwLock<HashMap<String,HashMap<String, (String, u128)>>> = RwLock::new(HashMap::new());
     // 用于撤回消息
     pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,VecDeque<String>>> = RwLock::new(HashMap::new());
     // 用于记录自定义的命令(x)
@@ -247,6 +249,8 @@ pub fn del_file_lock(filename:&str) {
 pub fn del_pkg_memory(pkg_name:&str) {
     // 删除常量
     G_CONST_MAP.write().unwrap().remove(pkg_name);
+    // 删除临时常量
+    G_TEMP_CONST_MAP.write().unwrap().remove(pkg_name);
     // 删除自定义命令
     G_CMD_MAP.write().unwrap().remove(pkg_name);
     // 删除全局锁

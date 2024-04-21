@@ -999,7 +999,7 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 
 【定义常量@<font color="red">常量名</font>@<font color="red">常量内容</font>】
 
-定义一个常量，常量在所有脚本中可见
+定义一个常量，常量在所有脚本中可见。
 
 
 ### 常量
@@ -1011,6 +1011,23 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 
 读取一个常量，若常量不存在，返回空文本。
 此命令有两种形式，第一种用于获取当前包的常量，第二种用于获取其它包的常量。
+
+
+### 定义临时常量
+
+
+【定义临时常量@<font color="red">临时常量名</font>@<font color="red">临时常量内容</font>@<font color="red">有效时间</font>】
+
+定义一个临时常量，临时常量在所有脚本中可见。，<font color="red">有效时间</font>单位为毫秒，必须 > 0。
+
+
+### 临时常量
+
+
+【临时常量@<font color="red">临时常量名</font>】
+
+
+读取一个临时常量，若临时常量不存在或者已经过期，返回空文本。
 
 
 ### 定义持久常量
@@ -1624,6 +1641,13 @@ onedice参数的写法参考[onedice](https://github.com/OlivOS-Team/onedice)。
 【解锁@<font color="red">锁名</font>】
 
 删除当前脚本创建的锁名。
+
+
+### 尝试加锁
+
+【尝试加锁@<font color="red">锁名</font>@<font color="red">加锁失败执行</font>】
+
+若锁已经存在，则返回<font color="red">加锁失败执行</font>，否则等同于【加锁@<font color="red">锁名</font>】。
 
 
 ### 补位

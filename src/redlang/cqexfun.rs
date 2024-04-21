@@ -1,6 +1,6 @@
 use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
 
-use crate::{add_file_lock, cqapi::{cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, redlang::{get_const_val, set_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID};
+use crate::{add_file_lock, cqapi::{cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, redlang::{get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -524,6 +524,18 @@ pub fn init_cq_ex_fun_map() {
             let k = self_t.get_param(params, 1)?;
             return Ok(Some(get_const_val(&pkg_name, &k)?.to_owned()));
         }
+    });
+    add_fun(vec!["定义临时常量"],|self_t,params|{
+        let k = self_t.get_param(params, 0)?;
+        let v = self_t.get_param(params, 1)?;
+        let mut  tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
+        tm += self_t.get_param(params, 2)?.parse::<u128>()?;
+        set_temp_const_val(&self_t.pkg_name, &k, v,tm)?;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["临时常量"],|self_t,params|{
+        let k = self_t.get_param(params, 0)?;
+        return Ok(Some(get_temp_const_val(&self_t.pkg_name, &k)?.to_owned()));
     });
     add_fun(vec!["进程ID"],|_self_t,_params|{
         return Ok(Some(std::process::id().to_string()));
