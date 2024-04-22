@@ -1,0 +1,32 @@
+name: Android Build Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      name:
+        description: 'Log level'
+        required: true
+        default: 'warning'
+
+jobs:
+  test:
+    name: build project
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          # Linux x86_64
+          - os: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@master
+
+    - name: install_ubuntu_dependencies
+      if: startsWith(matrix.os, 'ubuntu-') 
+      run: |
+        cargo install cross --git https://github.com/cross-rs/cross
+
+    - name: build_ubuntu
+      if: startsWith(matrix.os, 'ubuntu-') 
+      run: |
+        cross build --target aarch64-linux-android --release
