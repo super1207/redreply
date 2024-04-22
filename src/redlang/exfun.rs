@@ -3158,6 +3158,45 @@ def red_out(sw):
         });
         return Ok(Some(url));
     });
+    add_fun(vec!["运行lua"],|self_t,params|{
+        let code = self_t.get_param(params, 0)?;
+        let lua = mlua::Lua::new();
+    
+        let lua_ret = lua.scope(|scope| {
+            lua.globals().set(
+                "call_red",
+                scope.create_function_mut(|_, red_code:String| {
+                    let ret_str = self_t.parse(&red_code);
+                    if ret_str.is_err() {
+                        return Err(mlua::Error::RuntimeError(ret_str.err().unwrap().to_string()));
+                    }
+                    Ok(ret_str.unwrap())
+                })?,
+            )?;
+            let lua_chunk = lua.load(&code);
+            lua_chunk.eval::<String>()
+        })?;
+        return Ok(Some(lua_ret));
+    });
+    add_fun(vec!["运行超级lua"],|self_t,params|{
+        let code = self_t.get_param(params, 0)?;
+        let lua = unsafe { mlua::Lua::unsafe_new() };
+        let lua_ret = lua.scope(|scope| {
+            lua.globals().set(
+                "call_red",
+                scope.create_function_mut(|_, red_code:String| {
+                    let ret_str = self_t.parse(&red_code);
+                    if ret_str.is_err() {
+                        return Err(mlua::Error::RuntimeError(ret_str.err().unwrap().to_string()));
+                    }
+                    Ok(ret_str.unwrap())
+                })?,
+            )?;
+            let lua_chunk = lua.load(&code);
+            lua_chunk.eval::<String>()
+        })?;
+        return Ok(Some(lua_ret));
+    });
 }
 
 

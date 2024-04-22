@@ -61,6 +61,7 @@ crc64 = "2.0.0"
 headless_chrome = "1.0.9"
 path-clean = "1.0.1"
 rust-ini = "0.21.0"
+mlua = { version = "0.9.7", features = ["luajit", "vendored"] }
 
 [build-dependencies]
 embed-resource = "2.4.2"
