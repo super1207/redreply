@@ -80,6 +80,11 @@ pre-build = [
 	"apt-get --assume-yes install gcc-multilib"
 ]
 
+[target.i686-unknown-linux-musl.env]
+passthrough = [
+    "CROSS_NO_WARNINGS=0",
+]
+
 
 [profile.release]
 panic = "abort" # Strip expensive panic clean-up logic
