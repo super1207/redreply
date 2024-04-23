@@ -33,9 +33,9 @@ jobs:
       if: startsWith(matrix.os, 'ubuntu-') 
       run: |
         CROSS_NO_WARNINGS=0 cross build --target i686-unknown-linux-musl --release
-        cross build --target x86_64-unknown-linux-musl --release
-        cross build --target aarch64-linux-android --release
-        cross build --target aarch64-unknown-linux-gnu --release
+        CROSS_NO_WARNINGS=0 cross build --target x86_64-unknown-linux-musl --release
+        CROSS_NO_WARNINGS=0 cross build --target aarch64-linux-android --release
+        CROSS_NO_WARNINGS=0 cross build --target aarch64-unknown-linux-gnu --release
 
     - name: build_windows
       if: startsWith(matrix.os, 'windows-') 
