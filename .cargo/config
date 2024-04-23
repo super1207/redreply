@@ -1,2 +1,5 @@
 [target.aarch64-linux-android]
-rustflags = ["-C", "linker=aarch64-linux-android-clang", "-C", "link-args=-rdynamic", "-C", "default-linker-libraries"]
+rustflags = ["-C", "default-linker-libraries","-C","target-feature=+crt-static"]
+
+[aarch64-unknown-linux-gnu]
+rustflags = ["-C","target-feature=+crt-static"]
