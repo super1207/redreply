@@ -801,7 +801,7 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 ### 读配置节
 
 
-【读配置@<font color="red">INI文件路径</font>】
+【读配置节@<font color="red">INI文件路径</font>】
 
 读一个以UTF-8编码的INI文件，返回节名数组，若文件不存在或者无节，返回空数组。若已有文件解析失败则抛出异常。
 
@@ -809,7 +809,7 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 ### 写配置
 
 
-【读配置@<font color="red">INI文件路径</font>@<font color="red">节名</font>@<font color="red">键名</font>@<font color="red">值</font>】
+【写配置@<font color="red">INI文件路径</font>@<font color="red">节名</font>@<font color="red">键名</font>@<font color="red">值</font>】
 
 朝一个以UTF-8编码的INI文件里面写入配置项，文件若不存在则自动创建。若已有文件解析失败或文件创建失败则抛出异常。
 
