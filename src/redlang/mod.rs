@@ -343,7 +343,6 @@ pub struct RedLang {
     params_vec: Vec<Vec<String>>,          // 函数参数栈
     fun_ret_vec: Vec<(bool,usize)>,                // 记录函数是否返回,循环深度
     pub exmap:Rc<RefCell<HashMap<String, Arc<String>>>>,
-    coremap:HashMap<String, String>,
     xuhao: HashMap<String, usize>,
     pub type_uuid:String,
     pub pkg_name:String,
@@ -429,22 +428,12 @@ pub fn init_core_fun_map() {
     });
     add_fun(vec!["隐藏"],|self_t,params|{
         let out = self_t.get_param(params, 0)?;
-        let var_vec_len = self_t.var_vec.len();
-        let mp = &mut self_t.var_vec[var_vec_len - 1];
-        let mut var = RedLangVarType::new();
-        var.set_string(out)?;
-        mp.insert("46631549-6D26-68A5-E192-5EBE9A6EBA61".to_owned(), Rc::new(RefCell::new(var)));
+        self_t.set_coremap("隐藏", &out)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["传递"],|self_t,_params|{
-        let k = "46631549-6D26-68A5-E192-5EBE9A6EBA61";
-        let var_ref = self_t.get_var_ref(&k);
-        if let Some(v) = var_ref {
-            let mut k = (*v).borrow_mut();
-            return Ok(Some((*k.get_string()).clone()));
-        }else {
-            return Ok(Some("".to_string()));
-        }
+        let ret = self_t.get_coremap("隐藏")?;
+        return Ok(Some(ret));
     });
     add_fun(vec!["入栈"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
@@ -1725,19 +1714,24 @@ impl RedLang {
         key: &str,
         val: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let k = &*self.exmap;
+let k = &*self.exmap;
         k.borrow_mut().insert(key.to_owned(), Arc::new(val.to_string()));
         Ok(())
     }
     pub fn get_coremap(
-        &self,
+        &mut self,
         key: &str,
-    ) -> Result<&str, Box<dyn std::error::Error>> {
-        let ret = self.coremap.get(key);
-        if let Some(v) = ret{
-            return Ok(v);
+    ) -> Result<String, Box<dyn std::error::Error>> {
+
+        let k = format!("{}46631549-6D26-68A5-E192-5EBE9A6EBA61", key);
+        let var_ref = self.get_var_ref(&k);
+        if let Some(v) = var_ref {
+            let mut k = (*v).borrow_mut();
+            let val = k.get_string();
+            return Ok((*val).clone());
+        }else {
+            return Ok("".to_string());
         }
-        return Ok("");
     }
     #[allow(dead_code)]
     pub fn set_coremap(
@@ -1745,7 +1739,11 @@ impl RedLang {
         key: &str,
         val: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        self.coremap.insert(key.to_owned(), val.to_owned());
+        let var_vec_len = self.var_vec.len();
+        let mp = &mut self.var_vec[var_vec_len - 1];
+        let mut var = RedLangVarType::new();
+        var.set_string(val.to_owned())?;
+        mp.insert(format!("{}46631549-6D26-68A5-E192-5EBE9A6EBA61", key), Rc::new(RefCell::new(var)));
         Ok(())
     }
     fn get_len(&self,data:&str) -> Result<usize, Box<dyn std::error::Error>> {
@@ -2119,7 +2117,6 @@ impl RedLang {
             params_vec: v2,
             fun_ret_vec: v3,
             exmap: Rc::new(RefCell::new(HashMap::new())),
-            coremap: HashMap::new(),
             xuhao:HashMap::new(),
             type_uuid:crate::REDLANG_UUID.to_string(),
             pkg_name:String::new(),

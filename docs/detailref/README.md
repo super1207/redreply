@@ -1559,6 +1559,13 @@ CSS选择器可以选择要返回的元素，省略CSS选择器表示返回整�
 <font color="red">sql语句</font>支持正则函数`REGEXP`，如`【转文本【运行SQL@aaa.db@【@SELECT REGEXP('^aad', 'aadaaeeeiii')】】】`,返回`[["1"]]`
 
 
+### SQL修改数
+
+【SQL修改数】
+
+在【运行SQL】后使用，返回有多少行数据被修改了。
+
+
 ### 压缩
 
 【压缩@<font color="red">目录</font>@<font color="red">压缩文件</font>】

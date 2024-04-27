@@ -123,7 +123,7 @@ pub fn init_ex_fun_map() {
             let proxy = self_t.get_coremap("代理")?;
             let mut timeout_str = self_t.get_coremap("访问超时")?;
             if timeout_str == "" {
-                timeout_str = "60000";
+                timeout_str = "60000".to_owned();
             }
             let mut http_header = BTreeMap::new();
             let http_header_str = self_t.get_coremap("访问头")?;
@@ -138,7 +138,7 @@ pub fn init_ex_fun_map() {
             let timeout = timeout_str.parse::<u64>()?;
             let content = RT_PTR.block_on(async { 
                 let ret = tokio::select! {
-                    val_rst = http_post(url,Vec::new(),&http_header,proxy,"GET") => {
+                    val_rst = http_post(url,Vec::new(),&http_header,&proxy,"GET") => {
                         if let Ok(val) = val_rst {
                             val
                         } else {
@@ -181,7 +181,7 @@ pub fn init_ex_fun_map() {
             let proxy = self_t.get_coremap("代理")?;
             let mut timeout_str = self_t.get_coremap("访问超时")?;
             if timeout_str == "" {
-                timeout_str = "60000";
+                timeout_str = "60000".to_owned();
             }
             let mut http_header = BTreeMap::new();
             let http_header_str = self_t.get_coremap("访问头")?;
@@ -197,7 +197,7 @@ pub fn init_ex_fun_map() {
 
             let content = RT_PTR.block_on(async { 
                 let ret = tokio::select! {
-                    val_rst = http_post(url,data,&http_header,proxy,method) => {
+                    val_rst = http_post(url,data,&http_header,&proxy,method) => {
                         if let Ok(val) = val_rst {
                             val
                         } else {
@@ -1770,7 +1770,7 @@ pub fn init_ex_fun_map() {
             let proxy_str = self_t.get_coremap("代理")?;
             let proxy:std::ffi::OsString;
             if proxy_str != "" {
-                proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + proxy_str);
+                proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
                 arg_vec.push(&proxy);
             }
             let options = headless_chrome::LaunchOptions::default_builder()
@@ -1811,7 +1811,7 @@ pub fn init_ex_fun_map() {
             let proxy_str = self_t.get_coremap("代理")?;
             let proxy:std::ffi::OsString;
             if proxy_str != "" {
-                proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + proxy_str);
+                proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
                 arg_vec.push(&proxy);
             }
             let options = headless_chrome::LaunchOptions::default_builder()
@@ -1851,7 +1851,7 @@ pub fn init_ex_fun_map() {
             let proxy_str = self_t.get_coremap("代理")?;
             let proxy:std::ffi::OsString;
             if proxy_str != "" {
-                proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + proxy_str);
+                proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
                 arg_vec.push(&proxy);
             }
             let options = headless_chrome::LaunchOptions::default_builder()
@@ -2079,7 +2079,16 @@ pub fn init_ex_fun_map() {
             }
             vec.push(self_t.build_arr(v.iter().map(AsRef::as_ref).collect()));
         }
+        let changes = conn.changes().to_string();
+        self_t.set_coremap("SQL修改数", &changes)?;
         return Ok(Some(self_t.build_arr(vec.iter().map(AsRef::as_ref).collect())));
+    });
+    add_fun(vec!["SQL修改数"],|self_t,_params|{
+        let k = self_t.get_coremap("SQL修改数")?;
+        if k == "" {
+            return Ok(Some("0".to_owned()));
+        }
+        return Ok(Some(k));
     });
     add_fun(vec!["定义持久常量"],|self_t,params|{
         
@@ -2702,7 +2711,7 @@ pub fn init_ex_fun_map() {
             let proxy = self_t.get_coremap("代理")?;
             let mut timeout_str = self_t.get_coremap("访问超时")?;
             if timeout_str == "" {
-                timeout_str = "60000";
+                timeout_str = "60000".to_owned();
             }
             let mut http_header = BTreeMap::new();
             let http_header_str = self_t.get_coremap("访问头")?;
@@ -2737,7 +2746,7 @@ pub fn init_ex_fun_map() {
             let timeout = timeout_str.parse::<u64>()?;
             let content = RT_PTR.block_on(async { 
                 let ret = tokio::select! {
-                    val_rst = http_post(url,data,&http_header,proxy,"POST") => {
+                    val_rst = http_post(url,data,&http_header,&proxy,"POST") => {
                         if let Ok(val) = val_rst {
                             val
                         } else {
@@ -2964,7 +2973,7 @@ def red_out(sw):
         let proxy = self_t.get_coremap("代理")?;
         let mut timeout_str = self_t.get_coremap("访问超时")?;
         if timeout_str == "" {
-            timeout_str = "60000";
+            timeout_str = "60000".to_owned();
         }
         let mut http_header = BTreeMap::new();
         let http_header_str = self_t.get_coremap("访问头")?;
@@ -2980,7 +2989,7 @@ def red_out(sw):
         let timeout = timeout_str.parse::<u64>()?;
         let content = RT_PTR.block_on(async { 
             let ret = tokio::select! {
-                val_rst = http_post(url,vec![],&http_header,proxy,"GET") => {
+                val_rst = http_post(url,vec![],&http_header,&proxy,"GET") => {
                     if let Ok(val) = val_rst {
                         val
                     } else {
