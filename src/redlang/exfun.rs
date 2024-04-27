@@ -1,10 +1,11 @@
-use std::{collections::{BTreeMap, HashMap}, fs, io::Read, path::{Path, PathBuf}, str::FromStr, time::{Duration, SystemTime}, vec};
+use std::{cell::RefCell, collections::{BTreeMap, HashMap}, fs, io::Read, path::{Path, PathBuf}, str::FromStr, time::{Duration, SystemTime}, vec};
 use chrono::TimeZone;
 use encoding::Encoding;
 use flate2::{read::{GzDecoder, ZlibDecoder}, write::{GzEncoder, ZlibEncoder}, Compression};
 use ini::Ini;
 use jsonpath_rust::JsonPathQuery;
 use md5::{Md5, Digest};
+use mlua::MultiValue;
 use resvg::usvg::{self, TreeParsing, TreeTextToPath};
 use rusttype::Scale;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -3161,18 +3162,54 @@ def red_out(sw):
     add_fun(vec!["运行lua"],|self_t,params|{
         let code = self_t.get_param(params, 0)?;
         let lua = mlua::Lua::new();
-    
+        let s_t = RefCell::new(self_t);
         let lua_ret = lua.scope(|scope| {
+            let func1 = scope.create_function_mut(|_, red_code:String| {
+                let mut s_t = s_t.borrow_mut();
+                let ret_str = s_t.parse(&red_code);
+                if ret_str.is_err() {
+                    return Err(mlua::Error::RuntimeError(ret_str.err().unwrap().to_string()));
+                }
+                Ok(ret_str.unwrap())
+            })?;
+            let func3 = scope.create_function_mut(|_, muti_params:MultiValue| {
+                let params_len = muti_params.len();
+                if params_len < 1 {
+                    return Err(mlua::Error::RuntimeError("参数错误".to_string()));
+                }
+                let cmd = muti_params.get(0).unwrap();
+                let red_cmd = if cmd.is_string() {
+                    cmd.as_str().unwrap()
+                } else {
+                    return Err(mlua::Error::RuntimeError("参数错误".to_string()));
+                };
+                let mut s_t = s_t.borrow_mut();
+                let mut red_code = "【".to_string()+red_cmd;
+                for it in muti_params.iter().skip(1){
+                    let it_t = if it.is_string() {
+                        it.as_str().unwrap()
+                    } else {
+                        return Err(mlua::Error::RuntimeError("参数错误".to_string()));
+                    };
+                    red_code += "@";
+                    red_code += &s_t.parse_r_with_black(it_t).unwrap();
+                }
+                red_code += "】";
+                let ret_str = s_t.parse(&red_code);
+                if ret_str.is_err() {
+                    return Err(mlua::Error::RuntimeError(ret_str.err().unwrap().to_string()));
+                }
+                Ok(ret_str.unwrap())
+            })?;
             lua.globals().set(
                 "call_red",
-                scope.create_function_mut(|_, red_code:String| {
-                    let ret_str = self_t.parse(&red_code);
-                    if ret_str.is_err() {
-                        return Err(mlua::Error::RuntimeError(ret_str.err().unwrap().to_string()));
-                    }
-                    Ok(ret_str.unwrap())
-                })?,
+                func1
             )?;
+            lua.globals().set(
+                "call_redcmd",
+                func3
+            )?;
+            
             let lua_chunk = lua.load(&code);
             lua_chunk.eval::<String>()
         })?;
@@ -3181,17 +3218,54 @@ def red_out(sw):
     add_fun(vec!["运行超级lua"],|self_t,params|{
         let code = self_t.get_param(params, 0)?;
         let lua = unsafe { mlua::Lua::unsafe_new() };
+        let s_t = RefCell::new(self_t);
         let lua_ret = lua.scope(|scope| {
+            let func1 = scope.create_function_mut(|_, red_code:String| {
+                let mut s_t = s_t.borrow_mut();
+                let ret_str = s_t.parse(&red_code);
+                if ret_str.is_err() {
+                    return Err(mlua::Error::RuntimeError(ret_str.err().unwrap().to_string()));
+                }
+                Ok(ret_str.unwrap())
+            })?;
+            let func3 = scope.create_function_mut(|_, muti_params:MultiValue| {
+                let params_len = muti_params.len();
+                if params_len < 1 {
+                    return Err(mlua::Error::RuntimeError("参数错误".to_string()));
+                }
+                let cmd = muti_params.get(0).unwrap();
+                let red_cmd = if cmd.is_string() {
+                    cmd.as_str().unwrap()
+                } else {
+                    return Err(mlua::Error::RuntimeError("参数错误".to_string()));
+                };
+                let mut s_t = s_t.borrow_mut();
+                let mut red_code = "【".to_string()+red_cmd;
+                for it in muti_params.iter().skip(1){
+                    let it_t = if it.is_string() {
+                        it.as_str().unwrap()
+                    } else {
+                        return Err(mlua::Error::RuntimeError("参数错误".to_string()));
+                    };
+                    red_code += "@";
+                    red_code += &s_t.parse_r_with_black(it_t).unwrap();
+                }
+                red_code += "】";
+                let ret_str = s_t.parse(&red_code);
+                if ret_str.is_err() {
+                    return Err(mlua::Error::RuntimeError(ret_str.err().unwrap().to_string()));
+                }
+                Ok(ret_str.unwrap())
+            })?;
             lua.globals().set(
                 "call_red",
-                scope.create_function_mut(|_, red_code:String| {
-                    let ret_str = self_t.parse(&red_code);
-                    if ret_str.is_err() {
-                        return Err(mlua::Error::RuntimeError(ret_str.err().unwrap().to_string()));
-                    }
-                    Ok(ret_str.unwrap())
-                })?,
+                func1
             )?;
+            lua.globals().set(
+                "call_redcmd",
+                func3
+            )?;
+            
             let lua_chunk = lua.load(&code);
             lua_chunk.eval::<String>()
         })?;

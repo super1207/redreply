@@ -1782,6 +1782,15 @@ return "欢迎"..name.."使用"..version
 】】
 ```
 
+call_redcmd(cmd,...) -> str:用于在lua中执行红色问答命令，便于获取变量之类的，如
+
+```
+【运行lua【@
+call_redcmd("打印日志","hello world")
+return ""
+】】
+```
+
 **注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
 
 

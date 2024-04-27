@@ -2506,10 +2506,20 @@ impl RedLang {
         Ok(chs_out)
     }
 
-    fn parse_r(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
+    fn parse_r(&self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
         let mut ret = String::new();
         for i in input.chars() {
             if i == '\\' || i == '@' || i == '【' || i == '】' {
+                ret.push('\\');
+            }
+            ret.push(i);
+        }
+        Ok(ret)
+    }
+    pub fn parse_r_with_black(&self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let mut ret = String::new();
+        for i in input.chars() {
+            if i == '\\' || i == '@' || i == '【' || i == '】' || self.is_black_char(i) {
                 ret.push('\\');
             }
             ret.push(i);
