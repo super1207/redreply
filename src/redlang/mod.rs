@@ -617,7 +617,7 @@ pub fn init_core_fun_map() {
     });
     add_fun(vec!["继续"],|self_t,_params|{
         let xh_vec_len = self_t.xh_vec.len();
-        if xh_vec_len != 0 {
+        if xh_vec_len == 0 {
             return Err(RedLang::make_err("不在循环中，无法使用`继续`命令"));
         } else {
             self_t.xh_vec[xh_vec_len - 1][0] = true;
