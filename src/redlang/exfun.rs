@@ -1762,6 +1762,19 @@ pub fn init_ex_fun_map() {
         return Ok(Some("".to_string()));
     });
     
+    add_fun(vec!["设置浏览器宽高"],|self_t,params|{
+        let k1 = self_t.get_param(params, 0)?;
+        let k2 = self_t.get_param(params, 1)?;
+        // 校验
+        k1.parse::<u32>()?; 
+        k2.parse::<u32>()?; 
+        self_t.set_coremap("浏览器宽", &k1)?;
+        self_t.set_coremap("浏览器高", &k2)?;
+        return Ok(Some("".to_string()));
+    });
+
+
+    
     add_fun(vec!["网页截图"],|self_t,params|{
         fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
             let path = self_t.get_param(params, 0)?;
@@ -1773,8 +1786,12 @@ pub fn init_ex_fun_map() {
                 proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
                 arg_vec.push(&proxy);
             }
+
+            let width = self_t.get_coremap("浏览器宽")?.parse::<u32>().unwrap_or(1920);
+            let height = self_t.get_coremap("浏览器高")?.parse::<u32>().unwrap_or(1080);
+
             let options = headless_chrome::LaunchOptions::default_builder()
-                .window_size(Some((1920, 1080)))
+                .window_size(Some((width, height)))
                 .args(arg_vec)
                 .build()?;
                 let browser = headless_chrome::Browser::new(options)?;
@@ -1814,8 +1831,12 @@ pub fn init_ex_fun_map() {
                 proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
                 arg_vec.push(&proxy);
             }
+
+            let width = self_t.get_coremap("浏览器宽")?.parse::<u32>().unwrap_or(1920);
+            let height = self_t.get_coremap("浏览器高")?.parse::<u32>().unwrap_or(1080);
+
             let options = headless_chrome::LaunchOptions::default_builder()
-                .window_size(Some((1920, 1080)))
+                .window_size(Some((width, height)))
                 .args(arg_vec)
                 .build()?;
                 let browser = headless_chrome::Browser::new(options)?;
@@ -1854,8 +1875,12 @@ pub fn init_ex_fun_map() {
                 proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
                 arg_vec.push(&proxy);
             }
+
+            let width = self_t.get_coremap("浏览器宽")?.parse::<u32>().unwrap_or(1920);
+            let height = self_t.get_coremap("浏览器高")?.parse::<u32>().unwrap_or(1080);
+
             let options = headless_chrome::LaunchOptions::default_builder()
-                .window_size(Some((1920, 1080)))
+                .window_size(Some((width, height)))
                 .args(arg_vec)
                 .build()?;
                 let browser = headless_chrome::Browser::new(options)?;

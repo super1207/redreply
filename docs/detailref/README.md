@@ -1474,6 +1474,13 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 返回红色问答的应用目录，应用目录就是包的script.json所在目录，末尾有分隔符。
 
 
+### 设置浏览器宽高
+
+【设置浏览器宽高@<font color="red">宽</font>@<font color="red">高</font>】
+
+设置自定义的浏览器宽高，默认是1920x1080。此命令影响【网页截图】，【网页获取】，【网页获取文本】。
+
+
 ### 网页截图
 
 
