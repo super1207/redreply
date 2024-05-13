@@ -37,11 +37,11 @@
                 <span>用户ID:</span>
             </div>
             <div style="display: flex;flex-direction: column;flex-grow: 1;">
-                <input v-model = "platform"></input>
-                <input v-model = "bot_id"></input>
-                <input v-model = "groups_id" disabled></input>
-                <input v-model = "group_id"></input>
-                <input v-model = "user_id"></input>
+                <input v-model = "platform" @input="change_platform"></input>
+                <input v-model = "bot_id" @input="change_bot_id"></input>
+                <input v-model = "groups_id" @input="change_groups_id" disabled></input>
+                <input v-model = "group_id" @input="change_group_id"></input>
+                <input v-model = "user_id" @input="change_user_id"></input>
             </div>
         </div>
         <div style="height: 0; flex-grow: 1;display: flex;flex-direction: column;flex-grow: 1;">
@@ -79,6 +79,37 @@
             }
         },
         mounted () {
+
+            let platform_t = window.localStorage.getItem('debug_platform');
+            if (platform_t) {
+                this.platform = platform_t
+            }else {
+                this.platform = "onebot11"
+            }
+            let bot_id_t = window.localStorage.getItem('debug_bot_id');
+            if (bot_id_t) {
+                this.bot_id = bot_id_t
+            }else {
+                this.bot_id = "1736293901"
+            }
+            let groups_id_t = window.localStorage.getItem('debug_groups_id');
+            if (groups_id_t) {
+                this.groups_id = groups_id_t
+            }else {
+                this.groups_id = "暂不支持"
+            }
+            let group_id_t = window.localStorage.getItem('debug_group_id');
+            if (group_id_t) {
+                this.group_id = group_id_t
+            }else {
+                this.group_id = "920220179"
+            }
+            let user_id_t = window.localStorage.getItem('debug_user_id');
+            if (user_id_t) {
+                this.user_id = user_id_t
+            }else {
+                this.user_id = ""
+            }
 
             setInterval(() => {
                 quill = this.$refs.child.getQuill();
@@ -135,6 +166,21 @@
             });
         },
         methods: {
+            change_platform(){
+                window.localStorage.setItem('debug_platform',this.platform)
+            },
+            change_bot_id(){
+                window.localStorage.setItem('debug_bot_id',this.bot_id)
+            },
+            change_group_id(){
+                window.localStorage.setItem('debug_group_id',this.group_id)
+            },
+            change_user_id(){
+                window.localStorage.setItem('debug_user_id',this.user_id)
+            },
+            change_groups_id(){
+                window.localStorage.setItem('debug_groups_id',this.groups_id)
+            },
             run_script(){
                 let content = this.$refs.child.getQuill().getText();
                 let script = {
