@@ -16,7 +16,7 @@ use reqwest::header::HeaderValue;
 use std::io::Write;
 use crate::{add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, del_file_lock, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
 
-use image::{Rgba, ImageBuffer, EncodableLayout, AnimationDecoder};
+use image::{AnimationDecoder, EncodableLayout, GenericImageView, ImageBuffer, Rgba};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
 use std::io::Cursor;
 use image::io::Reader as ImageReader;
@@ -827,6 +827,62 @@ pub fn init_ex_fun_map() {
         let y = text4.parse::<i64>()?;
         let img_out = img_paste(img_vec_big,img_vec_sub,x,y)?;
         let ret = self_t.build_bin(img_out);
+        return Ok(Some(ret));
+    });
+
+    add_fun(vec!["图片横拼接","图片拼接"],|self_t,params|{
+        let img_text1 = self_t.get_param(params, 0)?;
+        let img_text2 = self_t.get_param(params, 1)?;
+        let img1_vec = RedLang::parse_bin(&img_text1)?;
+        let img2_vec = RedLang::parse_bin(&img_text2)?;
+        let img1 = ImageReader::new(Cursor::new(img1_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let img2 = ImageReader::new(Cursor::new(img2_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let mut back_img = ImageBuffer::new(img1.width() + img2.width(), std::cmp::max(img1.height(),img2.height()));
+        image::imageops::overlay(&mut back_img, &img1, 0, 0);
+        image::imageops::overlay(&mut back_img, &img2, img1.width() as i64, 0);
+        let mut bytes: Vec<u8> = Vec::new();
+        back_img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    });
+
+    add_fun(vec!["图片竖拼接"],|self_t,params|{
+        let img_text1 = self_t.get_param(params, 0)?;
+        let img_text2 = self_t.get_param(params, 1)?;
+        let img1_vec = RedLang::parse_bin(&img_text1)?;
+        let img2_vec = RedLang::parse_bin(&img_text2)?;
+        let img1 = ImageReader::new(Cursor::new(img1_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let img2 = ImageReader::new(Cursor::new(img2_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let mut back_img = ImageBuffer::new(std::cmp::max(img1.width(),img2.width()),img1.height() + img2.height());
+        image::imageops::overlay(&mut back_img, &img1, 0, 0);
+        image::imageops::overlay(&mut back_img, &img2, 0, img1.height() as i64);
+        let mut bytes: Vec<u8> = Vec::new();
+        back_img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
+        return Ok(Some(ret));
+    });
+
+    add_fun(vec!["图片截取","图像截取"],|self_t,params|{
+        let img_text1 = self_t.get_param(params, 0)?;
+        let img1_vec = RedLang::parse_bin(&img_text1)?;
+        let img1 = ImageReader::new(Cursor::new(img1_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let x = self_t.get_param(params, 1)?.parse::<u32>()?;
+        let y = self_t.get_param(params, 2)?.parse::<u32>()?;
+        let mut width = self_t.get_param(params,3)?.parse::<u32>()?;
+        let mut height = self_t.get_param(params, 4)?.parse::<u32>()?;
+        if x >= img1.width() || y >= img1.height()  {
+            return Err("图片截取原点超出图片范围".into());
+        }
+        if x + width > img1.width(){
+            width = img1.width() - x;
+        }
+        if y + height > img1.height(){
+            height = img1.height() - y;
+        }
+        let img2 = img1.view(x, y, width, height);
+        let mut bytes: Vec<u8> = Vec::new();
+        img2.to_image().write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
 
