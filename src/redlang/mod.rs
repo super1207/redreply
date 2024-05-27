@@ -2315,9 +2315,11 @@ impl RedLang {
             *status = 4;
         }
         else if new_str.starts_with(&*crate::CLEAR_UUID) {
+            // 处理清空
             chs_out.push_str(&*crate::CLEAR_UUID);
             *status = 0;
         } else {
+            // 普通文本且长度不为0
             if new_str.len() != 0 {
                 if *status == 2 {
                     return Err(RedLang::make_err(&format!("`{}`不能与数组类型直接连接",new_str)));

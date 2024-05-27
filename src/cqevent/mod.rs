@@ -90,10 +90,18 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
 
 fn do_run_code_and_ret_check(rl:&mut RedLang,code:&str)-> Result<String, Box<dyn std::error::Error>> {
     let ret = rl.parse(code)?;
-    if ret.contains(&*REDLANG_UUID) {
+
+    // 处理清空指令
+    let mut after_clear:&str = &ret;
+    if let Some(pos) = ret.rfind(CLEAR_UUID.as_str()) {
+        after_clear = ret.get((pos + 36)..).unwrap();
+    }
+
+    // 检查是否包含类型标记
+    if after_clear.contains(&*REDLANG_UUID) {
         return Err(RedLang::make_err("尝试输出非文本类型"));
     }
-    return Ok(ret);
+    return Ok(after_clear.to_owned());
 }
 
 pub fn do_script(rl:&mut RedLang,code:&str) -> Result<String, Box<dyn std::error::Error>>{
@@ -163,18 +171,15 @@ pub fn do_script(rl:&mut RedLang,code:&str) -> Result<String, Box<dyn std::error
         return Err(RedLang::make_err(&err_str));
     }
     let out_str_t = out_str_t_rst.unwrap();
-    // 处理清空指令
-    let mut after_clear:&str = &out_str_t;
-    if let Some(pos) = out_str_t.rfind(CLEAR_UUID.as_str()) {
-        after_clear = out_str_t.get((pos + 36)..).unwrap();
-    }
+
     // 处理分页指令
-    let out_str_vec = do_paging(after_clear)?;
+    let out_str_vec = do_paging(&out_str_t)?;
+
     // 发送到协议端
     for out_str in out_str_vec {
         crate::redlang::cqexfun::send_one_msg(rl, out_str)?;
     }
-    Ok(after_clear.to_owned())
+    return Ok(out_str_t);
 }
 
 fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
