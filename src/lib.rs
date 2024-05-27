@@ -81,9 +81,9 @@ lazy_static! {
     // 用于类型UUID
     pub static ref REDLANG_UUID:String = "12331549-6D26-68A5-E192-5EBE9A6EB998".to_owned();
     // 用于分页命令
-    pub static ref PAGING_UUID:String = uuid::Uuid::new_v4().to_string();
+    pub static ref PAGING_UUID:String = "5f4bf0da-1673-4e3f-8d7c-4932cc923504".to_owned();
     // 用于清空命令
-    pub static ref CLEAR_UUID:String = uuid::Uuid::new_v4().to_string();
+    pub static ref CLEAR_UUID:String = "a1e72c64-4d18-4529-bc19-e61c5a836e8c".to_owned();
     // 用于记录常量:包名-常量名-常量值(x)
     pub static ref G_CONST_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
     // 用于记录临时常量:包名-常量名-常量值-过期时间(x)

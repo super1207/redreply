@@ -70,7 +70,7 @@ fn create_windows() {
     btn.visible_focus(false);
     btn.set_callback(move |w|{
         let v = redlang::add_egg_click().unwrap();
-        let button_title = format!("点我加一\n\n\n当前:{}",v);
+        let button_title = format!("点我功德加一\n\n\n当前:{}",v);
         w.set_label(&*button_title)
     });
     flex_win.end();
