@@ -63,7 +63,7 @@ fn create_windows() {
     });
     flex_win.set_type(FlexType::Column);
     let v = redlang::add_egg_click().unwrap();
-    let button_title = format!("点我加一\n\n\n当前:{}",v);
+    let button_title = format!("点我功德加一\n\n\n当前:{}",v);
     let mut btn = Button::new(0, 0, 100, 100, &*button_title);
     btn.set_label_color(Color::from_rgb(66, 134, 244));
     btn.set_color(Color::from_rgb(255, 255, 255));

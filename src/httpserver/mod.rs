@@ -10,7 +10,7 @@ use crate::httpevent::do_http_event;
 use crate::mytool::read_json_str;
 use crate::onebot11s::event_to_onebot;
 use crate::pluscenter::PlusCenterPlusBase;
-use crate::{read_config, G_AUTO_CLOSE, CLEAR_UUID};
+use crate::{read_config, G_AUTO_CLOSE};
 use crate::redlang::RedLang;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 use futures_util::{SinkExt, StreamExt};
@@ -430,12 +430,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
             let res;
             let ret;
             if let Ok(ret_str) = ret_rst {
-                // 处理清空指令
-                if let Some(pos) = ret_str.rfind(CLEAR_UUID.as_str()) {
-                    ret = ret_str.get((pos + 36)..).unwrap().to_owned();
-                } else {
-                    ret = ret_str;
-                }
+                ret = ret_str;
                 res = serde_json::json!({
                     "retcode":0,
                     "data":ret

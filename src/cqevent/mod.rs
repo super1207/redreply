@@ -5,7 +5,7 @@ mod do_group_inc;
 
 use std::{rc::Rc, collections::{HashMap, HashSet}, sync::Arc, cell::RefCell};
 
-use crate::{add_running_script_num, cqapi::cq_add_log_w, dec_running_script_num, httpserver::send_onebot_event, mytool::read_json_str, read_code_cache, redlang::RedLang, CLEAR_UUID, PAGING_UUID, REDLANG_UUID, RT_PTR};
+use crate::{add_running_script_num, cqapi::cq_add_log_w, dec_running_script_num, httpserver::send_onebot_event, mytool::read_json_str, read_code_cache, redlang::RedLang, PAGING_UUID, REDLANG_UUID, RT_PTR};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -91,17 +91,11 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
 fn do_run_code_and_ret_check(rl:&mut RedLang,code:&str)-> Result<String, Box<dyn std::error::Error>> {
     let ret = rl.parse(code)?;
 
-    // 处理清空指令
-    let mut after_clear:&str = &ret;
-    if let Some(pos) = ret.rfind(CLEAR_UUID.as_str()) {
-        after_clear = ret.get((pos + 36)..).unwrap();
-    }
-
     // 检查是否包含类型标记
-    if after_clear.contains(&*REDLANG_UUID) {
+    if ret.contains(&*REDLANG_UUID) {
         return Err(RedLang::make_err("尝试输出非文本类型"));
     }
-    return Ok(after_clear.to_owned());
+    return Ok(ret.to_owned());
 }
 
 pub fn do_script(rl:&mut RedLang,code:&str) -> Result<String, Box<dyn std::error::Error>>{

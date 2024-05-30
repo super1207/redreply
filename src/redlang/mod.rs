@@ -1,7 +1,7 @@
 use std::{any::Any, cell::RefCell, collections::{BTreeMap, HashMap, HashSet, VecDeque}, error, ffi::{c_char, c_int, CStr, CString}, fmt, rc::Rc, sync::Arc, thread, time::SystemTime, vec};
 use encoding::Encoding;
 
-use crate::{cqapi::cq_add_log_w, cqevent::do_script, CLEAR_UUID, G_CONST_MAP, G_LOCK, G_TEMP_CONST_MAP};
+use crate::{cqapi::cq_add_log_w, cqevent::do_script, G_CONST_MAP, G_LOCK, G_TEMP_CONST_MAP};
 use libloading::Symbol;
 
 pub mod exfun;
@@ -1442,12 +1442,8 @@ pub fn init_core_fun_map() {
         for i in 1..params_len {
             rl.params_vec[0].push(self_t.get_param(params, i)?);
         }
-        let mut ret_str;
+        let ret_str;
         ret_str = rl.parse(&code)?;
-        // 处理清空指令
-        if let Some(pos) = ret_str.rfind(CLEAR_UUID.as_str()) {
-            ret_str = ret_str.get((pos + 36)..).unwrap().to_owned();
-        }
         return Ok(Some(ret_str));
     });
     add_fun(vec!["反射执行"],|self_t,params|{
@@ -2316,7 +2312,7 @@ impl RedLang {
         }
         else if new_str.starts_with(&*crate::CLEAR_UUID) {
             // 处理清空
-            chs_out.push_str(&*crate::CLEAR_UUID);
+            chs_out.clear();
             *status = 0;
         } else {
             // 普通文本且长度不为0
