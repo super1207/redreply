@@ -966,9 +966,9 @@ pub fn init_ex_fun_map() {
         }
         let mut v:Vec<u8> = vec![];
         {
-            let mut encoder = image::codecs::gif::GifEncoder::new(&mut v);
-            encoder.encode_frames(frame_vec)?;
+            let mut encoder = image::codecs::gif::GifEncoder::new(&mut v);        
             encoder.set_repeat(image::codecs::gif::Repeat::Infinite)?;
+            encoder.encode_frames(frame_vec)?;
         }
         let ret = self_t.build_bin(v);
         return Ok(Some(ret));
