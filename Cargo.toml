@@ -61,7 +61,7 @@ crc64 = "2.0.0"
 headless_chrome = "1.0.9"
 path-clean = "1.0.1"
 rust-ini = "0.21.0"
-mlua = { version = "0.9.7", features = ["luajit", "vendored"] }
+mlua = { version = "0.9.7", features = ["lua54", "vendored"] }
 
 [build-dependencies]
 embed-resource = "2.4.2"
@@ -73,19 +73,6 @@ xcap = "0.0.4"
 winconsole = "0.11.1"
 tray-icon = "0.13.0"
 fltk = "1.4.26"
-
-[workspace.metadata.cross.target.i686-unknown-linux-musl]
-pre-build = [
-	"apt-get --assume-yes install build-essential",
-	"apt-get --assume-yes install gcc-multilib"
-]
-
-[workspace.metadata.cross.target.arm-unknown-linux-gnueabihf]
-pre-build = [
-	"apt-get --assume-yes install gcc-multilib",
-	"apt-get --assume-yes install linux-libc-dev",
-]
-
 
 [profile.release]
 panic = "abort" # Strip expensive panic clean-up logic
