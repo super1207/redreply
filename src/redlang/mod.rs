@@ -1614,6 +1614,32 @@ pub fn init_core_fun_map() {
         }
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["复制命令"],|self_t,params|{
+        let old_cmd = self_t.get_param(params, 0)?;
+        let new_cmd = self_t.get_param(params, 1)?;
+
+        let exret;
+        // 如果旧命令不存在，则什么也不做
+        {
+            let cmd_t = old_cmd.to_uppercase();
+            let r = crate::G_CMD_FUN_MAP.read()?;
+            exret = match r.get(&cmd_t) {
+                Some(fun) => Some(fun.clone()),
+                None => None,
+            };
+            
+            if exret == None {
+                return Ok(Some("".to_string()));
+            }
+        }
+        let fun = exret.unwrap();
+        let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
+        let k = new_cmd.to_uppercase();
+        let k_t = crate::mytool::str_to_ft(&k);
+        w.insert(k.clone(), fun);
+        w.insert(k_t, fun);
+        return Ok(Some("".to_string()));
+    });
     add_fun(vec!["进制转化","进制转换"],|self_t,params|{
         let num_text = self_t.get_param(params, 0)?.to_uppercase();
         let from = self_t.get_param(params, 1)?.parse::<u32>()?;
@@ -1945,14 +1971,20 @@ let k = &*self.exmap;
 
         // 执行核心命令与拓展命令
         let exret;
+        let rfun;
         {
             let cmd_t = cmd.to_uppercase();
             let r = crate::G_CMD_FUN_MAP.read()?;
-            exret = match r.get(&cmd_t) {
-                Some(fun) => fun(self,params)?,
+            rfun = match r.get(&cmd_t) {
+                Some(fun) => Some(fun.clone()),
                 None => None,
             };
         }
+        
+        exret = match rfun {
+            Some(fun) => fun(self,params)?,
+            None => None,
+        };
 
         if let Some(v) = exret{
             return Ok(v);
