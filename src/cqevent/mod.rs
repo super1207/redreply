@@ -16,6 +16,7 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
 
     let mut root:serde_json::Value = serde_json::from_str(onebot_json_str)?;
 
+    // 将消息转化成数组形式
     if let Some(msg) = root.get("message") {
         if msg.is_string() {
             let arrmsg = crate::mytool::str_msg_to_arr(&msg)?;
@@ -28,6 +29,18 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
         root["message_id"] = serde_json::to_value(uuid::Uuid::new_v4().to_string())?;
     }
 
+    // 不处理10分钟之前的消息，made by tongyi ai
+    if let Some(time) = root.get("time") {
+        if let Some(time) = time.as_i64() {
+            if time < (chrono::Local::now().timestamp() - 600) {
+                // 打印日志
+                cq_add_log_w(&format!("10分钟前的消息，放弃处理本条消息：`{}`",onebot_json_str)).unwrap();
+                return Ok(0);
+            }
+        }
+    }
+
+    // 处理onebot11 server
     let root_t = root.clone();
     RT_PTR.spawn(async {
         send_onebot_event(root_t).await;
