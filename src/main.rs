@@ -95,10 +95,18 @@ fn create_windows() {
             }
         }
         if let Ok(event) = tray_channel.try_recv() {
-            if event.click_type == tray_icon::ClickType::Double {
-                wind.set_border(true);
-                wind.resizable(&wind);
-                wind.resize(wind.x(), wind.y(),600, 400);
+            match event {
+                tray_icon::TrayIconEvent::Click { id: _, position: _, rect: _, button, button_state: _ } => {
+                    match button {
+                        tray_icon::MouseButton::Left => {
+                            wind.set_border(true);
+                            wind.resizable(&wind);
+                            wind.resize(wind.x(), wind.y(),600, 400);
+                        },
+                        _ => {}
+                    } 
+                },
+                _ => {}
             }
         }
 

@@ -112,7 +112,8 @@ impl BotConnectTrait for OneBot115Connect {
         }
         let url_ws = self.url.replacen("ovo://", "ws://", 1);
         let url = url::Url::parse(&format!("{url_ws}/v1/events"))?;
-        let mut request = tungstenite::client::IntoClientRequest::into_client_request(url)?;
+        use tungstenite::client::IntoClientRequest;
+        let mut request = url.as_str().into_client_request()?;
         let mp = crate::httpevent::get_params_from_uri(&hyper::Uri::from_str(&self.url)?);
         if let Some(access_token) = mp.get("access_token") {
             request.headers_mut().insert("Authorization", tungstenite::http::HeaderValue::from_str(&format!("Bearer {}",access_token)).unwrap());

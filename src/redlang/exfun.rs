@@ -6,7 +6,6 @@ use ini::Ini;
 use jsonpath_rust::JsonPathQuery;
 use md5::{Md5, Digest};
 use mlua::MultiValue;
-use resvg::usvg::{self, TreeParsing, TreeTextToPath};
 use rusttype::Scale;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 use time::UtcOffset;
@@ -22,6 +21,7 @@ use std::io::Cursor;
 use image::io::Reader as ImageReader;
 use imageproc::geometric_transformations::Interpolation;
 use std::sync::Arc;
+use ab_glyph::{FontRef, PxScale};
 
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
@@ -800,7 +800,7 @@ pub fn init_ex_fun_map() {
         let img_out = image::imageops::crop(&mut img2,x_min as u32,y_min as u32,(x_max - x_min) as u32,(y_max - y_min) as u32);
         let mm = img_out.to_image();
         let mut bytes: Vec<u8> = Vec::new();
-        mm.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        mm.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -814,7 +814,7 @@ pub fn init_ex_fun_map() {
             image::imageops::overlay(&mut img, &img2, x, y);
             image::imageops::overlay(&mut img, &img1, 0, 0);
             let mut bytes: Vec<u8> = Vec::new();
-            img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+            img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
             Ok(bytes)
         }
         let text1 = self_t.get_param(params, 0)?;
@@ -841,7 +841,7 @@ pub fn init_ex_fun_map() {
         image::imageops::overlay(&mut back_img, &img1, 0, 0);
         image::imageops::overlay(&mut back_img, &img2, img1.width() as i64, 0);
         let mut bytes: Vec<u8> = Vec::new();
-        back_img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        back_img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -857,7 +857,7 @@ pub fn init_ex_fun_map() {
         image::imageops::overlay(&mut back_img, &img1, 0, 0);
         image::imageops::overlay(&mut back_img, &img2, 0, img1.height() as i64);
         let mut bytes: Vec<u8> = Vec::new();
-        back_img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        back_img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -881,7 +881,7 @@ pub fn init_ex_fun_map() {
         }
         let img2 = img1.view(x, y, width, height);
         let mut bytes: Vec<u8> = Vec::new();
-        img2.to_image().write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img2.to_image().write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -912,7 +912,7 @@ pub fn init_ex_fun_map() {
             }
         }
         let mut bytes: Vec<u8> = Vec::new();
-        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -930,7 +930,7 @@ pub fn init_ex_fun_map() {
             img_out = imageproc::filter::gaussian_blur_f32(&img,sigma);
         }
         let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -948,7 +948,7 @@ pub fn init_ex_fun_map() {
         let img_sub = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
         image::imageops::overlay(&mut img_big, &img_sub, x, y);
         let mut bytes: Vec<u8> = Vec::new();
-        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -984,7 +984,7 @@ pub fn init_ex_fun_map() {
             let frame = frame_rst?;
             let img_buf = frame.into_buffer();
             let mut bytes: Vec<u8> = Vec::new();
-            img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+            img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
             ret_vec.push(self_t.build_bin(bytes));
         }
         let ret = self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect());
@@ -1002,12 +1002,12 @@ pub fn init_ex_fun_map() {
             match frame.get_layout() {
                 webp::PixelLayout::Rgb => {
                     let img_buf: ImageBuffer<image::Rgb<u8>, Vec<_>> = ImageBuffer::from_vec(frame.width(),frame.height(),frame.get_image().to_vec()).ok_or("解析webp失败")?;
-                    img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+                    img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
                     ret_vec.push(self_t.build_bin(bytes));
                 },
                 webp::PixelLayout::Rgba => {
                     let img_buf: ImageBuffer<image::Rgba<u8>, Vec<_>> = ImageBuffer::from_vec(frame.width(),frame.height(),frame.get_image().to_vec()).ok_or("解析webp失败")?;
-                    img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+                    img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
                     ret_vec.push(self_t.build_bin(bytes))
                 }
             }
@@ -1078,7 +1078,7 @@ pub fn init_ex_fun_map() {
             }
         }
         let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1156,7 +1156,7 @@ pub fn init_ex_fun_map() {
         }
 
         let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1184,7 +1184,7 @@ pub fn init_ex_fun_map() {
             }
         }
         let mut bytes: Vec<u8> = Vec::new();
-        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1208,7 +1208,7 @@ pub fn init_ex_fun_map() {
             }
         }
         let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1248,6 +1248,7 @@ pub fn init_ex_fun_map() {
             return Err(RedLang::make_err("字体参数必须是字节集类型"));
         }
         let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
+        let font_t = FontRef::try_from_slice(&font_dat)?;
         let font_sep_text = self_t.get_param(params, 5)?;
         let line_sep_text = self_t.get_param(params, 6)?;
         let font_sep;
@@ -1321,19 +1322,19 @@ pub fn init_ex_fun_map() {
                     cur_x -= max_x + line_sep as i32;
                 }else { 
                     if cur_y + height  < img.height() as i32{
-                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x - width,cur_y,scale,&font,&ch.to_string());
+                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x - width,cur_y,PxScale{x:scale.x,y:scale.y},&font_t,&ch.to_string());
                         cur_y += height + font_sep as i32;
                     } else {
                         cur_x -= max_x + line_sep as i32;
                         cur_y = 0;
-                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x - width,cur_y,scale,&font,&ch.to_string());
+                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x - width,cur_y,PxScale{x:scale.x,y:scale.y},&font_t,&ch.to_string());
                         cur_y += height + font_sep as i32;
                     }
                 }
             }
         }
         let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1359,6 +1360,7 @@ pub fn init_ex_fun_map() {
             return Err(RedLang::make_err("字体参数必须是字节集类型"));
         }
         let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
+        let font_t = FontRef::try_from_slice(&font_dat)?;
         let font_sep_text = self_t.get_param(params, 5)?;
         let line_sep_text = self_t.get_param(params, 6)?;
         let font_sep;
@@ -1432,19 +1434,19 @@ pub fn init_ex_fun_map() {
                     cur_y += max_y + line_sep as i32;
                 }else { 
                     if cur_x + width  < img.width() as i32{
-                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x,cur_y,scale,&font,&ch.to_string());
+                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x,cur_y,PxScale{x:scale.x,y:scale.y},&font_t,&ch.to_string());
                         cur_x += width + font_sep as i32;
                     } else {
                         cur_y += max_y + line_sep as i32;
                         cur_x = 0;
-                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x,cur_y,scale,&font,&ch.to_string());
+                        imageproc::drawing::draw_text_mut(&mut img,color,cur_x,cur_y,PxScale{x:scale.x,y:scale.y},&font_t,&ch.to_string());
                         cur_x += width + font_sep as i32;
                     }
                 }
             }
         }
         let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1476,6 +1478,7 @@ pub fn init_ex_fun_map() {
             return Err(RedLang::make_err("字体参数必须是字节集类型"));
         }
         let font = rusttype::Font::try_from_bytes(&font_dat).ok_or("无法获得字体2")?;
+        let font_t = FontRef::try_from_slice(&font_dat)?;
         let font_sep_text = self_t.get_param(params, 7)?;
         let line_sep_text = self_t.get_param(params, 8)?;
         let font_sep;
@@ -1513,19 +1516,19 @@ pub fn init_ex_fun_map() {
                     cur_y += max_y + line_sep as i32;
                 }else { 
                     if text_x + cur_x + width  < img.width() as i32{
-                        imageproc::drawing::draw_text_mut(&mut img,color,text_x + cur_x,text_y + cur_y,scale,&font,&ch.to_string());
+                        imageproc::drawing::draw_text_mut(&mut img,color,text_x + cur_x,text_y + cur_y,PxScale{x:scale.x,y:scale.y},&font_t,&ch.to_string());
                         cur_x += width + font_sep as i32;
                     } else {
                         cur_y += max_y + line_sep as i32;
                         cur_x = 0;
-                        imageproc::drawing::draw_text_mut(&mut img,color,text_x + cur_x,text_y + cur_y,scale,&font,&ch.to_string());
+                        imageproc::drawing::draw_text_mut(&mut img,color,text_x + cur_x,text_y + cur_y,PxScale{x:scale.x,y:scale.y},&font_t,&ch.to_string());
                         cur_x += width + font_sep as i32;
                     }
                 }
             }
         }
         let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1547,7 +1550,7 @@ pub fn init_ex_fun_map() {
             }
         }
         let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1557,7 +1560,7 @@ pub fn init_ex_fun_map() {
         let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
         let img_out = image::imageops::flip_horizontal(&img);
         let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1567,7 +1570,7 @@ pub fn init_ex_fun_map() {
         let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
         let img_out = image::imageops::flip_vertical(&img);
         let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1579,7 +1582,7 @@ pub fn init_ex_fun_map() {
         let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
         let img_out = rotate_about_center(&img,theta,Interpolation::Bilinear,Rgba([0,0,0,0]));
         let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1604,7 +1607,7 @@ pub fn init_ex_fun_map() {
         let mut img_out_t = rotate_about_center(&img_big,theta,Interpolation::Bilinear,Rgba([0,0,0,0]));
         let img_out = image::imageops::crop(&mut img_out_t,((max_wh - max_width * 2) / 2).into(),((max_wh - max_height * 2) / 2).into(),max_width * 2,max_height * 2).to_image();
         let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -1625,7 +1628,7 @@ pub fn init_ex_fun_map() {
         }
         let img_out = image::imageops::resize(&img, width, height, image::imageops::FilterType::Nearest);
         let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         let ret = self_t.build_bin(bytes);
         return Ok(Some(ret));
     });
@@ -2222,7 +2225,7 @@ pub fn init_ex_fun_map() {
         if monitors.len() > 0 {
             let image = monitors[0].capture_image()?;
             let mut bytes: Vec<u8> = Vec::new();
-            image.write_to(&mut Cursor::new(&mut bytes), image::ImageOutputFormat::Png)?;
+            image.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
             return Ok(Some(self_t.build_bin(bytes)));
         }
         return Ok(Some(self_t.build_bin(vec![])));
@@ -3215,18 +3218,18 @@ def red_out(sw):
     
     add_fun(vec!["渲染SVG","SVG渲染"],|self_t,params|{
         let svg_text = self_t.get_param(params, 0)?;
-        let usvg_opt = usvg::Options::default();
-        let mut tree = resvg::usvg::Tree::from_str(&svg_text,&usvg_opt)?;
-        let mut font_dat = usvg::fontdb::Database::new();
-        font_dat.load_system_fonts();
-        tree.convert_text(&font_dat);
-        let re_tree = resvg::Tree::from_usvg(&tree);
+        let mut usvg_opt = usvg::Options::default();
+        usvg_opt.fontdb_mut().load_system_fonts();
+        let tree = resvg::usvg::Tree::from_str(&svg_text,&usvg_opt)?;
+        // tree.fontdb().load_system_fonts();
+        let width = (tree.size().width()+ 0.5)  as usize;
+        let height = (tree.size().height() + 0.5) as usize;
         let transform = resvg::tiny_skia::Transform::identity();
-        let width = (tree.size.width()+ 0.5)  as usize;
-        let height = (tree.size.height() + 0.5) as usize;
-        let mut pixmap = resvg::tiny_skia::Pixmap::new(width as u32, height as u32).ok_or("create pixmap err")?;
-        re_tree.render(transform, &mut pixmap.as_mut());
-        Ok(Some(self_t.build_bin(pixmap.encode_png()?)))
+        let sz = width * height * resvg::tiny_skia::BYTES_PER_PIXEL;
+        let mut pix = vec![0; sz];
+        let mut pixmapmut = resvg::tiny_skia::PixmapMut::from_bytes(pix.as_mut_slice(), width as u32, height as u32).ok_or("create pixmap err")?;
+        resvg::render(&tree, transform,&mut pixmapmut);
+        Ok(Some(self_t.build_bin(pixmapmut.to_owned().encode_png()?)))
     });
     add_fun(vec!["转繁体"],|self_t,params|{
         let msg = self_t.get_param(params, 0)?;
