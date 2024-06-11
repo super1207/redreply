@@ -283,6 +283,9 @@ app = createApp({
         connect_ob() {
             window.open("/obconnect.html", "_blank");
         },
+        gobal_filter_btn() {
+            window.open("/gobal_filter.html","_blank");
+        },
         select_up() {
             if(this.select_name_index <= 0){
                 return;

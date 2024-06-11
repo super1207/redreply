@@ -5,7 +5,7 @@ mod do_group_inc;
 
 use std::{rc::Rc, collections::{HashMap, HashSet}, sync::Arc, cell::RefCell};
 
-use crate::{add_running_script_num, cqapi::cq_add_log_w, dec_running_script_num, httpserver::send_onebot_event, mytool::read_json_str, read_code_cache, redlang::RedLang, PAGING_UUID, REDLANG_UUID, RT_PTR};
+use crate::{add_running_script_num, cqapi::cq_add_log_w, dec_running_script_num, get_gobal_filter_code, httpserver::send_onebot_event, mytool::read_json_str, read_code_cache, redlang::RedLang, PAGING_UUID, REDLANG_UUID, RT_PTR};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -35,6 +35,21 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
             if time < (chrono::Local::now().timestamp() - 600) {
                 // 打印日志
                 cq_add_log_w(&format!("10分钟前的消息，放弃处理本条消息：`{}`",onebot_json_str)).unwrap();
+                return Ok(0);
+            }
+        }
+    }
+
+    // 全局过滤器
+    {
+        let code:String = get_gobal_filter_code()?;
+        if code != "" {
+            let mut rl = RedLang::new();
+            set_normal_evt_info(&mut rl, &root)?;
+            rl.pkg_name = "".to_owned();
+            rl.script_name = "全局过滤器".to_owned();
+            let ret = rl.parse(&code)?;
+            if ret == "真" {
                 return Ok(0);
             }
         }

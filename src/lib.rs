@@ -123,6 +123,8 @@ lazy_static! {
     pub static ref G_FILE_MX:std::sync::Mutex<HashMap<String,i32>> = std::sync::Mutex::new(HashMap::new());
     // 历史日志
     static ref G_HISTORY_LOG:std::sync::RwLock<VecDeque<String>> = std::sync::RwLock::new(VecDeque::new());
+    // 全局过滤器缓存
+    pub static ref G_GOBAL_FILTER:std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
 }
 
 
@@ -140,7 +142,7 @@ pub struct AssetDoc;
 pub fn show_ctrl_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
     let config = read_config()?;
     let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
-    opener::open(format!("http://localhost:{port}"))?;
+    opener::open(format!("http://127.0.0.1:{port}"))?;
     Ok(())
 }
 
@@ -833,6 +835,57 @@ pub fn init_code() -> Result<(), Box<dyn std::error::Error + Send + Sync>>{
     Ok(())
 }
 
+fn get_gobal_filter_code_from_sql() -> Result<String, Box<dyn std::error::Error>> {
+    let app_dir = crate::cqapi::cq_get_app_directory1().unwrap();
+    let sql_file = app_dir + "reddat.db";
+
+    add_file_lock(&sql_file);
+    let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+        del_file_lock(&sql_file);
+    });
+
+    let conn = rusqlite::Connection::open(sql_file)?;
+    conn.execute("CREATE TABLE IF NOT EXISTS GOBAL_FILTER_TABLE (GOBAL_FILTER_NAME TEXT,VALUE TEXT DEFAULT '',PRIMARY KEY(GOBAL_FILTER_NAME));", [])?;
+    let ret_rst:Result<String,rusqlite::Error> = conn.query_row("SELECT VALUE FROM GOBAL_FILTER_TABLE WHERE GOBAL_FILTER_NAME = ?", ["CODE"], |row| row.get(0));
+    let ret_str:String;
+    if let Ok(ret) =  ret_rst {
+        ret_str = ret;
+    }else {
+        ret_str = "".to_owned();
+    }
+    return Ok(ret_str);
+}
+
+pub fn set_gobal_filter_code(code:&str) -> Result<(), Box<dyn std::error::Error>> {
+    let app_dir = crate::cqapi::cq_get_app_directory1().unwrap();
+    let sql_file = app_dir + "reddat.db";
+
+    add_file_lock(&sql_file);
+    let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+        del_file_lock(&sql_file);
+    });
+
+    let conn = rusqlite::Connection::open(sql_file)?;
+    conn.execute("CREATE TABLE IF NOT EXISTS GOBAL_FILTER_TABLE (GOBAL_FILTER_NAME TEXT,VALUE TEXT DEFAULT '',PRIMARY KEY(GOBAL_FILTER_NAME));", [])?;
+    conn.execute("REPLACE INTO GOBAL_FILTER_TABLE (GOBAL_FILTER_NAME,VALUE) VALUES (?,?)", ["CODE",code])?;
+    let mut wk = G_GOBAL_FILTER.write().unwrap();
+    *wk = Some(code.to_owned());
+    return Ok(());
+}
+
+pub fn get_gobal_filter_code() -> Result<String, Box<dyn std::error::Error>> {
+    {
+        let wk = G_GOBAL_FILTER.read().unwrap();
+        if wk.is_some() {
+            return Ok(wk.as_ref().unwrap().to_owned());
+        }
+    }
+    let mut wk = G_GOBAL_FILTER.write().unwrap();
+    let code = get_gobal_filter_code_from_sql()?;
+    *wk = Some(code);
+    let ret = wk.as_ref().unwrap().to_owned();
+    return Ok(ret);
+}
 
 pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
