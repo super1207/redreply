@@ -123,7 +123,8 @@ pub fn do_http_event(req:hyper::Request<hyper::body::Incoming>,can_write:bool,ca
             rl.req_rx = Some(body_rx2);
             rl.pkg_name = pkg_name.to_owned();
             rl.script_name = name.to_owned();
-            let rl_ret = crate::cqevent::do_script(&mut rl,code)?;
+            rl.can_wrong = true;
+            let rl_ret = rl.parse(&code)?;
             let mut http_header = BTreeMap::new();
             let mut res:hyper::Response<BoxBody>;
             if rl.get_type(&rl_ret)? == "字节集" {
