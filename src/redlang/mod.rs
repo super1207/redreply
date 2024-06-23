@@ -391,6 +391,29 @@ pub fn get_random() -> Result<usize, getrandom::Error> {
 }
 
 
+fn get_core_cmd(cmd:&str,pkg_name:&str) -> Option<fn(&mut RedLang, &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>> {
+    let mut rfun;
+    let cmd_t = cmd.to_uppercase();
+    let r = crate::G_CMD_FUN_MAP.read().unwrap();
+
+    // 先查看包对应的命令
+    let cmd_tt = format!("{pkg_name}eb4d8f3e-1c82-653b-5b26-3be3abb007bc{cmd_t}");
+    rfun = match r.get(&cmd_tt) {
+        Some(fun) => Some(fun.clone()),
+        None => None,
+    };
+
+    // 再查看内置命令
+    if rfun.is_none() {
+        rfun = match r.get(&cmd_t) {
+            Some(fun) => Some(fun.clone()),
+            None => None,
+        };
+    }
+    rfun
+}
+
+
 pub fn init_core_fun_map() {
     fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
         let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
@@ -1618,26 +1641,22 @@ pub fn init_core_fun_map() {
         let old_cmd = self_t.get_param(params, 0)?;
         let new_cmd = self_t.get_param(params, 1)?;
 
-        let exret;
+        let pkg_name = &self_t.pkg_name;
+        
         // 如果旧命令不存在，则什么也不做
-        {
-            let cmd_t = old_cmd.to_uppercase();
-            let r = crate::G_CMD_FUN_MAP.read()?;
-            exret = match r.get(&cmd_t) {
-                Some(fun) => Some(fun.clone()),
-                None => None,
-            };
-            
-            if exret == None {
-                return Ok(Some("".to_string()));
-            }
+        let exret = get_core_cmd(&old_cmd, pkg_name);
+        if exret == None {
+            return Ok(Some("".to_string()));
         }
+        // 构造新命令
         let fun = exret.unwrap();
-        let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
         let k = new_cmd.to_uppercase();
-        let k_t = crate::mytool::str_to_ft(&k);
-        w.insert(k.clone(), fun);
-        w.insert(k_t, fun);
+        let k_t: String = crate::mytool::str_to_ft(&k);
+
+        // 添加新命令
+        let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
+        w.insert(format!("{pkg_name}eb4d8f3e-1c82-653b-5b26-3be3abb007bc{k}"), fun);
+        w.insert(format!("{pkg_name}eb4d8f3e-1c82-653b-5b26-3be3abb007bc{k_t}"), fun);
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["进制转化","进制转换"],|self_t,params|{
@@ -1971,15 +1990,7 @@ let k = &*self.exmap;
 
         // 执行核心命令与拓展命令
         let exret;
-        let rfun;
-        {
-            let cmd_t = cmd.to_uppercase();
-            let r = crate::G_CMD_FUN_MAP.read()?;
-            rfun = match r.get(&cmd_t) {
-                Some(fun) => Some(fun.clone()),
-                None => None,
-            };
-        }
+        let rfun = get_core_cmd(cmd,&self.pkg_name);
         
         exret = match rfun {
             Some(fun) => fun(self,params)?,

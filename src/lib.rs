@@ -92,7 +92,7 @@ lazy_static! {
     pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,VecDeque<String>>> = RwLock::new(HashMap::new());
     // 用于记录自定义的命令(x)
     pub static ref G_CMD_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
-    // 用于记录命令
+    // 用于记录命令(x)
     pub static ref G_CMD_FUN_MAP:RwLock<HashMap<String, fn(&mut RedLang,&[String]) -> Result<Option<String>, Box<dyn std::error::Error>>>> = RwLock::new(HashMap::new());
     // 异步事件循环
     pub static ref  RT_PTR:Arc<tokio::runtime::Runtime> = Arc::new(tokio::runtime::Runtime::new().unwrap());
@@ -270,6 +270,20 @@ pub fn del_pkg_memory(pkg_name:&str) {
             lk.remove(&key);
         }
     }
+    // 删除自定义的内置命令
+    {
+        let mut lk = G_CMD_FUN_MAP.write().unwrap();
+        let mut to_remove_key = vec![];
+        for key in &*lk {
+            if key.0.starts_with(&format!("{pkg_name}eb4d8f3e-1c82-653b-5b26-3be3abb007bc")) {
+                to_remove_key.push(key.0.to_owned());
+            }
+        }
+        for key in &to_remove_key {
+            lk.remove(key);
+        }
+    }
+
 }
 
 
