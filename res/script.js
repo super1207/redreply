@@ -46,6 +46,7 @@ app = createApp({
             last_change_time:(new Date()).valueOf(),
             last_index:0,
             playbkmusic:"播放背景音乐",
+            is_load_success:false,
         }
     },
     mounted () {
@@ -139,6 +140,7 @@ app = createApp({
                     }
                     this.pkg_codes[pkg_name].push(this.codes[i])
                 }
+                this.is_load_success = true
                 // console.log(this.pkg_codes)
             })
             .catch(function (error) {
@@ -184,6 +186,13 @@ app = createApp({
             }
         },
         save_code() {
+
+            if(this.is_load_success == false)
+            {
+                alert("数据未加载成功，禁止保存，请稍后再试,或尝试刷新页面")
+                return
+            }
+
             this.save_cache(this.select_name_index);
             let code = []
 
