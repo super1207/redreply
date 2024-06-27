@@ -1708,53 +1708,70 @@ pub fn init_ex_fun_map() {
         let path = self_t.get_param(params, 0)?;
         let section = self_t.get_param(params, 1)?;
         let key = self_t.get_param(params, 2)?;
-        if Path::new(&path).exists() {
-            add_file_lock(&path);
-            let _guard = scopeguard::guard(path.clone(), |path| {
-                del_file_lock(&path);
-            });
-            let conf = Ini::load_from_file(path)?;
-            let section_t;
-            if section == "" {
-                let section_opt = conf.section(None::<String>);
-                if section_opt.is_none() {
-                    return Ok(Some("".to_string()));
-                }
-                section_t = section_opt.unwrap();
-            }else {
-                let section_opt = conf.section(Some(section));
-                if section_opt.is_none() {
-                    return Ok(Some("".to_string()));
-                }
-                section_t = section_opt.unwrap();
-            }
-            let val_opt = section_t.get(key);
-            if val_opt.is_none() {
+
+        let tp = self_t.get_type(&path)?;
+        let conf;
+        if tp == "字节集" {
+            let ini_bin = RedLang::parse_bin(&path)?;
+            conf = Ini::load_from_str(&String::from_utf8(ini_bin)?)?;
+        } else {
+            if Path::new(&path).exists() {
+                add_file_lock(&path);
+                let _guard = scopeguard::guard(path.clone(), |path| {
+                    del_file_lock(&path);
+                });
+                conf = Ini::load_from_file(path)?;
+            } else {
                 return Ok(Some("".to_string()));
             }
-            return Ok(Some(val_opt.unwrap().to_owned()));
+        }
+        let section_t;
+        if section == "" {
+            let section_opt = conf.section(None::<String>);
+            if section_opt.is_none() {
+                return Ok(Some("".to_string()));
+            }
+            section_t = section_opt.unwrap();
         }else {
+            let section_opt = conf.section(Some(section));
+            if section_opt.is_none() {
+                return Ok(Some("".to_string()));
+            }
+            section_t = section_opt.unwrap();
+        }
+        let val_opt = section_t.get(key);
+        if val_opt.is_none() {
             return Ok(Some("".to_string()));
         }
+        return Ok(Some(val_opt.unwrap().to_owned()));
+        
     });
     add_fun(vec!["读配置节"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
-        if Path::new(&path).exists() {
-            add_file_lock(&path);
-            let _guard = scopeguard::guard(path.clone(), |path| {
-                del_file_lock(&path);
-            });
-            let conf = Ini::load_from_file(path)?;
-            let mut to_ret_vec:Vec<&str> = vec![];
-            for (sec, _prop) in &conf {
-                if sec.is_some() {
-                    to_ret_vec.push(sec.unwrap());
-                }
+
+        let tp = self_t.get_type(&path)?;
+        let conf;
+        if tp == "字节集" {
+            let ini_bin = RedLang::parse_bin(&path)?;
+            conf = Ini::load_from_str(&String::from_utf8(ini_bin)?)?;
+        } else {
+            if Path::new(&path).exists() {
+                add_file_lock(&path);
+                let _guard = scopeguard::guard(path.clone(), |path| {
+                    del_file_lock(&path);
+                });
+                conf = Ini::load_from_file(path)?;
+            } else {
+                return Ok(Some(self_t.build_arr(vec![])));
             }
-            return Ok(Some(self_t.build_arr(to_ret_vec)));
-        }else {
-            return Ok(Some(self_t.build_arr(vec![])));
         }
+        let mut to_ret_vec:Vec<&str> = vec![];
+        for (sec, _prop) in &conf {
+            if sec.is_some() {
+                to_ret_vec.push(sec.unwrap());
+            }
+        }
+        return Ok(Some(self_t.build_arr(to_ret_vec)));
     });
     
     add_fun(vec!["写配置"],|self_t,params|{
