@@ -347,6 +347,9 @@ app = createApp({
                 document.getElementById('other_dlg').close()
             }  
         },
+        cron(){
+            window.open("/crontool.html", "_blank");
+        },
         pkg_rename(event) {
             if (this.rename_pkg_name == "") {
                 alert("失败，包名不能为空")

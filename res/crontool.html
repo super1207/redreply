@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>红色问答CRON校验</title>
+   <style>
+    html,body{
+        width: 100%;
+        height: 100%;
+        display: flex;
+        margin: 0;
+        padding: 0;
+    }
+    button,textarea,body,select,input{
+        background-color: #C7EDCC;
+        font-family: fusion-pixel-12px-monospaced-zh_hant, serif;
+    }
+   </style>
+   <script src="axios.js"></script>
+   <script src="vue.js"></script>
+   <link rel="stylesheet" href="vue-quill.snow.prod.css">
+</head>
+
+<body>
+   
+   <div id="app" style="padding:0.5em; border: 1px solid;margin: 0.2em;display: flex;flex-direction: column;flex-grow: 1;">
+        <h1 style="text-align: center;color: red;">红色问答CRON校验</h1>
+        <div style="display: flex; flex-direction: row;">
+            <div style="display: flex;flex-direction: column;">
+                <span>CRON表达式:</span>
+            </div>
+            <div style="display: flex;flex-direction: column;flex-grow: 1;">
+                <input v-model = "cronexpr" @input="change_cronexpr"></input>
+            </div>
+        </div>
+        <hr/>
+        <button style="height: 40px;font-size: medium;font-weight: bold;" @click="run_script2()">获得最近10次触发</button>
+        <div style="display: flex;flex: 1 0 auto;height: 0;flex-direction: row;overflow: scroll;">
+            <textarea style="flex-grow: 1;min-width: 50%;" disabled>{{result}}</textarea>
+        </div>
+    </body>
+        
+   </div>
+   <script>
+    const { createApp } = Vue
+    const app = createApp({
+        data() {
+            return {
+                // 用于显示
+                cronexpr:"",
+                result:""
+            }
+        },
+        mounted () {
+        },
+        methods: {
+            change_cronexpr(){
+                window.localStorage.setItem('debug_platform',this.platform)
+            },
+            run_script2(){
+                this.result = "正在执行..."
+                let url = "/test_cron?key=" + encodeURIComponent(this.cronexpr)
+                // console.log(url)
+                axios.get(url)
+                .then((res) => {
+                    if(res.data['retcode'] == 0){
+                        let result = res.data["data"]
+                        let l = result.length
+                        this.result = "最近10次触发：\n"
+                        for(let i = 0;i < l;i++){
+                            this.result += result[i] + "\n"
+                        }
+                    } else {
+                        this.result = "执行失败，不支持的表达式"
+                    }
+                })
+                .catch(function (error) {
+                    this.result = "执行失败，检查网络"
+                });
+            },
+        }
+    })
+    app.mount('#app')
+   </script>
+   
+</body>
+
+</html>

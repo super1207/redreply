@@ -70,6 +70,40 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
             },
         }
     }
+    else if url_path == "/test_cron" {
+        if !can_read {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let def_str = String::new();
+        let params = crate::httpevent::get_params_from_uri(request.uri());
+        let key = params.get("key").unwrap_or(&def_str);
+        let schedule_rst = <cron::Schedule as std::str::FromStr>::from_str(&key);
+        let ret: serde_json::Value;
+        let mut timestamp_vec = vec![];
+        if let Ok(schedule) = schedule_rst {
+            let now_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
+            let datetime_rst = chrono::TimeZone::timestamp_opt(&chrono::prelude::Local, now_time, 0);
+            
+            if let chrono::LocalResult::Single(data) = datetime_rst {
+                for datetime in schedule.after(&data).take(10) {
+                    timestamp_vec.push(datetime.to_rfc3339());
+                }
+            }
+            ret = json!({
+                "retcode":0,
+                "data":timestamp_vec
+            });
+        }else{
+            ret = json!({
+                "retcode":-1,
+                "data":timestamp_vec
+            });
+        }
+        let mut res = hyper::Response::new(full(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)
+    }
     else if url_path == "/get_pluscenter_list" {
         if !can_read {
             let res = hyper::Response::new(full("api not found"));

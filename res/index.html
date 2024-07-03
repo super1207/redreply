@@ -59,7 +59,8 @@
                 <div>
                     <div class="input_div"><span>脚本名：</span><input id="script_name" v-model="script_name"></input></div>
                     <div class="input_div"><span>介绍：&emsp;</span><input id="script_description" v-model="script_description"></input></div>
-                    <div class="input_div"><span>关键词：</span><input id="script_keyword" v-model="script_keyword"></input></div>
+                    
+                    <div v-if="script_cffs != '框架初始化' && script_cffs != '脚本错误' && script_cffs != '群成员增加' && script_cffs != '内容过滤'" class="input_div"><span>关键词：</span><input id="script_keyword" v-model="script_keyword"></input></div>
                     <select id="script_ppfs" v-model="script_ppfs">
                         <option disabled value="匹配方式">匹配方式</option>
                         <option value ="完全匹配">完全匹配</option>
@@ -80,6 +81,9 @@
                         <option value="网络触发">网络触发</option>
                         <option value="内容过滤">内容过滤(测试中)</option>
                     </select>
+                    <button v-if="script_cffs == 'CRON定时器'" @click="cron()">
+                        红色问答CRON校验工具
+                    </button>
                     <div id="my-toolbar">
                         <!-- Add buttons as you would before -->
                         
