@@ -174,25 +174,35 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                     msg_node.imgs.push(img_buffer);
                 }
             }else{
+
+                let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/groups/{group_id}/files"))?;
+                let client = reqwest::Client::builder().no_proxy().build()?;
+                let json_data: serde_json::Value;
                 if file.starts_with("http://") ||  file.starts_with("https://") {
-                    let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/groups/{group_id}/files"))?;
-                    let client = reqwest::Client::builder().no_proxy().build()?;
-                    let json_data = serde_json::json!({
+                    json_data = serde_json::json!({
                         "file_type":1, // 图片
                         "url":file,
                         "srv_send_msg":false
                     });
-                    let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
-                    req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-                    req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-                    req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
-                    req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
-                    let ret = client.execute(req).await?;
-                    let ret_str =  ret.text().await?; 
-                    let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
-                    crate::cqapi::cq_add_log(format!("接收qq guild API数据:{}", json_val.to_string()).as_str()).unwrap();
-                    msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+                } else { // base64://
+                    json_data = serde_json::json!({
+                        "file_type":1, // 图片
+                        "file_data":file.get(9..).ok_or("img not base64")?,
+                        "srv_send_msg":false,
+                    });
                 }
+                let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
+                let ret = client.execute(req).await?;
+                let ret_str =  ret.text().await?; 
+                let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
+                crate::cqapi::cq_add_log(format!("接收qq guild API数据:{}", json_val.to_string()).as_str()).unwrap();
+                msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+
+                
             }
             
         } else if tp == "face" {
