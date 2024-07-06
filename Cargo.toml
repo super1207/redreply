@@ -64,6 +64,9 @@ path-clean = "1.0.1"
 rust-ini = "0.21.0"
 mlua = { version = "0.9.8", features = ["lua54", "vendored"] }
 ab_glyph = "0.2.26"
+claxon = "0.4.3"
+minimp3 = "0.5.1"
+silk-rs = "0.2.0"
 
 [build-dependencies]
 embed-resource = "2.4.2"

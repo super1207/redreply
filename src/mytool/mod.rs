@@ -1,3 +1,9 @@
+pub mod all_to_silk;
+mod deal_flac;
+mod deal_silk;
+mod wav_deal;
+mod mp3_deal;
+
 use std::{collections::HashMap, str::FromStr};
 
 use crate::{cqapi::cq_add_log, redlang::RedLang};
