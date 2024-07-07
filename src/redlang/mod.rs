@@ -1828,8 +1828,14 @@ let k = &*self.exmap;
             let v_chs =data.chars().collect::<Vec<char>>();
             ret = v_chs.len();
         }else if tp == "字节集" {
-            let l = (data.len() - 37) / 2;
-            ret = l;
+            let uid = REDLANG_UUID.to_string();
+            if data.starts_with(&(uid.clone() + "B96ad849c-8e7e-7886-7742-e4e896cc5b86")) { // 特殊字节集类型
+                let raw_bin = RedLang::parse_bin(&self.bin_pool,&data)?;
+                ret = raw_bin.len();
+            }else{
+                let l = (data.len() - 37) / 2;
+                ret = l;
+            }
         }else{
             return Err(RedLang::make_err(&("对应类型不能获取长度:".to_owned()+&tp)));
         }
@@ -2107,7 +2113,7 @@ let k = &*self.exmap;
         }
     }
 
-    pub fn parse_bin(bin_pool:&mut HashMap<String, RedLangBinPoolVarType>,bin_data: & str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    pub fn parse_bin(bin_pool:&HashMap<String, RedLangBinPoolVarType>,bin_data: & str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let err_str = "不能获得字节集类型";
         if !bin_data.starts_with(&crate::REDLANG_UUID.to_string()) {
             return Err(RedLang::make_err(err_str));
@@ -2119,9 +2125,9 @@ let k = &*self.exmap;
         let content_text = bin_data.get(37..).ok_or(err_str)?;
         if content_text.starts_with("96ad849c-8e7e-7886-7742-e4e896cc5b86") { // 图片bin
             let bin_pool_key = content_text.get(36..).ok_or(err_str)?;
-            let bin_obj = bin_pool.get_mut(bin_pool_key).ok_or(err_str)?;
+            let bin_obj = bin_pool.get(bin_pool_key).ok_or(err_str)?;
             if bin_obj.type_t == "img" {
-                let mm = bin_obj.dat.downcast_mut::<(image::ImageFormat,ImageBuffer<Rgba<u8>, Vec<u8>>)>().unwrap();
+                let mm = bin_obj.dat.downcast_ref::<(image::ImageFormat,ImageBuffer<Rgba<u8>, Vec<u8>>)>().unwrap();
                 let mut bytes: Vec<u8> = Vec::new();
                 mm.1.write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)?;
                 return Ok(bytes);
