@@ -15,10 +15,9 @@ use reqwest::header::HeaderValue;
 use std::io::Write;
 use crate::{add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, del_file_lock, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
 
-use image::{AnimationDecoder, EncodableLayout, GenericImageView, ImageBuffer, Rgba};
+use image::{AnimationDecoder, EncodableLayout, GenericImageView, ImageBuffer, ImageFormat, Rgba};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
 use std::io::Cursor;
-use image::io::Reader as ImageReader;
 use imageproc::geometric_transformations::Interpolation;
 use std::sync::Arc;
 use ab_glyph::{FontRef, PxScale};
@@ -171,7 +170,7 @@ pub fn init_ex_fun_map() {
             let tp = self_t.get_type(&data_t)?;
             let data:Vec<u8>;
             if tp == "字节集" {
-                data = RedLang::parse_bin(&data_t)?;
+                data = RedLang::parse_bin(&mut self_t.bin_pool,&data_t)?;
             }else if tp == "文本" {
                 data = data_t.as_bytes().to_vec();
             }else {
@@ -422,7 +421,7 @@ pub fn init_ex_fun_map() {
         let mut json_str = json_obj.to_owned() ;
         let tp = self_t.get_type(&json_str)?;
         if tp == "字节集" {
-            let u8_vec = RedLang::parse_bin(&json_obj)?;
+            let u8_vec = RedLang::parse_bin(&mut self_t.bin_pool,&json_obj)?;
             json_str = String::from_utf8(u8_vec)?;
         }
         let json_data_rst = serde_json::from_str(&json_str);
@@ -583,7 +582,7 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["BASE64编码"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
-        let bin = RedLang::parse_bin(&text)?;
+        let bin = RedLang::parse_bin(&mut self_t.bin_pool,&text)?;
         let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
         return Ok(Some(b64_str));
     });
@@ -596,7 +595,7 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["GZIP解码"],|self_t,params|{
         let gzip_str = self_t.get_param(params, 0)?;
-        let gzip_bin = RedLang::parse_bin(&gzip_str)?;
+        let gzip_bin = RedLang::parse_bin(&mut self_t.bin_pool,&gzip_str)?;
         let mut d = GzDecoder::new(gzip_bin.as_slice());
         let mut buf = vec![];
         d.read_to_end(&mut buf)?;
@@ -604,7 +603,7 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["GZIP编码"],|self_t,params|{
         let gzip_str = self_t.get_param(params, 0)?;
-        let gzip_bin = RedLang::parse_bin(&gzip_str)?;
+        let gzip_bin = RedLang::parse_bin(&mut self_t.bin_pool,&gzip_str)?;
         let mut e = GzEncoder::new(vec![],Compression::default());
         e.write_all(&gzip_bin)?;
         let buf = e.finish()?;
@@ -612,7 +611,7 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["ZLIB解码"],|self_t,params|{
         let zlib_str = self_t.get_param(params, 0)?;
-        let zlib_bin = RedLang::parse_bin(&zlib_str)?;
+        let zlib_bin = RedLang::parse_bin(&mut self_t.bin_pool,&zlib_str)?;
         let mut d = ZlibDecoder::new(zlib_bin.as_slice());
         let mut buf = vec![];
         d.read_to_end(&mut buf)?;
@@ -620,7 +619,7 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["ZLIB编码"],|self_t,params|{
         let zlib_str = self_t.get_param(params, 0)?;
-        let zlib_bin = RedLang::parse_bin(&zlib_str)?;
+        let zlib_bin = RedLang::parse_bin(&mut self_t.bin_pool,&zlib_str)?;
         let mut e = ZlibEncoder::new(vec![],Compression::default());
         e.write_all(&zlib_bin)?;
         let buf = e.finish()?;
@@ -690,7 +689,7 @@ pub fn init_ex_fun_map() {
 
     add_fun(vec!["MD5编码"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
-        let bin = RedLang::parse_bin(&text)?;
+        let bin = RedLang::parse_bin(&mut self_t.bin_pool,&text)?;
         let mut hasher = Md5::new();
         hasher.update(bin);
         let result = hasher.finalize();
@@ -702,16 +701,13 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["RCNB编码"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
-        let bin = RedLang::parse_bin(&text)?;
+        let bin = RedLang::parse_bin(&mut self_t.bin_pool,&text)?;
         let content = rcnb_rs::encode(bin);
         return Ok(Some(content));
     });
     add_fun(vec!["图片信息","图像信息"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
-        let img_bin = RedLang::parse_bin(&text)?;
-        let img_t = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?;
-        let img_fmt  = img_t.format().ok_or("不能识别的图片格式")?;
-        let img = img_t.decode()?.to_rgba8();
+        let (img_fmt,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text)?;
         let mut mp = BTreeMap::new();
         mp.insert("宽".to_string(), img.width().to_string());
         mp.insert("高".to_string(), img.height().to_string());
@@ -737,9 +733,8 @@ pub fn init_ex_fun_map() {
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
         let text3 = self_t.get_param(params, 2)?;
-        let img_bin = RedLang::parse_bin(&text1)?;
+        let (_img_fmt,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
         let dst_t = RedLang::parse_arr(&text2)?;
-        let img = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
         let img_width_str = img.width().to_string();
         let img_height_str = img.height().to_string();
         let src_t:Vec<&str>;
@@ -799,73 +794,58 @@ pub fn init_ex_fun_map() {
         let y_max = m_max(vec![dst[0].1,dst[1].1,dst[2].1,dst[3].1]);
         let img_out = image::imageops::crop(&mut img2,x_min as u32,y_min as u32,(x_max - x_min) as u32,(y_max - y_min) as u32);
         let mm = img_out.to_image();
-        let mut bytes: Vec<u8> = Vec::new();
-        mm.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, mm));
         return Ok(Some(ret));
     });
     add_fun(vec!["图片叠加","图像叠加"],|self_t,params|{
-        fn img_paste(img_vec_big:Vec<u8>,img_vec_sub:Vec<u8>,x:i64,y:i64) -> Result<Vec<u8>, Box<dyn std::error::Error>>{
-            let img1 = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
-            let img2 = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
+        fn img_paste(img1:ImageBuffer<Rgba<u8>, Vec<u8>>,img2:ImageBuffer<Rgba<u8>, Vec<u8>>,x:i64,y:i64) -> Result<ImageBuffer<Rgba<u8>, Vec<u8>>, Box<dyn std::error::Error>>{
             let w = img1.width();
             let h = img1.height();
             let mut img:ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(w, h);
             image::imageops::overlay(&mut img, &img2, x, y);
             image::imageops::overlay(&mut img, &img1, 0, 0);
-            let mut bytes: Vec<u8> = Vec::new();
-            img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-            Ok(bytes)
+            Ok(img)
         }
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
         let text3 = self_t.get_param(params, 2)?;
         let text4 = self_t.get_param(params, 3)?;
-        let img_vec_big = RedLang::parse_bin(&text1)?;
-        let img_vec_sub = RedLang::parse_bin(&text2)?;
+        let (_img_fmt,img_vec_big) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
+        let (_img_fmt,img_vec_sub) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text2)?;
         let x = text3.parse::<i64>()?;
         let y = text4.parse::<i64>()?;
         let img_out = img_paste(img_vec_big,img_vec_sub,x,y)?;
-        let ret = self_t.build_bin(img_out);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_out));
         return Ok(Some(ret));
     });
 
     add_fun(vec!["图片横拼接","图片拼接"],|self_t,params|{
         let img_text1 = self_t.get_param(params, 0)?;
         let img_text2 = self_t.get_param(params, 1)?;
-        let img1_vec = RedLang::parse_bin(&img_text1)?;
-        let img2_vec = RedLang::parse_bin(&img_text2)?;
-        let img1 = ImageReader::new(Cursor::new(img1_vec)).with_guessed_format()?.decode()?.to_rgba8();
-        let img2 = ImageReader::new(Cursor::new(img2_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,img1) = RedLang::parse_img_bin(&mut self_t.bin_pool,&img_text1)?;
+        let (_,img2) = RedLang::parse_img_bin(&mut self_t.bin_pool,&img_text2)?;
         let mut back_img = ImageBuffer::new(img1.width() + img2.width(), std::cmp::max(img1.height(),img2.height()));
         image::imageops::overlay(&mut back_img, &img1, 0, 0);
         image::imageops::overlay(&mut back_img, &img2, img1.width() as i64, 0);
-        let mut bytes: Vec<u8> = Vec::new();
-        back_img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, back_img));
         return Ok(Some(ret));
     });
 
     add_fun(vec!["图片竖拼接"],|self_t,params|{
         let img_text1 = self_t.get_param(params, 0)?;
         let img_text2 = self_t.get_param(params, 1)?;
-        let img1_vec = RedLang::parse_bin(&img_text1)?;
-        let img2_vec = RedLang::parse_bin(&img_text2)?;
-        let img1 = ImageReader::new(Cursor::new(img1_vec)).with_guessed_format()?.decode()?.to_rgba8();
-        let img2 = ImageReader::new(Cursor::new(img2_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,img1) = RedLang::parse_img_bin(&mut self_t.bin_pool,&img_text1)?;
+        let (_,img2) = RedLang::parse_img_bin(&mut self_t.bin_pool,&img_text2)?;
         let mut back_img = ImageBuffer::new(std::cmp::max(img1.width(),img2.width()),img1.height() + img2.height());
         image::imageops::overlay(&mut back_img, &img1, 0, 0);
         image::imageops::overlay(&mut back_img, &img2, 0, img1.height() as i64);
-        let mut bytes: Vec<u8> = Vec::new();
-        back_img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, back_img));
         return Ok(Some(ret));
     });
 
     add_fun(vec!["图片截取","图像截取"],|self_t,params|{
         let img_text1 = self_t.get_param(params, 0)?;
-        let img1_vec = RedLang::parse_bin(&img_text1)?;
-        let img1 = ImageReader::new(Cursor::new(img1_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,img1) = RedLang::parse_img_bin(&mut self_t.bin_pool,&img_text1)?;
         let x = self_t.get_param(params, 1)?.parse::<u32>()?;
         let y = self_t.get_param(params, 2)?.parse::<u32>()?;
         let mut width = self_t.get_param(params,3)?.parse::<u32>()?;
@@ -880,9 +860,7 @@ pub fn init_ex_fun_map() {
             height = img1.height() - y;
         }
         let img2 = img1.view(x, y, width, height);
-        let mut bytes: Vec<u8> = Vec::new();
-        img2.to_image().write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img2.to_image()));
         return Ok(Some(ret));
     });
 
@@ -891,10 +869,8 @@ pub fn init_ex_fun_map() {
         let text2 = self_t.get_param(params, 1)?;
         let text3 = self_t.get_param(params, 2)?;
         let text4 = self_t.get_param(params, 3)?;
-        let img_vec_big = RedLang::parse_bin(&text1)?;
-        let img_vec_sub = RedLang::parse_bin(&text2)?;
-        let mut img_big = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
-        let img_sub = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,mut img_big) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
+        let (_,img_sub) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text2)?;
         let x = text3.parse::<i64>()?;
         let y = text4.parse::<i64>()?;
         for i in 0..img_sub.width() {
@@ -911,16 +887,13 @@ pub fn init_ex_fun_map() {
                 }
             }
         }
-        let mut bytes: Vec<u8> = Vec::new();
-        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_big));
         return Ok(Some(ret));
     });
 
     add_fun(vec!["图片模糊","图像模糊"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
-        let img_vec = RedLang::parse_bin(&text1)?;
-        let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
         let sigma = self_t.get_param(params, 1)?.parse::<f32>()?;
         let img_out;
         if sigma <= 0. {
@@ -929,9 +902,7 @@ pub fn init_ex_fun_map() {
             
             img_out = imageproc::filter::gaussian_blur_f32(&img,sigma);
         }
-        let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_out));
         return Ok(Some(ret));
     });
 
@@ -940,16 +911,12 @@ pub fn init_ex_fun_map() {
         let text2 = self_t.get_param(params, 1)?;
         let text3 = self_t.get_param(params, 2)?;
         let text4 = self_t.get_param(params, 3)?;
-        let img_vec_big = RedLang::parse_bin(&text1)?;
-        let img_vec_sub = RedLang::parse_bin(&text2)?;
+        let (_img_fmt,mut img_big) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
+        let (_img_fmt,img_sub) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text2)?;
         let x = text3.parse::<i64>()?;
         let y = text4.parse::<i64>()?;
-        let mut img_big = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
-        let img_sub = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
         image::imageops::overlay(&mut img_big, &img_sub, x, y);
-        let mut bytes: Vec<u8> = Vec::new();
-        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_big));
         return Ok(Some(ret));
     });
     add_fun(vec!["GIF合成"],|self_t,params|{
@@ -959,8 +926,7 @@ pub fn init_ex_fun_map() {
         let img_arr_str = RedLang::parse_arr(&text1)?;
         let mut frame_vec:Vec<image::Frame> = vec![];
         for it in img_arr_str {
-            let img_bin = RedLang::parse_bin(it)?;
-            let img = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
+            let (_,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,it)?;
             let fm = image::Frame::from_parts(img, 0, 0, image::Delay::from_saturating_duration(Duration::from_millis(delay)));
             frame_vec.push(fm);
         }
@@ -976,16 +942,14 @@ pub fn init_ex_fun_map() {
 
     add_fun(vec!["GIF分解"],|self_t,params|{
         let gif_str = self_t.get_param(params, 0)?;
-        let gif_bin = RedLang::parse_bin(&gif_str)?;
+        let gif_bin = RedLang::parse_bin(&mut self_t.bin_pool,&gif_str)?;
         let gif = image::codecs::gif::GifDecoder::new(Cursor::new(gif_bin))?;
         let gif_frames = gif.into_frames();
         let mut ret_vec:Vec<String> = vec![];
         for frame_rst in gif_frames {
             let frame = frame_rst?;
             let img_buf = frame.into_buffer();
-            let mut bytes: Vec<u8> = Vec::new();
-            img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-            ret_vec.push(self_t.build_bin(bytes));
+            ret_vec.push(self_t.build_img_bin((ImageFormat::Png, img_buf)));
         }
         let ret = self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect());
         return Ok(Some(ret));
@@ -993,7 +957,7 @@ pub fn init_ex_fun_map() {
 
     add_fun(vec!["WEBP分解"],|self_t,params|{
         let webp_str = self_t.get_param(params, 0)?;
-        let webp_bin = RedLang::parse_bin(&webp_str)?;
+        let webp_bin = RedLang::parse_bin(&mut self_t.bin_pool,&webp_str)?;
         let webp = webp::AnimDecoder::new(&webp_bin).decode()?;
         let webp_frames = webp.get_frames(0..webp.len()).ok_or("解析webp失败")?;
         let mut ret_vec:Vec<String> = vec![];
@@ -1007,8 +971,7 @@ pub fn init_ex_fun_map() {
                 },
                 webp::PixelLayout::Rgba => {
                     let img_buf: ImageBuffer<image::Rgba<u8>, Vec<_>> = ImageBuffer::from_vec(frame.width(),frame.height(),frame.get_image().to_vec()).ok_or("解析webp失败")?;
-                    img_buf.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-                    ret_vec.push(self_t.build_bin(bytes))
+                    ret_vec.push(self_t.build_img_bin((ImageFormat::Png, img_buf)))
                 }
             }
         }
@@ -1024,8 +987,7 @@ pub fn init_ex_fun_map() {
         let mut frame_vec:Vec<webp::AnimFrame> = vec![];
         let mut img_buf_vec = vec![];
         for it in img_arr_str {
-            let img_bin = RedLang::parse_bin(it)?;
-            let img_buf = ImageReader::new(Cursor::new(img_bin)).with_guessed_format()?.decode()?.to_rgba8();
+            let (_,img_buf) = RedLang::parse_img_bin(&mut self_t.bin_pool,it)?;
             img_buf_vec.push(img_buf);
             
         }
@@ -1056,8 +1018,7 @@ pub fn init_ex_fun_map() {
 
     add_fun(vec!["图片变圆","图像变圆"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
-        let img_vec = RedLang::parse_bin(&text1)?;
-        let mut img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,mut img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
         let width = img.width();
         let height = img.height();
         let r:u32;
@@ -1077,9 +1038,7 @@ pub fn init_ex_fun_map() {
                 }
             }
         }
-        let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img));
         return Ok(Some(ret));
     });
 
@@ -1089,8 +1048,7 @@ pub fn init_ex_fun_map() {
         let right_top_t = self_t.get_param(params, 2)?.parse::<u32>()?;
         let right_bottom_t = self_t.get_param(params, 3)?.parse::<u32>()?;
         let left_bottom_t = self_t.get_param(params, 4)?.parse::<u32>()?;
-        let img_vec = RedLang::parse_bin(&text1)?;
-        let mut img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,mut img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
         let width = img.width();
         let height = img.height();
 
@@ -1155,9 +1113,7 @@ pub fn init_ex_fun_map() {
             }
         }
 
-        let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img));
         return Ok(Some(ret));
     });
 
@@ -1166,12 +1122,10 @@ pub fn init_ex_fun_map() {
         let text2 = self_t.get_param(params, 1)?;
         let text3 = self_t.get_param(params, 2)?;
         let text4 = self_t.get_param(params, 3)?;
-        let img_vec_big = RedLang::parse_bin(&text1)?;
-        let img_vec_sub = RedLang::parse_bin(&text2)?;
+        let (_img_fmt,mut img_big) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
+        let (_img_fmt,img_sub) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text2)?;
         let x = text3.parse::<i64>()?;
         let y = text4.parse::<i64>()?;
-        let mut img_big = ImageReader::new(Cursor::new(img_vec_big)).with_guessed_format()?.decode()?.to_rgba8();
-        let img_sub = ImageReader::new(Cursor::new(img_vec_sub)).with_guessed_format()?.decode()?.to_rgba8();
         for i in 0..img_sub.width() {
             for j in 0..img_sub.height() {
                 let ii = x + i as i64;
@@ -1183,16 +1137,13 @@ pub fn init_ex_fun_map() {
                 }
             }
         }
-        let mut bytes: Vec<u8> = Vec::new();
-        img_big.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_big));
         return Ok(Some(ret));
     });
 
     add_fun(vec!["图片变灰","图像变灰"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
-        let img_vec = RedLang::parse_bin(&text1)?;
-        let mut img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,mut img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
         let width = img.width();
         let height = img.height();
         for x in 0..width {
@@ -1207,9 +1158,7 @@ pub fn init_ex_fun_map() {
                 pix.0[2] = color;
             }
         }
-        let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img));
         return Ok(Some(ret));
     });
     fn get_char_size(font:&rusttype::Font,scale:Scale,ch:char) -> (i32, i32) {
@@ -1243,7 +1192,7 @@ pub fn init_ex_fun_map() {
         let font_type = self_t.get_type(&font_text)?;
         let font_dat;
         if font_type == "字节集" {
-            font_dat = RedLang::parse_bin(&font_text)?;
+            font_dat = RedLang::parse_bin(&mut self_t.bin_pool,&font_text)?;
         }else {
             return Err(RedLang::make_err("字体参数必须是字节集类型"));
         }
@@ -1333,9 +1282,7 @@ pub fn init_ex_fun_map() {
                 }
             }
         }
-        let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img));
         return Ok(Some(ret));
     });
     add_fun(vec!["文字转图片","文字转图像"],|self_t,params|{
@@ -1355,7 +1302,7 @@ pub fn init_ex_fun_map() {
         let font_type = self_t.get_type(&font_text)?;
         let font_dat;
         if font_type == "字节集" {
-            font_dat = RedLang::parse_bin(&font_text)?;
+            font_dat = RedLang::parse_bin(&mut self_t.bin_pool,&font_text)?;
         }else {
             return Err(RedLang::make_err("字体参数必须是字节集类型"));
         }
@@ -1445,15 +1392,12 @@ pub fn init_ex_fun_map() {
                 }
             }
         }
-        let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img));
         return Ok(Some(ret));
     });
     add_fun(vec!["图片嵌字","图像嵌字"],|self_t,params|{
         let image_text = self_t.get_param(params, 0)?;
-        let img_vec = RedLang::parse_bin(&image_text)?;
-        let mut img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,mut img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&image_text)?;
         let text = self_t.get_param(params, 1)?;
         let text_x = self_t.get_param(params, 2)?.parse::<i32>()?;
         let text_y = self_t.get_param(params, 3)?.parse::<i32>()?;
@@ -1473,7 +1417,7 @@ pub fn init_ex_fun_map() {
         let font_type = self_t.get_type(&font_text)?;
         let font_dat;
         if font_type == "字节集" {
-            font_dat = RedLang::parse_bin(&font_text)?;
+            font_dat = RedLang::parse_bin(&mut self_t.bin_pool,&font_text)?;
         }else{
             return Err(RedLang::make_err("字体参数必须是字节集类型"));
         }
@@ -1527,9 +1471,7 @@ pub fn init_ex_fun_map() {
                 }
             }
         }
-        let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img));
         return Ok(Some(ret));
     });
     add_fun(vec!["创建图片","创建图像"],|self_t,params|{
@@ -1549,49 +1491,37 @@ pub fn init_ex_fun_map() {
                 pix.0 = color.0;
             }
         }
-        let mut bytes: Vec<u8> = Vec::new();
-        img.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img));
         return Ok(Some(ret));
     });
     add_fun(vec!["水平翻转"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
-        let img_vec = RedLang::parse_bin(&text1)?;
-        let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
         let img_out = image::imageops::flip_horizontal(&img);
-        let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_out));
         return Ok(Some(ret));
     });
     add_fun(vec!["垂直翻转"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
-        let img_vec = RedLang::parse_bin(&text1)?;
-        let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
         let img_out = image::imageops::flip_vertical(&img);
-        let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_out));
         return Ok(Some(ret));
     });
     add_fun(vec!["图像旋转","图片旋转"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
-        let img_vec = RedLang::parse_bin(&text1)?;
+        let (_,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
         let theta = text2.parse::<f32>()? / 360.0 * (2.0 * std::f32::consts::PI);
-        let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
         let img_out = rotate_about_center(&img,theta,Interpolation::Bilinear,Rgba([0,0,0,0]));
-        let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_out));
         return Ok(Some(ret));
     });
     add_fun(vec!["完整图像旋转","完整图片旋转"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
-        let img_vec = RedLang::parse_bin(&text1)?;
+        let (_,img_sub) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
         let theta = text2.parse::<f32>()? / 360.0 * (2.0 * std::f32::consts::PI);
-        let img_sub = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
         let img_width = img_sub.width();
         let img_height = img_sub.height();
         let (sin_val,cos_val) = theta.sin_cos();
@@ -1606,17 +1536,14 @@ pub fn init_ex_fun_map() {
         image::imageops::overlay(&mut img_big, &img_sub, ((max_wh - img_width) / 2).into() , ((max_wh - img_height) / 2).into());
         let mut img_out_t = rotate_about_center(&img_big,theta,Interpolation::Bilinear,Rgba([0,0,0,0]));
         let img_out = image::imageops::crop(&mut img_out_t,((max_wh - max_width * 2) / 2).into(),((max_wh - max_height * 2) / 2).into(),max_width * 2,max_height * 2).to_image();
-        let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_out));
         return Ok(Some(ret));
     });
     add_fun(vec!["图像大小调整","图片大小调整"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let mut width = self_t.get_param(params, 1)?.parse::<u32>()?;
         let mut height = self_t.get_param(params, 2)?.parse::<u32>()?;
-        let img_vec = RedLang::parse_bin(&text1)?;
-        let img = ImageReader::new(Cursor::new(img_vec)).with_guessed_format()?.decode()?.to_rgba8();
+        let (_,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
         if width == 0 && height != 0 {
             let k = (height as f64) / (img.height() as f64);
             width = ((img.width() as f64) * k).round() as u32;
@@ -1627,9 +1554,7 @@ pub fn init_ex_fun_map() {
             return Err(RedLang::make_err("目标图片高和宽均为0，无法调整大小"));
         }
         let img_out = image::imageops::resize(&img, width, height, image::imageops::FilterType::Nearest);
-        let mut bytes: Vec<u8> = Vec::new();
-        img_out.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        let ret = self_t.build_bin(bytes);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_out));
         return Ok(Some(ret));
     });
     add_fun(vec!["转大写"],|self_t,params|{
@@ -1712,7 +1637,7 @@ pub fn init_ex_fun_map() {
         let tp = self_t.get_type(&path)?;
         let conf;
         if tp == "字节集" {
-            let ini_bin = RedLang::parse_bin(&path)?;
+            let ini_bin = RedLang::parse_bin(&mut self_t.bin_pool,&path)?;
             conf = Ini::load_from_str(&String::from_utf8(ini_bin)?)?;
         } else {
             if Path::new(&path).exists() {
@@ -1752,7 +1677,7 @@ pub fn init_ex_fun_map() {
         let tp = self_t.get_type(&path)?;
         let conf;
         if tp == "字节集" {
-            let ini_bin = RedLang::parse_bin(&path)?;
+            let ini_bin = RedLang::parse_bin(&mut self_t.bin_pool,&path)?;
             conf = Ini::load_from_str(&String::from_utf8(ini_bin)?)?;
         } else {
             if Path::new(&path).exists() {
@@ -1814,7 +1739,7 @@ pub fn init_ex_fun_map() {
             del_file_lock(&path);
         });
         let mut f = fs::File::create(path)?;
-        let bin = RedLang::parse_bin(&bin_data)?;
+        let bin = RedLang::parse_bin(&mut self_t.bin_pool,&bin_data)?;
         std::io::Write::write_all(&mut f, bin.as_bytes())?;
         return Ok(Some("".to_string()));
     });
@@ -1833,7 +1758,7 @@ pub fn init_ex_fun_map() {
         }else {
             f = fs::File::create(path)?;
         }
-        let bin = RedLang::parse_bin(&bin_data)?;
+        let bin = RedLang::parse_bin(&mut self_t.bin_pool,&bin_data)?;
         std::io::Write::write_all(&mut f, bin.as_bytes())?;
         return Ok(Some("".to_string()));
     });
@@ -2798,7 +2723,7 @@ pub fn init_ex_fun_map() {
             s.reverse();
             ret = String::from_iter(s);
         } else if tp == "字节集" {
-            let mut bin = RedLang::parse_bin(&to_rev)?;
+            let mut bin = RedLang::parse_bin(&mut self_t.bin_pool,&to_rev)?;
             bin.reverse();
             ret = self_t.build_bin(bin);
         } else {
@@ -2866,7 +2791,7 @@ pub fn init_ex_fun_map() {
         }
         let bin_text = self_t.get_param(params, 0)?;
         let filename = self_t.get_param(params, 1)?;
-        let mut bin = RedLang::parse_bin(&bin_text)?;
+        let mut bin = RedLang::parse_bin(&mut self_t.bin_pool,&bin_text)?;
         let url = "https://catbox.moe/user/api.php";
         match access(self_t,&filename,&url,&mut bin) {
             Ok(ret) => Ok(Some(ret)),

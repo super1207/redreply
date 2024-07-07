@@ -129,7 +129,7 @@ pub fn do_http_event(req:hyper::Request<hyper::body::Incoming>,can_write:bool,ca
             let mut res:hyper::Response<BoxBody>;
             if rl.get_type(&rl_ret)? == "字节集" {
                 http_header.insert("Content-Type", "application/octet-stream");
-                res = hyper::Response::new(crate::httpserver::full(RedLang::parse_bin(&rl_ret)?));
+                res = hyper::Response::new(crate::httpserver::full(RedLang::parse_bin(&mut rl.bin_pool,&rl_ret)?));
             } else {
                 http_header.insert("Content-Type", "text/html; charset=utf-8");
                 res = hyper::Response::new(crate::httpserver::full(rl_ret));

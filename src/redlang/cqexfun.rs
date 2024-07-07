@@ -306,7 +306,7 @@ pub fn init_cq_ex_fun_map() {
         let tp = self_t.get_type(&pic)?;
         let mut ret:String = String::new();
         if tp == "字节集" {
-            let bin = RedLang::parse_bin(&pic)?;
+            let bin = RedLang::parse_bin(&mut self_t.bin_pool,&pic)?;
             let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
             ret = format!("[CQ:image,file=base64://{}]",b64_str);
         }else if tp == "文本" {
@@ -331,7 +331,7 @@ pub fn init_cq_ex_fun_map() {
         let tp = self_t.get_type(&pic)?;
         let mut ret:String = String::new();
         if tp == "字节集" {
-            let bin = RedLang::parse_bin(&pic)?;
+            let bin = RedLang::parse_bin(&mut self_t.bin_pool,&pic)?;
             let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
             ret = format!("[CQ:record,file=base64://{}]",b64_str);
         }else if tp == "文本" {
@@ -356,7 +356,7 @@ pub fn init_cq_ex_fun_map() {
         let tp = self_t.get_type(&pic)?;
         let mut ret:String = String::new();
         if tp == "字节集" {
-            let bin = RedLang::parse_bin(&pic)?;
+            let bin = RedLang::parse_bin(&mut self_t.bin_pool,&pic)?;
             let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
             ret = format!("[CQ:video,file=base64://{}]",b64_str);
         }else if tp == "文本" {
@@ -511,7 +511,7 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["定义常量"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
         let v = self_t.get_param(params, 1)?;
-        set_const_val(&self_t.pkg_name, &k, v)?;
+        set_const_val(&mut self_t.bin_pool,&self_t.pkg_name, &k, v)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["常量"],|self_t,params|{
@@ -530,7 +530,7 @@ pub fn init_cq_ex_fun_map() {
         let v = self_t.get_param(params, 1)?;
         let mut  tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
         tm += self_t.get_param(params, 2)?.parse::<u128>()?;
-        set_temp_const_val(&self_t.pkg_name, &k, v,tm)?;
+        set_temp_const_val(&mut self_t.bin_pool,&self_t.pkg_name, &k, v,tm)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["临时常量"],|self_t,params|{
@@ -1088,7 +1088,7 @@ pub fn init_cq_ex_fun_map() {
                 return Err("主人数组的元素必须为全为文本类型".into());
             }
         }
-        crate::redlang::set_const_val(&self_t.pkg_name, "0b863263-484c-4447-9990-0469186b3d97", master_arr_str)?;
+        crate::redlang::set_const_val(&mut self_t.bin_pool,&self_t.pkg_name, "0b863263-484c-4447-9990-0469186b3d97", master_arr_str)?;
         return Ok(Some("".to_string()));
     });
 }

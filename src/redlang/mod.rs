@@ -1,7 +1,8 @@
 use std::{any::Any, cell::RefCell, collections::{BTreeMap, HashMap, HashSet, VecDeque}, error, ffi::{c_char, c_int, CStr, CString}, fmt, rc::Rc, sync::Arc, thread, time::SystemTime, vec};
 use encoding::Encoding;
+use image::{ImageBuffer, Rgba};
 
-use crate::{cqapi::cq_add_log_w, cqevent::do_script, G_CONST_MAP, G_LOCK, G_TEMP_CONST_MAP};
+use crate::{cqapi::cq_add_log_w, cqevent::do_script, G_CONST_MAP, G_LOCK, G_TEMP_CONST_MAP, REDLANG_UUID};
 use libloading::Symbol;
 
 pub mod exfun;
@@ -38,15 +39,23 @@ struct RedLangVarType {
     dat:Box<dyn Any>
 }
 
-fn set_const_val(pkg_name:&str,val_name:&str,val:String) -> Result<(), Box<dyn std::error::Error>> {
+fn set_const_val(bin_pool:&mut HashMap<String, RedLangBinPoolVarType>,pkg_name:&str,val_name:&str,val:String) -> Result<(), Box<dyn std::error::Error>> {
     let mut g_map = G_CONST_MAP.write()?;
     let val_map = g_map.get_mut(pkg_name);
+    let uid = REDLANG_UUID.to_string();
+    let val_t;
+    if val.starts_with(&(uid.clone() + "B96ad849c-8e7e-7886-7742-e4e896cc5b86")) { // 特殊字节集类型
+        let b = RedLang::parse_bin(bin_pool,&val)?;
+        val_t = RedLang::build_bin_with_uid(&uid, b);
+    }else {
+        val_t = val;
+    }
     if val_map.is_none() {
         let mut mp = HashMap::new();
-        mp.insert(val_name.to_owned(), val);
+        mp.insert(val_name.to_owned(), val_t);
         g_map.insert(pkg_name.to_owned(), mp);
     }else {
-        val_map.unwrap().insert(val_name.to_owned(), val);
+        val_map.unwrap().insert(val_name.to_owned(), val_t);
     }
     Ok(())
 }
@@ -62,15 +71,23 @@ fn get_const_val(pkg_name:&str,val_name:&str) -> Result<String, Box<dyn std::err
     }
 }
 
-fn set_temp_const_val(pkg_name:&str,val_name:&str,val:String,expire_time:u128) -> Result<(), Box<dyn std::error::Error>> {
+fn set_temp_const_val(bin_pool:&mut HashMap<String, RedLangBinPoolVarType>,pkg_name:&str,val_name:&str,val:String,expire_time:u128) -> Result<(), Box<dyn std::error::Error>> {
     let mut g_map = G_TEMP_CONST_MAP.write()?;
     let val_map = g_map.get_mut(pkg_name);
+    let uid = REDLANG_UUID.to_string();
+    let val_t;
+    if val.starts_with(&(uid.clone() + "B96ad849c-8e7e-7886-7742-e4e896cc5b86")) { // 特殊字节集类型
+        let b = RedLang::parse_bin(bin_pool,&val)?;
+        val_t = RedLang::build_bin_with_uid(&uid, b);
+    }else {
+        val_t = val;
+    }
     if val_map.is_none() {
         let mut mp = HashMap::new();
-        mp.insert(val_name.to_owned(), (val,expire_time));
+        mp.insert(val_name.to_owned(), (val_t,expire_time));
         g_map.insert(pkg_name.to_owned(), mp);
     }else {
-        val_map.unwrap().insert(val_name.to_owned(), (val,expire_time));
+        val_map.unwrap().insert(val_name.to_owned(), (val_t,expire_time));
     }
     Ok(())
 }
@@ -128,7 +145,7 @@ impl RedLangVarType {
         }
         return self.show_str.clone();
     }
-    pub fn set_string(&mut self,dat_str:String) -> Result<(), Box<dyn std::error::Error>>{
+    pub fn set_string(&mut self,bin_pool:&mut HashMap<String, RedLangBinPoolVarType>,dat_str:String) -> Result<(), Box<dyn std::error::Error>>{
         let uid = crate::REDLANG_UUID.to_string();
         if dat_str.starts_with(&(uid.clone() + "A")) {
             let t = RedLang::parse_arr(&dat_str)?;
@@ -143,7 +160,11 @@ impl RedLangVarType {
             self.dat = Box::new(RedLang::parse_obj(&dat_str)?);
             self.show_str = Rc::new(dat_str);
         }else if dat_str.starts_with(&(uid.clone() + "B")) {
-            self.dat = Box::new(RedLang::parse_bin(&dat_str)?);
+            if dat_str.starts_with(&(uid.clone() + "B96ad849c-8e7e-7886-7742-e4e896cc5b86")) {
+                self.dat = Box::new(RedLang::parse_img_bin(bin_pool,&dat_str)?);
+            } else {
+                self.dat = Box::new(RedLang::parse_bin(bin_pool,&dat_str)?);
+            }
             self.show_str = Rc::new(dat_str);
         }else if dat_str.starts_with(&(uid + "F")) {
             self.dat = Box::new(dat_str.clone());
@@ -337,6 +358,12 @@ impl RedLangVarType {
 
 }
 
+
+pub struct RedLangBinPoolVarType {
+    pub type_t:String,
+    pub dat:Box<dyn Any>
+}
+
 pub struct RedLang {
     var_vec: Vec<HashMap<String,  Rc<RefCell<RedLangVarType>>>>, //变量栈
     xh_vec: Vec<[bool; 2]>,                // 循环控制栈
@@ -353,6 +380,7 @@ pub struct RedLang {
     pub can_wrong:bool,
     stack:VecDeque<String>,
     scriptcallstackdeep:Rc::<RefCell<usize>>, // 记录脚本调用栈的深度
+    pub bin_pool:HashMap<String, RedLangBinPoolVarType>,
 }
 
 #[derive(Debug, Clone)]
@@ -473,7 +501,7 @@ pub fn init_core_fun_map() {
         let var_vec_len = self_t.var_vec.len();
         let mp = &mut self_t.var_vec[var_vec_len - 1];
         let mut var = RedLangVarType::new();
-        var.set_string(v)?;
+        var.set_string(&mut self_t.bin_pool,v)?;
         mp.insert(k, Rc::new(RefCell::new(var)));
         return Ok(Some("".to_string()));
     });
@@ -501,7 +529,7 @@ pub fn init_core_fun_map() {
             let mp = &mut self_t.var_vec[var_vec_len - i - 1];
             let v_opt = mp.get_mut(&k);
             if let Some(val) = v_opt {
-                (**val).borrow_mut().set_string((*vvv_rc).borrow().to_owned())?;
+                (**val).borrow_mut().set_string(&mut self_t.bin_pool,(*vvv_rc).borrow().to_owned())?;
                 is_set = true;
                 break;
             }
@@ -510,7 +538,7 @@ pub fn init_core_fun_map() {
             let var_vec_len = self_t.var_vec.len();
             let mp = &mut self_t.var_vec[var_vec_len - 1];
             let mut var = RedLangVarType::new();
-            var.set_string((*vvv_rc).borrow().to_owned())?;
+            var.set_string(&mut self_t.bin_pool,(*vvv_rc).borrow().to_owned())?;
             mp.insert(k, Rc::new(RefCell::new(var)));
         }
         return Ok(Some("".to_string()));
@@ -1147,7 +1175,7 @@ pub fn init_core_fun_map() {
             let ret_str:String;
             let code_t = self_t.get_param(params, 1)?;
             let code = code_t.to_lowercase();
-            let u8_vec = RedLang::parse_bin(data)?;
+            let u8_vec = RedLang::parse_bin(&mut self_t.bin_pool,data)?;
             if code == "" || code == "utf8" {
                 ret_str = String::from_utf8(u8_vec)?;
             }else if code == "gbk" {
@@ -1209,7 +1237,7 @@ pub fn init_core_fun_map() {
 
             }else if tp == "字节集" {
                 let el_t = self_t.get_param(params, i + 1)?;
-                let el = RedLang::parse_bin(&el_t)?;
+                let el = RedLang::parse_bin(&mut self_t.bin_pool,&el_t)?;
                 let mut  v = (*data).borrow_mut();
                 v.add_bin(el)?;
             }else{
@@ -1251,7 +1279,7 @@ pub fn init_core_fun_map() {
         }else if tp == "字节集" {
             let index = k_name.parse::<usize>()?;
             let mut v = (*data).borrow_mut();
-            let bt = RedLang::parse_bin(&v_name)?;
+            let bt = RedLang::parse_bin(&mut self_t.bin_pool,&v_name)?;
             if bt.len() != 1 {
                 return Err(RedLang::make_err("替换字节集元素时值的长度不为1"));
             }
@@ -1631,7 +1659,7 @@ pub fn init_core_fun_map() {
                 let v_str: Rc<String> = v.get_string();
                 let mut v_num = v_str.parse::<i64>()?;
                 v_num += number;
-                v.set_string(v_num.to_string())?;
+                v.set_string(&mut self_t.bin_pool,v_num.to_string())?;
                 break;
             }
         }
@@ -1783,7 +1811,7 @@ let k = &*self.exmap;
         let var_vec_len = self.var_vec.len();
         let mp = &mut self.var_vec[var_vec_len - 1];
         let mut var = RedLangVarType::new();
-        var.set_string(val.to_owned())?;
+        var.set_string(&mut self.bin_pool,val.to_owned())?;
         mp.insert(format!("{}46631549-6D26-68A5-E192-5EBE9A6EBA61", key), Rc::new(RefCell::new(var)));
         Ok(())
     }
@@ -2029,7 +2057,7 @@ let k = &*self.exmap;
         }
         Ok(ret_str)
     }
-    pub fn parse_bin(bin_data: & str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    pub fn parse_img_bin(bin_pool:&mut HashMap<String, RedLangBinPoolVarType>,bin_data: & str) -> Result<(image::ImageFormat,ImageBuffer<Rgba<u8>, Vec<u8>>), Box<dyn std::error::Error>> {
         let err_str = "不能获得字节集类型";
         if !bin_data.starts_with(&crate::REDLANG_UUID.to_string()) {
             return Err(RedLang::make_err(err_str));
@@ -2038,29 +2066,93 @@ let k = &*self.exmap;
         if tp != "B" {
             return Err(RedLang::make_err(err_str));
         }
-        let content_text = bin_data.get(37..).ok_or(err_str)?.as_bytes();
-        if content_text.len() % 2 != 0 {
+        let content_text = bin_data.get(37..).ok_or(err_str)?;
+        if content_text.starts_with("96ad849c-8e7e-7886-7742-e4e896cc5b86") { // 图片bin，直接返回
+            let bin_pool_key = content_text.get(36..).ok_or(err_str)?;
+            let bin_obj = bin_pool.get_mut(bin_pool_key).ok_or(err_str)?;
+            if bin_obj.type_t == "img" {
+                let mm = bin_obj.dat.downcast_mut::<(image::ImageFormat,ImageBuffer<Rgba<u8>, Vec<u8>>)>().unwrap();
+                return Ok(mm.to_owned());
+            }
+            return Err(RedLang::make_err(err_str));
+        } else { // 普通的bin，要转成图片
+            let content_text = content_text.as_bytes();
+            if content_text.len() % 2 != 0 {
+                return Err(RedLang::make_err(err_str));
+            }
+            let mut content2:Vec<u8> = vec![];
+            for pos in 0..(content_text.len() / 2) {
+                let mut ch1 = content_text[pos * 2];
+                let mut ch2 = content_text[pos * 2 + 1];
+                if ch1 < 0x3A {
+                    ch1 -= 0x30;
+                }else{
+                    ch1 -= 0x41;
+                    ch1 += 10;
+                }
+                if ch2 < 0x3A {
+                    ch2 -= 0x30;
+                }else{
+                    ch2 -= 0x41;
+                    ch2 += 10;
+                }
+                content2.push((ch1 << 4) + ch2);
+            }
+            // 转成图片
+            use image::io::Reader as ImageReader;
+            let img_t = ImageReader::new(std::io::Cursor::new(content2)).with_guessed_format()?;
+            let img_fmt: image::ImageFormat  = img_t.format().ok_or("不能识别的图片格式")?;
+            let img = img_t.decode()?.to_rgba8();
+            return Ok((img_fmt,img));
+        }
+    }
+
+    pub fn parse_bin(bin_pool:&mut HashMap<String, RedLangBinPoolVarType>,bin_data: & str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        let err_str = "不能获得字节集类型";
+        if !bin_data.starts_with(&crate::REDLANG_UUID.to_string()) {
             return Err(RedLang::make_err(err_str));
         }
-        let mut content2:Vec<u8> = vec![];
-        for pos in 0..(content_text.len() / 2) {
-            let mut ch1 = content_text[pos * 2];
-            let mut ch2 = content_text[pos * 2 + 1];
-            if ch1 < 0x3A {
-                ch1 -= 0x30;
-            }else{
-                ch1 -= 0x41;
-                ch1 += 10;
-            }
-            if ch2 < 0x3A {
-                ch2 -= 0x30;
-            }else{
-                ch2 -= 0x41;
-                ch2 += 10;
-            }
-            content2.push((ch1 << 4) + ch2);
+        let tp = bin_data.get(36..37).ok_or(err_str)?;
+        if tp != "B" {
+            return Err(RedLang::make_err(err_str));
         }
-        return Ok(content2);
+        let content_text = bin_data.get(37..).ok_or(err_str)?;
+        if content_text.starts_with("96ad849c-8e7e-7886-7742-e4e896cc5b86") { // 图片bin
+            let bin_pool_key = content_text.get(36..).ok_or(err_str)?;
+            let bin_obj = bin_pool.get_mut(bin_pool_key).ok_or(err_str)?;
+            if bin_obj.type_t == "img" {
+                let mm = bin_obj.dat.downcast_mut::<(image::ImageFormat,ImageBuffer<Rgba<u8>, Vec<u8>>)>().unwrap();
+                let mut bytes: Vec<u8> = Vec::new();
+                mm.1.write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)?;
+                return Ok(bytes);
+            }
+            return Err(RedLang::make_err(err_str));
+        } else { // 普通的bin
+            let content_text = content_text.as_bytes();
+            if content_text.len() % 2 != 0 {
+                return Err(RedLang::make_err(err_str));
+            }
+            let mut content2:Vec<u8> = vec![];
+            for pos in 0..(content_text.len() / 2) {
+                let mut ch1 = content_text[pos * 2];
+                let mut ch2 = content_text[pos * 2 + 1];
+                if ch1 < 0x3A {
+                    ch1 -= 0x30;
+                }else{
+                    ch1 -= 0x41;
+                    ch1 += 10;
+                }
+                if ch2 < 0x3A {
+                    ch2 -= 0x30;
+                }else{
+                    ch2 -= 0x41;
+                    ch2 += 10;
+                }
+                content2.push((ch1 << 4) + ch2);
+            }
+            return Ok(content2);
+        }
+
     }
     pub fn parse_arr2<'a>(arr_data: &'a str,uuid:&str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {
         let err_str = "不能获得数组类型";
@@ -2166,6 +2258,7 @@ impl RedLang {
             can_wrong:true,
             stack:VecDeque::new(),
             scriptcallstackdeep: Rc::new(RefCell::new(0)),
+            bin_pool:HashMap::new()
         }
     }
 
@@ -2286,6 +2379,22 @@ impl RedLang {
     pub fn build_bin(&self,bin:Vec<u8>) ->String {
         return Self::build_bin_with_uid(&self.type_uuid,bin);
     }
+
+    pub fn build_img_bin(&mut self,img:(image::ImageFormat,ImageBuffer<Rgba<u8>, Vec<u8>>)) -> String   {
+        let mut ret_str = String::new();
+        ret_str.push_str(&self.type_uuid);
+        ret_str.push('B');
+        ret_str.push_str("96ad849c-8e7e-7886-7742-e4e896cc5b86");
+        let img_uuid = uuid::Uuid::new_v4().to_string();
+        ret_str.push_str(&img_uuid);
+        let bin_pool = &mut self.bin_pool;
+        bin_pool.insert(img_uuid, RedLangBinPoolVarType {
+            type_t:"img".to_owned(),
+            dat:Box::new((img.0,img.1))
+        });
+        return ret_str;
+    }
+
     pub fn build_bin_with_uid(uid:&str,bin:Vec<u8>) -> String {
         let mut ret_str = String::new();
         ret_str.push_str(uid);
