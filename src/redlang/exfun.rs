@@ -30,20 +30,19 @@ pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,p
     let uri = reqwest::Url::from_str(url)?;
     if proxy_str == "" {
         if uri.scheme() == "http" {
-            client = reqwest::Client::builder().no_proxy().build()?;
+            client = reqwest::Client::builder().no_proxy().http1_title_case_headers().build()?;
         } else {
-            client = reqwest::Client::builder().danger_accept_invalid_certs(true).no_proxy().build()?;
+            client = reqwest::Client::builder().danger_accept_invalid_certs(true).no_proxy().http1_title_case_headers().build()?;
         }
     }else {
         if uri.scheme() == "http" {
             let proxy = reqwest::Proxy::http(proxy_str)?;
-            client = reqwest::Client::builder().proxy(proxy).build()?;
+            client = reqwest::Client::builder().proxy(proxy).http1_title_case_headers().build()?;
         }else{
             let proxy = reqwest::Proxy::https(proxy_str)?;
-            client = reqwest::Client::builder().danger_accept_invalid_certs(true).proxy(proxy).build()?;
+            client = reqwest::Client::builder().danger_accept_invalid_certs(true).http1_title_case_headers().proxy(proxy).build()?;
         }
     }
-    
     let mut req;
     if method == "POST" {
         req = client.post(uri).body(reqwest::Body::from(data)).build()?;

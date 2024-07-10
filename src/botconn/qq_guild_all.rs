@@ -273,25 +273,33 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
                 msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
         }
-        else if tp == "video" {
+        else if tp == "video" { // only qq group
             let file = it.get("data").ok_or("data not found")?.get("file").ok_or("file not found")?.as_str().ok_or("file not a string")?;
-            if file.starts_with("http://") ||  file.starts_with("https://") {
                 let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/groups/{group_id}/files"))?;
-                let client = reqwest::Client::builder().no_proxy().build()?;
                 let json_data: serde_json::Value;
                 if file.starts_with("http://") ||  file.starts_with("https://") {
+                    let client = reqwest::Client::builder().no_proxy().build()?;
+                    let req = client.get(file).build()?;
+                    let ret = client.execute(req).await?;
+                    let retbin = ret.bytes().await?.to_vec();
+                    let b64_str = BASE64_CUSTOM_ENGINE.encode(retbin);
                     json_data = serde_json::json!({
                         "file_type":2, // 视频
-                        "url":file,
-                        "srv_send_msg":false
+                        "file_data":b64_str,
+                        "srv_send_msg":false,
                     });
                 } else { // base64://
+                    let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+                        &base64::alphabet::STANDARD,
+                        base64::engine::general_purpose::PAD), file.get(9..).ok_or("record not base64")?)?;
+                    let b64_str = BASE64_CUSTOM_ENGINE.encode(retbin);
                     json_data = serde_json::json!({
                         "file_type":2, // 视频
-                        "file_data":file.get(9..).ok_or("video not base64")?,
+                        "file_data":b64_str,
                         "srv_send_msg":false,
                     });
                 }
+                let client = reqwest::Client::builder().no_proxy().build()?;
                 let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
                 req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
                 req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
@@ -302,18 +310,34 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
                 crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
                 msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
-            }
         }
-        else if tp == "file" {
+        else if tp == "file" { // only qq group ，暂时不可用
             let file = it.get("data").ok_or("data not found")?.get("file").ok_or("file not found")?.as_str().ok_or("file not a string")?;
-            if file.starts_with("http://") ||  file.starts_with("https://") {
                 let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/groups/{group_id}/files"))?;
+                let json_data: serde_json::Value;
+                if file.starts_with("http://") ||  file.starts_with("https://") {
+                    let client = reqwest::Client::builder().no_proxy().build()?;
+                    let req = client.get(file).build()?;
+                    let ret = client.execute(req).await?;
+                    let retbin = ret.bytes().await?.to_vec();
+                    let b64_str = BASE64_CUSTOM_ENGINE.encode(retbin);
+                    json_data = serde_json::json!({
+                        "file_type":4, // 文件
+                        "file_data":b64_str,
+                        "srv_send_msg":false,
+                    });
+                } else { // base64://
+                    let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+                        &base64::alphabet::STANDARD,
+                        base64::engine::general_purpose::PAD), file.get(9..).ok_or("record not base64")?)?;
+                    let b64_str = BASE64_CUSTOM_ENGINE.encode(retbin);
+                    json_data = serde_json::json!({
+                        "file_type":4, // 文件
+                        "file_data":b64_str,
+                        "srv_send_msg":false,
+                    });
+                }
                 let client = reqwest::Client::builder().no_proxy().build()?;
-                let json_data = serde_json::json!({
-                    "file_type":4, // 文件（暂不可用）
-                    "url":file,
-                    "srv_send_msg":false
-                });
                 let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
                 req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",&self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
                 req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
@@ -322,9 +346,8 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 let ret = client.execute(req).await?;
                 let ret_str =  ret.text().await?; 
                 let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
-                crate::cqapi::cq_add_log(format!("接收qq guild API数据:{}", json_val.to_string()).as_str()).unwrap();
+                crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
                 msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
-            }
         }
         else if tp == "qmarkdown" {
             let markdown_data = it.get("data").ok_or("data not found")?.get("data").ok_or("markdown data not found")?.as_str().ok_or("markdown data not a string")?;

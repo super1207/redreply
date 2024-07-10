@@ -17,7 +17,7 @@ onebot11、olivos、satori、qq频道私区域(qqguild_private)、qq频道(qqgui
 
 websocket地址：`ws://localhost:[redport]:/onebot/[机器人平台]/[机器人账号]`
 
-如：`ws://localhost:1207/onebot/ntqqv1/1875159423`
+如：`ws://localhost:1207/onebot/onebot11/1875159423`
 
 当只有一个平台一个账号时，可以简写为(不推荐)：
 
