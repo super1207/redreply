@@ -3305,6 +3305,30 @@ def red_out(sw):
         })?;
         return Ok(Some(lua_ret));
     });
+    add_fun(vec!["TTS"],|self_t,params|{
+        fn to_audio(text:&str,player:&str) -> Result<Vec<u8>,Box<dyn std::error::Error>>{
+            let voices = msedge_tts::voice::get_voices_list()?;
+            for voice in &voices {
+                if voice.name.contains(player) {
+                    let config = msedge_tts::tts::SpeechConfig::from(voice);
+                    let mut tts = msedge_tts::tts::client::connect()?;
+                    let audio = tts
+                        .synthesize(text, &config)?;
+                    let bt = audio.audio_bytes;
+                    return Ok(bt);
+                }
+            }
+            return Err(format!("player `{player}` not found").into());
+        }
+        let text = self_t.get_param(params, 0)?;
+        let mut player = self_t.get_param(params, 1)?;
+        if player == "" {
+            player = "YunyangNeural".to_owned();
+        }
+        let bin_mp3 = to_audio(&text,&player)?;
+        let ret = self_t.build_bin(bin_mp3);
+        return Ok(Some(ret));
+    });
 }
 
 
