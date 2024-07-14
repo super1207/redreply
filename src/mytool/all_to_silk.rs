@@ -16,9 +16,9 @@ pub fn get_media_type(input:&Vec<u8>) -> &str{
         return "wav";
     }else if input.starts_with(&[73,68,51]) || input.starts_with(&[0xFF]){
         return "mp3";
-    }else if input.starts_with(&[0x66,0x41,0x61,0x43]) {
+    }else if input.starts_with(&[0x66,0x4C,0x61,0x43]) {
         return "flac";
-    }else if input.starts_with(".#!SILK_V3".as_bytes()){
+    }else if input.starts_with(&[0x02,0x23,0x21,0x53,0x49,0x4C,0x4B,0x5F,0x56,0x33]){
         return "silk";
     }else if input.starts_with(&[0x4F,0x67,0x67,0x53]) {
         return "ogg";
@@ -43,7 +43,7 @@ pub fn all_to_silk(input:&Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>
     }else if tp == "silk" {
         return Ok(input.to_owned());
     }else {
-                return Err("not support".into());
+        return Err("not support".into());
     }
     let silk = deal_silk::to_qq_silk(&pcm);
     return Ok(silk);

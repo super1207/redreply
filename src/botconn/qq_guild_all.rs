@@ -242,7 +242,9 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                     let req = client.get(file).build()?;
                     let ret = client.execute(req).await?;
                     let retbin = ret.bytes().await?.to_vec();
-                    let ret_silk = crate::mytool::all_to_silk::all_to_silk(&retbin).map_err(|_x|{"can't convert to silk".to_owned()})?;
+                    let ret_silk = crate::mytool::all_to_silk::all_to_silk(&retbin).map_err(|x|{
+                        format!("can't convert to silk:{:?}",x)
+                    })?;
                     let b64_str = BASE64_CUSTOM_ENGINE.encode(ret_silk);
                     json_data = serde_json::json!({
                         "file_type":3, // 语音
@@ -253,7 +255,9 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                     let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
                         &base64::alphabet::STANDARD,
                         base64::engine::general_purpose::PAD), file.get(9..).ok_or("record not base64")?)?;
-                    let ret_silk = crate::mytool::all_to_silk::all_to_silk(&retbin).map_err(|_x|{"can't convert to silk".to_owned()})?;
+                    let ret_silk = crate::mytool::all_to_silk::all_to_silk(&retbin).map_err(|x|{
+                        format!("can't convert to silk:{:?}",x)
+                    })?;
                     let b64_str = BASE64_CUSTOM_ENGINE.encode(ret_silk);
                     json_data = serde_json::json!({
                         "file_type":3, // 语音
