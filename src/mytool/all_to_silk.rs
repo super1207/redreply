@@ -1,6 +1,6 @@
 use std::io::BufReader;
 
-use super::{deal_flac, deal_silk, mp3_deal, wav_deal};
+use super::{deal_flac, deal_silk, mp3_deal, wav_deal,deal_ogg};
 
 
 #[derive(Debug)]
@@ -18,9 +18,11 @@ pub fn get_media_type(input:&Vec<u8>) -> &str{
         return "mp3";
     }else if input.starts_with(&[0x66,0x41,0x61,0x43]) {
         return "flac";
-    }else if input.starts_with("#!SILK".as_bytes()){
+    }else if input.starts_with(".#!SILK_V3".as_bytes()){
         return "silk";
-    }else{
+    }else if input.starts_with(&[0x4F,0x67,0x67,0x53]) {
+        return "ogg";
+    } else{
         return "";
     }
 }
@@ -36,10 +38,12 @@ pub fn all_to_silk(input:&Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>
         pcm = mp3_deal::deal_mp3(BufReader::new(&input[..]))?;
     }else if tp == "flac" {
         pcm = deal_flac::deal_flac(BufReader::new(&input[..]))?;
+    }else if tp == "ogg" {
+        pcm = deal_ogg::deal_ogg(BufReader::new(&input[..]))?;
     }else if tp == "silk" {
         return Ok(input.to_owned());
     }else {
-        return Err("not support".into());
+                return Err("not support".into());
     }
     let silk = deal_silk::to_qq_silk(&pcm);
     return Ok(silk);

@@ -3,6 +3,7 @@ mod deal_flac;
 mod deal_silk;
 mod wav_deal;
 mod mp3_deal;
+mod deal_ogg;
 
 use std::{collections::HashMap, str::FromStr};
 

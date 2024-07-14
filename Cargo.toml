@@ -68,6 +68,7 @@ ab_glyph = "0.2.26"
 claxon = "0.4.3"
 minimp3 = "0.5.1"
 silk-rs = "0.2.0"
+lewton = "0.10.2"
 
 msedge-tts = "0.2.1"
 
