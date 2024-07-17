@@ -116,7 +116,7 @@ impl Satoriv1Connect {
                     let img_str = tag.attributes().get("src").ok_or("No src at img element")?.ok_or("No src at img element")?.as_utf8_str();
                     let img = html_escape::decode_html_entities(&img_str);
                     let cq_img =  cq_params_encode(&img);
-                    out += &format!("[CQ:img,file={cq_img},url={cq_img}]");
+                    out += &format!("[CQ:image,file={cq_img},url={cq_img}]");
                 }
             } else{
                 let text_str = child.as_raw().ok_or("No text at at element")?.as_utf8_str();
