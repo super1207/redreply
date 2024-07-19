@@ -1697,6 +1697,42 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some(self_t.build_arr(to_ret_vec)));
     });
+
+    add_fun(vec!["读配置键"],|self_t,params|{
+        let path = self_t.get_param(params, 0)?;
+        let section_name = self_t.get_param(params, 1)?;
+        let tp = self_t.get_type(&path)?;
+        let conf;
+        if tp == "字节集" {
+            let ini_bin = RedLang::parse_bin(&mut self_t.bin_pool,&path)?;
+            conf = Ini::load_from_str(&String::from_utf8(ini_bin)?)?;
+        } else {
+            if Path::new(&path).exists() {
+                add_file_lock(&path);
+                let _guard = scopeguard::guard(path.clone(), |path| {
+                    del_file_lock(&path);
+                });
+                conf = Ini::load_from_file(path)?;
+            } else {
+                return Ok(Some(self_t.build_arr(vec![])));
+            }
+        }
+        let mut to_ret_vec = vec![];
+        if let Some(section) = conf.section(Some(section_name)) {
+            for (key,val) in section.into_iter() {
+                let mut temp = BTreeMap::new();
+                temp.insert(key.to_owned(), val.to_owned());
+                let t = self_t.build_obj(temp);
+                to_ret_vec.push(t);
+            }
+        }else{
+            return Ok(Some(self_t.build_arr(vec![])));
+        }
+        let bind = to_ret_vec.iter().map(|t|{
+            return t.as_ref();
+        }).collect();
+        return Ok(Some(self_t.build_arr(bind)));
+    });
     
     add_fun(vec!["写配置"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;

@@ -810,6 +810,25 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 读一个以UTF-8编码的INI文件，返回节名数组，若文件不存在或者无节，返回空数组。若已有文件解析失败则抛出异常。
 
 
+### 读配置键
+
+
+【读配置键@<font color="red">INI文件路径</font>@<font color="red">节名</font>】
+
+【读配置键@<font color="red">INI格式的字节集</font>@<font color="red">节名</font>】
+
+读一个以UTF-8编码的INI文件下某节的内容，返回的是一个数组，包含此节下的所有键值对，若文件不存在或者无对应节，返回空数组。若已有文件解析失败则抛出异常。
+
+如应用目录下有xxx.ini文件：
+```
+[kkk]
+aaa=1
+ccc=3
+bbb=2
+```
+代码：`【转文本【读配置键【应用目录】xxx.ini@kkk】】`将返回`[{"aaa":"1"},{"ccc":"3"},{"bbb":"2"}]`。
+
+
 ### 写配置
 
 
