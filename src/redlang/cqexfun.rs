@@ -921,7 +921,8 @@ pub fn init_cq_ex_fun_map() {
         // 创建表
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
-
+        let sql_file = crate::mytool::path_to_os_str(&sql_file);
+        
         add_file_lock(&sql_file);
         let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
             del_file_lock(&sql_file);
@@ -960,6 +961,7 @@ pub fn init_cq_ex_fun_map() {
         // 创建表
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
+        let sql_file = crate::mytool::path_to_os_str(&sql_file);
 
         add_file_lock(&sql_file);
         let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
@@ -984,6 +986,7 @@ pub fn init_cq_ex_fun_map() {
         // 查询积分
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
+        let sql_file = crate::mytool::path_to_os_str(&sql_file);
 
         add_file_lock(&sql_file);
         let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
@@ -1017,6 +1020,7 @@ pub fn init_cq_ex_fun_map() {
         // 查询积分
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
+        let sql_file = crate::mytool::path_to_os_str(&sql_file);
 
         add_file_lock(&sql_file);
         let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {

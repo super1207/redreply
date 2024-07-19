@@ -170,7 +170,7 @@ pub fn show_dir_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
 pub fn add_egg_click() -> Result<i64,Box<dyn std::error::Error + Send + Sync>> {
     let app_dir = crate::cqapi::cq_get_app_directory1()?;
     let sql_file = app_dir + "reddat.db";
-
+    let sql_file = mytool::path_to_os_str(&sql_file);
     add_file_lock(&sql_file);
     let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
         del_file_lock(&sql_file);
@@ -852,7 +852,7 @@ pub fn init_code() -> Result<(), Box<dyn std::error::Error + Send + Sync>>{
 fn get_gobal_filter_code_from_sql() -> Result<String, Box<dyn std::error::Error>> {
     let app_dir = crate::cqapi::cq_get_app_directory1().unwrap();
     let sql_file = app_dir + "reddat.db";
-
+    let sql_file = mytool::path_to_os_str(&sql_file);
     add_file_lock(&sql_file);
     let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
         del_file_lock(&sql_file);
@@ -873,7 +873,7 @@ fn get_gobal_filter_code_from_sql() -> Result<String, Box<dyn std::error::Error>
 pub fn set_gobal_filter_code(code:&str) -> Result<(), Box<dyn std::error::Error>> {
     let app_dir = crate::cqapi::cq_get_app_directory1().unwrap();
     let sql_file = app_dir + "reddat.db";
-
+    let sql_file = mytool::path_to_os_str(&sql_file);
     add_file_lock(&sql_file);
     let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
         del_file_lock(&sql_file);

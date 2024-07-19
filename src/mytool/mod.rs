@@ -330,6 +330,13 @@ pub fn deal_path_str(path_str:&str) -> &str {
 }
 
 
+pub fn path_to_os_str(path_str:&str) -> String {
+    let new_str = path_str.replace("\\", std::path::MAIN_SEPARATOR.to_string().as_str());
+    let ret_str = new_str.replace("/", std::path::MAIN_SEPARATOR.to_string().as_str());
+    ret_str
+}
+
+
 pub async fn github_proxy() -> Option<String> {
     let urls_to_test = ["https://mirror.ghproxy.com/", "https://github.moeyy.xyz/","https://github.moeyy.cn/",""];
     let (tx, mut rx) =  tokio::sync::mpsc::channel(urls_to_test.len() + 1);

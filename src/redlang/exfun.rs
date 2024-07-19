@@ -447,6 +447,8 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["读文件"],|self_t,params|{
         let file_path = self_t.get_param(params, 0)?;
+        let file_path = crate::mytool::path_to_os_str(&file_path);
+
         let path = Path::new(&file_path);
         if !path.exists() {
             return Ok(Some(self_t.build_bin(vec![])));
@@ -1630,6 +1632,7 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["读配置"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
+        let path = crate::mytool::path_to_os_str(&path);
         let section = self_t.get_param(params, 1)?;
         let key = self_t.get_param(params, 2)?;
 
@@ -1672,6 +1675,7 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["读配置节"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
+        let path = crate::mytool::path_to_os_str(&path);
 
         let tp = self_t.get_type(&path)?;
         let conf;
@@ -1700,6 +1704,8 @@ pub fn init_ex_fun_map() {
 
     add_fun(vec!["读配置键"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
+        let path = crate::mytool::path_to_os_str(&path);
+
         let section_name = self_t.get_param(params, 1)?;
         let tp = self_t.get_type(&path)?;
         let conf;
@@ -1736,6 +1742,7 @@ pub fn init_ex_fun_map() {
     
     add_fun(vec!["写配置"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
+        let path = crate::mytool::path_to_os_str(&path);
         let section = self_t.get_param(params, 1)?;
         let key = self_t.get_param(params, 2)?;
         let value = self_t.get_param(params, 3)?;
@@ -1766,6 +1773,7 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["写文件"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
+        let path = crate::mytool::path_to_os_str(&path);
         let bin_data = self_t.get_param(params, 1)?;
         let parent_path = Path::new(&path).parent().ok_or("写文件：无法创建目录或文件")?;
         fs::create_dir_all(parent_path)?;
@@ -1780,6 +1788,7 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["追加文件"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
+        let path = crate::mytool::path_to_os_str(&path);
         let bin_data = self_t.get_param(params, 1)?;
         let parent_path = Path::new(&path).parent().ok_or("写文件：无法创建目录或文件")?;
         fs::create_dir_all(parent_path)?;
@@ -2047,6 +2056,7 @@ pub fn init_ex_fun_map() {
     
     add_fun(vec!["运行SQL"],|self_t,params|{
         let sql_file = self_t.get_param(params, 0)?;
+        let sql_file = crate::mytool::path_to_os_str(&sql_file);
         let sql = self_t.get_param(params, 1)?;
         let sql_params_str = self_t.get_param(params, 2)?;
                 let sql_params;
@@ -2155,6 +2165,7 @@ pub fn init_ex_fun_map() {
         
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
+        let sql_file = crate::mytool::path_to_os_str(&sql_file);
         
         let key = self_t.get_param(params, 0)?;
         let value = self_t.get_param(params, 1)?;
@@ -2172,6 +2183,7 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["持久常量"],|self_t,params|{
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
+        let sql_file = crate::mytool::path_to_os_str(&sql_file);
 
         let key = self_t.get_param(params, 0)?;
         
