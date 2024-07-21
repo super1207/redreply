@@ -95,7 +95,7 @@ impl Satoriv1Connect {
     }
 
     fn satori_msg_to_cq_msg(html:&str) -> Result<String,Box<dyn std::error::Error + Send + Sync>> {
-        let dom = tl::parse(html, tl::ParserOptions::default()).unwrap();
+        let dom = tl::parse(html, tl::ParserOptions::default())?;
         let childen = dom.nodes();
         let mut out = String::new();
         for child in childen {
@@ -153,6 +153,10 @@ impl Satoriv1Connect {
                     let b64 = file.split_at(9).1;
                     out += &format!("<img src={} />", serde_json::json!("data:image/png;base64,".to_owned() + b64));
                 }
+            }
+            else if tp == "reply" {
+                let id = it.get("data").ok_or("data not found")?.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?;
+                out += &format!("<quote id={} />", serde_json::json!(id));
             }
         }
         Ok(out)
@@ -230,37 +234,72 @@ impl Satoriv1Connect {
                     let card =  read_json_str(&member, "nick");
                     let key = format!("{platform} {self_id} {channel_id}");
                     group_groups_map.upgrade().ok_or("upgrade group_groups_map失败")?.write().unwrap().insert(key,guild_id.to_owned());
-                    let event_json = serde_json::json!({
-                        "time":tm,
-                        "self_id":self_id,
-                        "platform":platform,
-                        "post_type":"message",
-                        "message_type":"group",
-                        "sub_type":"normal",
-                        "message_id":message_id,
-                        "group_id":channel_id,
-                        "groups_id":guild_id,
-                        "user_id":user_id,
-                        "message":cq_msg,
-                        "raw_message":content,
-                        "font":0,
-                        "sender":{
+                    if content.starts_with("<chronocat:poke") {
+                        // chronocat的戳一戳事件
+                        let dom = tl::parse(&content, tl::ParserOptions::default())?;
+                        let childen = dom.nodes();
+                        for child in childen {
+                            if let Some(tag) = child.as_tag() {
+                                if tag.name() == "chronocat:poke" {
+                                    let id_str = tag.attributes().get("user-id").ok_or("No user-id at chronocat:poke element")?.ok_or("No user-id at chronocat:poke element")?.as_utf8_str();
+                                    let id = html_escape::decode_html_entities(&id_str);
+                                    let oid_str = tag.attributes().get("operator-id").ok_or("No operator-id at chronocat:poke element")?.ok_or("No operator-id at chronocat:poke element")?.as_utf8_str();
+                                    let oid = html_escape::decode_html_entities(&oid_str);
+                                    let event_json = serde_json::json!({
+                                        "time":tm,
+                                        "self_id":self_id,
+                                        "platform":platform,
+                                        "post_type":"notice",
+                                        "message_id":message_id, // 这里仍然加入msg_id，以方便进行回复
+                                        "notice_type":"notify",
+                                        "sub_type":"poke",
+                                        "group_id":channel_id,
+                                        "groups_id":guild_id,
+                                        "user_id":oid,
+                                        "target_id":id,
+                                    });
+                                    tokio::task::spawn_blocking(move ||{
+                                        if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
+                                            crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                                        }
+                                    });
+                                }
+                            }
+                        }
+                    } else {
+                        // 普通群聊
+                        let event_json = serde_json::json!({
+                            "time":tm,
+                            "self_id":self_id,
+                            "platform":platform,
+                            "post_type":"message",
+                            "message_type":"group",
+                            "sub_type":"normal",
+                            "message_id":message_id,
+                            "group_id":channel_id,
+                            "groups_id":guild_id,
                             "user_id":user_id,
-                            "nickname":nickname,
-                            "card":card,
-                            "sex":"unknown",
-                            "age":0,
-                            "area":"",
-                            "level":"0",
-                            "role":"member",
-                            "title":""
-                        }
-                    });
-                    tokio::task::spawn_blocking(move ||{
-                        if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                            crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
-                        }
-                    });
+                            "message":cq_msg,
+                            "raw_message":content,
+                            "font":0,
+                            "sender":{
+                                "user_id":user_id,
+                                "nickname":nickname,
+                                "card":card,
+                                "sex":"unknown",
+                                "age":0,
+                                "area":"",
+                                "level":"0",
+                                "role":"member",
+                                "title":""
+                            }
+                        });
+                        tokio::task::spawn_blocking(move ||{
+                            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
+                                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                            }
+                        });
+                    }
                 }else { //private
                     let key = format!("{platform} {self_id} {user_id}");
                     user_channel_map.upgrade().ok_or("upgrade user_channel_map失败")?.write().unwrap().insert(key,channel_id);
