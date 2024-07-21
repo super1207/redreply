@@ -8,6 +8,11 @@
 
 > 强大的聊天自定义问答系统
 
+## 展示
+
+![QQ_1721552994792](https://github.com/user-attachments/assets/49cb54a4-8aee-470a-ab51-2f49973ce7b0)
+
+
 ## 文档
 
 [文档](https://super1207.github.io/redreply)
