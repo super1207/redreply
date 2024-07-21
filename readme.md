@@ -10,7 +10,19 @@
 
 ## 展示
 
-![QQ_1721556957839](https://github.com/user-attachments/assets/a1e4273e-322f-4de1-a999-2eaa7af74f40)
+![example1](https://github.com/user-attachments/assets/a1e4273e-322f-4de1-a999-2eaa7af74f40)
+
+
+<details>
+
+<summary>手机页面展示</summary>
+
+![example2](https://github.com/user-attachments/assets/10dbca5c-2d6c-42c7-bf5e-05d00dc5115d)
+
+</details>
+
+
+
 
 
 
