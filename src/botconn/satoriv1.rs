@@ -136,7 +136,7 @@ impl Satoriv1Connect {
             let tp = it.get("type").ok_or("type not found")?;
             if tp == "text" {
                 let text = it.get("data").ok_or("data not found")?.get("text").ok_or("text not found")?.as_str().ok_or("text not a string")?;
-                out += &html_escape::encode_text(text);
+                out += &html_escape::encode_double_quoted_attribute(text);
             } else if tp == "at" {
                 let qq = it.get("data").ok_or("data not found")?.get("qq").ok_or("qq not found")?.as_str().ok_or("qq not a string")?;
                 if qq == "all" {
@@ -157,6 +157,15 @@ impl Satoriv1Connect {
             else if tp == "reply" {
                 let id = it.get("data").ok_or("data not found")?.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?;
                 out += &format!("<quote id={} />", serde_json::json!(id));
+            }
+            else if tp == "record" {
+                let file = it.get("data").ok_or("data not found")?.get("file").ok_or("file not found")?.as_str().ok_or("file not a string")?;
+                if file.starts_with("http://") ||  file.starts_with("https://") {
+                    out += &format!("<audio src={} />", serde_json::json!(file));
+                }else if file.starts_with("base64://") {
+                    let b64 = file.split_at(9).1;
+                    out += &format!("<audio src={} />", serde_json::json!("data:image/png;base64,".to_owned() + b64));
+                }
             }
         }
         Ok(out)
