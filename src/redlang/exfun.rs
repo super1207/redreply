@@ -1835,13 +1835,25 @@ pub fn init_ex_fun_map() {
             let width = self_t.get_coremap("浏览器宽")?.parse::<u32>().unwrap_or(1920);
             let height = self_t.get_coremap("浏览器高")?.parse::<u32>().unwrap_or(1080);
 
+
             let options = headless_chrome::LaunchOptions::default_builder()
                 .window_size(Some((width, height)))
                 .args(arg_vec)
                 .build()?;
-                let browser = headless_chrome::Browser::new(options)?;
-                let tab = browser.new_tab()?;
-                tab.navigate_to(&path)?.wait_until_navigated()?;
+            let browser = headless_chrome::Browser::new(options)?;
+            let tab = browser.new_tab()?;
+            {
+                let http_header_str = self_t.get_coremap("访问头")?;
+                if http_header_str != "" {
+                    let http_header = RedLang::parse_obj(&http_header_str)?;
+                    let mut headers = HashMap::new();
+                    for (k,v) in http_header.iter() {
+                            headers.insert(k.as_str(), v.as_str());
+                    }
+                    tab.set_extra_http_headers(headers)?;
+                }
+            }
+            tab.navigate_to(&path)?.wait_until_navigated()?;
             let el_html= tab.wait_for_element("html")?;
             let body_height = el_html.get_box_model()?.height;
             let body_width = el_html.get_box_model()?.width;
@@ -1884,9 +1896,20 @@ pub fn init_ex_fun_map() {
                 .window_size(Some((width, height)))
                 .args(arg_vec)
                 .build()?;
-                let browser = headless_chrome::Browser::new(options)?;
-                let tab = browser.new_tab()?;
-                tab.navigate_to(&path)?.wait_until_navigated()?;
+            let browser = headless_chrome::Browser::new(options)?;
+            let tab = browser.new_tab()?;
+            {
+                let http_header_str = self_t.get_coremap("访问头")?;
+                if http_header_str != "" {
+                    let http_header = RedLang::parse_obj(&http_header_str)?;
+                    let mut headers = HashMap::new();
+                    for (k,v) in http_header.iter() {
+                            headers.insert(k.as_str(), v.as_str());
+                    }
+                    tab.set_extra_http_headers(headers)?;
+                }
+            }
+            tab.navigate_to(&path)?.wait_until_navigated()?;
             let el_html= tab.wait_for_element("html")?;
             let body_height = el_html.get_box_model()?.height;
             let body_width = el_html.get_box_model()?.width;
@@ -1928,9 +1951,20 @@ pub fn init_ex_fun_map() {
                 .window_size(Some((width, height)))
                 .args(arg_vec)
                 .build()?;
-                let browser = headless_chrome::Browser::new(options)?;
-                let tab = browser.new_tab()?;
-                tab.navigate_to(&path)?.wait_until_navigated()?;
+            let browser = headless_chrome::Browser::new(options)?;
+            let tab = browser.new_tab()?;
+            {
+                let http_header_str = self_t.get_coremap("访问头")?;
+                if http_header_str != "" {
+                    let http_header = RedLang::parse_obj(&http_header_str)?;
+                    let mut headers = HashMap::new();
+                    for (k,v) in http_header.iter() {
+                            headers.insert(k.as_str(), v.as_str());
+                    }
+                    tab.set_extra_http_headers(headers)?;
+                }
+            }
+            tab.navigate_to(&path)?.wait_until_navigated()?;
             let el_html= tab.wait_for_element("html")?;
             let body_height = el_html.get_box_model()?.height;
             let body_width = el_html.get_box_model()?.width;
