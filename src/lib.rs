@@ -16,7 +16,6 @@ use httpserver::init_http_server;
 
 use libload::init_lib;
 use mytool::read_json_str;
-use onebot11s::gen_lcg_id;
 use path_clean::PathClean;
 use redlang::RedLang;
 use serde_json;
@@ -1102,7 +1101,6 @@ pub fn read_code_cache() -> Result<serde_json::Value, Box<dyn std::error::Error>
 }
 
 pub fn read_one_pkg(pkg_name:&str) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
-    gen_lcg_id();
     let wk = G_SCRIPT.read()?;
     let mut ret_vec = vec![];
     for it in wk.as_array().ok_or("read G_SCRIPT err")? {

@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 
 use crate::mytool::{read_json_str, str_msg_to_arr};
 
-pub fn gen_lcg_id() -> i32 {
+fn gen_lcg_id() -> i32 {
     lazy_static!{
         static ref X:std::sync::Mutex<i64> = std::sync::Mutex::new(1207);
     }
