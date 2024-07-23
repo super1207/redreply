@@ -63,15 +63,25 @@ fn create_windows() {
     });
     flex_win.set_type(FlexType::Column);
     let v = redlang::add_egg_click().unwrap();
-    let button_title = format!("点我功德加一\n\n\n当前:{}",v);
+    let button_title;
+    if v > 100 {
+        button_title = format!("May the force be with you!Secret code:920220179\n\n\n当前:{}",v);
+    }else{
+        button_title = format!("点我功德加一\n\n\n当前:{}",v);
+    }
     let mut btn = Button::new(0, 0, 100, 100, &*button_title);
     btn.set_label_color(Color::from_rgb(66, 134, 244));
     btn.set_color(Color::from_rgb(255, 255, 255));
     btn.visible_focus(false);
     btn.set_callback(move |w|{
         let v = redlang::add_egg_click().unwrap();
-        let button_title = format!("点我功德加一\n\n\n当前:{}",v);
-        w.set_label(&*button_title)
+        if v > 100 {
+            let button_title = format!("May the force be with you!Secret code:920220179\n\n\n当前:{}",v);
+            w.set_label(&*button_title)
+        } else {
+            let button_title = format!("点我功德加一\n\n\n当前:{}",v);
+            w.set_label(&*button_title)
+        }
     });
     flex_win.end();
     wind.end();
