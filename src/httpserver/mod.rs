@@ -348,6 +348,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
                 }
             }
             else {
+                cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
                 let ret = json!({
                     "retcode":-1,
                 });

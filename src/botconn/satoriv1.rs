@@ -241,6 +241,9 @@ impl Satoriv1Connect {
                 let channel = body.get("channel").ok_or("channel 不存在")?; // 没有channel就无法回复
                 let channel_id =read_json_str(channel, "id");
                 if guild_opt.is_some(){ //group
+                    if user_id == self_id { //机器人自己的消息，忽略
+                        return Ok(());
+                    }
                     let guild = guild_opt.unwrap();
                     let guild_id = read_json_str(guild, "id");
                     let member = read_json_obj_or_null(body, "member"); // 可以没有member
@@ -847,9 +850,6 @@ impl BotConnectTrait for Satoriv1Connect {
         }else {
             passive_id2 = "";
         }
-       
-        
-
 
         if action == "send_group_msg" {
             return Self::send_group_msg(self,json,platform,self_id,passive_id2).await;

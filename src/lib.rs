@@ -939,12 +939,35 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error + Send 
             rename_pkg_process.push(vec![k1,k2]);
         }
     }
-    
 
+    
+    
     // 保存脚本
     {
         let plus_dir_str = cq_get_app_directory1()?;
         let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
+
+        // 禁止新脚本加载
+        (*G_QUIT_FLAG.write().unwrap()) = true;
+        let _guard = scopeguard::guard((),|_| {
+            (*G_QUIT_FLAG.write().unwrap()) = false;
+        });
+
+        // 等待所有脚本退出
+        let mut tm = 0;
+        loop {
+            tm += 1;
+            {
+                if (*G_RUNNING_SCRIPT_NUM.read().unwrap()) == 0 {
+                    break;
+                }
+            }
+            std::thread::sleep(core::time::Duration::from_millis(1));
+            if tm > 10000 {
+                let running_scripts = get_running_script_info();
+                return Err(format!("有脚本:{:?}不愿意退出,所以无法保存", running_scripts).into());
+            }
+        }
 
         // 修改文件名
         for it in rename_pkg_process {
@@ -1045,6 +1068,29 @@ fn save_one_pkg(contents: &str) -> Result<(), Box<dyn std::error::Error + Send +
 }
 
 fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+
+    // 禁止新脚本加载
+    (*G_QUIT_FLAG.write().unwrap()) = true;
+    let _guard = scopeguard::guard((),|_| {
+        (*G_QUIT_FLAG.write().unwrap()) = false;
+    });
+
+    // 等待所有脚本退出
+    let mut tm = 0;
+    loop {
+        tm += 1;
+        {
+            if (*G_RUNNING_SCRIPT_NUM.read().unwrap()) == 0 {
+                break;
+            }
+        }
+        std::thread::sleep(core::time::Duration::from_millis(1));
+        if tm > 10000 {
+            let running_scripts = get_running_script_info();
+            return Err(format!("有脚本:{:?}不愿意退出,所以无法保存", running_scripts).into());
+        }
+    }
+
     if old_pkg_name != "" && new_pkg_name != ""{
         let plus_dir_str = cq_get_app_directory1()?;
         let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
@@ -1065,6 +1111,29 @@ fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std
 
 
 fn del_one_pkg(pkg_name:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+
+    // 禁止新脚本加载
+    (*G_QUIT_FLAG.write().unwrap()) = true;
+    let _guard = scopeguard::guard((),|_| {
+        (*G_QUIT_FLAG.write().unwrap()) = false;
+    });
+
+    // 等待所有脚本退出
+    let mut tm = 0;
+    loop {
+        tm += 1;
+        {
+            if (*G_RUNNING_SCRIPT_NUM.read().unwrap()) == 0 {
+                break;
+            }
+        }
+        std::thread::sleep(core::time::Duration::from_millis(1));
+        if tm > 10000 {
+            let running_scripts = get_running_script_info();
+            return Err(format!("有脚本:{:?}不愿意退出,所以无法保存", running_scripts).into());
+        }
+    }
+
     // 删除pkg文件
     if pkg_name != "" {
         let plus_dir_str = cq_get_app_directory1()?;
