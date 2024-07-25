@@ -1723,21 +1723,15 @@ pub fn init_ex_fun_map() {
                 return Ok(Some(self_t.build_arr(vec![])));
             }
         }
-        let mut to_ret_vec = vec![];
+        let mut to_ret_map = BTreeMap::new();
         if let Some(section) = conf.section(Some(section_name)) {
             for (key,val) in section.into_iter() {
-                let mut temp = BTreeMap::new();
-                temp.insert(key.to_owned(), val.to_owned());
-                let t = self_t.build_obj(temp);
-                to_ret_vec.push(t);
+                to_ret_map.insert(key.to_owned(), val.to_owned());
             }
         }else{
-            return Ok(Some(self_t.build_arr(vec![])));
+            return Ok(Some(self_t.build_obj(BTreeMap::new())));
         }
-        let bind = to_ret_vec.iter().map(|t|{
-            return t.as_ref();
-        }).collect();
-        return Ok(Some(self_t.build_arr(bind)));
+        return Ok(Some(self_t.build_obj(to_ret_map)));
     });
     
     add_fun(vec!["写配置"],|self_t,params|{
