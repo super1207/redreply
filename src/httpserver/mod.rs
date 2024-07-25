@@ -167,6 +167,29 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)
     }
+    else if url_path.starts_with("/5350b16b-b5e2-425a-bba1-d33d92813ab4/") { // github代理
+        if !can_write {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let sp_ret = url_path.split("5350b16b-b5e2-425a-bba1-d33d92813ab4").collect::<Vec<&str>>();
+        let github_url = sp_ret.get(1).ok_or("url error")?;
+        let git_proxy = crate::pluscenter::get_proxy().await?;
+        let client = reqwest::Client::builder().danger_accept_invalid_certs(true).no_proxy().build().unwrap();
+        let uri = <reqwest::Url as std::str::FromStr>::from_str(&(git_proxy.to_owned() + github_url)).unwrap();
+        let req = client.get(uri).build().unwrap();
+        if let Ok(ret) = client.execute(req).await {
+            if ret.status() == reqwest::StatusCode::OK {
+                let ct = ret.headers().get("Content-Type").ok_or("content type error")?.to_owned();
+                let ret2 = ret.bytes().await?.to_vec();
+                let mut res = hyper::Response::new(crate::httpserver::full(ret2));
+                res.headers_mut().insert("Content-Type", ct);
+                return Ok(res);
+            }
+        }
+        let res = hyper::Response::new(full("access github error"));
+        return Ok(res);
+    }
     else if url_path == "/read_one_pkg" {
         if !can_read {
             let res = hyper::Response::new(full("api not found"));
@@ -896,7 +919,7 @@ pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody {
 async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local: bool) -> Result<Response<BoxBody>> {
     
     let url_path = request.uri().path();
-    // cq_add_log_w(&format!("url:{url_path}")).unwrap();
+        // cq_add_log_w(&format!("url:{url_path}")).unwrap();
     // 登录页面不进行身份验证
     if url_path == "/login.html" {
         return deal_file(request).await; 
@@ -1115,7 +1138,7 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
             let mut res = hyper::Response::new(full(file_buf));
             res.headers_mut().insert("Content-Type", HeaderValue::from_static("image/x-icon"));
             return Ok(res);
-        } else if !url_path.contains(".") || url_path.starts_with("/user") {
+        } else if !url_path.contains(".") || url_path.starts_with("/user") || url_path.contains("5350b16b-b5e2-425a-bba1-d33d92813ab4") {
             return deal_api(request,can_write,can_read).await;
         } else {
             // 没有读权限不允许访问文件
