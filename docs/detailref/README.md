@@ -1764,9 +1764,9 @@ onedice参数的写法参考[onedice](https://github.com/OlivOS-Team/onedice)。
 
 此命令用于调用机器上的python，来执行python。在<font color="red">脚本内容</font>中，可以使用如下内置函数：
 
-red_in()：用于获取参数文本，若没有参数文本，则得到空文本。
+red_in()：用于获取参数，若没有参数，则得到空文本。
 
-red_out(str)：用于返回文本,作为命令的返回。
+red_out(str)：用于返回,作为命令的返回。
 
 red_install(pkg_name)：用于联网从pypi安装一个三方包(目前使用清华源)。
 
@@ -1785,9 +1785,9 @@ red_install(pkg_name)：用于联网从pypi安装一个三方包(目前使用清
 
 此命令用于调用机器上的python，来执行python。在<font color="red">脚本内容</font>中，可以使用如下内置函数：
 
-red_in()：用于获取参数文本，若没有参数文本，则得到空文本。
+red_in()：用于获取参数，若没有参数，则得到空文本。
 
-red_out(str)：用于返回文本,作为命令的返回。
+red_out(str)：用于返回,作为命令的返回。
 
 red_install(pkg_name)：用于联网从pypi安装一个三方包(目前使用清华源)。
 
@@ -1805,9 +1805,9 @@ red_install(pkg_name)：用于联网从pypi安装一个三方包(目前使用清
 
 此命令用于调用机器上的python，来执行python。在<font color="red">脚本内容</font>中，可以使用如下内置函数：
 
-red_in()：用于获取参数文本，若没有参数文本，则得到空文本。
+red_in()：用于获取参数，若没有参数，则得到空文本。
 
-red_out(str)：用于返回文本,作为命令的返回。
+red_out(str)：用于返回,作为命令的返回。
 
 另外：python环境中，所有和普通打印(stdout)相关的内容，都是无效的。并且，这个命令执行速度很慢，并且权限非常大，请谨慎使用。
 
@@ -2168,7 +2168,7 @@ CQ码**外部**的字符需要CQ转义，以上三个命令的作用可以参考
 
 红色问答中脚本的执行输出，会自动根据来源发送到指定群、用户。
 
-支持的键包括：<font color="red">机器人ID</font>、<font color="red">群ID</font>、<font color="red">发送者ID</font>，<font color="red">机器人平台</font>。
+支持的键包括：<font color="red">机器人ID</font>、<font color="red">群ID</font>、<font color="red">发送者ID</font>，<font color="red">机器人平台</font>，<font color="red">消息ID</font>。
 
 受此命令影响的命令有：文档待补充.jpg
 

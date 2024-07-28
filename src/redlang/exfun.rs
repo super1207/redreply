@@ -2877,6 +2877,38 @@ pub fn init_ex_fun_map() {
         }
     });
 
+    fn get_raw_data(self_t:&mut RedLang,input:String) -> Result<String, Box<dyn std::error::Error>>{
+        let raw_data;
+        let tp = self_t.get_type(&input)?;
+        if tp == "文本" {
+            raw_data = input;
+        }else if tp == "字节集" {
+            let temp = RedLang::parse_bin(&self_t.bin_pool, &input)?;
+            raw_data = self_t.build_bin(temp);
+        } else if tp == "数组" {
+            let mut retarr = vec![];
+            let arr = RedLang::parse_arr(&input)?;
+            for it in arr {
+                retarr.push(get_raw_data(self_t, it.to_owned())?);
+            }
+            let bind = retarr.iter().map(|x|x.as_ref()).collect();
+            raw_data = self_t.build_arr(bind);
+        } else if tp == "对象" {
+            let mut retobj = BTreeMap::new();
+            let obj = RedLang::parse_obj(&input)?;
+            for (k,v) in obj {
+                retobj.insert(get_raw_data(self_t, k)?, get_raw_data(self_t, v)?);
+            }
+            raw_data = self_t.build_obj(retobj);
+        }
+        else {
+            return Err(RedLang::make_err(&format!("不支持的参数类型:{tp}")));
+        }
+        Ok(raw_data)
+    }
+
+
+
     add_fun(vec!["运行PY"],|self_t,params|{
         let code = r#"
 import os
@@ -2905,16 +2937,18 @@ def red_install(pkg_name):
 def red_in():
     import base64
     inn = input()
-    sw = base64.b64decode(inn).decode()
-    return sw
+    sw = base64.b64decode(inn).decode('utf-8')
+    return __red_py_decode(sw)
 
 def red_out(sw):
     import base64
-    en = base64.b64encode(sw.encode()).decode()
+    en = base64.b64encode(__to_red_type(sw).encode('utf-8')).decode('utf-8')
     red_print(en)
 "#;
         let code1 = self_t.get_param(params, 0)?;
         let input = self_t.get_param(params, 1)?;
+        let input = get_raw_data(self_t, input)?;
+        
         let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
 
@@ -2948,6 +2982,8 @@ def red_out(sw):
         };
         let pip_in = std::process::Stdio::piped();
 
+        let red_py_decode = crate::G_RED_PY_DECODE.to_owned();
+
         #[cfg(windows)]
         let mut p = std::process::Command::new("python").creation_flags(0x08000000)
         .stdin(pip_in)
@@ -2956,7 +2992,7 @@ def red_out(sw):
         .current_dir(app_dir)
         .env("PATH", new_env)
         .arg("-c")
-        .arg(format!("{code}{code1}"))
+        .arg(format!("{red_py_decode}{code}{code1}"))
         .spawn()?;
 
 
@@ -2968,7 +3004,7 @@ def red_out(sw):
         .current_dir(app_dir)
         .env("PATH", new_env)
         .arg("-c")
-        .arg(format!("{code}{code1}"))
+        .arg(format!("{red_py_decode}{code}{code1}"))
         .spawn()?;
 
         let s = p.stdin.take();
@@ -3008,19 +3044,23 @@ def red_in():
     import base64
     inn = input()
     sw = base64.b64decode(inn).decode()
-    return sw
+    return __red_py_decode(sw)
 
 def red_out(sw):
     import base64
-    en = base64.b64encode(sw.encode()).decode()
+    en = base64.b64encode(__to_red_type(sw).encode()).decode()
     red_print(en)
 "#;
     
         let code1 = self_t.get_param(params, 0)?;
         let input = self_t.get_param(params, 1)?;
+        let input = get_raw_data(self_t, input)?;
         let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let pip_in = std::process::Stdio::piped();
+
+        let red_py_decode = crate::G_RED_PY_DECODE.to_owned();
+
 
         #[cfg(windows)]
         use std::os::windows::process::CommandExt;
@@ -3032,7 +3072,7 @@ def red_out(sw):
         .stderr(std::process::Stdio::piped())
         .current_dir(app_dir)
         .arg("-c")
-        .arg(format!("{code}{code1}"))
+        .arg(format!("{red_py_decode}{code}{code1}"))
         .spawn()?;
 
 
@@ -3043,7 +3083,7 @@ def red_out(sw):
         .stderr(std::process::Stdio::piped())
         .current_dir(app_dir)
         .arg("-c")
-        .arg(format!("{code}{code1}"))
+        .arg(format!("{red_py_decode}{code}{code1}"))
         .spawn()?;
 
         let s = p.stdin.take();
@@ -3117,6 +3157,7 @@ def red_out(sw):
     add_fun(vec!["快速运行PY"],|self_t,params|{
         let code = self_t.get_param(params, 0)?;
         let input = self_t.get_param(params, 1)?;
+        let input = get_raw_data(self_t, input)?;
         let ret = call_py_block(&code,&input);
         Ok(Some(ret))
     });

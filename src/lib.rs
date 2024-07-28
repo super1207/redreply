@@ -124,6 +124,77 @@ lazy_static! {
     static ref G_HISTORY_LOG:std::sync::RwLock<VecDeque<String>> = std::sync::RwLock::new(VecDeque::new());
     // 全局过滤器缓存
     pub static ref G_GOBAL_FILTER:std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+
+    // py解析red变量
+    pub static ref G_RED_PY_DECODE:String =  r#"
+def __red_py_decode(input:str):
+    if input.startswith('12331549-6D26-68A5-E192-5EBE9A6EB998'):
+        if input[36] == 'B':
+            return bytes.fromhex(input[37:])
+        if input[36] == 'A':
+            retarr = []
+            data = input[37:].encode('utf-8')
+            while len(data) != 0:
+                pos = data.find(b',')
+                l = int(data[0:pos])
+                retarr.append(__red_py_decode(data[pos + 1:pos + l + 1].decode('utf-8')))
+                data = data[pos + l + 1:]
+            return retarr
+        if input[36] == 'O':
+            retobj = {}
+            k = None
+            data = input[37:].encode('utf-8')
+            while len(data) != 0:
+                pos = data.find(b',')
+                l = int(data[0:pos])
+                d = __red_py_decode(data[pos + 1:pos + l + 1].decode('utf-8'))
+                if k == None:
+                    k = d
+                else:
+                    retobj[k] = d
+                    k = None
+                data = data[pos + l + 1:]
+            return retobj
+    else:
+        return input
+def __to_red_type(input):
+    if isinstance(input,str):
+        return input
+    if isinstance(input,bytes):
+        print(2)
+        return '12331549-6D26-68A5-E192-5EBE9A6EB998B' + input.hex().upper()
+    if isinstance(input,bool):
+        if input == True:
+            return '真'
+        else:
+            return '假'
+    if isinstance(input,int):
+        return str(input)
+    if isinstance(input,float):
+        return str(input)
+    if isinstance(input,list):
+        retstr = '12331549-6D26-68A5-E192-5EBE9A6EB998A'
+        for it in input:
+            d = __to_red_type(it)
+            l = str(len(d.encode('utf-8')))
+            retstr += l + ',' + d
+        return retstr
+    if isinstance(input,dict):
+        from collections import OrderedDict
+        ordered_dict = OrderedDict()
+        for k,v in input.items():
+            ordered_dict[k] = v
+        retstr = '12331549-6D26-68A5-E192-5EBE9A6EB998O'
+        for k,v in ordered_dict.items():
+            d = __to_red_type(k)
+            l = str(len(d.encode('utf-8')))
+            retstr += l + ',' + d
+            d = __to_red_type(v)
+            l = str(len(d.encode('utf-8')))
+            retstr += l + ',' + d
+        return retstr
+    return str(input)
+"#.to_owned();
 }
 
 
@@ -526,6 +597,73 @@ def deal_msg(message,js):
     code = js["code"]
     code = """
 __red_out_data = ""
+def __red_py_decode(input:str):
+    if input.startswith('12331549-6D26-68A5-E192-5EBE9A6EB998'):
+        if input[36] == 'B':
+            return bytes.fromhex(input[37:])
+        if input[36] == 'A':
+            retarr = []
+            data = input[37:].encode('utf-8')
+            while len(data) != 0:
+                pos = data.find(b',')
+                l = int(data[0:pos])
+                retarr.append(__red_py_decode(data[pos + 1:pos + l + 1].decode('utf-8')))
+                data = data[pos + l + 1:]
+            return retarr
+        if input[36] == 'O':
+            retobj = {}
+            k = None
+            data = input[37:].encode('utf-8')
+            while len(data) != 0:
+                pos = data.find(b',')
+                l = int(data[0:pos])
+                d = __red_py_decode(data[pos + 1:pos + l + 1].decode('utf-8'))
+                if k == None:
+                    k = d
+                else:
+                    retobj[k] = d
+                    k = None
+                data = data[pos + l + 1:]
+            return retobj
+    else:
+        return input
+def __to_red_type(input):
+    if isinstance(input,str):
+        return input
+    if isinstance(input,bytes):
+        print(2)
+        return '12331549-6D26-68A5-E192-5EBE9A6EB998B' + input.hex().upper()
+    if isinstance(input,bool):
+        if input == True:
+            return '真'
+        else:
+            return '假'
+    if isinstance(input,int):
+        return str(input)
+    if isinstance(input,float):
+        return str(input)
+    if isinstance(input,list):
+        retstr = '12331549-6D26-68A5-E192-5EBE9A6EB998A'
+        for it in input:
+            d = __to_red_type(it)
+            l = str(len(d.encode('utf-8')))
+            retstr += l + ',' + d
+        return retstr
+    if isinstance(input,dict):
+        from collections import OrderedDict
+        ordered_dict = OrderedDict()
+        for k,v in input.items():
+            ordered_dict[k] = v
+        retstr = '12331549-6D26-68A5-E192-5EBE9A6EB998O'
+        for k,v in ordered_dict.items():
+            d = __to_red_type(k)
+            l = str(len(d.encode('utf-8')))
+            retstr += l + ',' + d
+            d = __to_red_type(v)
+            l = str(len(d.encode('utf-8')))
+            retstr += l + ',' + d
+        return retstr
+    return str(input)
 def red_install(pkg_name):
     '''安装一个模块'''
     from pip._internal.cli import main
@@ -536,10 +674,10 @@ def red_install(pkg_name):
         err = "安装依赖{}失败".format(pkg_name)
         raise Exception(err)
 def red_in():
-    return __red_in_data
+    return __red_py_decode(__red_in_data)
 def red_out(s):
     global __red_out_data
-    __red_out_data = s
+    __red_out_data = __to_red_type(s)
 """ + code
     input_t = js["input"]
     scope = {"__red_in_data":input_t}

@@ -80,6 +80,7 @@ fn change_uid_to_i64(root:&mut serde_json::Value){
             st.insert("group_id".to_owned());
             st.insert("self_id".to_owned());
             st.insert("message_id".to_owned());
+            st.insert("operator_id".to_owned());
             st
         };
     }
@@ -297,8 +298,8 @@ pub fn event_to_onebot(root:&serde_json::Value) -> Result<(serde_json::Value,Str
     change_event_at_and_reply(&mut root)?; // 处理at和回复
     deal_event_groups(&mut root)?; // 处理groups
     // 处理platform和self_id
-    let platform = root.get("platform").unwrap().as_str().unwrap().to_owned();
-    let self_id = root.get("self_id").unwrap().as_i64().unwrap().to_string();
+    let platform = read_json_str(&root, "platform");
+    let self_id =  read_json_str(&root, "self_id");
     // 处理passive_id
     root.as_object_mut().unwrap().remove("platform");
     if passive_id != "" {

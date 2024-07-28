@@ -84,6 +84,7 @@ fn change_id_to_str(root:&mut serde_json::Value){
             st.insert("group_id".to_owned());
             st.insert("self_id".to_owned());
             st.insert("message_id".to_owned());
+            st.insert("operator_id".to_owned());
             st
         };
 
