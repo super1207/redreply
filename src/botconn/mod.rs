@@ -19,7 +19,6 @@ use self::{onebot11::OneBot11Connect, onebot115::OneBot115Connect, qqguild_priva
 trait BotConnectTrait:Send + Sync {
     async fn call_api(&self,platform:&str,self_id:&str,passive_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>;
     fn get_platform_and_self_id(&self) -> Vec<(String,String)>;
-    fn get_url(&self) -> String;
     fn get_alive(&self) -> bool;
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>>;
     async fn disconnect(&mut self);

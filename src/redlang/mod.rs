@@ -2105,7 +2105,7 @@ let k = &*self.exmap;
                 content2.push((ch1 << 4) + ch2);
             }
             // 转成图片
-            use image::io::Reader as ImageReader;
+            use image::ImageReader;
             let img_t = ImageReader::new(std::io::Cursor::new(content2)).with_guessed_format()?;
             let img_fmt: image::ImageFormat  = img_t.format().ok_or("不能识别的图片格式")?;
             let img = img_t.decode()?.to_rgba8();

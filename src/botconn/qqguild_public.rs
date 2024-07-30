@@ -712,11 +712,6 @@ impl BotConnectTrait for QQGuildPublicConnect {
         Ok(())
     }
 
-
-    fn get_url(&self) -> String {
-        return self.url.clone();
-    }
-
     async fn call_api(&self,_platform:&str,_self_id:&str,passive_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let action = read_json_str(json, "action");
 

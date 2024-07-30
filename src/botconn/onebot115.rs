@@ -222,11 +222,7 @@ impl BotConnectTrait for OneBot115Connect {
         });
         Ok(())
     }
-
-    fn get_url(&self) -> String {
-        return self.url.clone();
-    }
-
+    
     async fn call_api(&self,platform:&str,self_id:&str,_passive_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         
         let json_obj = json.as_object_mut().ok_or("json is not object")?;

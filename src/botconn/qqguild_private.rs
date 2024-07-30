@@ -20,7 +20,6 @@ pub struct QQGuildPrivateConnect {
     pub is_stop:Arc<AtomicBool>,
     pub stop_tx:Option<tokio::sync::mpsc::Sender<bool>>,
     pub sn:Arc<std::sync::RwLock<Option<u64>>>,
-    pub user_guild_dms_map:Arc<std::sync::RwLock<std::collections::HashMap<String,String>>>,
     pub id_event_map:Arc<std::sync::RwLock<std::collections::HashMap<String,(u64,serde_json::Value)>>>,
     pub bot_id:Arc<std::sync::RwLock<String>>
 }
@@ -37,7 +36,6 @@ impl QQGuildPrivateConnect {
             appsecret: "".to_owned(),
             access_token: Arc::new(RwLock::new("".to_owned())),
             sn:Arc::new(RwLock::new(None)),
-            user_guild_dms_map:Arc::new(RwLock::new(std::collections::HashMap::new())),
             id_event_map:Arc::new(RwLock::new(std::collections::HashMap::new())),
             bot_id:Arc::new(RwLock::new("".to_owned())),
         }
@@ -485,10 +483,6 @@ impl BotConnectTrait for QQGuildPrivateConnect {
         Ok(())
     }
 
-
-    fn get_url(&self) -> String {
-        return self.url.clone();
-    }
 
     async fn call_api(&self,_platform:&str,_self_id:&str,passive_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let action = read_json_str(json, "action");
