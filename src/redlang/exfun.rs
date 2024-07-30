@@ -1832,6 +1832,8 @@ pub fn init_ex_fun_map() {
 
             let options = headless_chrome::LaunchOptions::default_builder()
                 .window_size(Some((width, height)))
+                .headless(true)
+                .devtools(false)
                 .args(arg_vec)
                 .build()?;
             let browser = headless_chrome::Browser::new(options)?;
@@ -1888,6 +1890,8 @@ pub fn init_ex_fun_map() {
 
             let options = headless_chrome::LaunchOptions::default_builder()
                 .window_size(Some((width, height)))
+                .headless(true)
+                .devtools(false)
                 .args(arg_vec)
                 .build()?;
             let browser = headless_chrome::Browser::new(options)?;
@@ -1943,6 +1947,8 @@ pub fn init_ex_fun_map() {
 
             let options = headless_chrome::LaunchOptions::default_builder()
                 .window_size(Some((width, height)))
+                .headless(true)
+                .devtools(false)
                 .args(arg_vec)
                 .build()?;
             let browser = headless_chrome::Browser::new(options)?;
