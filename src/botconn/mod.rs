@@ -4,11 +4,13 @@ mod satoriv1;
 mod qqguild_private;
 mod qqguild_public;
 mod qq_guild_all;
+mod kook;
 
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 
+use kook::KookConnect;
 use tokio::sync::RwLock;
 
 use crate::{cqapi::cq_add_log_w, RT_PTR};
@@ -28,31 +30,6 @@ trait BotConnectTrait:Send + Sync {
 lazy_static! {
     static ref G_BOT_MAP:RwLock<HashMap<String,Arc<RwLock<dyn BotConnectTrait>>>> = RwLock::new(HashMap::new());
 }
-
-
-// pub async fn rand_platform_and_id() -> Option<(String,String)> {
-    
-//     let lk = G_BOT_MAP.read().await;
-//     let mut all = vec![];
-
-//     for bot in &*lk {
-//         let platform_and_self_id = bot.1.read().await.get_platform_and_self_id();
-//         for (platform,self_id) in platform_and_self_id {
-//             all.push((platform,self_id))
-//         }
-//     }
-
-//     if all.len() == 0 {
-//         return None;
-//     }
-
-//     let rand_num = crate::redlang::get_random().unwrap();
-
-//     let target = &all[rand_num % all.len()];
-
-//     return Some(target.to_owned());
-
-// }
 
 pub async fn call_api(platform:&str,self_id:&str,passive_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let mut bot_select = None;
@@ -172,6 +149,13 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                                 let mut bot = QQGuildPublicConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到qqguild_public失败:{url_t},{err:?}")).unwrap();
+                                } else {
+                                    G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
+                                }
+                            }else if url_t.starts_with("kook://") {
+                                let mut bot = KookConnect::build(&url_t);
+                                if let Err(err) = bot.connect().await {
+                                    cq_add_log_w(&format!("连接到kook失败:{url_t},{err:?}")).unwrap();
                                 } else {
                                     G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
                                 }
