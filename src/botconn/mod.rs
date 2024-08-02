@@ -5,11 +5,13 @@ mod qqguild_private;
 mod qqguild_public;
 mod qq_guild_all;
 mod kook;
+mod email;
 
 use std::{collections::HashMap, sync::Arc};
 
 use async_trait::async_trait;
 
+use email::EmailConnect;
 use kook::KookConnect;
 use tokio::sync::RwLock;
 
@@ -156,6 +158,13 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                                 let mut bot = KookConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到kook失败:{url_t},{err:?}")).unwrap();
+                                } else {
+                                    G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
+                                }
+                            }else if url_t.starts_with("email://") {
+                                let mut bot = EmailConnect::build(&url_t);
+                                if let Err(err) = bot.connect().await {
+                                    cq_add_log_w(&format!("连接到email失败:{url_t},{err:?}")).unwrap();
                                 } else {
                                     G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
                                 }
