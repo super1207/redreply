@@ -8,7 +8,21 @@
 
 > 强大的聊天自定义问答系统
 
+## 背景
+
+受铃心自定义的启发，制作一个类似的自定义系统。 <br />
+
+随着酷Q、先驱等机器人平台的停运，其上运行的铃心自定义也逐渐不再被其作者很好的维护。再加上各种跨平台的开源机器人平台的逐渐流行，一个全开源、跨平台的自定义问答系统被期待着。<br />
+
+红色问答因此而出现。
+
+## 主要功能
+
+以自定义回复为核心，附带群管、监控、词库、语音、图片、调用接口、对接网站、黑白名单、定时任务、网页爬虫、简单编程、入群验证、发言限制、Web服务器、制作接口等功能。<br />
+
 ## 展示
+
+> 红色问答使用浏览器作为界面，并且开箱即用，您可以躺在床上用手机一只手愉快地编写插件。
 
 ![example1](https://github.com/user-attachments/assets/a1e4273e-322f-4de1-a999-2eaa7af74f40)
 
@@ -21,26 +35,50 @@
 
 </details>
 
+## 平台协议支持
+
+> 红色问答支持众多聊天平台协议，有聊天框框的地方就可以有红色问答，您编写的插件无需任何改动即可在这些聊天平台上面运行。
+
+[qq官方频道/群](https://q.qq.com/)：QQ官方协议接口，redreply内置支持
+
+[kook/开黑啦](https://www.kookapp.cn/)：KOOK官方协议接口，redreply内置支持
+
+[llonebot](https://github.com/LLOneBot/LLOneBot) ：社区支持的三方QQ协议,使你的NTQQ支持OneBot11协议进行QQ机器人开发
+
+[chronocat](https://github.com/chrononeko/chronocat) ：社区支持的三方QQ协议,模块化的 Satori 框架
+
+[NapCatQQ](https://github.com/NapNeko/NapCatQQ)：社区支持，基于NTQQ的无头Bot框架(satori协议)
+
+[Lagrange.Core](https://github.com/LagrangeDev/Lagrange.Core)：An Implementation of NTQQ Protocol, with Pure C#, Derived from Konata.Core(onebot协议)
+
+[koishi/satori](https://koishi.chat/)：Cross-platform chatbot framework made with love.支持telegram、discord、飞书、钉钉等
+
+[olivos](https://github.com/OlivOS-Team/OlivOS)：OlivOS / Witness Union，一个强大的跨平台交互栈与机器人框架，支持ff14、hackchat、bilibili等
+
+[onebot11](https://github.com/botuniverse/onebot-11)：其它onebot11实现
+
+[redreply](https://github.com/super1207/redreply)：是的，没看错，redreply可以导出onebot11接口，所以一个redreply可以连接另一个redreply，但是请不要自己连接自己（笑）
 
 
+## 操作平台支持
 
+红色问答为每个您熟悉的平台发布可执行文件，其中包括：windows、linux、android。
 
+红色问答只有一个可执行文件，基本不需要安装其它依赖，你只需要双击一次即可完成部署工作。
+
+> 是的，没有ios和mac
 
 ## 文档
 
+> 红色问答有很多高级功能，如果需要，可以仔细阅读文档来了解。
+
 [文档](https://super1207.github.io/redreply)
 
-## 背景
 
-受铃心自定义的启发，制作一个类似的自定义系统。 <br />
+## 插件商店
 
-随着酷Q、先驱等机器人平台的停运，其上运行的铃心自定义也逐渐不再被其作者很好的维护。再加上各种跨平台的开源机器人平台的逐渐流行，一个全开源、跨平台的自定义问答系统被期待着。<br />
+红色问答维护一个插件商店，您可以在这里[发布您的插件](https://github.com/super1207/redreplyhub)，让更多的人享受到您的劳动成果。
 
-红色问答因此而出现。
-
-## 主要功能
-
-以自定义回复为核心，附带群管、监控、词库、语音、图片、调用接口、对接网站、黑白名单、定时任务、网页爬虫、简单编程、入群验证、发言限制、Web服务器、制作接口等功能。<br />
 
 ## 开源说明
 
