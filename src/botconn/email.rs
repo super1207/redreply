@@ -4,7 +4,7 @@ use uuid::Uuid;
 use super::BotConnectTrait;
 use crate::{botconn::async_trait, cqapi::cq_add_log, mytool::read_json_str, RT_PTR};
 use crate::mytool::str_msg_to_arr;
-use lettre::{AsyncSmtpTransport, AsyncTransport};
+use lettre::{message::{MultiPart, SinglePart}, AsyncSmtpTransport, AsyncTransport};
 use lettre::Tokio1Executor;
 
 #[derive(Debug,Clone)]
@@ -163,13 +163,27 @@ impl EmailConnect {
         let is_auto_escape = Self::get_json_bool(params, "auto_escape");
         return is_auto_escape;
     }
-    async fn make_email_msg(&self,message_arr:&serde_json::Value) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let mut to_ret = "".to_owned();
+    async fn make_email_msg(&self,message_arr:&serde_json::Value) -> Result<Vec<SinglePart>, Box<dyn std::error::Error + Send + Sync>> {
+        let mut to_ret = vec![];
         for it in message_arr.as_array().ok_or("message not arr")? {
             let tp = it.get("type").ok_or("type not found")?;
             if tp == "text"{
                 let t = it.get("data").ok_or("data not found")?.get("text").ok_or("text not found")?.as_str().ok_or("text not str")?.to_owned();
-                to_ret.push_str(&t);
+                to_ret.push(SinglePart::html(format!("<p style=\"white-space:pre-line;\">{}</p>", html_escape::encode_double_quoted_attribute(&t))));
+            } else if tp == "image" {
+                let uri = it.get("data").ok_or("data not found")?.get("file").ok_or("file not found")?.as_str().ok_or("file not str")?;
+                let out;
+                if uri.starts_with("http://") ||  uri.starts_with("https://") {
+                    out = format!("<img src={} />", serde_json::json!(uri));
+                } else if uri.starts_with("base64://") {
+                    let b64 = uri.split_at(9).1;
+                    out = format!("<img src={} />", serde_json::json!("data:image/png;base64,".to_owned() + b64));
+                } else {
+                    continue;
+                }
+                
+                let t = SinglePart::html(out);
+                to_ret.push(t);
             }
         }
         Ok(to_ret)
@@ -195,16 +209,30 @@ impl EmailConnect {
        
         let user_id = read_json_str(params,"user_id");
         let bot_id = self.self_id.read().unwrap().to_owned();
-        let email_msg = self.make_email_msg(&message_arr).await?;
+        
         let server = self.smtp_server.read().unwrap().to_owned();
         let port = self.smtp_port.read().unwrap().to_owned();
         let password = self.password.read().unwrap().to_owned();
+
+        let single_part_vec = self.make_email_msg(&message_arr).await?;
+        let mut multipart;
+        if single_part_vec.len() != 0 {
+            let multipart_builder = MultiPart::alternative();
+            multipart = multipart_builder.singlepart(single_part_vec[0].to_owned());
+            for it in &single_part_vec[1..] {
+                multipart = multipart.singlepart(it.to_owned());
+            }
+        }else {
+            return Err("message is empty".into());
+        }
         let email = lettre::Message::builder()
             .from(format!("Bot <{bot_id}>").parse()?)
             .to(format!("User <{user_id}>").parse()?)
             .subject("Dear User")
             .header(lettre::message::header::ContentType::TEXT_PLAIN)
-            .body(email_msg)?;
+            .multipart(
+                multipart
+            )?;
         let creds = lettre::transport::smtp::authentication::Credentials::new(bot_id, password);
         let mailer = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(server.to_owned()).port(port)
             .tls(lettre::transport::smtp::client::Tls::Required(lettre::transport::smtp::client::TlsParameters::new(server)?))
