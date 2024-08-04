@@ -3447,6 +3447,75 @@ def red_out(sw):
         let ret = self_t.build_bin(bin_mp3);
         return Ok(Some(ret));
     });
+    add_fun(vec!["执行频率"],|self_t,params|{
+        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+        let sql_file = app_dir + "reddat.db";
+        let sql_file = crate::mytool::path_to_os_str(&sql_file);
+        
+        let name = self_t.get_param(params, 0)?;
+        let time_str = self_t.get_param(params, 1)?;
+        let times_str = self_t.get_param(params, 2)?;
+        let time = time_str.parse::<i64>()?;
+        let times = times_str.parse::<i64>()?;
+        let key = format!("{name}245d51a6-5139-49ae-9d21-6d07065ee610{time}245d51a6-5139-49ae-9d21-6d07065ee610{times}");
+
+        if times <= 0 {
+            return Ok(Some(self_t.get_param(params, 3)?));
+        }
+        let times = times - 1;
+
+        let can_run;
+        {
+            add_file_lock(&sql_file);
+
+            let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+                del_file_lock(&sql_file);
+            });
+    
+            let tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
+            let tm13 = tm.as_millis() as i64;
+            
+            let conn = rusqlite::Connection::open(sql_file)?;
+            // 先创建表
+            conn.execute("CREATE TABLE IF NOT EXISTS RUN_FREQ_TABLE (KEY TEXT PRIMARY KEY,VALUE TEXT);", [])?;
+            // 再查询,VALUE格式:开始时间-剩余次数
+            let ret_rst:Result<String,rusqlite::Error> = conn.query_row("SELECT VALUE FROM RUN_FREQ_TABLE WHERE KEY = ?", [key.to_owned()], |row| row.get(0));
+            if let Ok(ret) =  ret_rst {
+                // 查询到了,要判断是否过期
+                let v = ret.split("-").collect::<Vec<&str>>();
+                let start_time = v[0].parse::<i64>()?;
+                let r_times = v[1].parse::<i64>()?;
+                if tm13 - start_time > time {
+                    // 过期了
+                    can_run = true;
+                    let value = format!("{tm13}-{times}");
+                    conn.execute("REPLACE INTO RUN_FREQ_TABLE (KEY,VALUE) VALUES (?,?)", [key,value])?;
+                } else {
+                    // 没过期
+                    if r_times != 0 {
+                        // 可以执行，剩余次数-1
+                        can_run = true;
+                        let r_times = r_times - 1;
+                        let value = format!("{start_time}-{r_times}");
+                        conn.execute("REPLACE INTO RUN_FREQ_TABLE (KEY,VALUE) VALUES (?,?)", [key,value])?;
+                    } else {
+                        // 不能执行
+                        can_run = false;
+                    }
+                }
+            }else {
+                // 没查询到,等效于没过期
+                can_run = true;
+                let value = format!("{tm13}-{times}");
+                conn.execute("REPLACE INTO RUN_FREQ_TABLE (KEY,VALUE) VALUES (?,?)", [key,value])?;
+            }
+        }
+        if !can_run {
+            // 不能执行
+            return Ok(Some(self_t.get_param(params, 3)?));
+        }
+        return Ok(Some("".to_string()));
+    });
 }
 
 

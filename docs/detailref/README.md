@@ -1902,6 +1902,17 @@ return ""
 用于复制**内置命令**。若旧命令不存在，则什么也不做。若新命令已存在，则覆盖。复制得到的新命令依然属于内置命令。
 
 
+### 执行频率
+
+【执行频率@<font color="red">名称</font>@<font color="red">间隔时间</font>@<font color="red">次数</font>@<font color="red">不能执行返回</font>】
+
+定义<font color="red">名称</font>在<font color="red">间隔时间</font>只能执行<font color="red">次数</font>次。
+
+判断是否可以执行，若可以执行，则返回空文本，否则返回<font color="red">不能执行返回</font>。
+
+<font color="red">间隔时间</font>的单位为毫秒。
+
+
 ### TTS
 
 【TTS@<font color="red">文本</font>@<font color="red">音色</font>】

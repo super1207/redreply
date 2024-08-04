@@ -12,6 +12,7 @@ pub struct EmailConnect {
     pub self_id:Arc<std::sync::RwLock<String>>,
     pub smtp_server:Arc<std::sync::RwLock<String>>,
     pub smtp_port:Arc<std::sync::RwLock<u16>>,
+    pub smtp_ssl:Arc<std::sync::RwLock<bool>>,
     pub password:Arc<std::sync::RwLock<String>>,
     pub url:String,
     pub is_stop:Arc<AtomicBool>
@@ -23,6 +24,7 @@ impl EmailConnect {
             self_id:Arc::new(std::sync::RwLock::new("".to_owned())),
             smtp_server:Arc::new(std::sync::RwLock::new("".to_owned())),
             smtp_port:Arc::new(std::sync::RwLock::new(465)),
+            smtp_ssl:Arc::new(std::sync::RwLock::new(true)),
             password:Arc::new(std::sync::RwLock::new("".to_owned())),
             url:url.to_owned(),
             is_stop:Arc::new(AtomicBool::new(false)),
@@ -30,7 +32,7 @@ impl EmailConnect {
     }
 
     
-    fn deal_fetcharr(&self,fetch:&imap::types::ZeroCopy<Vec<imap::types::Fetch>>) -> Result<(), Box<dyn std::error::Error + Send + Sync>>{
+    fn deal_fetcharr(&self,fetch:&imap::types::Fetches) -> Result<(), Box<dyn std::error::Error + Send + Sync>>{
         if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(());
         }
@@ -82,16 +84,19 @@ impl EmailConnect {
         let password = config_json["password"].as_str().ok_or("email url格式错误: password 不是字符串")?.to_owned();
         let smtp_server = config_json["smtp_server"].as_str().ok_or("email url格式错误: smtp_server 不是字符串")?.to_owned();
         let smtp_port = config_json["smtp_port"].as_u64().ok_or("email url格式错误: smtp_port 不是数字")?;
+        let smtp_ssl = config_json["smtp_ssl"].as_bool().ok_or("email url格式错误: smtp_ssl 不是布尔值")?;
         *self.smtp_server.write().unwrap() = smtp_server;
         *self.smtp_port.write().unwrap() = smtp_port as u16;
         *self.self_id.write().unwrap() = username.to_owned();
         *self.password.write().unwrap() = password.to_owned();
+        *self.smtp_ssl.write().unwrap() = smtp_ssl.to_owned();
         if imap_ssl {
-            let tls = native_tls::TlsConnector::builder().build()?;
-            let client = imap::connect((imap_server.to_owned(), imap_port as u16), imap_server.to_owned(), &tls)?;
-            let mut imap_session: imap::Session<native_tls::TlsStream<TcpStream>> = client
+            // et tls = native_tls::TlsConnector::builder().build()?;
+            let client = imap::ClientBuilder::new(imap_server.to_owned(), imap_port as u16).connect()?;
+            let mut imap_session = client
                 .login(username, password)
                 .map_err(|e| e.0)?;
+            let _ = imap_session.run_command_and_check_ok("ID (\"name\" \"XXXX\" \"contact\" \"XXXX@163.com\" \"version\" \"1.0.0\" \"vendor\" \"myclient\")");
             imap_session.select("INBOX")?;
             cq_add_log(&format!("邮件协议已经连接:{}",self.url)).unwrap();
             loop {
@@ -101,8 +106,12 @@ impl EmailConnect {
                 }
                 let uids = imap_session.search("NEW")?;
                 if uids.is_empty() {
-                    let handle = imap_session.idle()?;
-                    handle.wait_with_timeout(Duration::from_secs(5))?;
+                    let mut handle = imap_session.idle();
+                    handle.timeout(Duration::from_secs(5));
+                    let _ = handle.wait_while(|_x|{
+                        return false;
+                    });
+                    // handle.wait_with_timeout(Duration::from_secs(5))?;
                     continue;
                 }else {
                     for uid in uids {
@@ -118,6 +127,7 @@ impl EmailConnect {
             let mut imap_session = client
                 .login(username, password)
                 .map_err(|e| e.0)?;
+            let _ = imap_session.run_command("ID (\"name\" \"XXXX\" \"contact\" \"XXXX@163.com\" \"version\" \"1.0.0\" \"vendor\" \"myclient\")\r\n");
             imap_session.select("INBOX")?;
             cq_add_log(&format!("邮件协议已经连接:{}",self.url)).unwrap();
             loop {
@@ -127,8 +137,12 @@ impl EmailConnect {
                 }
                 let uids = imap_session.search("NEW")?;
                 if uids.is_empty() {
-                    let handle = imap_session.idle()?;
-                    handle.wait_with_timeout(Duration::from_secs(5))?;
+                    let mut handle = imap_session.idle();
+                    handle.timeout(Duration::from_secs(5));
+                    let _ = handle.wait_while(|_x|{
+                        return false;
+                    });
+                    // handle.wait_with_timeout(Duration::from_secs(5))?;
                     continue;
                 }else {
                     for uid in uids {
@@ -165,7 +179,18 @@ impl EmailConnect {
     }
     async fn make_email_msg(&self,message_arr:&serde_json::Value) -> Result<Vec<SinglePart>, Box<dyn std::error::Error + Send + Sync>> {
         let mut to_ret = vec![];
-        for it in message_arr.as_array().ok_or("message not arr")? {
+        let msg_arr = message_arr.as_array().ok_or("message not arr")?;
+        if msg_arr.len() == 1 {
+            // 只有一个元素，并且类型是文本，就直接发送纯文本邮件
+            let m0 = &msg_arr[0];
+            let tp = m0.get("type").ok_or("type not found")?;
+            if tp == "text"{
+                let t = m0.get("data").ok_or("data not found")?.get("text").ok_or("text not found")?.as_str().ok_or("text not str")?.to_owned();
+                to_ret.push(SinglePart::plain(t));
+                return Ok(to_ret);
+            }
+        }
+        for it in msg_arr {
             let tp = it.get("type").ok_or("type not found")?;
             if tp == "text"{
                 let t = it.get("data").ok_or("data not found")?.get("text").ok_or("text not found")?.as_str().ok_or("text not str")?.to_owned();
@@ -234,20 +259,32 @@ impl EmailConnect {
                 multipart
             )?;
         let creds = lettre::transport::smtp::authentication::Credentials::new(bot_id, password);
-        let mailer = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(server.to_owned()).port(port)
-            .tls(lettre::transport::smtp::client::Tls::Required(lettre::transport::smtp::client::TlsParameters::new(server)?))
+        let use_ssl = self.smtp_ssl.read().unwrap().to_owned();
+        let mailer;
+        if use_ssl {
+            mailer = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(server.to_owned()).port(port)
+                .tls(lettre::transport::smtp::client::Tls::Wrapper(lettre::transport::smtp::client::TlsParameters::new(server)?))
+                .credentials(creds)
+                .build();
+        }else {
+            mailer = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(server.to_owned()).port(port)
+            .tls(lettre::transport::smtp::client::Tls::None)
             .credentials(creds)
             .build();
+        }
+        cq_add_log(&format!("sending email:{}",message_arr.to_string())).unwrap();
         let send_ret = match mailer.send(email).await {
             Ok(_) => "ok".to_owned(),
             Err(e) => format!("{:?}", e),
         };
         if send_ret == "ok" {
+            let msg_id = Uuid::new_v4().to_string();
+            cq_add_log(&format!("send email ok:{msg_id}")).unwrap();
             return Ok(serde_json::json!({
                 "status": "ok",
                 "retcode": 0,
                 "data": {
-                    "message_id": Uuid::new_v4().to_string()
+                    "message_id": msg_id
                 },
                 "echo": echo.to_owned()
             }));

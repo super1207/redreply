@@ -72,7 +72,7 @@ lewton = "0.10.2"
 
 msedge-tts = "0.2.1"
 
-imap = "2.4.1"
+imap = { git = "https://github.com/jonhoo/rust-imap"}
 native-tls = "0.2.12"
 mail-parser = "0.9.3"
 mail-smtp = "0.3.0"
