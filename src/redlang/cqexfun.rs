@@ -176,13 +176,18 @@ pub fn init_cq_ex_fun_map() {
         return Ok(Some(ret));
     });
 
-    fn get_stranger_info(self_t:&mut RedLang) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-        let user_id = &*self_t.get_exmap("发送者ID");
+    fn get_stranger_info(self_t:&mut RedLang,user_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+        let user_id_t;
+        if user_id == "" {
+            user_id_t = (*self_t.get_exmap("发送者ID")).to_owned();
+        }else {
+            user_id_t = user_id.to_owned();
+        }
         let send_json;
         send_json = serde_json::json!({
             "action":"get_stranger_info",
             "params":{
-                "user_id":user_id
+                "user_id":user_id_t
             }
         });
 
@@ -196,7 +201,7 @@ pub fn init_cq_ex_fun_map() {
         return Ok(data.to_owned());
     }
     add_fun(vec!["取发送者信息"],|self_t,_params|{
-        let data = get_stranger_info(self_t)?;
+        let data = get_stranger_info(self_t,"")?;
         let nickname = read_json_str(&data, "nickname");
         self_t.set_exmap("发送者昵称", &nickname)?;
         let to_ret = serde_json::json!({
@@ -205,6 +210,12 @@ pub fn init_cq_ex_fun_map() {
         });
         let ret = do_json_parse(&to_ret, &self_t.type_uuid)?;
         return Ok(Some(ret));
+    });
+    add_fun(vec!["取头像"],|self_t,params|{
+        let user_id = self_t.get_param(params, 0)?;
+        let data = get_stranger_info(self_t,&user_id).unwrap_or_default();
+        let avatar = read_json_str(&data, "avatar");
+        return Ok(Some(avatar));
     });
     add_fun(vec!["发送者ID","发送者QQ"],|self_t,_params|{
         let qq = self_t.get_exmap("发送者ID");
@@ -225,7 +236,7 @@ pub fn init_cq_ex_fun_map() {
             nickname = card;
         }
         if nickname == "" {
-            if let Ok(data) = get_stranger_info(self_t) {
+            if let Ok(data) = get_stranger_info(self_t,"") {
                 let name = read_json_str(&data, "nickname");
                 if name != "" {
                     self_t.set_exmap("发送者昵称", &name)?;

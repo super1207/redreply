@@ -17,6 +17,7 @@ pub struct OneBot11Connect {
     pub tx:Option<tokio::sync::mpsc::Sender<serde_json::Value>>,
     pub is_stop:Arc<AtomicBool>,
     pub stop_tx :Option<tokio::sync::mpsc::Sender<bool>>,
+    pub real_platform:Arc<std::sync::RwLock<Option<String>>>
 }
 
 lazy_static! {
@@ -66,9 +67,32 @@ impl OneBot11Connect {
             url:url.to_owned(),
             tx:None,
             is_stop:Arc::new(AtomicBool::new(false)),
-            stop_tx: None
-
+            stop_tx: None,
+            real_platform:Arc::new(RwLock::new(None))
         }
+    }
+    pub async fn get_avatar(&self,user_id:&str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let read_platform = self.real_platform.read().unwrap().to_owned();
+        if read_platform == None {
+            let mut send_json;
+            send_json = serde_json::json!({
+                "action":"get_version_info",
+                "params":{}
+            });
+            let self_id = self.self_id.read().unwrap().to_owned();
+            let ret = self.call_api("onebot11", &self_id, "", &mut send_json).await?;
+            let platform = ret["data"]["app_name"].as_str().unwrap_or("").to_ascii_lowercase();
+            if platform.contains("lagrange") || platform.contains("llonebot") || platform.contains("cqhttp") || platform.contains("napcat") {
+                *self.real_platform.write().unwrap() = Some("qq".to_string());
+            } else {
+                *self.real_platform.write().unwrap() = Some("".to_string());
+            }
+        }
+        let read_platform = self.real_platform.read().unwrap().to_owned();
+        if read_platform == Some("qq".to_owned()) {
+            return Ok(format!("https://thirdqq.qlogo.cn/g?b=qq&nk={user_id}&s=640"));
+        }
+        return Err("can't get avatar".into());
     }
 }
 
@@ -343,6 +367,14 @@ impl BotConnectTrait for OneBot11Connect {
                 }
             }
         }
+
+
+        let mut is_add_avatar = false;
+        let action: String = read_json_str(json, "action");
+        if action == "get_stranger_info" {
+            is_add_avatar = true;
+        }
+
         let (tx_ay, mut rx_ay) =  tokio::sync::mpsc::channel::<serde_json::Value>(1);
         G_ECHO_MAP.write().await.insert(echo.clone(), tx_ay);
         let _guard = scopeguard::guard(echo, |echo| {
@@ -364,7 +396,12 @@ impl BotConnectTrait for OneBot11Connect {
         self.tx.clone().ok_or("tx is none")?.send((*json).clone()).await?;
 
         tokio::select! {
-            std::option::Option::Some(val) = rx_ay.recv() => {
+            std::option::Option::Some(mut val) = rx_ay.recv() => {
+                if is_add_avatar {
+                    // 要补充头像
+                    let user_id = read_json_str(&val["data"],"user_id");
+                    val["data"]["avatar"] = serde_json::json!(self.get_avatar(&user_id).await.unwrap_or("".to_owned()));
+                }
                 return Ok(val);
             },
             _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
