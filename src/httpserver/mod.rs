@@ -176,7 +176,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         let github_url = sp_ret.get(1).ok_or("url error")?;
         let git_proxy = crate::pluscenter::get_proxy().await?;
         let client = reqwest::Client::builder().danger_accept_invalid_certs(true).no_proxy().build().unwrap();
-        let uri = <reqwest::Url as std::str::FromStr>::from_str(&(git_proxy.to_owned() + github_url)).unwrap();
+        let uri = <reqwest::Url as std::str::FromStr>::from_str(&(git_proxy.to_owned() + github_url))?;
         let req = client.get(uri).build().unwrap();
         if let Ok(ret) = client.execute(req).await {
             if ret.status() == reqwest::StatusCode::OK {
