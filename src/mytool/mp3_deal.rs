@@ -1,6 +1,6 @@
 use std::io::BufReader;
 
-use minimp3::{Decoder, Frame};
+use minimp3_fixed::{Decoder, Frame};
 
 use super::all_to_silk::PCMStruct;
 
@@ -24,8 +24,10 @@ pub fn deal_mp3(bufr: BufReader<&[u8]>)  -> Result<PCMStruct, Box<dyn std::error
                     pcm.data.push(it as f64);
                 }
             },
-            Err(minimp3::Error::Eof) => break,
-            Err(e) => panic!("{:?}", e),
+            Err(minimp3_fixed::Error::Eof) => break,
+            Err(e) => {
+                return Err(Box::new(e));
+            },
         }
     }
     
