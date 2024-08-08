@@ -263,7 +263,7 @@ impl EmailConnect {
         let mailer;
         if use_ssl {
             mailer = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(server.to_owned()).port(port)
-                .tls(lettre::transport::smtp::client::Tls::Wrapper(lettre::transport::smtp::client::TlsParameters::new(server)?))
+                .tls(lettre::transport::smtp::client::Tls::Required(lettre::transport::smtp::client::TlsParameters::new(server)?))
                 .credentials(creds)
                 .build();
         }else {
