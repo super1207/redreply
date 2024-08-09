@@ -12,9 +12,12 @@ use std::sync::RwLock;
 use std::thread;
 use cqapi::cq_add_log;
 use cqapi::cq_get_app_directory2;
+use encoding::Encoding;
 use httpserver::init_http_server;
 
 use libload::init_lib;
+use md5::Digest;
+use md5::Md5;
 use mytool::read_json_str;
 use path_clean::PathClean;
 use redlang::RedLang;
@@ -207,6 +210,38 @@ pub struct Asset;
 #[folder = "docs/"]
 #[prefix = "docs/"]
 pub struct AssetDoc;
+
+
+pub fn get_local_python_uid() -> Result<String,Box<dyn std::error::Error>> {
+
+
+    #[cfg(windows)]
+    use std::os::windows::process::CommandExt;
+
+    let mut command = std::process::Command::new("python");
+
+    #[cfg(windows)]
+    let output = command.creation_flags(0x08000000).arg("-c").arg("import sys; print(sys.version)").output()?;
+
+    #[cfg(not(windows))]
+    let output = command.arg("-c").arg("import sys; print(sys.version)").output()?;
+
+    let version = 
+    if cfg!(target_os = "windows") {
+        encoding::all::GBK.decode(&output.stdout, encoding::DecoderTrap::Ignore)?
+    }else {
+        String::from_utf8_lossy(&output.stdout).to_string()
+    };
+    
+    let mut hasher = Md5::new();
+    hasher.update(version.trim().to_string().as_bytes());
+    let result = hasher.finalize();
+    let mut content = String::new();
+    for ch in result {
+        content.push_str(&format!("{:02x}",ch));
+    }
+    return Ok(content);
+}
 
 
 pub fn show_ctrl_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {

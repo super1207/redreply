@@ -2958,33 +2958,52 @@ def red_out(sw):
         let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
 
+        let tmp_dir = get_tmp_dir().map_err(|x|{format!("get_tmp_dir err:{:?}",x)})?;
+        let python_id = crate::get_local_python_uid()?;
+        let python_dir = format!("{}pymain_{}_{}",tmp_dir,self_t.pkg_name,python_id);
 
-        fs::create_dir_all(app_dir.clone() + "pymain")?;
+        fs::create_dir_all(&python_dir)?;
+
+        let python_env_is_create;
+        if Path::new(&python_dir).join("redpymainok").is_file(){
+            python_env_is_create = true;
+        }else{
+            python_env_is_create = false;
+        }
 
         #[cfg(windows)]
         use std::os::windows::process::CommandExt;
 
-        #[cfg(windows)]
-        let foo = std::process::Command::new("python").creation_flags(0x08000000).current_dir(app_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
-        
-        #[cfg(not(windows))]
-        let foo = std::process::Command::new("python").current_dir(app_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
 
-        if foo.is_err() {
-            return Err(RedLang::make_err(&format!("python环境创建失败:{:?}",foo)));
-        }else {
-            let is_ok = foo.unwrap().success();
-            if !is_ok {
-                cq_add_log_w("python环境创建异常").unwrap();
+        if !python_env_is_create {
+            
+    
+            #[cfg(windows)]
+            let foo = std::process::Command::new("python").creation_flags(0x08000000).current_dir(python_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
+            
+            #[cfg(not(windows))]
+            let foo = std::process::Command::new("python").current_dir(python_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
+    
+            if foo.is_err() {
+                return Err(RedLang::make_err(&format!("python环境创建失败:{:?}",foo.err())));
+            } else {
+                let f = foo.unwrap();
+                let is_ok = f.clone().success();
+                if !is_ok {
+                    return Err(format!("python环境创建异常:{:?}",f).into());
+                } else {
+                    let mut f = fs::File::create(Path::new(&python_dir).join("redpymainok"))?;
+                    std::io::Write::write_all(&mut f, &[])?;
+                }
             }
         }
 
         let curr_env = std::env::var("PATH").unwrap_or_default();
 
         let new_env = if cfg!(target_os = "windows") {
-            format!("{}pymain/Scripts;{}",app_dir,curr_env)
+            format!("{}pymain/Scripts;{}",python_dir,curr_env)
         } else {
-            format!("{}pymain/bin:{}",app_dir,curr_env)
+            format!("{}pymain/bin:{}",python_dir,curr_env)
         };
         let pip_in = std::process::Stdio::piped();
 
