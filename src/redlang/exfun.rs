@@ -1834,6 +1834,7 @@ pub fn init_ex_fun_map() {
                 .window_size(Some((width, height)))
                 .headless(true)
                 .devtools(false)
+                .sandbox(false)
                 .args(arg_vec)
                 .build()?;
             let browser = headless_chrome::Browser::new(options)?;
