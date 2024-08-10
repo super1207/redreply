@@ -1813,6 +1813,12 @@ pub fn init_ex_fun_map() {
     });
 
 
+    add_fun(vec!["网页截图调试"],|self_t,params|{
+        let k1: String = self_t.get_param(params, 0)?;
+        self_t.set_coremap("网页截图调试", &k1)?;
+        return Ok(Some("".to_string()));
+    });
+
     
     add_fun(vec!["网页截图"],|self_t,params|{
         fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
@@ -1829,10 +1835,16 @@ pub fn init_ex_fun_map() {
             let width = self_t.get_coremap("浏览器宽")?.parse::<u32>().unwrap_or(1920);
             let height = self_t.get_coremap("浏览器高")?.parse::<u32>().unwrap_or(1080);
 
+            let headless;
+            if self_t.get_coremap("网页截图调试")? == "真" {
+                headless = false;
+            } else{
+                headless = true;
+            }
 
             let options = headless_chrome::LaunchOptions::default_builder()
                 .window_size(Some((width, height)))
-                .headless(true)
+                .headless(headless)
                 .devtools(false)
                 .sandbox(false)
                 .args(arg_vec)
@@ -1889,9 +1901,17 @@ pub fn init_ex_fun_map() {
             let width = self_t.get_coremap("浏览器宽")?.parse::<u32>().unwrap_or(1920);
             let height = self_t.get_coremap("浏览器高")?.parse::<u32>().unwrap_or(1080);
 
+            let headless;
+            if self_t.get_coremap("网页截图调试")? == "真" {
+                headless = false;
+            } else{
+                headless = true;
+            }
+
             let options = headless_chrome::LaunchOptions::default_builder()
                 .window_size(Some((width, height)))
-                .headless(true)
+                .headless(headless)
+                .sandbox(false)
                 .devtools(false)
                 .args(arg_vec)
                 .build()?;
@@ -1946,10 +1966,18 @@ pub fn init_ex_fun_map() {
             let width = self_t.get_coremap("浏览器宽")?.parse::<u32>().unwrap_or(1920);
             let height = self_t.get_coremap("浏览器高")?.parse::<u32>().unwrap_or(1080);
 
+            let headless;
+            if self_t.get_coremap("网页截图调试")? == "真" {
+                headless = false;
+            } else{
+                headless = true;
+            }
+
             let options = headless_chrome::LaunchOptions::default_builder()
                 .window_size(Some((width, height)))
-                .headless(true)
+                .headless(headless)
                 .devtools(false)
+                .sandbox(false)
                 .args(arg_vec)
                 .build()?;
             let browser = headless_chrome::Browser::new(options)?;
