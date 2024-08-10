@@ -218,7 +218,7 @@ pub fn get_local_python_uid() -> Result<String,Box<dyn std::error::Error>> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
-    let mut command = std::process::Command::new("python");
+    let mut command = std::process::Command::new("python3");
 
     #[cfg(windows)]
     let output = command.creation_flags(0x08000000).arg("-c").arg("import sys; print(sys.version)").output()?;
@@ -575,10 +575,10 @@ fn create_python_env() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
     #[cfg(windows)]
-    let foo = std::process::Command::new("python").creation_flags(0x08000000).current_dir(app_dir).arg("-m").arg("venv").arg("pymain").status();
+    let foo = std::process::Command::new("python3").creation_flags(0x08000000).current_dir(app_dir).arg("-m").arg("venv").arg("pymain").status();
     
     #[cfg(not(windows))]
-    let foo = std::process::Command::new("python").current_dir(app_dir).arg("-m").arg("venv").arg("pymain").status();
+    let foo = std::process::Command::new("python3").current_dir(app_dir).arg("-m").arg("venv").arg("pymain").status();
 
     if foo.is_err() {
         return Err(format!("python环境创建失败:{:?}",foo).into());
@@ -758,7 +758,7 @@ conn_fun()
 
 
         #[cfg(windows)]
-        let foo = std::process::Command::new("python").creation_flags(0x08000000)
+        let foo = std::process::Command::new("python3").creation_flags(0x08000000)
         .env("PATH", new_env)
         .arg("-c")
         .arg(code)
@@ -768,7 +768,7 @@ conn_fun()
 
 
         #[cfg(not(windows))]
-        let foo = std::process::Command::new("python")
+        let foo = std::process::Command::new("python3")
         .env("PATH", new_env)
         .arg("-c")
         .arg(code)
