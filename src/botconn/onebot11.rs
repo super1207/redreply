@@ -6,7 +6,7 @@ use hyper::header::HeaderValue;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{tungstenite, connect_async};
 
-use crate::{RT_PTR, cqapi::cq_add_log_w, mytool::read_json_str};
+use crate::{cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory1}, mytool::read_json_str, RT_PTR};
 
 use super::BotConnectTrait;
 
@@ -63,7 +63,7 @@ fn get_json_dat(msg:Result<hyper_tungstenite::tungstenite::Message, hyper_tungst
 impl OneBot11Connect {
     pub fn build(url:&str) -> Self {
         OneBot11Connect {
-            self_id:Arc::new(RwLock::new("".to_owned())),
+            self_id:Arc::new(RwLock::new("".to_owned())), 
             url:url.to_owned(),
             tx:None,
             is_stop:Arc::new(AtomicBool::new(false)),
@@ -71,7 +71,88 @@ impl OneBot11Connect {
             real_platform:Arc::new(RwLock::new(None))
         }
     }
-    pub async fn get_avatar(&self,user_id:&str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+
+    async fn deal_music_segment(&self,json: &mut serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+
+        let platform = self.get_platform().await?;
+        if platform != "qq" {
+            return Ok(());
+        }
+
+        let plus_dir = cq_get_app_directory1()?;
+        let config = plus_dir + "adapter_onebot11_config.json";
+        let config_str;
+        if let Ok(config_str_t) = tokio::fs::read_to_string(config).await {
+            config_str = config_str_t;
+        }else {
+            return Ok(());
+        }
+        let config_json:serde_json::Value = serde_json::from_str(&config_str)?;
+        let mut music_card_sign = read_json_str(&config_json, "music_card_sign");
+        if music_card_sign == "" {
+            return  Ok(());
+        }
+        if !music_card_sign.ends_with("/") {
+            music_card_sign.push_str("/");
+        }
+
+        let params = json.get_mut("params").ok_or("params is none")?;
+        if let Some(message) = params.get_mut("message") {
+            for msgobj in message.as_array_mut().ok_or("message is not array")? {
+                if msgobj["type"].as_str().ok_or("type is not str")? != "music" {
+                    continue;
+                }
+                if msgobj["data"]["type"].as_str().ok_or("data type is not str")? != "custom" {
+                    continue;
+                }
+                let data = &msgobj["data"];
+    
+                let url = read_json_str(data, "url");
+                let mut audio = read_json_str(data, "audio");
+                let title = read_json_str(data, "title");
+                let mut content = read_json_str(data, "content");  
+                let image = read_json_str(data, "image");
+    
+                // 兼容sm
+                if content.is_empty() {
+                    content = read_json_str(data, "singer");
+                }
+    
+                // 兼容gocq末期
+                if audio.is_empty() {
+                    audio = read_json_str(data, "voice");
+                }
+                
+    
+                let url_t:String = url::form_urlencoded::byte_serialize(url.as_bytes()).collect();
+                let audio_t:String = url::form_urlencoded::byte_serialize(audio.as_bytes()).collect();
+                let title_t:String = url::form_urlencoded::byte_serialize(title.as_bytes()).collect();
+                let content_t:String = url::form_urlencoded::byte_serialize(content.as_bytes()).collect();
+                let image_t:String = url::form_urlencoded::byte_serialize(image.as_bytes()).collect();
+    
+                cq_add_log(&format!("使用`{music_card_sign}`进行音乐卡片签名")).unwrap();
+                let get_url = format!("{music_card_sign}?url={audio_t}&song={title_t}&singer={content_t}&cover={image_t}&jump={url_t}&format=bilibili");
+                let api_get = reqwest::get(get_url).await?;
+                let ret_text = api_get.text().await?;
+                let j:serde_json::Value = serde_json::from_str(&ret_text)?;
+                let code = read_json_str(&j, "code");
+                if code != "1" { 
+                    cq_add_log_w(&format!("使用`{}`进行音乐卡片签名失败:{}",music_card_sign,ret_text)).unwrap();
+                    continue;
+                }else {
+                    cq_add_log(&format!("使用`{music_card_sign}`进行音乐卡片签名成功")).unwrap();
+                }
+                let music_json = j["message"].as_str().ok_or("music message is not str")?;
+                *msgobj.get_mut("type").ok_or("get type err")? = serde_json::json!("json");
+                *msgobj.get_mut("data").ok_or("get data err")? = serde_json::json!({
+                    "data": music_json
+                });
+            }
+        }
+        Ok(())
+    }
+
+    pub async fn get_platform(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let read_platform = self.real_platform.read().unwrap().to_owned();
         if read_platform == None {
             let mut send_json;
@@ -89,7 +170,16 @@ impl OneBot11Connect {
             }
         }
         let read_platform = self.real_platform.read().unwrap().to_owned();
-        if read_platform == Some("qq".to_owned()) {
+        if let Some(platform) = read_platform {
+            if platform == "qq" {
+                return Ok("qq".to_string());
+            }
+        }
+        return Ok("".to_string());
+    }
+    pub async fn get_avatar(&self,user_id:&str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let platform = self.get_platform().await?;
+        if platform == "qq" {
             return Ok(format!("https://thirdqq.qlogo.cn/g?b=qq&nk={user_id}&s=640"));
         }
         return Err("can't get avatar".into());
@@ -375,6 +465,10 @@ impl BotConnectTrait for OneBot11Connect {
             is_add_avatar = true;
         }
 
+        if action == "send_msg" || action == "send_group_msg" || action == "send_private_msg" {
+            self.deal_music_segment(json).await?;
+        }
+
         let (tx_ay, mut rx_ay) =  tokio::sync::mpsc::channel::<serde_json::Value>(1);
         G_ECHO_MAP.write().await.insert(echo.clone(), tx_ay);
         let _guard = scopeguard::guard(echo, |echo| {
@@ -418,3 +512,4 @@ impl BotConnectTrait for OneBot11Connect {
         return vec![(platform,self_id)];
     }
 }
+

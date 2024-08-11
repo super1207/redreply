@@ -20,10 +20,10 @@
 |---|---|
 | 官方QQ频道私域 | 内置(推荐)、基于Gensokyo/onebot(其次推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐)、基于satoricq/satori(不推荐) |
 | 官方QQ频道公域/群 | 内置(推荐)、基于Gensokyo/onebot(同样推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐)、基于satoricq/satori(不推荐) |
-| 开黑啦kook | 基于kookonebot(推荐)、基于satoricq/satori(同样推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐) |
-| 三方QQ | 基于openshamrock(推荐)、基于llonebot(同样推荐)、基于Lagrange.Core/onebot(其次推荐)、基于opqonebot(不推荐)、基于go-cqhttp(不推荐)、基于chronocat(无测试) |
-| 米哈游大别野 | 基于satoricq/satori(推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐) |
-| 其它 | 基于koishi/satori（无测试）、基于OlivOS（无测试） |
+| 开黑啦kook | 内置(推荐)、基于kookonebot(不推荐)、基于satoricq/satori(同样推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐) |
+| 三方QQ | 基于openshamrock(推荐)、基于llonebot(同样推荐)、基于Lagrange.Core/onebot(同样推荐)、基于opqonebot(不推荐)、基于go-cqhttp(不推荐)、基于chronocat(无测试) |
+| 米哈游大别野(已经没了) | 基于satoricq/satori(推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐) |
+| 邮件 | 内置(推荐) |
 
 [推荐]：经过super1207仔细测试，使用/部署体验良好。
 
