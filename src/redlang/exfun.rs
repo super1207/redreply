@@ -3008,10 +3008,10 @@ def red_out(sw):
             
     
             #[cfg(windows)]
-            let foo = std::process::Command::new("python").creation_flags(0x08000000).current_dir(python_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
+            let foo = std::process::Command::new("python3").creation_flags(0x08000000).current_dir(python_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
             
             #[cfg(not(windows))]
-            let foo = std::process::Command::new("python").current_dir(python_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
+            let foo = std::process::Command::new("python3").current_dir(python_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
     
             if foo.is_err() {
                 return Err(RedLang::make_err(&format!("python环境创建失败:{:?}",foo.err())));
@@ -3039,7 +3039,7 @@ def red_out(sw):
         let red_py_decode = crate::G_RED_PY_DECODE.to_owned();
 
         #[cfg(windows)]
-        let mut p = std::process::Command::new("python").creation_flags(0x08000000)
+        let mut p = std::process::Command::new("python3").creation_flags(0x08000000)
         .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -3051,7 +3051,7 @@ def red_out(sw):
 
 
         #[cfg(not(windows))]
-        let mut p = std::process::Command::new("python")
+        let mut p = std::process::Command::new("python3")
         .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -3120,7 +3120,7 @@ def red_out(sw):
         use std::os::windows::process::CommandExt;
 
         #[cfg(not(windows))]
-        let mut p = std::process::Command::new("python")
+        let mut p = std::process::Command::new("python3")
         .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -3131,7 +3131,7 @@ def red_out(sw):
 
 
         #[cfg(windows)]
-        let mut p = std::process::Command::new("python").creation_flags(0x08000000)
+        let mut p = std::process::Command::new("python3").creation_flags(0x08000000)
         .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())

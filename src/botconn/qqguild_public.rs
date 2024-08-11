@@ -351,7 +351,7 @@ async fn send_qqgroup_msg(self_t:&SelfData,group_id:&str,to_reply_id:&str,passiv
             if id != "" {
                 id += "|";
             }
-            id += &api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
+            id += api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?;
             set_msg_seq(self_t,passive_id,msg_seq)?;
         }
         let event_id = set_event_id(self_t,&serde_json::json!({"t":"send_group_msg","d":{"id":id,"channel_id":group_id}}),5 * 60)?;
