@@ -369,7 +369,7 @@ pub struct RedLang {
     xh_vec: Vec<[bool; 2]>,                // 循环控制栈
     params_vec: Vec<Vec<String>>,          // 函数参数栈
     fun_ret_vec: Vec<(bool,usize)>,                // 记录函数是否返回,循环深度
-    pub exmap:Rc<RefCell<HashMap<String, Arc<String>>>>,
+    pub exmap:Rc<RefCell<HashMap<String, Arc<String>>>>, // 用于记录平台相关数据
     xuhao: HashMap<String, usize>,
     pub type_uuid:String,
     pub pkg_name:String,

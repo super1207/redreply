@@ -70,10 +70,11 @@
                         <option value="脚本错误">脚本错误</option>
                         <option value="群成员增加">群成员增加</option>
                         <option value="网络触发">网络触发</option>
-                        <option value="内容过滤">内容过滤(测试中)</option>
+                        <option value="内容过滤">内容过滤</option>
+                        <option value="延迟触发">延迟触发</option>
                     </select>
                     <div v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div"><span>关键词：</span><input id="script_keyword" v-model="script_keyword"></input></div>
-                    <select id="script_ppfs" v-model="script_ppfs" v-if="(script_cffs == '群聊触发') || (script_cffs == '私聊触发') || (script_cffs == '群、私聊触发') || (script_cffs == '网络触发')">
+                    <select id="script_ppfs" v-model="script_ppfs" v-if="(script_cffs == '群聊触发') || (script_cffs == '私聊触发') || (script_cffs == '群、私聊触发') || (script_cffs == '网络触发') || (script_cffs == '延迟触发')">
                         <option disabled value="匹配方式">匹配方式</option>
                         <option value ="完全匹配">完全匹配</option>
                         <option value ="正则匹配">正则匹配</option>

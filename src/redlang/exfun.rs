@@ -13,7 +13,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::io::Write;
-use crate::{add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, del_file_lock, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
+use crate::{add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, cronevent::{OneTimeRunStruct, G_ONE_TIME_RUN}, del_file_lock, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, G_QUIT_FLAG, RT_PTR};
 
 use image::{AnimationDecoder, EncodableLayout, GenericImageView, ImageBuffer, ImageFormat, Rgba};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -627,7 +627,18 @@ pub fn init_ex_fun_map() {
         return Ok(Some(self_t.build_bin(buf)));
     });
     add_fun(vec!["延时"],|self_t,params|{
-        let mill = self_t.get_param(params, 0)?.parse::<u64>()?;
+        let mut mill = self_t.get_param(params, 0)?.parse::<u64>()?;
+        while mill > 1000 {
+            let time_struct = core::time::Duration::from_secs(1);
+            std::thread::sleep(time_struct);
+            mill -= 1000;
+            if *G_QUIT_FLAG.read().unwrap() == true {
+                return Err("延时终止，因用户要求退出".into());
+            }
+        }
+        if *G_QUIT_FLAG.read().unwrap() == true {
+            return Err("延时终止，因用户要求退出".into());
+        }
         let time_struct = core::time::Duration::from_millis(mill);
         std::thread::sleep(time_struct);
         return Ok(Some("".to_string()));
@@ -3563,6 +3574,22 @@ def red_out(sw):
             return Ok(Some(self_t.get_param(params, 3)?));
         }
         return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["设置延迟触发"],|self_t,params|{
+        // 【设置延迟触发@关键词@时间@传递数据】
+        let keyword = self_t.get_param(params, 0)?;
+        let mut tm = self_t.get_param(params, 1)?.parse::<i64>()?;
+        let subdata = self_t.get_param(params, 2)?;
+        let now_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64;
+        tm += now_time;
+        let mut lk = G_ONE_TIME_RUN.lock().unwrap();
+        lk.push(OneTimeRunStruct {
+             run_time: tm,
+             pkg_name: self_t.pkg_name.to_owned(), 
+             flag: keyword, 
+             sub_data: subdata,
+              data: (*self_t.exmap).borrow().clone() });
+        Ok(Some("".to_string()))
     });
 }
 

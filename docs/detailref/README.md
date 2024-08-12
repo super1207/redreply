@@ -569,8 +569,6 @@ hellohellohellohellohello
 
 X，Y都必须为非负整数，且Y**不能小于**X。
 
-对于32位版本，X、Y最大支持32位二进制位，对于64位版本，X、Y最大支持64位二进制位。
-
 
 ### 闭包
 
@@ -1918,6 +1916,13 @@ return ""
 【TTS@<font color="red">文本</font>@<font color="red">音色</font>】
 
 返回语音字节集(mp3或wav)，音色可以省略，也可以为`Xiaoyi`（女声）。
+
+
+### 设置延迟触发
+
+【设置延迟触发@<font color="red">关键词</font>@<font color="red">延迟时间(ms)</font>@<font color="red">传递数据</font>】
+
+在<font color="red">延迟时间(ms)</font>后触发关键词为<font color="red">关键词</font>且触发方式为`延迟触发`的当前包脚本。平台相关的数据会被复制到被触发的脚本中，并且可使用【传递】命令取出<font color="red">传递数据</font>。
 
 
 ## 平台相关命令说明
