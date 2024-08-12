@@ -1,6 +1,6 @@
 use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
 
-use crate::{add_file_lock, cqapi::{cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, redlang::{get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID};
+use crate::{add_file_lock, cqapi::{cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, redlang::{get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_QUIT_FLAG, G_SCRIPT_RELATE_MSG, PAGING_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -707,7 +707,7 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["输入流"],|self_t,params|{
         let tm = self_t.get_param(params, 0)?;
-        let d = std::time::Duration::from_millis(tm.parse::<u64>().unwrap_or(15000));
+        let tm = tm.parse::<u64>().unwrap_or(15000);
         let self_id = self_t.get_exmap("机器人ID");
         let group_id = self_t.get_exmap("群ID");
         let user_id = self_t.get_exmap("发送者ID");
@@ -740,8 +740,24 @@ pub fn init_cq_ex_fun_map() {
                 lk_vec.remove(pos);
             }
         });
-        
-        let rv = rx.recv_timeout(d);
+        let mut tm = tm;
+        while tm > 1000 {
+            if *G_QUIT_FLAG.read().unwrap() == true {
+                return Err("输入流终止，因用户要求退出".into());
+            }
+            let rv = rx.recv_timeout(std::time::Duration::from_secs(1));
+            if let Ok(msg) = rv {
+                return Ok(Some(msg));
+            }
+            tm -= 1000;
+        }
+        if *G_QUIT_FLAG.read().unwrap() == true {
+            return Err("输入流终止，因用户要求退出".into());
+        }
+        let rv = rx.recv_timeout(std::time::Duration::from_millis(tm));
+        if let Ok(msg) = rv {
+            return Ok(Some(msg));
+        }
         let mut ret_str = String::new();
         if let Ok(msg) = rv {
             ret_str = msg;
@@ -750,7 +766,7 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["群输入流"],|self_t,params|{
         let tm = self_t.get_param(params, 0)?;
-        let d = std::time::Duration::from_millis(tm.parse::<u64>().unwrap_or(15000));
+        let tm = tm.parse::<u64>().unwrap_or(15000);
         let self_id = self_t.get_exmap("机器人ID");
         let group_id = self_t.get_exmap("群ID");
         let user_id = self_t.get_exmap("发送者ID");
@@ -783,9 +799,28 @@ pub fn init_cq_ex_fun_map() {
                 lk_vec.remove(pos);
             }
         });
-        
-        let rv = rx.recv_timeout(d);
         let mut ret_str = self_t.build_obj(BTreeMap::new());
+        let mut tm = tm;
+        while tm > 1000 {
+            if *G_QUIT_FLAG.read().unwrap() == true {
+                return Err("输入流终止，因用户要求退出".into());
+            }
+            let rv = rx.recv_timeout(std::time::Duration::from_secs(1));
+            if let Ok(msg) = rv {
+                let js:serde_json::Value = serde_json::from_str(&msg).unwrap();
+                let js_obj = js.as_object().unwrap();
+                let mut mp:BTreeMap::<String,String> = BTreeMap::new();
+                mp.insert("发送者ID".to_string(), js_obj["发送者ID"].as_str().unwrap().to_owned());
+                mp.insert("消息".to_string(), js_obj["消息"].as_str().unwrap().to_owned());
+                ret_str = self_t.build_obj(mp);
+                return Ok(Some(ret_str));
+            }
+            tm -= 1000;
+        }
+        if *G_QUIT_FLAG.read().unwrap() == true {
+            return Err("输入流终止，因用户要求退出".into());
+        }
+        let rv = rx.recv_timeout(std::time::Duration::from_millis(tm));
         if let Ok(msg) = rv {
             let js:serde_json::Value = serde_json::from_str(&msg).unwrap();
             let js_obj = js.as_object().unwrap();
