@@ -39,7 +39,7 @@ sevenz-rust = "0.6.1"
 jsonpath-rust = "0.7.0"
 rusttype = "0.9.3"
 # markdown = "1.0.0-alpha.7"
-reqwest = {version = "0.12.5",default-features = false,features = ["rustls-tls","multipart"]}
+reqwest = {version = "0.12.5",default-features = false,features = ["native-tls-vendored","multipart"]}
 time = { version = "0.3.36", features = ["formatting", "macros"] }
 # headless_chrome = {version="1.0.5",default-features = false}
 webp = "0.3.0"
