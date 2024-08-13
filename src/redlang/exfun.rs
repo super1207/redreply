@@ -13,7 +13,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::io::Write;
-use crate::{add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, cronevent::{OneTimeRunStruct, G_ONE_TIME_RUN}, del_file_lock, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, G_QUIT_FLAG, RT_PTR};
+use crate::{add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, cronevent::{OneTimeRunStruct, G_ONE_TIME_RUN}, del_file_lock, get_python_cmd_name, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, G_QUIT_FLAG, RT_PTR};
 
 use image::{AnimationDecoder, EncodableLayout, GenericImageView, ImageBuffer, ImageFormat, Rgba};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -3019,10 +3019,10 @@ def red_out(sw):
             
     
             #[cfg(windows)]
-            let foo = std::process::Command::new("python3").creation_flags(0x08000000).current_dir(python_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
+            let foo = std::process::Command::new(get_python_cmd_name().unwrap()).creation_flags(0x08000000).current_dir(python_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
             
             #[cfg(not(windows))]
-            let foo = std::process::Command::new("python3").current_dir(python_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
+            let foo = std::process::Command::new(get_python_cmd_name().unwrap()).current_dir(python_dir.clone()).arg("-m").arg("venv").arg("pymain").status();
     
             if foo.is_err() {
                 return Err(RedLang::make_err(&format!("python环境创建失败:{:?}",foo.err())));
@@ -3050,7 +3050,7 @@ def red_out(sw):
         let red_py_decode = crate::G_RED_PY_DECODE.to_owned();
 
         #[cfg(windows)]
-        let mut p = std::process::Command::new("python3").creation_flags(0x08000000)
+        let mut p = std::process::Command::new(get_python_cmd_name().unwrap()).creation_flags(0x08000000)
         .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -3062,7 +3062,7 @@ def red_out(sw):
 
 
         #[cfg(not(windows))]
-        let mut p = std::process::Command::new("python3")
+        let mut p = std::process::Command::new(get_python_cmd_name().unwrap())
         .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -3131,7 +3131,7 @@ def red_out(sw):
         use std::os::windows::process::CommandExt;
 
         #[cfg(not(windows))]
-        let mut p = std::process::Command::new("python3")
+        let mut p = std::process::Command::new(get_python_cmd_name().unwrap())
         .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -3142,7 +3142,7 @@ def red_out(sw):
 
 
         #[cfg(windows)]
-        let mut p = std::process::Command::new("python3").creation_flags(0x08000000)
+        let mut p = std::process::Command::new(get_python_cmd_name().unwrap()).creation_flags(0x08000000)
         .stdin(pip_in)
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
