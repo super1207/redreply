@@ -1858,6 +1858,7 @@ pub fn init_ex_fun_map() {
                 .headless(headless)
                 .devtools(false)
                 .sandbox(false)
+                .idle_browser_timeout(value)
                 .args(arg_vec)
                 .build()?;
             let browser = headless_chrome::Browser::new(options)?;
