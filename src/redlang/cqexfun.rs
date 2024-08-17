@@ -1,6 +1,6 @@
 use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
 
-use crate::{add_file_lock, cqapi::{cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, redlang::{get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_QUIT_FLAG, G_SCRIPT_RELATE_MSG, PAGING_UUID};
+use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, redlang::{get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_QUIT_FLAG, G_SCRIPT_RELATE_MSG, PAGING_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -318,6 +318,10 @@ pub fn init_cq_ex_fun_map() {
         let mut ret:String = String::new();
         if tp == "字节集" {
             let bin = RedLang::parse_bin(&mut self_t.bin_pool,&pic)?;
+            if bin.len() == 0 {
+                cq_add_log_w("图片字节集长度为0").unwrap();
+                return Ok(Some("".to_owned()));
+            }
             let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
             ret = format!("[CQ:image,file=base64://{}]",b64_str);
         }else if tp == "文本" {

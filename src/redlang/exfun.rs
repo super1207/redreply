@@ -1853,12 +1853,17 @@ pub fn init_ex_fun_map() {
                 headless = true;
             }
 
+            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            if timeout_str == "" {
+                timeout_str = "30000".to_owned();
+            }
+
             let options = headless_chrome::LaunchOptions::default_builder()
                 .window_size(Some((width, height)))
                 .headless(headless)
                 .devtools(false)
                 .sandbox(false)
-                .idle_browser_timeout(value)
+                .idle_browser_timeout(Duration::from_millis(timeout_str.parse()?))
                 .args(arg_vec)
                 .build()?;
             let browser = headless_chrome::Browser::new(options)?;
@@ -1920,11 +1925,17 @@ pub fn init_ex_fun_map() {
                 headless = true;
             }
 
+            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            if timeout_str == "" {
+                timeout_str = "30000".to_owned();
+            }
+
             let options = headless_chrome::LaunchOptions::default_builder()
                 .window_size(Some((width, height)))
                 .headless(headless)
                 .sandbox(false)
                 .devtools(false)
+                .idle_browser_timeout(Duration::from_millis(timeout_str.parse()?))
                 .args(arg_vec)
                 .build()?;
             let browser = headless_chrome::Browser::new(options)?;
@@ -1985,11 +1996,17 @@ pub fn init_ex_fun_map() {
                 headless = true;
             }
 
+            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            if timeout_str == "" {
+                timeout_str = "30000".to_owned();
+            }
+
             let options = headless_chrome::LaunchOptions::default_builder()
                 .window_size(Some((width, height)))
                 .headless(headless)
                 .devtools(false)
                 .sandbox(false)
+                .idle_browser_timeout(Duration::from_millis(timeout_str.parse()?))
                 .args(arg_vec)
                 .build()?;
             let browser = headless_chrome::Browser::new(options)?;
