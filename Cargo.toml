@@ -86,7 +86,7 @@ winreg = "0.52.0"
 xcap = "0.0.10"
 winconsole = "0.11.1"
 tray-icon = "0.14.3"
-fltk = { version = "1.4.33",features = ["fltk-bundled"]}
+fltk = { version = "1.4.33"}
 
 [profile.release]
 panic = "abort" # Strip expensive panic clean-up logic
