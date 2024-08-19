@@ -90,7 +90,7 @@ pub fn to_qq_silk(pcm: &PCMStruct) -> Vec<u8> {
         index += pcm.channel_num;
     }
     // bit_rate也最好是24000，不然可能在NTQQ上无法播放
-    if let Ok(out) = silk_rs::encode_silk(u16_data, out_sample_rate, out_sample_rate, true){
+    if let Ok(out) = silk_rs_no_llvm::encode_silk(u16_data, out_sample_rate, out_sample_rate, true){
         return out;
     }else{
         return vec![];

@@ -303,11 +303,17 @@ pub fn json_to_cq_str(js: & serde_json::Value) ->Result<String, Box<dyn std::err
             if nodes.is_object() {
                 for j in nodes.as_object().ok_or("msg nodes 不是object")? {
                     let k = j.0;
-                    let v = json_as_str(j.1)?;
-                    cqcode.push_str(k);
-                    cqcode.push('=');
-                    cqcode.push_str(cq_params_encode(&v).as_str());
-                    cqcode.push(',');    
+                    if let Ok(v) = json_as_str(j.1) {
+                        cqcode.push_str(k);
+                        cqcode.push('=');
+                        cqcode.push_str(cq_params_encode(&v).as_str());
+                        cqcode.push(',');
+                    } else {
+                        cqcode.push_str(k);
+                        cqcode.push('=');
+                        cqcode.push_str(cq_params_encode(&j.1.to_string()).as_str());
+                        cqcode.push(',');
+                    }
                 }
             }
             let n= &cqcode[0..cqcode.len()-1];
