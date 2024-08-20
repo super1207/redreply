@@ -54,7 +54,8 @@ pub struct KookConnect {
     pub is_stop:Arc<AtomicBool>,
     pub stop_tx :Option<tokio::sync::mpsc::Sender<bool>>,
     pub sn:Arc<AtomicI64>,
-    msg_ids:Arc<RwLock<VecDeque<MsgIdPair>>>
+    msg_ids:Arc<RwLock<VecDeque<MsgIdPair>>>,
+    recieve_pong:Arc<AtomicBool>,
 }
 
 impl KookConnect {
@@ -66,7 +67,8 @@ impl KookConnect {
             is_stop:Arc::new(AtomicBool::new(false)),
             stop_tx: None,
             sn: Arc::new(AtomicI64::new(0)),
-            msg_ids:Arc::new(RwLock::new(VecDeque::new()))
+            msg_ids:Arc::new(RwLock::new(VecDeque::new())),
+            recieve_pong:Arc::new(AtomicBool::new(false)),
         }
     }
     async fn http_get_json(&self,uri:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
@@ -737,14 +739,18 @@ impl KookConnect {
         }
         Ok(())
     }
-    async fn conv_event(self:&KookConnect,s:String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    async fn conv_event(self:&KookConnect,s:String) -> Result<i32, Box<dyn std::error::Error + Send + Sync>> {
         let js:serde_json::Value = serde_json::from_str(&s)?;
         let s = js.get("s").ok_or("s not found")?.as_i64().ok_or("s not i64")?;
         if s == 5 {
             cq_add_log_w("要求重连").unwrap();
+            return Ok(5);
         }else if s == 1 {
             cq_add_log("连接KOOK成功").unwrap();
-        }else if s == 0 {
+        }else if s == 3 {
+            self.recieve_pong.store(true, std::sync::atomic::Ordering::Relaxed);
+        }
+        else if s == 0 {
             cq_add_log(&format!("收到KOOK事件:{}", js.to_string())).unwrap();
             let d = js.get("d").ok_or("d not found")?;
             let new_sn = js.get("sn").ok_or("sn not found")?.as_i64().ok_or("sn not i64")?;
@@ -754,7 +760,7 @@ impl KookConnect {
                 cq_add_log_w(&format!("处理KOOK事件出错:{}",rst.err().unwrap())).unwrap();
             }
         }
-        Ok(())
+        Ok(0)
     }
     pub fn to_json_str(val:&serde_json::Value) -> String {
         if val.is_i64() {
@@ -1496,7 +1502,7 @@ impl BotConnectTrait for KookConnect {
     async fn disconnect(&mut self){
         self.is_stop.store(true,std::sync::atomic::Ordering::Relaxed);
         if self.stop_tx.is_some() {
-            let _foo = self.stop_tx.clone().unwrap().send(true).await;
+            let _foo = self.stop_tx.clone().unwrap().send_timeout(true, Duration::from_secs(1)).await;
         }
     }
 
@@ -1516,21 +1522,37 @@ impl BotConnectTrait for KookConnect {
         let (ws_stream, _) = connect_async(wss_url).await?;
         let (mut write_halt,mut read_halt) = ws_stream.split();
         let sn_ptr = self.sn.clone();
-        let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
+        let is_stop = self.is_stop.clone();
+        let recieve_pong = Arc::<AtomicBool>::downgrade(&self.recieve_pong);
         let (stoptx, mut stoprx) =  tokio::sync::mpsc::channel::<bool>(1);
-        self.stop_tx = Some(stoptx);
+        self.stop_tx = Some(stoptx.clone());
+        let stop_tx = stoptx.clone();
         tokio::spawn(async move {
             let mut index = 0;
+            let mut index_lost_pong = -1;
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
-                if let Some(val) = is_stop.upgrade() {
-                    if val.load(std::sync::atomic::Ordering::Relaxed) {
+                if is_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
+                }
+                index += 1;
+
+                if index == 7 {
+                    if let Some(val) = recieve_pong.upgrade() {
+                        if val.load(std::sync::atomic::Ordering::Relaxed) {
+                            index_lost_pong = 0;
+                        } else {
+                            index_lost_pong += 1;
+                        }
+                        if index_lost_pong >= 2 {
+                            cq_add_log_w("接收KOOK心跳失败").unwrap();
+                            break;
+                        }
+                    } else {
                         break;
                     }
-                }else {
-                    break; 
-                } 
-                index += 1;
+                }
+
                 if index == 30 {
                     index = 0;
                     let json_str = serde_json::json!({
@@ -1545,19 +1567,23 @@ impl BotConnectTrait for KookConnect {
                     }
                 }
             }
+            // 断开连接
+            is_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+            let _foo = stop_tx.send_timeout(true, Duration::from_secs(1)).await;
         });
-        let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
+        let is_stop = self.is_stop.clone();
         let url_str_t = self.url.clone();
         let kobj = self.clone();
+        let stop_tx = stoptx.clone();
         tokio::spawn(async move {
+            let is_stop = is_stop;
+            let stop_tx = stop_tx.clone();
             loop {
+                let is_stop = is_stop.clone();
+                let stop_tx = stop_tx.clone();
                 let kobj = kobj.clone();
-                if let Some(val) = is_stop.upgrade() {
-                    if val.load(std::sync::atomic::Ordering::Relaxed) {
-                        break;
-                    }
-                }else {
-                    break; 
+                if is_stop.clone().load(std::sync::atomic::Ordering::Relaxed) {
+                    break;
                 }
                 tokio::select! {
                     Some(msg_rst) = read_halt.next() => {
@@ -1567,9 +1593,19 @@ impl BotConnectTrait for KookConnect {
                             let mut s = String::new();
                             if let Ok(_) = d.read_to_string(&mut s) {
                                 tokio::spawn(async move {
+                                    let is_stop = is_stop.clone();
+                                    let stop_tx = stop_tx.clone();
                                     let kobj = kobj.clone();
-                                    if let Err(e) = KookConnect::conv_event(&kobj,s).await {
-                                        crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                                    let rst = KookConnect::conv_event(&kobj,s).await;
+                                    if rst.is_err() {
+                                        crate::cqapi::cq_add_log(format!("{:?}", rst.err().unwrap()).as_str()).unwrap();
+                                    } else {
+                                        let code = rst.unwrap();
+                                        // 断开连接
+                                        if code != 0 {
+                                            is_stop.store(true, std::sync::atomic::Ordering::Relaxed);
+                                            let _foo = stop_tx.clone().send_timeout(true, Duration::from_secs(1)).await;
+                                        }
                                     }
                                 });
                             }else {
@@ -1587,9 +1623,7 @@ impl BotConnectTrait for KookConnect {
                 }
             }
             // 移除conn
-            if let Some(val) = is_stop.upgrade() {
-                val.store(true, std::sync::atomic::Ordering::Relaxed);
-            }
+            is_stop.store(true, std::sync::atomic::Ordering::Relaxed);
             cq_add_log_w(&format!("kook连接已经断开(read_halt):{url_str_t}")).unwrap();
         });
         Ok(())
