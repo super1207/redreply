@@ -7,7 +7,7 @@ mod qq_guild_all;
 mod kook;
 mod email;
 
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 
@@ -103,6 +103,10 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                     for index in 0..earse_urls.len() {
                         earse_bot[index].write().await.disconnect().await;
                         G_BOT_MAP.write().await.remove(&earse_urls[index]);
+                    }
+                    // 有bot移除，等30秒再进行连接
+                    if earse_urls.len() > 0 {
+                        tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
                 // 连接未在bot_map中的url

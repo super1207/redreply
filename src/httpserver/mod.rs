@@ -988,7 +988,7 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
                     lk.insert(ws_uid.to_owned(), (tx,platform.clone(),self_id.clone()));
                 }
                 if let Err(e) = serve_onebot_websocket(websocket,rx,platform,self_id).await {
-                    cq_add_log_w(&format!("Error in websocket connection: {}", e)).unwrap();
+                    cq_add_log_w(&format!("onebots Error in websocket connection: {}", e)).unwrap();
                 }
                 {
                     let mut lk = G_ONEBOT_WS_MAP.write().await;
@@ -1067,7 +1067,7 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
                     lk.insert(uid.clone(), tx);
                 }
                 if let Err(e) = serve_websocket(websocket,rx).await {
-                    cq_add_log_w(&format!("Error in websocket connection: {}", e)).unwrap();
+                    cq_add_log_w(&format!("watchlog Error in websocket connection: {}", e)).unwrap();
                 }
                 // 线程结束，删除对应的entry
                 let mut lk = G_LOG_MAP.write().await;
@@ -1097,7 +1097,7 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
                     *k = Some(tx);
                 }
                 if let Err(e) = serve_py_websocket(websocket,rx).await {
-                    cq_add_log_w(&format!("Error in websocket connection: {}", e)).unwrap();
+                    cq_add_log_w(&format!("pyserver Error in websocket connection: {}", e)).unwrap();
                 }
             });
             

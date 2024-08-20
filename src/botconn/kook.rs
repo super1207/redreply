@@ -746,7 +746,13 @@ impl KookConnect {
             cq_add_log_w("要求重连").unwrap();
             return Ok(5);
         }else if s == 1 {
-            cq_add_log("连接KOOK成功").unwrap();
+            cq_add_log_w(&format!("收到KOOK HELLO包：{}", js.to_string())).unwrap();
+            if js["d"]["code"].as_i64().ok_or("HELLO包错误")? != 0 {
+                return Ok(1);
+            } else {
+                cq_add_log("连接KOOK成功").unwrap();
+            }
+            // 
         }else if s == 3 {
             cq_add_log("KOOK心跳接收成功").unwrap();
             self.recieve_pong.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -760,6 +766,8 @@ impl KookConnect {
             if rst.is_err() {
                 cq_add_log_w(&format!("处理KOOK事件出错:{}",rst.err().unwrap())).unwrap();
             }
+        } else {
+            cq_add_log_w(&format!("KOOK收到未知数据：{}", js.to_string())).unwrap();
         }
         Ok(0)
     }
@@ -1517,6 +1525,7 @@ impl BotConnectTrait for KookConnect {
         self.token = config_json.get("Token").ok_or("kook url格式错误:没有Token")?.as_str().ok_or("kook url格式错误:Token不是字符串")?.to_owned();
 
         let login_info = self.get_login_info().await?;
+
         *self.self_id.write().unwrap() = login_info.user_id; 
 
         let wss_url = self.get_gateway().await?;
@@ -1525,7 +1534,7 @@ impl BotConnectTrait for KookConnect {
         let sn_ptr = self.sn.clone();
         let is_stop = self.is_stop.clone();
         let recieve_pong = self.recieve_pong.clone();
-        let (stoptx, mut stoprx) =  tokio::sync::mpsc::channel::<bool>(1);
+        let (stoptx, mut stoprx) =  tokio::sync::mpsc::channel::<bool>(10);
         self.stop_tx = Some(stoptx.clone());
         let stop_tx = stoptx.clone();
         tokio::spawn(async move {
@@ -1570,6 +1579,12 @@ impl BotConnectTrait for KookConnect {
             // 断开连接
             is_stop.store(true, std::sync::atomic::Ordering::Relaxed);
             let _foo = stop_tx.send_timeout(true, Duration::from_secs(1)).await;
+            use crate::botconn::kook::tungstenite::protocol::CloseFrame;
+            use crate::botconn::kook::tungstenite::protocol::frame::coding::CloseCode::Normal;
+            let _err = write_halt.send(tungstenite::Message::Close(Some(CloseFrame{ 
+                code: Normal, 
+                reason: std::borrow::Cow::Borrowed("byebye")
+            }))).await;
             cq_add_log_w("KOOK心跳断开").unwrap();
         });
         let is_stop = self.is_stop.clone();
@@ -1599,7 +1614,7 @@ impl BotConnectTrait for KookConnect {
                                     let kobj = kobj.clone();
                                     let rst = KookConnect::conv_event(&kobj,s).await;
                                     if rst.is_err() {
-                                        crate::cqapi::cq_add_log(format!("{:?}", rst.err().unwrap()).as_str()).unwrap();
+                                        crate::cqapi::cq_add_log(format!("KOOK抛出错误:{:?}", rst.err().unwrap()).as_str()).unwrap();
                                     } else {
                                         let code = rst.unwrap();
                                         // 断开连接
