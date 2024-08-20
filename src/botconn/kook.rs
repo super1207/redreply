@@ -748,6 +748,7 @@ impl KookConnect {
         }else if s == 1 {
             cq_add_log("连接KOOK成功").unwrap();
         }else if s == 3 {
+            cq_add_log("KOOK心跳接收成功").unwrap();
             self.recieve_pong.store(true, std::sync::atomic::Ordering::Relaxed);
         }
         else if s == 0 {
@@ -1523,7 +1524,7 @@ impl BotConnectTrait for KookConnect {
         let (mut write_halt,mut read_halt) = ws_stream.split();
         let sn_ptr = self.sn.clone();
         let is_stop = self.is_stop.clone();
-        let recieve_pong = Arc::<AtomicBool>::downgrade(&self.recieve_pong);
+        let recieve_pong = self.recieve_pong.clone();
         let (stoptx, mut stoprx) =  tokio::sync::mpsc::channel::<bool>(1);
         self.stop_tx = Some(stoptx.clone());
         let stop_tx = stoptx.clone();
@@ -1538,17 +1539,14 @@ impl BotConnectTrait for KookConnect {
                 index += 1;
 
                 if index == 7 {
-                    if let Some(val) = recieve_pong.upgrade() {
-                        if val.load(std::sync::atomic::Ordering::Relaxed) {
-                            index_lost_pong = 0;
-                        } else {
-                            index_lost_pong += 1;
-                        }
-                        if index_lost_pong >= 2 {
-                            cq_add_log_w("接收KOOK心跳失败").unwrap();
-                            break;
-                        }
+                    if recieve_pong.load(std::sync::atomic::Ordering::Relaxed) {
+                        recieve_pong.store(false, std::sync::atomic::Ordering::Relaxed);
+                        index_lost_pong = 0;
                     } else {
+                        index_lost_pong += 1;
+                    }
+                    if index_lost_pong >= 2 {
+                        cq_add_log_w("接收KOOK心跳失败").unwrap();
                         break;
                     }
                 }
@@ -1562,14 +1560,17 @@ impl BotConnectTrait for KookConnect {
                     // cq_add_log(&format!("发送KOOK心跳:{json_str}")).unwrap();
                     let foo = write_halt.send(tungstenite::Message::Text(json_str)).await;
                     if foo.is_err() {
-                        cq_add_log_w("发送KOOK心跳失败").unwrap();
+                        cq_add_log_w("发送KOOK心跳发送失败").unwrap();
                         break;
+                    }else {
+                        cq_add_log("KOOK心跳发送成功").unwrap();
                     }
                 }
             }
             // 断开连接
             is_stop.store(true, std::sync::atomic::Ordering::Relaxed);
             let _foo = stop_tx.send_timeout(true, Duration::from_secs(1)).await;
+            cq_add_log_w("KOOK心跳断开").unwrap();
         });
         let is_stop = self.is_stop.clone();
         let url_str_t = self.url.clone();
