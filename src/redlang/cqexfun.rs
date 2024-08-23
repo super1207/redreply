@@ -434,6 +434,29 @@ pub fn init_cq_ex_fun_map() {
         let _cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str());
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["表情回应"],|self_t,params|{
+        let emoji_id = self_t.get_param(params, 0)?;
+        let message_id = self_t.get_exmap("消息ID");
+        let emojis = emoji_id.chars().collect::<Vec<char>>();
+        if emojis.len() != 1 {
+            cq_add_log_w(&format!("表情回应失败，表情ID错误1")).unwrap();
+            return Ok(Some("".to_string())); 
+        }
+        let emoji: char = emojis[0];
+        let emoji_num = emoji as i32;
+        let send_json = serde_json::json!({
+            "action":"set_msg_emoji_like",
+            "params":{
+                "message_id": *message_id,
+                "emoji_id": emoji_num.to_string(),
+            }
+        });
+        let self_id = self_t.get_exmap("机器人ID");
+        let platform = get_platform(&self_t);
+        let passive_id = self_t.get_exmap("消息ID");
+        let _cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str());
+        return Ok(Some("".to_string()));
+    });
     add_fun(vec!["输出流"],|self_t,params|{
         let msg = self_t.get_param(params, 0)?;
         let msg_id = send_one_msg(&self_t,&msg)?;

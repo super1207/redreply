@@ -2252,6 +2252,12 @@ onebot事件json对应的RedLang对象。
 取出消息事件或<font color="red">CQ文本</font>中的文本数组。
 
 
+### 表情回应(目前仅少量适配器可用)
+
+【表情回应@<font color="red">emoji表情</font>】】
+
+对当前消息进行表情回应，目前仅支持部分emoji。例子：`【表情回应@😘】`
+
 ### 输入流
 
 
