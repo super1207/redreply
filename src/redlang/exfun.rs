@@ -3008,9 +3008,10 @@ def red_out(sw):
     red_print(en)
 "#;
         let code1 = self_t.get_param(params, 0)?;
-        let input = self_t.get_param(params, 1)?;
-        let input = get_raw_data(self_t, input)?;
-        
+        let mut input = self_t.get_param(params, 1)?;
+        if input.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
+            input = get_raw_data(self_t,input)?;
+        }
         let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
 
@@ -3134,8 +3135,10 @@ def red_out(sw):
 "#;
     
         let code1 = self_t.get_param(params, 0)?;
-        let input = self_t.get_param(params, 1)?;
-        let input = get_raw_data(self_t, input)?;
+        let mut input = self_t.get_param(params, 1)?;
+        if input.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
+            input = get_raw_data(self_t,input)?;
+        }
         let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let pip_in = std::process::Stdio::piped();
@@ -3237,8 +3240,10 @@ def red_out(sw):
     });
     add_fun(vec!["快速运行PY"],|self_t,params|{
         let code = self_t.get_param(params, 0)?;
-        let input = self_t.get_param(params, 1)?;
-        let input = get_raw_data(self_t, input)?;
+        let mut input = self_t.get_param(params, 1)?;
+        if input.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
+            input = get_raw_data(self_t,input)?;
+        }
         let ret = call_py_block(&code,&input);
         Ok(Some(ret))
     });
@@ -3595,8 +3600,10 @@ def red_out(sw):
         // 【设置延迟触发@关键词@时间@传递数据】
         let keyword = self_t.get_param(params, 0)?;
         let mut tm = self_t.get_param(params, 1)?.parse::<i64>()?;
-        let subdata = self_t.get_param(params, 2)?;
-        let subdata = get_raw_data(self_t, subdata)?;
+        let mut subdata = self_t.get_param(params, 2)?;
+        if subdata.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
+            subdata = get_raw_data(self_t,subdata)?;
+        }
         let now_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64;
         tm += now_time;
         let mut lk = G_ONE_TIME_RUN.lock().unwrap();

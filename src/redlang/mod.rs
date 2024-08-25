@@ -1493,10 +1493,12 @@ pub fn init_core_fun_map() {
         for i in 1..params_len {
             rl.params_vec[0].push(self_t.get_param(params, i)?);
         }
-        let ret_str;
+        let mut ret_str;
         ret_str = rl.parse(&code)?;
-        let raw_data = exfun::get_raw_data(&mut rl,ret_str)?;
-        return Ok(Some(raw_data));
+        if ret_str.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
+            ret_str = exfun::get_raw_data(self_t,ret_str)?;
+        }
+        return Ok(Some(ret_str));
     });
     add_fun(vec!["反射执行"],|self_t,params|{
         let code = self_t.get_param(params, 0)?;
