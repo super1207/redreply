@@ -25,6 +25,36 @@ use ab_glyph::{FontRef, PxScale};
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
 
+pub fn get_raw_data(self_t:&mut RedLang,input:String) -> Result<String, Box<dyn std::error::Error>>{
+    let raw_data;
+    let tp = self_t.get_type(&input)?;
+    if tp == "文本" {
+        raw_data = input;
+    }else if tp == "字节集" {
+        let temp = RedLang::parse_bin(&self_t.bin_pool, &input)?;
+        raw_data = self_t.build_bin(temp);
+    } else if tp == "数组" {
+        let mut retarr = vec![];
+        let arr = RedLang::parse_arr(&input)?;
+        for it in arr {
+            retarr.push(get_raw_data(self_t, it.to_owned())?);
+        }
+        let bind = retarr.iter().map(|x|x.as_ref()).collect();
+        raw_data = self_t.build_arr(bind);
+    } else if tp == "对象" {
+        let mut retobj = BTreeMap::new();
+        let obj = RedLang::parse_obj(&input)?;
+        for (k,v) in obj {
+            retobj.insert(get_raw_data(self_t, k)?, get_raw_data(self_t, v)?);
+        }
+        raw_data = self_t.build_obj(retobj);
+    }
+    else {
+        return Err(RedLang::make_err(&format!("不支持的参数类型:{tp}")));
+    }
+    Ok(raw_data)
+}
+
 pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,proxy_str:&str,method:&str) -> Result<(Vec<u8>,String), Box<dyn std::error::Error + Send + Sync>> {
     let client;
     let uri = reqwest::Url::from_str(url)?;
@@ -2941,38 +2971,6 @@ pub fn init_ex_fun_map() {
         }
     });
 
-    fn get_raw_data(self_t:&mut RedLang,input:String) -> Result<String, Box<dyn std::error::Error>>{
-        let raw_data;
-        let tp = self_t.get_type(&input)?;
-        if tp == "文本" {
-            raw_data = input;
-        }else if tp == "字节集" {
-            let temp = RedLang::parse_bin(&self_t.bin_pool, &input)?;
-            raw_data = self_t.build_bin(temp);
-        } else if tp == "数组" {
-            let mut retarr = vec![];
-            let arr = RedLang::parse_arr(&input)?;
-            for it in arr {
-                retarr.push(get_raw_data(self_t, it.to_owned())?);
-            }
-            let bind = retarr.iter().map(|x|x.as_ref()).collect();
-            raw_data = self_t.build_arr(bind);
-        } else if tp == "对象" {
-            let mut retobj = BTreeMap::new();
-            let obj = RedLang::parse_obj(&input)?;
-            for (k,v) in obj {
-                retobj.insert(get_raw_data(self_t, k)?, get_raw_data(self_t, v)?);
-            }
-            raw_data = self_t.build_obj(retobj);
-        }
-        else {
-            return Err(RedLang::make_err(&format!("不支持的参数类型:{tp}")));
-        }
-        Ok(raw_data)
-    }
-
-
-
     add_fun(vec!["运行PY"],|self_t,params|{
         let code = r#"
 import os
@@ -3598,6 +3596,7 @@ def red_out(sw):
         let keyword = self_t.get_param(params, 0)?;
         let mut tm = self_t.get_param(params, 1)?.parse::<i64>()?;
         let subdata = self_t.get_param(params, 2)?;
+        let subdata = get_raw_data(self_t, subdata)?;
         let now_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64;
         tm += now_time;
         let mut lk = G_ONE_TIME_RUN.lock().unwrap();
@@ -3606,7 +3605,7 @@ def red_out(sw):
              pkg_name: self_t.pkg_name.to_owned(), 
              flag: keyword, 
              sub_data: subdata,
-              data: (*self_t.exmap).borrow().clone() });
+             data: (*self_t.exmap).borrow().clone() });
         Ok(Some("".to_string()))
     });
 }

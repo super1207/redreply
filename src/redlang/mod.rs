@@ -1495,7 +1495,8 @@ pub fn init_core_fun_map() {
         }
         let ret_str;
         ret_str = rl.parse(&code)?;
-        return Ok(Some(ret_str));
+        let raw_data = exfun::get_raw_data(&mut rl,ret_str)?;
+        return Ok(Some(raw_data));
     });
     add_fun(vec!["反射执行"],|self_t,params|{
         let code = self_t.get_param(params, 0)?;
