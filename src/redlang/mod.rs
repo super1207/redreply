@@ -585,7 +585,7 @@ pub fn init_core_fun_map() {
             let mut last_type = 0u8;
             for _i in 0..tms {
                 let v = self_t.get_param(params, 1)?;
-                RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
+                RedLang::conect_arr(&self_t.bin_pool,&mut last_type,&mut ret_str,&v)?;
                 if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
                     break;
                 }
@@ -605,7 +605,7 @@ pub fn init_core_fun_map() {
                 fun_params[1] = i.to_string();
                 fun_params[2] = arr[i].to_owned();
                 let v = self_t.call_fun(&fun_params,true)?;
-                RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
+                RedLang::conect_arr(&self_t.bin_pool,&mut last_type,&mut ret_str,&v)?;
                 if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
                     break;
                 }
@@ -623,7 +623,7 @@ pub fn init_core_fun_map() {
                 fun_params[1] = k;
                 fun_params[2] = v;
                 let v = self_t.call_fun(&fun_params,true)?;
-                RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
+                RedLang::conect_arr(&self_t.bin_pool,&mut last_type,&mut ret_str,&v)?;
                 if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
                     break;
                 }
@@ -638,7 +638,7 @@ pub fn init_core_fun_map() {
         let mut last_type = 0;
         while self_t.get_param(params, 0)? == "真" {
             let v = self_t.get_param(params, 1)?;
-            RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
+            RedLang::conect_arr(&self_t.bin_pool,&mut last_type,&mut ret_str,&v)?;
             if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
                 break;
             }
@@ -2444,7 +2444,7 @@ impl RedLang {
         return Self::build_obj_with_uid(&self.type_uuid,obj);
     }
 
-    fn conect_arr(status:&mut u8,chs_out:&mut String,new_str:&str) -> Result<(), Box<dyn std::error::Error>>{
+    fn conect_arr(bin_pool:&HashMap<String, RedLangBinPoolVarType>,status:&mut u8,chs_out:&mut String,new_str:&str) -> Result<(), Box<dyn std::error::Error>>{
         if new_str.starts_with(&(crate::REDLANG_UUID.to_string() + "A")) {
             if *status == 2 {
                 // 这里要进行数组合并，因为之前是数组
@@ -2459,8 +2459,20 @@ impl RedLang {
         } else if new_str.starts_with(&(crate::REDLANG_UUID.to_string() + "B")) {
             if *status == 4 {
                 // 这里要进行字节集合并，因为之前是字节集
-                let arr = new_str.get(37..).ok_or("在合并字节集时获取新字节集失败")?;
-                chs_out.push_str(arr);
+                if chs_out.contains("96ad849c-8e7e-7886-7742-e4e896cc5b86") { // 之前是图片
+                    let bin = RedLang::parse_bin(&bin_pool,&chs_out)?;
+                    chs_out.clear();
+                    chs_out.push_str(&RedLang::build_bin_with_uid(&crate::REDLANG_UUID, bin));
+                }
+                if new_str.contains("96ad849c-8e7e-7886-7742-e4e896cc5b86") { // 新来的是图片
+                    let bin = RedLang::parse_bin(&bin_pool,&new_str)?;
+                    let new_s = RedLang::build_bin_with_uid(&crate::REDLANG_UUID, bin);
+                    let arr = new_s.get(37..).ok_or("在合并字节集时获取新字节集失败")?;
+                    chs_out.push_str(&arr);
+                } else { // 新来的不是图片 
+                    let arr = new_str.get(37..).ok_or("在合并字节集时获取新字节集失败")?;
+                    chs_out.push_str(arr);
+                }
             } else if *status == 0 { // 之前没有
                 chs_out.push_str(&new_str);
             } else { // 之前是其它类型
@@ -2652,7 +2664,7 @@ impl RedLang {
                 if cq_n == 0 {
                     let s = cq_code.iter().collect::<String>();
                     let cqout = self.parsecq(&s)?;
-                    RedLang::conect_arr(&mut cur_type_status,&mut chs_out,&cqout)?;
+                    RedLang::conect_arr(&self.bin_pool,&mut cur_type_status,&mut chs_out,&cqout)?;
                     cq_code.clear();
                     cq_n = 0;
                     status = 0;
