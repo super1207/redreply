@@ -24,7 +24,7 @@ pub fn do_init_event(pkg_name_opt:Option<&str>) -> Result<i32, Box<dyn std::erro
             rl.pkg_name = pkg_name.to_owned();
             if pkg_name_opt.is_none() || pkg_name_opt.unwrap() == rl.pkg_name {
                 rl.script_name = name.to_owned();
-                let ret = crate::cqevent::do_script(&mut rl,&code);
+                let ret = crate::cqevent::do_script(&mut rl,&code,"init");
                 if let Err(err) = ret{
                     cq_add_log_w(&format!("{}",err)).unwrap();
                 }

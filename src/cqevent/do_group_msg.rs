@@ -95,7 +95,7 @@ fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result< (),
                     rl.exmap = Rc::new(RefCell::new(exmap));
                     rl.pkg_name = pkg_name_t.to_owned();
                     rl.script_name = script_name_t.to_owned();
-                    if let Err(e) = super::do_script(&mut rl,&code_t) {
+                    if let Err(e) = super::do_script(&mut rl,&code_t,"normal") {
                         cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e.to_string()).as_str()).unwrap();
                     }
                 });

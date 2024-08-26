@@ -3,6 +3,7 @@ use std::{str::FromStr, collections::BTreeMap};
 use http_body_util::BodyExt;
 use hyper::http::{HeaderValue, HeaderName};
 use tokio_util::bytes::Buf;
+use crate::cqevent::do_script;
 use crate::redlang::exfun::get_raw_data;
 use crate::RT_PTR;
 use crate::cqapi::cq_add_log_w;
@@ -125,7 +126,7 @@ pub fn do_http_event(req:hyper::Request<hyper::body::Incoming>,can_write:bool,ca
             rl.pkg_name = pkg_name.to_owned();
             rl.script_name = name.to_owned();
             rl.can_wrong = true;
-            let mut rl_ret = rl.parse(&code)?;
+            let mut rl_ret = do_script(&mut rl, code,"normal")?;
             if rl_ret.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
                 rl_ret = get_raw_data(&mut rl, rl_ret)?;
             }

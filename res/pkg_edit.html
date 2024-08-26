@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+   <meta charset="UTF-8">
+   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+   <title>红色问答脚本编辑</title>
+   <style>
+    html,body{
+        width: 100%;
+        height: 100%;
+        display: flex;
+        margin: 0;
+        padding: 0;
+    }
+    button,textarea,body,select,input{
+        background-color: #C7EDCC;
+        font-family: fusion-pixel-12px-monospaced-zh_hant, serif;
+    }
+    .name_active { /* 点中名字，变色属性 */
+        color: red;
+    }
+   </style>
+   <script src="axios.js"></script>
+   <script src="vue.js"></script>
+   <script src="vue-quill.js"></script>
+   <link rel="stylesheet" href="vue-quill.snow.prod.css">
+</head>
+
+<body>
+   
+   <div id="app" style="padding:0.5em; border: 1px solid;margin: 0.2em;display: flex;flex-direction: column;flex-grow: 1;">
+        <dialog id = "favDialog">
+            <form method="dialog" style="display: flex;flex-direction: column;font-weight: blod;">
+                <div>您有如下脚本</div>
+                <button v-for="(code,index) in pkg_codes" style="margin: 0.1em;" @click="select_name_change(index)" :class="{name_active:index==select_index}">
+                    {{ code["name"] }}
+                </button>
+                <button>取消</button>
+            </form>
+        </dialog>    
+        <h1 style="text-align: center;color: red;">红色问答脚本编辑</h1>
+        
+        <div style="display: flex;margin: 0.2em;">
+            <span>当前选择的脚本：</span>
+            <button @click="select_name_fun()" style="flex: 1 0 auto;cursor: pointer;">{{select_name}}</button>
+        </div>
+        <div style="display: flex;margin: 0.2em;">
+            <span>脚本名：</span>
+            <input v-model = "script_name" style="flex: 1 0 auto;"></input>
+        </div>
+        <div class="input_div" style="display: flex;margin: 0.2em;">
+            <span>介绍：&emsp;</span>
+            <input id="script_description" v-model="script_description" style="flex: 1 0 auto;"></input>
+        </div>
+        <select id="script_cffs" v-model="script_cffs">
+            <option disabled value="触发方式">触发方式</option>
+            <option value ="群聊触发">群聊触发</option>
+            <option value ="私聊触发">私聊触发</option>
+            <option value="群、私聊触发">群、私聊触发</option>
+            <option value="事件触发">事件触发</option>
+            <option value="框架初始化">框架初始化</option>
+            <option value="CRON定时器">CRON定时器</option>
+            <option value="脚本错误">脚本错误</option>
+            <option value="群成员增加">群成员增加</option>
+            <option value="网络触发">网络触发</option>
+            <option value="内容过滤">内容过滤</option>
+            <option value="延迟触发">延迟触发</option>
+        </select>
+        <div v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div"  style="display: flex;margin: 0.2em;">
+            <span>关键词：</span>
+            <input id="script_keyword" v-model="script_keyword"  style="flex: 1 0 auto;"></input>
+        </div>
+        <select id="script_ppfs" v-model="script_ppfs" v-if="(script_cffs == '群聊触发') || (script_cffs == '私聊触发') || (script_cffs == '群、私聊触发') || (script_cffs == '网络触发') || (script_cffs == '延迟触发')">
+            <option disabled value="匹配方式">匹配方式</option>
+            <option value ="完全匹配">完全匹配</option>
+            <option value ="正则匹配">正则匹配</option>
+            <option value="模糊匹配">模糊匹配</option>
+            <option value="前缀匹配">前缀匹配</option>
+        </select>
+        <button v-if="script_cffs == 'CRON定时器'" @click="cron()">
+            红色问答CRON校验工具
+        </button>
+        <div style="height: 0; flex-grow: 1;display: flex;flex-direction: column;flex-grow: 1;">
+            <quill-editor id = "script_content"  ref="child" theme="snow" spellcheck = false style="flex-grow: 1; height: 0;"></quill-editor>
+            <div style="display: flex;">
+                <button style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="add_code()">新增脚本</button>
+                <button style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="save_code()">保存脚本</button>
+                <button style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="del_code()">删除脚本</button>
+            </div>
+        </div>
+        </body>
+   </div>
+   <script>
+    function getQueryVariable(variable)
+    {
+        var query = window.location.search.substring(1);
+        var vars = query.split("&");
+        for (var i=0;i<vars.length;i++) {
+            var pair = vars[i].split("=");
+            if(pair[0] == variable){return pair[1];}
+        }
+        return(false);
+    }
+    const { createApp } = Vue
+    const app = createApp({
+        data() {
+            return {
+                last_code:"",
+                last_change_time:(new Date()).valueOf(),
+                last_index:0,
+                select_name:"当前没有脚本",
+                select_index:-1,
+                pkg_codes:[],
+                script_name:"",
+                script_description:"",
+                script_cffs:"",
+                script_ppfs:"",
+                script_keyword:""
+            }
+        },
+        mounted () {
+
+            setInterval(() => {
+                quill = this.$refs.child.getQuill();
+                let sec = quill.getSelection()
+                let curr_index = 0
+                if(sec){
+                    curr_index = sec.index
+                }
+                
+                let code = quill.getText();
+                tm = (new Date()).valueOf()
+                if ((code!= this.last_code || curr_index != this.last_index) && !this.composing && tm - this.last_change_time > 300) {
+                    this.highlight()
+                    this.last_code = code
+                    this.last_index = curr_index
+                }
+            }, 500)
+
+
+            // 对复制进行hook，解决复制时多余的换行
+            ele = document.getElementById("script_content")
+            ele.oncopy = (e) => {
+                quill = this.$refs.child.getQuill()
+                range = quill.getSelection()
+                e.clipboardData.setData('text/plain', quill.getText(range.index, range.length));
+                e.preventDefault();
+            }
+            
+             // 处理中文输入
+            ele.addEventListener('compositionstart',(e) =>{
+                this.composing = true
+                console.log('compositionstart')
+            })
+            ele.addEventListener('compositionend',(e) =>{    
+                this.composing = false
+                console.log('compositionend')
+                this.last_change_time = (new Date()).valueOf()
+            })
+
+            quill = this.$refs.child.getQuill()
+            quill.on('text-change', (delta, oldDelta, source) => {
+                if (source == 'user') {
+                    if(!this.composing){
+                        this.last_change_time = (new Date()).valueOf()
+                    }
+                }
+            });
+            quill.on('selection-change', (range, oldDelta, source) => {
+                if (source == 'user') {
+                    if(!this.composing){
+                        this.last_change_time = (new Date()).valueOf()
+                    }
+                }
+            });
+            let pkg_name = getQueryVariable("pkg_name")
+            if(pkg_name == encodeURIComponent("默认包")) {
+                pkg_name = ""
+            }
+            let url = "/read_one_pkg?pkg_name=" + pkg_name
+            console.log(url)
+            axios
+            .get(url)
+            .then(
+            res => {
+                let code = res.data["data"]
+                console.log(code)
+                this.pkg_codes = code
+                if(code.length > 0) {
+                    this.select_index = 0;
+                    this.load(this.select_index)
+                }else {
+                    this.select_index = -1
+                }
+            })
+            .catch(function (error) {
+                console.log(error);
+            });
+        },
+        watch:{
+            select_index:function(newval,oldval){
+                console.log("select_index val change:" + newval)
+                if(newval == -1) {
+                    this.select_name = "当前没有脚本"
+                }else {
+                    this.select_name = this.pkg_codes[newval]["name"]
+                }
+            },
+            script_name:function(newval,oldval){
+                if(this.select_index != -1) {
+                    this.select_name = newval
+                }
+            }
+        },
+        methods: {
+            select_name_fun(){
+                document.getElementById('favDialog').showModal();
+            },
+            save(index){
+                this.pkg_codes[this.select_index]["content"]["code"] = this.$refs.child.getText()
+                this.pkg_codes[index]["name"] = this.script_name
+                this.pkg_codes[index]["content"]["匹配方式"] = this.script_ppfs
+                this.pkg_codes[index]["content"]["触发方式"] = this.script_cffs
+                this.pkg_codes[index]["content"]["关键词"] = this.script_keyword
+                this.pkg_codes[index]["description"] = this.script_description
+            },
+            load(index){
+                this.script_name = this.pkg_codes[index]["name"]
+                this.script_ppfs = this.pkg_codes[index]["content"]["匹配方式"]
+                this.script_cffs = this.pkg_codes[index]["content"]["触发方式"]
+                this.script_keyword = this.pkg_codes[index]["content"]["关键词"]
+                this.$refs.child.setText(this.pkg_codes[index]["content"]["code"])
+                this.script_description = this.pkg_codes[index]["description"]
+            },
+            select_name_change(index){
+                if(this.select_index == -1) {
+                    this.select_index = index;
+                    this.load(index)
+                }else if(index == this.select_index){
+                    // do nothing
+                }
+                else{
+                    this.save(this.select_index)
+                    this.select_index = index
+                    this.load(this.select_index)
+                }
+                //console.log(this.$refs.child.getText())
+                
+            },
+            add_code() {
+                if(this.select_index != -1) {
+                    this.save(this.select_index)
+                }
+                let obj = {
+                    name:"script_name",
+                    description:"code_description",
+                    content:{
+                        code:"hello\n",
+                        关键词:"222",
+                        匹配方式:"完全匹配",
+                        触发方式:"群聊触发"
+                    }
+                }
+                this.pkg_codes.push(obj)
+                this.select_index = this.pkg_codes.length - 1
+                this.load(this.select_index)
+            },
+            del_code() {
+                if(this.select_index != -1) {
+                    this.save(this.select_index)
+                    this.pkg_codes.splice(this.select_index,1);
+                    this.select_index -= 1;
+                    if(this.select_index != -1) {
+                        this.load(this.select_index)
+                    } else {
+                        if(this.pkg_codes.length > 0) {
+                            this.select_index = 0;
+                            this.load(this.select_index)
+                        }else {
+                            this.script_name = ""
+                            this.script_ppfs = ""
+                            this.script_cffs = ""
+                            this.script_keyword = ""
+                            this.$refs.child.setText("")
+                            this.script_description = ""
+                        }
+                    }
+                }
+            },
+            save_code(){
+                if(this.select_index != -1) {
+                    this.save(this.select_index)
+                }
+                let pkg_name = getQueryVariable("pkg_name")
+                pkg_name = decodeURIComponent(pkg_name)
+                if(pkg_name == "默认包") {
+                    pkg_name = ""
+                }
+                axios
+                .post("/save_one_pkg",{
+                    "pkg_name": pkg_name,
+                    data:this.pkg_codes
+                })
+                .then((res) => {
+                    if(res.data['retcode'] == 0){
+                        alert("保存成功")
+                    }else {
+                        alert("保存失败")
+                    }
+                })
+                .catch(function (error) {
+                    console.log(error);
+                    alert("保存失败")
+                });
+            },
+            highlight()
+            {
+                var current_color = 0;
+                function next_color(){
+                    current_color = (current_color + 1) % 4;
+                }
+                function pre_color(){
+                    current_color = (current_color + 3) % 4;
+                }
+                var colorList = ["#000000","#FF0000","#0000FF","#008000"]
+                function ColorReverse(OldColorValue){
+                    var OldColorValue = "0x"+OldColorValue.replace(/#/g,"");
+                    var str="000000"+(0xFFFFFF-OldColorValue).toString(16);
+                    return '#' + str.substring(str.length-6,str.length);
+                }
+                function out_text(quill,index){
+                    colorList[current_color](quill,index)
+                }
+
+                quill = this.$refs.child.getQuill();
+                
+                select = quill.getSelection()
+                let curr_index = 0
+                if(select){
+                    curr_index = select.index
+                }
+
+                let code = quill.getText();
+                content = []
+                for(let i = 0;i<code.length;i++){
+                    if(code[i] == "【"){
+                        next_color()
+                        content.push({
+                            "insert":code[i],attributes:{color:colorList[current_color]}
+                        })
+                    }
+                    else if(code[i] == "】"){
+                        content.push({
+                            "insert":code[i],attributes:{color:colorList[current_color]}
+                        })
+                        pre_color()
+                    }
+                    else if(code[i] == "\\"){
+                        content.push({
+                            "insert":code[i],attributes:{color:colorList[current_color]}
+                        })
+                        i += 1
+                        content.push({
+                            "insert":code[i],attributes:{color:colorList[current_color]}
+                        })
+                    }
+                    else{
+                        if(code[i] == '\xa0'){
+                            content.push({
+                                "insert":" ",attributes:{color:colorList[current_color]}
+                            })
+                        }else {
+                            content.push({
+                                "insert":code[i],attributes:{color:colorList[current_color]}
+                            })
+                        }
+                    }
+                }
+                // 在这里处理光标
+                if(curr_index >= 0 && curr_index < content.length){
+                    let t = 0;
+                    if(content[curr_index].insert == "【"){
+                        t = 1;
+                        content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                        while(curr_index < content.length){
+                            curr_index += 1
+                            if(curr_index >= content.length)break
+                            if(content[curr_index].insert == "\\"){
+                                curr_index += 1
+                            }else if(content[curr_index].insert == "【"){
+                                t += 1
+                            }else if(content[curr_index].insert == "】"){
+                                t -= 1
+                            }
+                            if(t == 0){
+                                content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                                break
+                            }
+                        }
+                    }else if(content[curr_index].insert == "】") {
+                        t = 1;
+                        content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                        while(curr_index >= 0){
+                            curr_index -= 1
+                            if(curr_index < 0)break
+                            if(curr_index - 1 > 0 && content[curr_index - 1].insert == "\\") {
+                                curr_index -= 1
+                            }else if(content[curr_index].insert == "【"){
+                                t -= 1
+                            }else if(content[curr_index].insert == "】"){
+                                t += 1
+                            }
+                            if(t == 0){
+                                content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                                break
+                            }
+                        }
+                    }else if(curr_index - 1 >=0){
+                        curr_index -= 1;
+                        if(content[curr_index].insert == "【"){
+                            t = 1;
+                            content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                            while(curr_index < content.length){
+                                curr_index += 1
+                                if(curr_index >= content.length)break
+                                if(content[curr_index].insert == "\\"){
+                                    curr_index += 1
+                                }else if(content[curr_index].insert == "【"){
+                                    t += 1
+                                }else if(content[curr_index].insert == "】"){
+                                    t -= 1
+                                }
+                                if(t == 0){
+                                    content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                                    break
+                                }
+                            }
+                        }else if(content[curr_index].insert == "】") {
+                            t = 1;
+                            content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                            while(curr_index >= 0){
+                                curr_index -= 1
+                                if(curr_index < 0)break
+                                if(curr_index - 1 > 0 && content[curr_index - 1].insert == "\\") {
+                                    curr_index -= 1
+                                }else if(content[curr_index].insert == "【"){
+                                    t -= 1
+                                }else if(content[curr_index].insert == "】"){
+                                    t += 1
+                                }
+                                if(t == 0){
+                                    content[curr_index].attributes.background = ColorReverse(content[curr_index].attributes.color)
+                                    break
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                quill.setContents(content)
+                quill.setSelection(select)
+            },
+        }
+    })
+    const globalOptions = {
+        modules: {
+        toolbar: ""
+        },
+        placeholder: '脚本内容',
+        theme: 'snow'
+    }
+    VueQuill.QuillEditor.props.globalOptions.default = () => globalOptions
+    app.component('QuillEditor', VueQuill.QuillEditor);
+    app.mount('#app')
+   </script>
+   
+</body>
+
+</html>

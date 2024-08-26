@@ -126,9 +126,9 @@ fn do_run_code_and_ret_check(rl:&mut RedLang,code:&str)-> Result<String, Box<dyn
     return Ok(ret.to_owned());
 }
 
-pub fn do_script(rl:&mut RedLang,code:&str) -> Result<String, Box<dyn std::error::Error>>{
+pub fn do_script(rl:&mut RedLang,code:&str,script_type:&str) -> Result<String, Box<dyn std::error::Error>>{
     // 增加脚本运行计数
-    if add_running_script_num(&rl.pkg_name,&rl.script_name) == false {
+    if add_running_script_num(&rl.pkg_name,&rl.script_name,script_type) == false {
         return Ok("".to_owned());
     }
     let pkg_name = rl.pkg_name.clone();
@@ -178,7 +178,7 @@ pub fn do_script(rl:&mut RedLang,code:&str) -> Result<String, Box<dyn std::error
                             rl2.script_name = script_name.clone();
                             rl2.set_coremap("错误信息", &err_str)?;
                             rl2.can_wrong = false;
-                            if let Err(err) = crate::cqevent::do_script(&mut rl2,&code) {
+                            if let Err(err) = crate::cqevent::do_script(&mut rl2,&code,"normal") {
                                 cq_add_log_w(&format!("{}",err)).unwrap();
                             }
                         }      

@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
 use std::thread;
+use std::time::SystemTime;
 use cqapi::cq_add_log;
 use cqapi::cq_get_app_directory2;
 use encoding::Encoding;
@@ -98,10 +99,14 @@ lazy_static! {
     pub static ref G_CMD_FUN_MAP:RwLock<HashMap<String, fn(&mut RedLang,&[String]) -> Result<Option<String>, Box<dyn std::error::Error>>>> = RwLock::new(HashMap::new());
     // 异步事件循环
     pub static ref  RT_PTR:Arc<tokio::runtime::Runtime> = Arc::new(tokio::runtime::Runtime::new().unwrap());
-    // 退出标记
+    // 退出标记，标记整个pkg都在退出
     pub static ref G_QUIT_FLAG:RwLock<bool> = RwLock::new(false);
+    // 退出标记，标记某个pkg_name正在退出
+    pub static ref G_PKG_QUIT_FLAG:RwLock<HashSet<String>> = RwLock::new(HashSet::new());
     // 记录正在运行的脚本数量（用于退出）
     pub static ref G_RUNNING_SCRIPT_NUM:RwLock<usize> = RwLock::new(0usize);
+    // 记录正在加载的脚本
+    pub static ref G_LOADING_SCRIPT_FLAG:RwLock<HashSet<String>> = RwLock::new(HashSet::new());
     // 记录正在运行的脚本名字
     pub static ref G_RUNNING_SCRIPT:RwLock<Vec<ScriptInfo>> = RwLock::new(vec![]);
     // 输入流记录
@@ -210,6 +215,69 @@ pub struct Asset;
 #[folder = "docs/"]
 #[prefix = "docs/"]
 pub struct AssetDoc;
+
+
+pub fn pkg_can_run(pkg_name:&str,script_type:&str) -> bool {
+    if *G_QUIT_FLAG.read().unwrap() == true {
+        return false;
+    }
+    if G_PKG_QUIT_FLAG.read().unwrap().contains(pkg_name) {
+        return false;
+    }
+    if script_type != "init" && script_type != "输入流" && script_type != "延时" {
+        if G_LOADING_SCRIPT_FLAG.read().unwrap().contains(pkg_name) {
+            return false;
+        }
+    }
+    return true;
+}
+
+pub fn wait_one_pkg_quit(pkg_name:&str,timeoutms:i64) -> bool {
+    let start_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    loop {
+        let mut can_break = true;
+        {
+            let lk = G_RUNNING_SCRIPT.read().unwrap();
+            for it in &*lk {
+                if it.pkg_name == pkg_name {
+                    can_break = false;
+                    break;
+                }
+            }
+        }
+        if can_break == true {
+            break;
+        }
+        let now_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+        if now_time - start_time > timeoutms {
+            return false;
+        }
+        std::thread::sleep(core::time::Duration::from_millis(1));
+    }
+    return true;
+}
+
+pub fn wait_all_pkg_quit(timeoutms:i64) -> bool {
+    let start_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    loop {
+        let mut can_break = true;
+        {
+            let lk = G_RUNNING_SCRIPT.read().unwrap();
+            if lk.len() != 0 {
+                can_break = false;
+            }
+        }
+        if can_break == true {
+            break;
+        }
+        let now_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+        if now_time - start_time > timeoutms {
+            return false;
+        }
+        std::thread::sleep(core::time::Duration::from_millis(1));
+    }
+    return true;
+}
 
 
 pub fn get_python_cmd_name() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -420,8 +488,8 @@ pub fn wait_for_quit() -> ! {
     std::process::exit(0);
 }
 
-pub fn add_running_script_num(pkg_name:&str,script_name:&str) -> bool {
-    if *G_QUIT_FLAG.read().unwrap() == true {
+pub fn add_running_script_num(pkg_name:&str,script_name:&str,script_type:&str) -> bool {
+    if pkg_can_run(pkg_name,script_type) == false {
         return false;
     }
     let mut lk = G_RUNNING_SCRIPT_NUM.write().unwrap();
@@ -1220,6 +1288,16 @@ fn save_one_pkg(contents: &str) -> Result<(), Box<dyn std::error::Error + Send +
         fs::write(script_path.join("script.json"), cont)?;
     }
 
+    // 插入初始化标记，可以阻挡其它脚本执行
+    G_LOADING_SCRIPT_FLAG.write().unwrap().insert(pkg_name.to_owned());
+    let _guard = scopeguard::guard((),|_| {
+        G_LOADING_SCRIPT_FLAG.write().unwrap().remove(&pkg_name);
+    });
+    // 等待正在运行的脚本退出
+    if wait_one_pkg_quit(&pkg_name, 15000) == false {
+        return Err(format!("有脚本不愿意退出,所以无法保存").into());
+    }
+
     // 更新内存中的脚本
     {
         let mut new_script = vec![];
@@ -1231,7 +1309,9 @@ fn save_one_pkg(contents: &str) -> Result<(), Box<dyn std::error::Error + Send +
             }
         }
         for it in scripts {
-            new_script.push(it.to_owned());
+            let mut item = it.to_owned();
+            item["pkg_name"] = serde_json::Value::String(pkg_name.to_string());
+            new_script.push(item);
         }
         (*wk) = serde_json::Value::Array(new_script);
     }
@@ -1250,26 +1330,17 @@ fn save_one_pkg(contents: &str) -> Result<(), Box<dyn std::error::Error + Send +
 
 fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
-    // 禁止新脚本加载
-    (*G_QUIT_FLAG.write().unwrap()) = true;
+    // 禁止脚本加载
+    G_PKG_QUIT_FLAG.write().unwrap().insert(old_pkg_name.to_owned());
+    G_PKG_QUIT_FLAG.write().unwrap().insert(new_pkg_name.to_owned());
     let _guard = scopeguard::guard((),|_| {
-        (*G_QUIT_FLAG.write().unwrap()) = false;
+        G_PKG_QUIT_FLAG.write().unwrap().remove(old_pkg_name);
+        G_PKG_QUIT_FLAG.write().unwrap().remove(new_pkg_name);
     });
 
-    // 等待所有脚本退出
-    let mut tm = 0;
-    loop {
-        tm += 1;
-        {
-            if (*G_RUNNING_SCRIPT_NUM.read().unwrap()) == 0 {
-                break;
-            }
-        }
-        std::thread::sleep(core::time::Duration::from_millis(1));
-        if tm > 10000 {
-            let running_scripts = get_running_script_info();
-            return Err(format!("有脚本:{:?}不愿意退出,所以无法保存", running_scripts).into());
-        }
+    // 等待脚本退出
+    if wait_one_pkg_quit(old_pkg_name, 15000) == false {
+        return Err(format!("有脚本不愿意退出,所以无法保存").into());
     }
 
     if old_pkg_name != "" && new_pkg_name != ""{
@@ -1294,25 +1365,14 @@ fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std
 fn del_one_pkg(pkg_name:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     // 禁止新脚本加载
-    (*G_QUIT_FLAG.write().unwrap()) = true;
+    G_PKG_QUIT_FLAG.write().unwrap().insert(pkg_name.to_owned());
     let _guard = scopeguard::guard((),|_| {
-        (*G_QUIT_FLAG.write().unwrap()) = false;
+        G_PKG_QUIT_FLAG.write().unwrap().remove(pkg_name);
     });
 
-    // 等待所有脚本退出
-    let mut tm = 0;
-    loop {
-        tm += 1;
-        {
-            if (*G_RUNNING_SCRIPT_NUM.read().unwrap()) == 0 {
-                break;
-            }
-        }
-        std::thread::sleep(core::time::Duration::from_millis(1));
-        if tm > 10000 {
-            let running_scripts = get_running_script_info();
-            return Err(format!("有脚本:{:?}不愿意退出,所以无法保存", running_scripts).into());
-        }
+    // 等待脚本退出
+    if wait_one_pkg_quit(pkg_name, 15000) == false {
+        return Err(format!("有脚本不愿意退出,所以无法保存").into());
     }
 
     // 删除pkg文件

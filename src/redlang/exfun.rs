@@ -13,7 +13,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::io::Write;
-use crate::{add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, cronevent::{OneTimeRunStruct, G_ONE_TIME_RUN}, del_file_lock, get_python_cmd_name, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, G_QUIT_FLAG, RT_PTR};
+use crate::{add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, cronevent::{OneTimeRunStruct, G_ONE_TIME_RUN}, del_file_lock, get_python_cmd_name, pkg_can_run, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
 
 use image::{AnimationDecoder, EncodableLayout, GenericImageView, ImageBuffer, ImageFormat, Rgba};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -662,11 +662,11 @@ pub fn init_ex_fun_map() {
             let time_struct = core::time::Duration::from_secs(1);
             std::thread::sleep(time_struct);
             mill -= 1000;
-            if *G_QUIT_FLAG.read().unwrap() == true {
+            if pkg_can_run(&self_t.pkg_name,"延时") == false {
                 return Err("延时终止，因用户要求退出".into());
             }
         }
-        if *G_QUIT_FLAG.read().unwrap() == true {
+        if pkg_can_run(&self_t.pkg_name,"延时") == false {
             return Err("延时终止，因用户要求退出".into());
         }
         let time_struct = core::time::Duration::from_millis(mill);

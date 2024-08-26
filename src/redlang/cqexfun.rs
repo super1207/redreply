@@ -1,6 +1,6 @@
 use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
 
-use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, redlang::{get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_QUIT_FLAG, G_SCRIPT_RELATE_MSG, PAGING_UUID};
+use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, pkg_can_run, redlang::{get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -769,7 +769,7 @@ pub fn init_cq_ex_fun_map() {
         });
         let mut tm = tm;
         while tm > 1000 {
-            if *G_QUIT_FLAG.read().unwrap() == true {
+            if pkg_can_run(&self_t.pkg_name,"输入流") == false {
                 return Err("输入流终止，因用户要求退出".into());
             }
             let rv = rx.recv_timeout(std::time::Duration::from_secs(1));
@@ -778,7 +778,7 @@ pub fn init_cq_ex_fun_map() {
             }
             tm -= 1000;
         }
-        if *G_QUIT_FLAG.read().unwrap() == true {
+        if pkg_can_run(&self_t.pkg_name,"输入流") == false {
             return Err("输入流终止，因用户要求退出".into());
         }
         let rv = rx.recv_timeout(std::time::Duration::from_millis(tm));
@@ -829,7 +829,7 @@ pub fn init_cq_ex_fun_map() {
         let mut ret_str = self_t.build_obj(BTreeMap::new());
         let mut tm = tm;
         while tm > 1000 {
-            if *G_QUIT_FLAG.read().unwrap() == true {
+            if pkg_can_run(&self_t.pkg_name,"输入流") == false {
                 return Err("输入流终止，因用户要求退出".into());
             }
             let rv = rx.recv_timeout(std::time::Duration::from_secs(1));
@@ -844,7 +844,7 @@ pub fn init_cq_ex_fun_map() {
             }
             tm -= 1000;
         }
-        if *G_QUIT_FLAG.read().unwrap() == true {
+        if pkg_can_run(&self_t.pkg_name,"输入流") == false {
             return Err("输入流终止，因用户要求退出".into());
         }
         let rv = rx.recv_timeout(std::time::Duration::from_millis(tm));
