@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+    <head>
+        <!-- 指明页面编码为utf-8 -->
+        <meta charset="UTF-8">
+        <!-- 适应手机 -->
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <!-- 引入vue，用于前端渲染 -->
+        <script src="vue.js"></script>
+        <!-- 引入axios，http客户端 -->
+        <script src="axios.js"></script>
+        <!-- 网站标题 -->
+        <title>红色问答控制台</title>
+        <!-- 引入样式控制文件 -->
+        <link rel="stylesheet" type="text/css" href="style.css">
+        
+        <script src="vue-quill.js"></script>
+        <link rel="stylesheet" href="vue-quill.snow.prod.css">
+    </head>
+    <body>
+        <div id="app">
+            <audio src="https://files.catbox.moe/ij0viz.mp3" ref="mybackmusic" loop="loop" hidden></audio>
+            <dialog id = "other_dlg">
+                <div>
+                    <div>
+                        <div class = "ws_set"><span>包名:</span><input v-model = "new_pkg_name"></input><button @click="pkg_create()">创建新包</button></div>
+                        <div class = "ws_set"><span>包名:</span><input v-model = "rename_pkg_name"></input><button @click="pkg_rename()">修改包名</button></div>
+                        <button @click="pkg_delete()">删除包</button>
+                    </div>
+                    <button @click="debug_btn()">调试</button>
+                    <button @click="pluscenter_btn()">脚本商店</button>
+                    <button @click="gobal_filter_btn()">全局过滤器</button>
+                    <button @click="playmusic_btn()">{{playbkmusic}}</button>
+                    <button @click="other_close()">取消</button>
+                </div>  
+            </dialog>
+            <h1>红色问答 {{version}}</h1>
+            <div id="pkg_btn_vec">
+                <div v-for="(pkg_content,pkg_name) in pkg_codes" @click="" >
+                    <button @click="if(pkg_name!=select_pkg_name){this.save_cache(select_name_index);select_name_index_change(-1);select_name_index=-1;select_pkg_name=pkg_name}" :class="{name_active:pkg_name==select_pkg_name}">
+                        {{ pkg_name }}
+                    </button>
+                </div>
+            </div>
+            <div id="pkg_content">
+                <div>
+                    <div>名字</div>
+                    <div>
+                        <div v-for="(code,index) in pkg_codes[select_pkg_name]" @click="this.save_cache(select_name_index);select_name_index_change(index);select_name_index=index" :class="{name_active:index==select_name_index}">
+                            <span>{{ code["name"] }}</span>
+                        </div>
+                    </div>
+                    <div>
+                        <button @click="select_up()">上移</button>
+                        <button @click="select_down()">下移</button>
+                    </div>
+                    
+                </div>
+                <div>
+                    <div class="input_div"><span>脚本名：</span><input id="script_name" v-model="script_name"></input></div>
+                    <div class="input_div"><span>介绍：&emsp;</span><input id="script_description" v-model="script_description"></input></div>
+                    <select id="script_cffs" v-model="script_cffs">
+                        <option disabled value="触发方式">触发方式</option>
+                        <option value ="群聊触发">群聊触发</option>
+                        <option value ="私聊触发">私聊触发</option>
+                        <option value="群、私聊触发">群、私聊触发</option>
+                        <option value="事件触发">事件触发</option>
+                        <option value="框架初始化">框架初始化</option>
+                        <option value="CRON定时器">CRON定时器</option>
+                        <option value="脚本错误">脚本错误</option>
+                        <option value="群成员增加">群成员增加</option>
+                        <option value="网络触发">网络触发</option>
+                        <option value="内容过滤">内容过滤</option>
+                        <option value="延迟触发">延迟触发</option>
+                    </select>
+                    <div v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div"><span>关键词：</span><input id="script_keyword" v-model="script_keyword"></input></div>
+                    <select id="script_ppfs" v-model="script_ppfs" v-if="(script_cffs == '群聊触发') || (script_cffs == '私聊触发') || (script_cffs == '群、私聊触发') || (script_cffs == '网络触发') || (script_cffs == '延迟触发')">
+                        <option disabled value="匹配方式">匹配方式</option>
+                        <option value ="完全匹配">完全匹配</option>
+                        <option value ="正则匹配">正则匹配</option>
+                        <option value="模糊匹配">模糊匹配</option>
+                        <option value="前缀匹配">前缀匹配</option>
+                    </select>
+                    <button v-if="script_cffs == 'CRON定时器'" @click="cron()">
+                        红色问答CRON校验工具
+                    </button>
+                    <div id="my-toolbar">
+                        <!-- Add buttons as you would before -->
+                        
+                        <button id="custom-button" @click="undo()">
+                            <svg viewbox="0 0 18 18">
+                                <polygon class="ql-fill ql-stroke" points="6 10 4 12 2 10 6 10"></polygon>
+                                <path class="ql-stroke" d="M8.09,13.91A4.6,4.6,0,0,0,9,14,5,5,0,1,0,4,9"></path>
+                                </svg>
+                        </button>
+                        <button id="custom-button" @click="redo()">
+                            <svg viewbox="0 0 18 18">
+                                <polygon class="ql-fill ql-stroke" points="12 10 14 12 16 10 12 10"></polygon>
+                                <path class="ql-stroke" d="M9.91,13.91A4.6,4.6,0,0,1,9,14a5,5,0,1,1,5-5"></path>
+                                </svg>
+                        </button>
+                      </div>
+                    <quill-editor  toolbar="#my-toolbar" id = "script_content" ref="child" theme="snow" spellcheck = false>
+                    </quill-editor>
+                    
+                    <!-- <textarea id="script_content" v-model="script_content" v-on:select="select_text"></textarea> -->
+                </div>
+            </div>
+            <div id="cmd_content">
+                <div>
+                    <button @click="add_code()">新增</button>
+                    <button @click="del_code()">删除</button>
+                    <button @click="save_code()">保存</button>
+                    <button @click="the_other()">其它</button>
+                </div>
+                <div>
+                    <button @click="connect_ob()">连接平台协议</button>
+                    <button @click="help_web()">帮助</button>
+                    <button @click="watch_log()">日志</button>
+                    <button @click="quit_redreply()">退出</button>
+                </div>
+                
+               
+            </div>
+        </div>
+        <!-- 引入js文件 -->
+        <script src="script.js"></script>
+    </body>
+</html>

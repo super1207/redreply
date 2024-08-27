@@ -11,119 +11,370 @@
         <script src="axios.js"></script>
         <!-- 网站标题 -->
         <title>红色问答控制台</title>
-        <!-- 引入样式控制文件 -->
-        <link rel="stylesheet" type="text/css" href="style.css">
+        <style>
+            html,body{
+                width: 100%;
+                height: 100%;
+                margin: 0;
+            }
+            #app {
+                display: flex;
+                flex: 1 0 auto;
+                flex-direction: column;
+                height: 100%;
+            }
+            .atitle {
+                margin: 0.5em;
+                --offset: 10px;
+                --border-size: 2px;
+                display: block;
+                position: relative;
+                text-align: center;
+                padding: 0.5em;
+                appearance: none;
+                border: 0;
+                background: transparent;
+                color: #e55743;
+                text-transform: uppercase;
+                letter-spacing: 0.25em;
+                outline: none;
+                cursor: pointer;
+                font-weight: bold;
+                border-radius: 0;
+                box-shadow: inset 0 0 0 var(--border-size) currentcolor;
+                transition: background 0.8s ease;
+            }
+            .atitle:hover {
+                background: rgba(100, 0, 0, 0.03);
+            }
+            .atitle__horizontal, .atitle__vertical {
+                position: absolute;
+                top: var(--horizontal-offset, 0);
+                right: var(--vertical-offset, 0);
+                bottom: var(--horizontal-offset, 0);
+                left: var(--vertical-offset, 0);
+                transition: transform 0.8s ease;
+                will-change: transform;
+            }
+            .atitle__horizontal::before, .atitle__vertical::before {
+                content: "";
+                position: absolute;
+                border: inherit;
+            }
+            .atitle__horizontal {
+                --vertical-offset: calc(var(--offset) * -1);
+                border-top: var(--border-size) solid currentcolor;
+                border-bottom: var(--border-size) solid currentcolor;
+            }
+            .atitle__horizontal::before {
+                top: calc(var(--vertical-offset) - var(--border-size));
+                bottom: calc(var(--vertical-offset) - var(--border-size));
+                left: calc(var(--vertical-offset) * -1);
+                right: calc(var(--vertical-offset) * -1);
+            }
+            .atitle:hover .atitle__horizontal {
+                transform: scaleX(0);
+            }
+            .atitle__vertical {
+                --horizontal-offset: calc(var(--offset) * -1);
+                border-left: var(--border-size) solid currentcolor;
+                border-right: var(--border-size) solid currentcolor;
+            }
+            .atitle__vertical::before {
+                top: calc(var(--horizontal-offset) * -1);
+                bottom: calc(var(--horizontal-offset) * -1);
+                left: calc(var(--horizontal-offset) - var(--border-size));
+                right: calc(var(--horizontal-offset) - var(--border-size));
+            }
+            .atitle:hover .atitle__vertical {
+                transform: scaleY(0);
+            }
+            .acard {
+                height: 5em;
+                width: 16em;
+                padding: 1em;
+                overflow: hidden;
+                background-color: #f3f5f6;
+                border-radius: 5%;
+            }
+            .acard:hover {
+                box-shadow: 0px 0px 12px rgba(0, 0, 0, 0.24);
+                background-color: rgb(152, 152, 100);
+                color: white;
+                cursor: pointer;
+            }
+            .moveFromBottom{
+                position: fixed;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                opacity: 0;
+                -webkit-transform: translate(0, 100%);
+                transform: translate(0, 100%);
+                -webkit-transition: all ease-in-out .3s;
+                transition: all ease-in-out .3s;
+            }
+            .box{
+                width: 100%;
+                height: 10em;
+                background: #fff;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+            }
+            .mask{
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0, 0, 0, .5);
+                display: none;
+            }
+            .showMove {
+                opacity: 1;
+                -webkit-transform: translate(0, 0);
+                transform: translate(0,0);
+            }
+        </style>
         
-        <script src="vue-quill.js"></script>
-        <link rel="stylesheet" href="vue-quill.snow.prod.css">
     </head>
     <body>
-        <div id="app">
-            <audio src="https://files.catbox.moe/ij0viz.mp3" ref="mybackmusic" loop="loop" hidden></audio>
-            <dialog id = "other_dlg">
-                <div>
-                    <div>
-                        <div class = "ws_set"><span>包名:</span><input v-model = "new_pkg_name"></input><button @click="pkg_create()">创建新包</button></div>
-                        <div class = "ws_set"><span>包名:</span><input v-model = "rename_pkg_name"></input><button @click="pkg_rename()">修改包名</button></div>
-                        <button @click="pkg_delete()">删除包</button>
-                    </div>
-                    <button @click="debug_btn()">调试</button>
-                    <button @click="pluscenter_btn()">脚本商店</button>
-                    <button @click="gobal_filter_btn()">全局过滤器</button>
-                    <button @click="playmusic_btn()">{{playbkmusic}}</button>
-                    <button @click="other_close()">取消</button>
-                </div>  
-            </dialog>
-            <h1>红色问答 {{version}}</h1>
-            <div id="pkg_btn_vec">
-                <div v-for="(pkg_content,pkg_name) in pkg_codes" @click="" >
-                    <button @click="if(pkg_name!=select_pkg_name){this.save_cache(select_name_index);select_name_index_change(-1);select_name_index=-1;select_pkg_name=pkg_name}" :class="{name_active:pkg_name==select_pkg_name}">
-                        {{ pkg_name }}
-                    </button>
-                </div>
-            </div>
-            <div id="pkg_content">
-                <div>
-                    <div>名字</div>
-                    <div>
-                        <div v-for="(code,index) in pkg_codes[select_pkg_name]" @click="this.save_cache(select_name_index);select_name_index_change(index);select_name_index=index" :class="{name_active:index==select_name_index}">
-                            <span>{{ code["name"] }}</span>
+        <div id="app" style="display: flex;flex-direction:column;">
+            <dialog id = "favDialog">
+                <div style="display: flex;flex-direction: column;">
+                    <form method="dialog">
+                        <div style="font-weight: bold;text-align: center;background-color: aquamarine;margin: 0.5em;color: red;">新增一个包</div>
+                        <span>包名：</span>
+                        <input v-model = "add_pkg_name"></input><br />
+                        <div style="display: flex;margin: 0.5em;">
+                            <button @click="add_pkg_dialog_ok" style="flex: 1 0 auto;margin: 0.5em;">确定</button>
+                            <button style="flex: 1 0 auto;margin: 0.5em;">取消</button>
                         </div>
-                    </div>
-                    <div>
-                        <button @click="select_up()">上移</button>
-                        <button @click="select_down()">下移</button>
-                    </div>
-                    
+                    </form>
                 </div>
-                <div>
-                    <div class="input_div"><span>脚本名：</span><input id="script_name" v-model="script_name"></input></div>
-                    <div class="input_div"><span>介绍：&emsp;</span><input id="script_description" v-model="script_description"></input></div>
-                    <select id="script_cffs" v-model="script_cffs">
-                        <option disabled value="触发方式">触发方式</option>
-                        <option value ="群聊触发">群聊触发</option>
-                        <option value ="私聊触发">私聊触发</option>
-                        <option value="群、私聊触发">群、私聊触发</option>
-                        <option value="事件触发">事件触发</option>
-                        <option value="框架初始化">框架初始化</option>
-                        <option value="CRON定时器">CRON定时器</option>
-                        <option value="脚本错误">脚本错误</option>
-                        <option value="群成员增加">群成员增加</option>
-                        <option value="网络触发">网络触发</option>
-                        <option value="内容过滤">内容过滤</option>
-                        <option value="延迟触发">延迟触发</option>
-                    </select>
-                    <div v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div"><span>关键词：</span><input id="script_keyword" v-model="script_keyword"></input></div>
-                    <select id="script_ppfs" v-model="script_ppfs" v-if="(script_cffs == '群聊触发') || (script_cffs == '私聊触发') || (script_cffs == '群、私聊触发') || (script_cffs == '网络触发') || (script_cffs == '延迟触发')">
-                        <option disabled value="匹配方式">匹配方式</option>
-                        <option value ="完全匹配">完全匹配</option>
-                        <option value ="正则匹配">正则匹配</option>
-                        <option value="模糊匹配">模糊匹配</option>
-                        <option value="前缀匹配">前缀匹配</option>
-                    </select>
-                    <button v-if="script_cffs == 'CRON定时器'" @click="cron()">
-                        红色问答CRON校验工具
+            </dialog>
+            <dialog id = "favDialog2">
+                <div style="display: flex;flex-direction: column;">
+                    <form method="dialog">
+                        <div style="font-weight: bold;text-align: center;background-color: aquamarine;margin: 0.5em;color: red;">改名一个包</div>
+                        <span>原包名：</span>
+                        <input v-model = "select_name" readonly true></input><br />
+                        <span>新包名：</span>
+                        <input v-model = "add_pkg_name"></input><br />
+                        <div style="display: flex;margin: 0.5em;">
+                            <button @click="rename_pkg_dialog_ok" style="flex: 1 0 auto;margin: 0.5em;">确定</button>
+                            <button style="flex: 1 0 auto;margin: 0.5em;">取消</button>
+                        </div>
+                    </form>
+                </div>
+            </dialog>
+            <h1 class="atitle" @click="title_click()">
+                红色问答 {{version}}
+                <div class="atitle__horizontal"></div>
+                <div class="atitle__vertical"></div>
+            </h1>
+            <div id="pkg_btn_vec" style="height: 0; display: flex;flex-wrap: wrap;flex: 1 0 auto;background-color: #f5f2f0;align-content: flex-start;overflow-y: auto;justify-content: center;">
+                <div v-for="name in pkg_vec" @click="" style="flex: 0 0 auto;margin: 0.5em;">
+                    <button class="acard" @click="upup(name)">
+                        {{ name }}
                     </button>
-                    <div id="my-toolbar">
-                        <!-- Add buttons as you would before -->
-                        
-                        <button id="custom-button" @click="undo()">
-                            <svg viewbox="0 0 18 18">
-                                <polygon class="ql-fill ql-stroke" points="6 10 4 12 2 10 6 10"></polygon>
-                                <path class="ql-stroke" d="M8.09,13.91A4.6,4.6,0,0,0,9,14,5,5,0,1,0,4,9"></path>
-                                </svg>
-                        </button>
-                        <button id="custom-button" @click="redo()">
-                            <svg viewbox="0 0 18 18">
-                                <polygon class="ql-fill ql-stroke" points="12 10 14 12 16 10 12 10"></polygon>
-                                <path class="ql-stroke" d="M9.91,13.91A4.6,4.6,0,0,1,9,14a5,5,0,1,1,5-5"></path>
-                                </svg>
-                        </button>
-                      </div>
-                    <quill-editor  toolbar="#my-toolbar" id = "script_content" ref="child" theme="snow" spellcheck = false>
-                    </quill-editor>
-                    
-                    <!-- <textarea id="script_content" v-model="script_content" v-on:select="select_text"></textarea> -->
                 </div>
             </div>
-            <div id="cmd_content">
-                <div>
-                    <button @click="add_code()">新增</button>
-                    <button @click="del_code()">删除</button>
-                    <button @click="save_code()">保存</button>
-                    <button @click="the_other()">其它</button>
-                </div>
-                <div>
-                    <button @click="connect_ob()">连接平台协议</button>
-                    <button @click="help_web()">帮助</button>
-                    <button @click="watch_log()">日志</button>
-                    <button @click="quit_redreply()">退出</button>
-                </div>
-                
-               
+            <div class="mask" @click="downdown()"></div>
+            <div id="box1" class="box moveFromBottom">
+                <div style="flex: 1 0 auto; text-align: center;background-color: rgb(220, 238, 238);font-weight: bold;display: flex;flex-direction: column;justify-content: center;"><span>{{select_name}}</span></div>
+                <button style="flex: 1 0 auto;" @click="edit_click()">编辑</button>
+                <button @click="rename_pkg()" style="flex: 1 0 auto;">改名</button>
+                <button @click="del_pkg()" style="flex: 1 0 auto;">删除</button>
+            </div>
+            <div id="cmd_content" style="display: flex;flex: 0 0 2.5em;padding: 0.5em;background-color: #b6cde4;">
+                <button @click="connect_ob()" style="flex: 1 0 auto;">连接平台协议</button>
+                <button @click="add_click()" style="flex: 1 0 auto;">新增</button>
+                <button @click="other_fun()" style="flex: 1 0 auto;">其它</button>
+                <button @click="quit_redreply()" style="flex: 1 0 auto;">退出</button>
             </div>
         </div>
-        <!-- 引入js文件 -->
-        <script src="script.js"></script>
+        <script>
+            function randomString(e) {    
+                e = e || 32;
+                var t = "123456789",
+                a = t.length,
+                n = "";
+                for (i = 0; i < e; i++) n += t.charAt(Math.floor(Math.random() * a));
+                return n
+            }
+            function validateFileName(fileName ){
+                var reg = new RegExp('[\\\\/:*?\"<>|]');
+                if (reg.test(fileName)) {
+                    //"上传的文件名不能包含【\\\\/:*?\"<>|】这些非法字符,请修改后重新上传!";
+                    return false;
+                }
+                return true;
+            }
+            const { createApp } = Vue
+            createApp({
+                data() {
+                    return {
+                        version:"",
+                        pkg_vec:[],
+                        select_name:"",
+                        add_pkg_name:""
+                    }
+                },
+                computed:{
+                    
+                },
+                mounted () {
+                    axios
+                    .get("/get_version")
+                    .then(
+                    res => {
+                        this.version = res.data["data"];
+                    })
+                    .catch(function (error) {
+                        console.log(error);
+                    });
+                    this.flash_pkg_name()
+                },
+                methods: {
+                    flash_pkg_name(){
+                        axios
+                        .get("/get_all_pkg_name")
+                        .then(
+                        res => {
+                            let ret = res.data["data"];
+                            ret.unshift("默认包");
+                            this.pkg_vec = ret;
+                        })
+                        .catch(function (error) {
+                            console.log(error);
+                        });
+                    },
+                    upup(name){
+                        this.select_name = name
+                        let box1 =document.getElementById('box1'); 
+                        let maskShow = document.querySelector(".mask")
+                        maskShow.style.display='block'
+                        box1.classList.add("showMove")
+                    },
+                    downdown(){
+                        let box1 =document.getElementById('box1'); 
+                        let maskShow = document.querySelector(".mask")
+                        box1.classList.remove("showMove")
+                        maskShow.style.display='none'
+                    },
+                    connect_ob() {
+                        window.open("/obconnect.html", "_blank");
+                    },
+                    title_click() {
+                        window.open("https://github.com/super1207/redreply", "_blank");
+                    },
+                    quit_redreply() {
+                        let is_quit = confirm("是否真的要退出强大的红色问答？")
+                        if(is_quit){
+                            setTimeout(function(){
+                                location.reload();
+                            },1000);
+                            axios.get("/close")
+                        }
+                    },
+                    other_fun(){
+                        window.open("/index_old.html", "_blank");
+                    },
+                    add_click() {
+                        this.add_pkg_name = "包_"+randomString(4)
+                        document.getElementById('favDialog').showModal();
+                    },
+                    edit_click() {
+                        console.log("edit")
+                        window.open("/pkg_edit.html?pkg_name=" + encodeURIComponent(this.select_name), "_blank");
+                        this.downdown()
+                    },
+                    del_pkg(){
+                        if(this.select_name == "默认包") {
+                            alert("不可以删除默认包")
+                        }
+                        axios.post("/del_one_pkg",{
+                                "pkg_name":this.select_name,
+                            })
+                            .then((res) => {
+                                if(res.data['retcode'] == 0){
+                                    this.flash_pkg_name()
+                                }else {
+                                    alert("failed")
+                                }
+                            })
+                            .catch(function (error) {
+                                alert("failed")
+                            });
+                        this.downdown()
+                    },
+                    rename_pkg(){
+                        this.downdown()
+                        this.add_pkg_name = this.select_name
+                        document.getElementById('favDialog2').showModal();
+                    },
+                    rename_pkg_dialog_ok(){
+                        if (this.add_pkg_name == "") {
+                            alert("失败，包名不能为空")
+                        }else if(this.select_name == "默认包"){
+                            alert("失败，默认包不可以改名")
+                        }
+                        else if(validateFileName(this.add_pkg_name) == false) {
+                            alert("失败，包名不能包含【\\\\/:*?\"<>|】这些非法字符")
+                        }
+                        else if(this.pkg_vec.includes(this.add_pkg_name) == true) {
+                            alert("失败，包名已经存在")
+                        }else if(this.new_pkg_name == "默认包") {
+                            alert("失败，包名不可以为默认包")
+                        }else {
+                            axios.post("/rename_one_pkg",{
+                                "old_pkg_name":this.select_name,
+                                "new_pkg_name":this.add_pkg_name
+                            })
+                            .then((res) => {
+                                if(res.data['retcode'] == 0){
+                                    this.flash_pkg_name()
+                                }else {
+                                    alert("failed")
+                                }
+                            })
+                            .catch(function (error) {
+                                alert("failed")
+                            });
+                        }
+                    },
+                    add_pkg_dialog_ok(){
+                        if (this.add_pkg_name == "") {
+                            alert("失败，包名不能为空")
+                        }
+                        else if(validateFileName(this.add_pkg_name) == false) {
+                            alert("失败，包名不能包含【\\\\/:*?\"<>|】这些非法字符")
+                        }
+                        else if(this.pkg_vec.includes(this.add_pkg_name) == true) {
+                            alert("失败，包名已经存在")
+                        }else if(this.new_pkg_name == "默认包") {
+                            alert("失败，包名不可以为默认包")
+                        }else {
+                            axios.post("/save_one_pkg",{
+                                "pkg_name":this.add_pkg_name,
+                                "data":[]
+                            })
+                            .then((res) => {
+                                if(res.data['retcode'] == 0){
+                                    this.flash_pkg_name()
+                                }else {
+                                    alert("failed")
+                                }
+                            })
+                            .catch(function (error) {
+                                alert("failed")
+                            });
+                        }
+                    },
+                }
+            }).mount('#app')
+        </script>
     </body>
 </html>

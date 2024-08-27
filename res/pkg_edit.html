@@ -14,7 +14,7 @@
         padding: 0;
     }
     button,textarea,body,select,input{
-        background-color: #C7EDCC;
+        background-color: #c7eddf;
         font-family: fusion-pixel-12px-monospaced-zh_hant, serif;
     }
     .name_active { /* 点中名字，变色属性 */
@@ -29,7 +29,7 @@
 
 <body>
    
-   <div id="app" style="padding:0.5em; border: 1px solid;margin: 0.2em;display: flex;flex-direction: column;flex-grow: 1;">
+   <div id="app" style="border: 1px solid;display: flex;flex-direction: column;flex: 0 1 100%;overflow-x: auto;margin: 0.4em;">
         <dialog id = "favDialog">
             <form method="dialog" style="display: flex;flex-direction: column;font-weight: blod;">
                 <div>您有如下脚本</div>
@@ -41,15 +41,15 @@
         </dialog>    
         <h1 style="text-align: center;color: red;">红色问答脚本编辑</h1>
         
-        <div style="display: flex;margin: 0.2em;">
+        <div style="display: flex;">
             <span>当前选择的脚本：</span>
             <button @click="select_name_fun()" style="flex: 1 0 auto;cursor: pointer;">{{select_name}}</button>
         </div>
-        <div style="display: flex;margin: 0.2em;">
+        <div style="display: flex;">
             <span>脚本名：</span>
             <input v-model = "script_name" style="flex: 1 0 auto;"></input>
         </div>
-        <div class="input_div" style="display: flex;margin: 0.2em;">
+        <div class="input_div" style="display: flex;">
             <span>介绍：&emsp;</span>
             <input id="script_description" v-model="script_description" style="flex: 1 0 auto;"></input>
         </div>
@@ -67,7 +67,7 @@
             <option value="内容过滤">内容过滤</option>
             <option value="延迟触发">延迟触发</option>
         </select>
-        <div v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div"  style="display: flex;margin: 0.2em;">
+        <div v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div"  style="display: flex;">
             <span>关键词：</span>
             <input id="script_keyword" v-model="script_keyword"  style="flex: 1 0 auto;"></input>
         </div>
@@ -81,9 +81,10 @@
         <button v-if="script_cffs == 'CRON定时器'" @click="cron()">
             红色问答CRON校验工具
         </button>
-        <div style="height: 0; flex-grow: 1;display: flex;flex-direction: column;flex-grow: 1;">
-            <quill-editor id = "script_content"  ref="child" theme="snow" spellcheck = false style="flex-grow: 1; height: 0;"></quill-editor>
-            <div style="display: flex;">
+            <div style="flex: 1 0 auto;height: 0;background-color: #f2ebeb;width: 100%;">
+                <quill-editor id = "script_content"  ref="child" theme="snow" spellcheck = false style="flex: 1 0 auto;"></quill-editor>
+            </div>
+            <div style="display: flex;flex: 0 0 auto;">
                 <button style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="add_code()">新增脚本</button>
                 <button style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="save_code()">保存脚本</button>
                 <button style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="del_code()">删除脚本</button>
@@ -214,6 +215,9 @@
             }
         },
         methods: {
+            cron(){
+                window.open("/crontool.html", "_blank");
+            },
             select_name_fun(){
                 document.getElementById('favDialog').showModal();
             },
