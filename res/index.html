@@ -11,6 +11,7 @@
         <script src="axios.js"></script>
         <!-- 网站标题 -->
         <title>红色问答控制台</title>
+        <link href='live2d/pio.css' rel='stylesheet' type='text/css'/>
         <style>
             html,body{
                 width: 100%;
@@ -140,7 +141,13 @@
         
     </head>
     <body>
+        <!-- style="position: fixed;right: 0px;bottom: 55px;" -->
+        <div class="pio-container right" >
+            <div class="pio-action"></div>
+            <canvas id="pio" width="200" height="200"></canvas>
+        </div>
         <div id="app" style="display: flex;flex-direction:column;">
+            
             <dialog id = "favDialog">
                 <div style="display: flex;flex-direction: column;">
                     <form method="dialog">
@@ -375,6 +382,20 @@
                     },
                 }
             }).mount('#app')
+        </script>
+        <script src='live2d/l2d.js'></script>
+        <script src='live2d/pio.js'></script>
+        <script>
+            var pio = new Paul_Pio({
+                "mode": "draggable",
+                "hidden": true,
+                "content": {
+                    "welcome": ["super1207！", "今天天气不错，一起来玩吧！", "欢迎使用红色问答~"],
+                    "link":"https://github.com/super1207/redreply"
+                },
+                // "night": "single.night()",
+                "model": ["live2d/models/pio/model1.json","live2d/models/pio/model2.json","live2d/models/pio/model3.json"]
+            });
         </script>
     </body>
 </html>

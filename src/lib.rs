@@ -958,11 +958,15 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
     let err = "get asset err";
     fs::create_dir_all(cq_get_app_directory1().unwrap() + "webui")?;
     for it in Asset::iter() {
-                let file = Asset::get(&it.to_string()).ok_or(err)?;
-        fs::write(cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + it.to_string().get(4..).unwrap_or_default(), file.data)?;
+        let file = Asset::get(&it.to_string()).ok_or(err)?;
+        let file_path = cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + it.to_string().get(4..).unwrap_or_default();
+        if let Some(path) = PathBuf::from_str(&file_path)?.parent() {
+            fs::create_dir_all(path)?;
+        }
+        fs::write(file_path, file.data)?;
     } 
     for it in AssetDoc::iter() {
-                let file = AssetDoc::get(&it.to_string()).ok_or(err)?;
+        let file = AssetDoc::get(&it.to_string()).ok_or(err)?;
         let file_path = cq_get_app_directory1().unwrap() + "webui" + &sep.to_string() + &it.to_string();
         if let Some(path) = PathBuf::from_str(&file_path)?.parent() {
             fs::create_dir_all(path)?;

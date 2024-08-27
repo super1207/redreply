@@ -18,7 +18,7 @@ lazy_static = "1.5.0"
 chrono = "0.4.38"
 md-5 = "0.10.6"
 rcnb-rs = "0.1.0"
-rust-embed="8.5.0"
+rust-embed = {version="8.5.0",features = ["compression"]}
 image = "0.25.2"
 imageproc = "0.25.0"
 gif = "0.13.1"

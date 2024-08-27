@@ -670,6 +670,15 @@ async fn deal_file(request: hyper::Request<hyper::body::Incoming>) -> Result<hyp
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/markdown"));
     }else if url_path.ends_with(".woff2") {
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("font/woff2"));
+    }else if url_path.ends_with(".json") {
+        res.headers_mut().insert("Cache-Control", HeaderValue::from_static("max-age=300"));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+    }else if url_path.ends_with(".moc") {
+        res.headers_mut().insert("Cache-Control", HeaderValue::from_static("max-age=300"));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/octet-stream"));
+    }else if url_path.ends_with(".mtn") {
+        res.headers_mut().insert("Cache-Control", HeaderValue::from_static("max-age=300"));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/octet-stream"));
     }
     else {
         *res.status_mut() = hyper::StatusCode::NOT_FOUND;
