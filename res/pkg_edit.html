@@ -14,11 +14,17 @@
         padding: 0;
     }
     button,textarea,body,select,input{
-        background-color: #c7eddf;
+        background-color: #e1ebe7;
         font-family: fusion-pixel-12px-monospaced-zh_hant, serif;
+    }
+    button:hover {
+        background-color: aqua;
+        color: red;
+        cursor: pointer;
     }
     .name_active { /* 点中名字，变色属性 */
         color: red;
+        font-weight: bold;
     }
    </style>
    <script src="axios.js"></script>
@@ -29,23 +35,22 @@
 
 <body>
    
-   <div id="app" style="border: 1px solid;display: flex;flex-direction: column;flex: 0 1 100%;overflow-x: auto;margin: 0.4em;">
-        <dialog id = "favDialog">
-            <form method="dialog" style="display: flex;flex-direction: column;font-weight: blod;">
-                <div>您有如下脚本</div>
-                <button v-for="(code,index) in pkg_codes" style="margin: 0.1em;" @click="select_name_change(index)" :class="{name_active:index==select_index}">
-                    {{ code["name"] }}
-                </button>
-                <button>取消</button>
-            </form>
-        </dialog>    
-        <h1 style="text-align: center;color: red;">红色问答脚本编辑</h1>
+   <div id="app" style="border: 1px solid;display: flex;flex-direction: column;flex: 0 1 100%;overflow-x: auto;margin: 0.4em;"> 
+        <h1 style="text-align: center;color: red;">编辑:{{pkg_name}}</h1>
         
-        <div style="display: flex;">
-            <span>当前选择的脚本：</span>
-            <button @click="select_name_fun()" style="flex: 1 0 auto;cursor: pointer;">{{select_name}}</button>
+        <div style="display: flex;overflow-x: auto;border: 0.1em;border-style:outset;border-spacing: 1px;background-color:#b8e7e4;">
+            <button v-for="(code,index) in pkg_codes" style="padding: 0.3em; margin: 0.2em;white-space:nowrap;cursor: pointer;" @click="select_name_change(index)" :class="{name_active:index==select_index}" v-bind:key="index"
+                draggable="true"    
+                @dragstart="dragStart($event, index)"
+                @dragover="allowDrop"
+                @drop="drop($event, index)" @dragend="dragEnd"
+            >
+                {{ code["name"] }}
+            </button>
+            <div v-if="select_index == -1" style="padding: 0.3em; margin: 0.2em;white-space:nowrap;">无脚本，请点击[新增脚本]吧，亲~</div>
+            <div v-if="pkg_codes.length > 1" style="padding: 0.3em; margin: 0.2em;white-space:nowrap;">可以拖拽调整显示顺序哦，亲~</div>
         </div>
-        <div style="display: flex;">
+        <div style="display: flex;margin: 0.2em;">
             <span>脚本名：</span>
             <input v-model = "script_name" style="flex: 1 0 auto;"></input>
         </div>
@@ -53,7 +58,7 @@
             <span>介绍：&emsp;</span>
             <input id="script_description" v-model="script_description" style="flex: 1 0 auto;"></input>
         </div>
-        <select id="script_cffs" v-model="script_cffs">
+        <select id="script_cffs" v-model="script_cffs" style="margin: 0.2em;height: 1.5em;cursor: pointer;">
             <option disabled value="触发方式">触发方式</option>
             <option value ="群聊触发">群聊触发</option>
             <option value ="私聊触发">私聊触发</option>
@@ -67,11 +72,11 @@
             <option value="内容过滤">内容过滤</option>
             <option value="延迟触发">延迟触发</option>
         </select>
-        <div v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div"  style="display: flex;">
+        <div style="display: flex;" v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div">
             <span>关键词：</span>
             <input id="script_keyword" v-model="script_keyword"  style="flex: 1 0 auto;"></input>
         </div>
-        <select id="script_ppfs" v-model="script_ppfs" v-if="(script_cffs == '群聊触发') || (script_cffs == '私聊触发') || (script_cffs == '群、私聊触发') || (script_cffs == '网络触发') || (script_cffs == '延迟触发')">
+        <select id="script_ppfs" v-model="script_ppfs" v-if="(script_cffs == '群聊触发') || (script_cffs == '私聊触发') || (script_cffs == '群、私聊触发') || (script_cffs == '网络触发') || (script_cffs == '延迟触发')" style="margin-top: 0.2em;height: 1.5em;cursor: pointer;">
             <option disabled value="匹配方式">匹配方式</option>
             <option value ="完全匹配">完全匹配</option>
             <option value ="正则匹配">正则匹配</option>
@@ -81,7 +86,7 @@
         <button v-if="script_cffs == 'CRON定时器'" @click="cron()">
             红色问答CRON校验工具
         </button>
-            <div style="flex: 1 0 auto;height: 0;background-color: #f2ebeb;width: 100%;">
+            <div style="flex: 1 0 auto;height: 0;width: 100%;">
                 <quill-editor id = "script_content"  ref="child" theme="snow" spellcheck = false style="flex: 1 0 auto;"></quill-editor>
             </div>
             <div style="display: flex;flex: 0 0 auto;">
@@ -110,14 +115,14 @@
                 last_code:"",
                 last_change_time:(new Date()).valueOf(),
                 last_index:0,
-                select_name:"当前没有脚本",
                 select_index:-1,
                 pkg_codes:[],
                 script_name:"",
                 script_description:"",
                 script_cffs:"",
                 script_ppfs:"",
-                script_keyword:""
+                script_keyword:"",
+                pkg_name:""
             }
         },
         mounted () {
@@ -176,6 +181,8 @@
                 }
             });
             let pkg_name = getQueryVariable("pkg_name")
+            document.title = decodeURIComponent(pkg_name)
+            this.pkg_name = document.title
             if(pkg_name == encodeURIComponent("默认包")) {
                 pkg_name = ""
             }
@@ -200,26 +207,44 @@
             });
         },
         watch:{
-            select_index:function(newval,oldval){
-                console.log("select_index val change:" + newval)
-                if(newval == -1) {
-                    this.select_name = "当前没有脚本"
-                }else {
-                    this.select_name = this.pkg_codes[newval]["name"]
-                }
-            },
             script_name:function(newval,oldval){
                 if(this.select_index != -1) {
-                    this.select_name = newval
+                    this.pkg_codes[this.select_index]['name'] = newval
+                    // this.select_name = newval
                 }
             }
         },
         methods: {
+            //拖曳相關--str---↓↓--
+            allowDrop(e) {//取消默認行為
+                console.log("allowDrop" + e )
+                e.preventDefault();
+            },
+            dragStart(e, index) {//拖曳開始
+                console.log("dragStart：" + e + "," + index)
+                e.dataTransfer.setData('Text', index);
+            },
+            drop(e, index) {//放置
+                console.log("drop" + e + "," + index)
+                // this.allowDrop(e);
+                dragIndex = e.dataTransfer.getData('Text');
+                if(dragIndex != index) {
+                    let temp = this.pkg_codes[dragIndex]
+                    this.pkg_codes[dragIndex] = this.pkg_codes[index]
+                    this.pkg_codes[index] = temp;
+                    if(this.select_index == dragIndex) {
+                        this.select_index = index
+                    }else if(this.select_index == index){
+                        this.select_index = dragIndex
+                    }
+                }
+            },
+            dragEnd() {//放置結束
+                console.log("dragEnd");
+            },
+            //拖曳相關--end---↑↑--
             cron(){
                 window.open("/crontool.html", "_blank");
-            },
-            select_name_fun(){
-                document.getElementById('favDialog').showModal();
             },
             save(index){
                 this.pkg_codes[this.select_index]["content"]["code"] = this.$refs.child.getText()
@@ -252,12 +277,20 @@
                 //console.log(this.$refs.child.getText())
                 
             },
+            randomString(e) {    
+                e = e || 32;
+                var t = "123456789",
+                a = t.length,
+                n = "";
+                for (i = 0; i < e; i++) n += t.charAt(Math.floor(Math.random() * a));
+                return n
+            },
             add_code() {
                 if(this.select_index != -1) {
                     this.save(this.select_index)
                 }
                 let obj = {
-                    name:"script_name",
+                    name:"script_"+this.randomString(4),
                     description:"code_description",
                     content:{
                         code:"hello\n",

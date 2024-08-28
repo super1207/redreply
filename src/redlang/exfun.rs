@@ -1913,7 +1913,8 @@ pub fn init_ex_fun_map() {
             let el_html= tab.wait_for_element("html")?;
             let body_height = el_html.get_box_model()?.height;
             let body_width = el_html.get_box_model()?.width;
-            tab.set_bounds(headless_chrome::types::Bounds::Normal { left: Some(0), top: Some(0), width:Some(body_width), height: Some(body_height) })?;
+            
+            tab.set_bounds(headless_chrome::types::Bounds::Normal { left: Some(0), top: Some(0), width:Some(body_width), height: Some(body_height + 200f64) })?;
             let mut el = el_html;
             if sec != ""{
                 el = tab.wait_for_element(&sec)?;
@@ -1983,9 +1984,6 @@ pub fn init_ex_fun_map() {
             }
             tab.navigate_to(&path)?.wait_until_navigated()?;
             let el_html= tab.wait_for_element("html")?;
-            let body_height = el_html.get_box_model()?.height;
-            let body_width = el_html.get_box_model()?.width;
-            tab.set_bounds(headless_chrome::types::Bounds::Normal { left: Some(0), top: Some(0), width:Some(body_width), height: Some(body_height) })?;
             let mut el = el_html;
             if sec != ""{
                 el = tab.wait_for_element(&sec)?;
@@ -2054,9 +2052,6 @@ pub fn init_ex_fun_map() {
             }
             tab.navigate_to(&path)?.wait_until_navigated()?;
             let el_html= tab.wait_for_element("html")?;
-            let body_height = el_html.get_box_model()?.height;
-            let body_width = el_html.get_box_model()?.width;
-            tab.set_bounds(headless_chrome::types::Bounds::Normal { left: Some(0), top: Some(0), width:Some(body_width), height: Some(body_height) })?;
             let mut el = el_html;
             if sec != ""{
                 el = tab.wait_for_element(&sec)?;
