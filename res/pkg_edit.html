@@ -90,9 +90,9 @@
                 <quill-editor id = "script_content"  ref="child" theme="snow" spellcheck = false style="flex: 1 0 auto;"></quill-editor>
             </div>
             <div style="display: flex;flex: 0 0 auto;">
-                <button style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="add_code()">新增脚本</button>
-                <button style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="save_code()">保存脚本</button>
-                <button style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="del_code()">删除脚本</button>
+                <button ref="child1" disabled true style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="add_code()">新增脚本</button>
+                <button ref="child2" disabled true style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="save_code()">保存脚本</button>
+                <button ref="child3" disabled true style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="del_code()">删除脚本</button>
             </div>
         </div>
         </body>
@@ -201,6 +201,10 @@
                 }else {
                     this.select_index = -1
                 }
+                // 只有加载成功了才允许保存
+                this.$refs.child1.disabled = false;
+                this.$refs.child2.disabled = false;
+                this.$refs.child3.disabled = false;
             })
             .catch(function (error) {
                 console.log(error);
