@@ -71,7 +71,26 @@ fn get_const_val(pkg_name:&str,val_name:&str) -> Result<String, Box<dyn std::err
     }
 }
 
+fn clear_temp_const_val() -> Result<(), Box<dyn std::error::Error>> {
+    let tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
+    let mut g_map = G_TEMP_CONST_MAP.write()?;
+    let mut to_rm = vec![];
+    for (pkg_name,mp) in &*g_map {
+        for (k,(_v,val1)) in &*mp {
+            if *val1 < tm {
+                to_rm.push((pkg_name.to_owned(),k.to_owned()));
+            }
+        }
+    }
+    for (pkg_name,key) in &to_rm {
+        let vv = g_map.get_mut(pkg_name).unwrap();
+        vv.remove(key);
+    }
+    Ok(())
+}
+
 fn set_temp_const_val(bin_pool:&mut HashMap<String, RedLangBinPoolVarType>,pkg_name:&str,val_name:&str,val:String,expire_time:u128) -> Result<(), Box<dyn std::error::Error>> {
+    clear_temp_const_val()?; // 清除过期的key
     let mut g_map = G_TEMP_CONST_MAP.write()?;
     let val_map = g_map.get_mut(pkg_name);
     let uid = REDLANG_UUID.to_string();
