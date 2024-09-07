@@ -602,10 +602,12 @@ pub fn init_core_fun_map() {
             let tms = k1.parse::<usize>()?;
             self_t.xh_vec.push([false, false]);
             let mut last_type = 0u8;
+            let xh_len = self_t.xh_vec.len();
             for _i in 0..tms {
+                self_t.xh_vec[xh_len - 1][0] = false;
                 let v = self_t.get_param(params, 1)?;
                 RedLang::conect_arr(&self_t.bin_pool,&mut last_type,&mut ret_str,&v)?;
-                if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
+                if self_t.xh_vec[xh_len - 1][1] == true {
                     break;
                 }
             }
@@ -620,12 +622,14 @@ pub fn init_core_fun_map() {
             let mut fun_params:Vec<String> = vec!["".to_string(),"".to_string(),"".to_string()];
             fun_params[0] = fun;
             let mut last_type = 0;
+            let xh_len = self_t.xh_vec.len();
             for i in 0..tms {
+                self_t.xh_vec[xh_len - 1][0] = false;
                 fun_params[1] = i.to_string();
                 fun_params[2] = arr[i].to_owned();
                 let v = self_t.call_fun(&fun_params,true)?;
                 RedLang::conect_arr(&self_t.bin_pool,&mut last_type,&mut ret_str,&v)?;
-                if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
+                if self_t.xh_vec[xh_len - 1][1] == true {
                     break;
                 }
             }
@@ -638,12 +642,14 @@ pub fn init_core_fun_map() {
             let mut fun_params:Vec<String> = vec!["".to_string(),"".to_string(),"".to_string()];
             fun_params[0] = fun;
             let mut last_type = 0;
+            let xh_len = self_t.xh_vec.len();
             for (k,v) in obj {
+                self_t.xh_vec[xh_len - 1][0] = false;
                 fun_params[1] = k;
                 fun_params[2] = v;
                 let v = self_t.call_fun(&fun_params,true)?;
                 RedLang::conect_arr(&self_t.bin_pool,&mut last_type,&mut ret_str,&v)?;
-                if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
+                if self_t.xh_vec[xh_len - 1][1] == true {
                     break;
                 }
             }
@@ -655,10 +661,12 @@ pub fn init_core_fun_map() {
         let mut ret_str = String::new();
         self_t.xh_vec.push([false, false]);
         let mut last_type = 0;
+        let xh_len = self_t.xh_vec.len();
         while self_t.get_param(params, 0)? == "真" {
+            self_t.xh_vec[xh_len - 1][0] = false;
             let v = self_t.get_param(params, 1)?;
             RedLang::conect_arr(&self_t.bin_pool,&mut last_type,&mut ret_str,&v)?;
-            if self_t.xh_vec[self_t.xh_vec.len() - 1][1] == true {
+            if self_t.xh_vec[xh_len - 1][1] == true {
                 break;
             }
         }
@@ -2595,8 +2603,6 @@ impl RedLang {
             if xh_vec_len != 0 {
                 // 说明在循环中
                 if self.xh_vec[xh_vec_len - 1][0] == true {
-                    self.xh_vec[xh_vec_len - 1][0] = false; // 准备下次循环
-                                                            // 这里退出本次循环
                     break;
                 }
                 if self.xh_vec[xh_vec_len - 1][1] == true {
