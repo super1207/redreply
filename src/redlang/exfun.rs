@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::{BTreeMap, HashMap}, fs, io::Read, path::{Path, PathBuf}, str::FromStr, time::{Duration, SystemTime}, vec};
+use std::{cell::RefCell, collections::{BTreeMap, HashMap, HashSet}, fs, io::Read, path::{Path, PathBuf}, str::FromStr, time::{Duration, SystemTime}, vec};
 use chrono::TimeZone;
 use encoding::Encoding;
 use flate2::{read::{GzDecoder, ZlibDecoder}, write::{GzEncoder, ZlibEncoder}, Compression};
@@ -3610,6 +3610,119 @@ def red_out(sw):
              data: (*self_t.exmap).borrow().clone() });
         Ok(Some("".to_string()))
     });
+    fn zhuhe(s_len:usize,n:usize) -> Vec<Vec<usize>> {
+        if s_len == 0 || n == 0 || s_len < n {
+            return vec![];
+        }
+        let mut stack_vec:Vec<usize> = Vec::new();
+        let mut out_vec:Vec<Vec<usize>> = Vec::new();
+        stack_vec.push(0);
+        loop {
+            if stack_vec.len() == n {
+                out_vec.push(stack_vec.clone());
+                let last_num = stack_vec[stack_vec.len() - 1];
+                if last_num == (s_len - 1) {
+                    stack_vec.pop();
+                    if stack_vec.len() == 0 {
+                        break;
+                    }
+                    let last_num = stack_vec[stack_vec.len() - 1];
+                    stack_vec.pop();
+                    stack_vec.push(last_num + 1);
+                }else {
+                    stack_vec.pop();
+                    stack_vec.push(last_num + 1);
+                }
+    
+            } else {
+                let last_num = stack_vec[stack_vec.len() - 1];
+                if last_num == (s_len - 1) {
+                    stack_vec.pop();
+                    if stack_vec.len() == 0 {
+                        break;
+                    }
+                    let last_num = stack_vec[stack_vec.len() - 1];
+                    stack_vec.pop();
+                    stack_vec.push(last_num + 1);
+                } else {
+                    stack_vec.push(last_num + 1)
+                }
+            }
+        }
+        out_vec
+    }
+    fn next_permutation(nums: &mut [usize]) -> bool {
+        use std::cmp::Ordering;
+        // or use feature(array_windows) on nightly
+        let last_ascending = match nums.windows(2).rposition(|w| w[0] < w[1]) {
+            Some(i) => i,
+            None => {
+                nums.reverse();
+                return false;
+            }
+        };
+    
+        let swap_with = nums[last_ascending + 1..]
+            .binary_search_by(|n| usize::cmp(&nums[last_ascending], n).then(Ordering::Less))
+            .unwrap_err(); // cannot fail because the binary search will never succeed
+        nums.swap(last_ascending, last_ascending + swap_with);
+        nums[last_ascending + 1..].reverse();
+        true
+    }
+    // 全排列
+    fn quanpai(n:usize) -> Vec<Vec<usize>> {
+        let mut out_vec:Vec<Vec<usize>> = Vec::new();
+        let mut v = (0usize..n).collect::<Vec<usize>>();
+        out_vec.push(v.clone());
+        loop {
+            let ret = next_permutation(&mut v);
+            if ret == false {
+                break;
+            }
+            out_vec.push(v.clone());
+        }
+        out_vec
+    }
+    add_fun(vec!["组合"],|self_t,params|{
+        let s = self_t.get_param(params, 0)?;
+        let s = RedLang::parse_arr(&s)?;
+        let n = self_t.get_param(params, 1)?.parse::<usize>()?;
+        let s_len = s.len();
+        let out_vec = zhuhe(s_len,n);
+        let mut out_vec_t:Vec<String> = Vec::new();
+        for it in out_vec {
+            let mut temp_vec = vec![];
+            for it2 in it {
+                temp_vec.push(s[it2]);
+            }
+            let red_vec = self_t.build_arr(temp_vec);
+            out_vec_t.push(red_vec);
+        }
+        let out2 = out_vec_t.iter().map(|x|x.as_str()).collect::<Vec<&str>>();
+        Ok(Some(self_t.build_arr(out2)))
+    });
+    add_fun(vec!["排列"],|self_t,params|{
+        let s = self_t.get_param(params, 0)?;
+        let s = RedLang::parse_arr(&s)?;
+        let n = self_t.get_param(params, 1)?.parse::<usize>()?;
+        let s_len = s.len();
+        let out_zhuhe = zhuhe(s_len,n);
+        let quanpai_vec = quanpai(n);
+        let mut out_vec_t:Vec<String> = Vec::new();
+        for it3 in out_zhuhe {
+            for it4 in &quanpai_vec {
+                let mut temp_vec = vec![];
+                for it5 in it4 {
+                    temp_vec.push(s[it3[*it5]]);
+                }
+                let red_vec = self_t.build_arr(temp_vec);
+                out_vec_t.push(red_vec);
+            }
+        }
+        let out2 = out_vec_t.iter().map(|x|x.as_str()).collect::<Vec<&str>>();
+        Ok(Some(self_t.build_arr(out2)))
+    });
+    
 }
 
 
