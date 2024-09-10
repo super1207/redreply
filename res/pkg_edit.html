@@ -228,19 +228,60 @@
             dragStart(e, index) {//拖曳開始
                 console.log("dragStart：" + e + "," + index)
                 e.dataTransfer.setData('Text', index);
+                let client = event.target.getBoundingClientRect()
+                let source_x = (client.left + client.right) / 2
+                let mouse_x = event.clientX
+                e.dataTransfer.setData('Offset', source_x - mouse_x);
             },
             drop(e, index) {//放置
-                console.log("drop" + e + "," + index)
+                let offset = e.dataTransfer.getData('Offset');
+                let client = event.target.getBoundingClientRect()
+                let target_pos = (client.left + client.right) / 2
+                let source_pos = (event.clientX + Number(offset))
+                let tp = 0
+                if(target_pos > source_pos) {
+                    tp = -1
+                    console.log("左")
+                }else {
+                    tp = 1
+                    console.log("右")
+                }
+                
                 // this.allowDrop(e);
-                dragIndex = e.dataTransfer.getData('Text');
+                dragIndex = Number(e.dataTransfer.getData('Text'));
                 if(dragIndex != index) {
-                    let temp = this.pkg_codes[dragIndex]
-                    this.pkg_codes[dragIndex] = this.pkg_codes[index]
-                    this.pkg_codes[index] = temp;
-                    if(this.select_index == dragIndex) {
-                        this.select_index = index
-                    }else if(this.select_index == index){
-                        this.select_index = dragIndex
+                    let mode_list = []
+                    for(i = 0;i < this.pkg_codes.length;i++) {
+                        mode_list.push(i)
+                    }
+
+                    if(index + tp == dragIndex) { // 不动
+                        return;
+                    }
+
+                    // 插入元素
+                    if(tp == -1) {
+                        mode_list.splice(index,0,dragIndex)
+                        this.pkg_codes.splice(index,0,this.pkg_codes[dragIndex])
+                    } else {
+                        mode_list.splice(index + 1,0,dragIndex)
+                        this.pkg_codes.splice(index + 1,0,this.pkg_codes[dragIndex])
+                    }
+
+                    // 删除原来位置的元素
+                    if(index < dragIndex) { // 往右边移动
+                        this.pkg_codes.splice(dragIndex + 1,1)
+                        mode_list.splice(dragIndex + 1,1)
+                    }else if(index > dragIndex) { // 往左边移动
+                        this.pkg_codes.splice(dragIndex,1)
+                        mode_list.splice(dragIndex,1)
+                    }
+                    
+                    for(i = 0;i < mode_list.length;i++) {
+                        if (mode_list[i] == this.select_index) {
+                            this.select_index = i
+                            break
+                        }
                     }
                 }
             },
