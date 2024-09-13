@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::{BTreeMap, HashMap, HashSet}, fs, io::Read, path::{Path, PathBuf}, str::FromStr, time::{Duration, SystemTime}, vec};
+use std::{cell::RefCell, collections::{BTreeMap, HashMap}, fs, io::Read, path::{Path, PathBuf}, str::FromStr, time::{Duration, SystemTime}, vec};
 use chrono::TimeZone;
 use encoding::Encoding;
 use flate2::{read::{GzDecoder, ZlibDecoder}, write::{GzEncoder, ZlibEncoder}, Compression};
@@ -2285,7 +2285,11 @@ pub fn init_ex_fun_map() {
         let sql_file = crate::mytool::path_to_os_str(&sql_file);
         
         let key = self_t.get_param(params, 0)?;
-        let value = self_t.get_param(params, 1)?;
+        let mut value = self_t.get_param(params, 1)?;
+
+        if value.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
+            value = get_raw_data(self_t, value)?;
+        }
 
         add_file_lock(&sql_file);
         let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
