@@ -1936,7 +1936,7 @@ return ""
 
 例:`【排列【数组@a@b@c】@2】`返回`[[a,b],[b,a],[a,c],[c,a],[b,c],[c,b]]`
 
-# 组合
+## 组合
 
 【组合@<font color="red">组合数组</font>@<font color="red">选取元素个数</font>】
 
@@ -1945,6 +1945,53 @@ return ""
 返回的是一个二维数组。
 
 例:`【组合【数组@a@b@c】@2】`返回`[[a,b],[a,c],[b,c]]`
+
+## HTML解析
+
+【HTML解析@<font color="red">HTML文本或字节集</font>@<font color="red">CSS选择器</font>】
+
+返回一个数组，数组中包含所有匹配到的元素(一个RedLang数组)。
+
+参数如果是字节集，会自动按UTF8编码转为文本。
+
+例如：
+
+```
+【html解析【@
+	<ul>
+		<li color="red">aaa</li>
+		<li color="blue">bbb</li>
+		<li color="pink">ccc</li>
+	</ul>
+】@li】
+```
+
+返回格式类似：
+```
+[
+  {
+    "attrs":{"color":"red"},
+    "html":"<li color=\"red\">aaa</li>",
+    "inner_html":"aaa",
+    "value":"aaa"
+  },
+  {
+    "attrs":{"color":"blue"},
+    "html":"<li color=\"blue\">bbb</li>",
+    "inner_html":"bbb",
+    "value":"bbb"
+  },
+  {
+    "attrs":{"color":"pink"},
+    "html":"<li color=\"pink\">ccc</li>",
+    "inner_html":"ccc",
+    "value":"ccc"
+  }
+]
+```
+
+其中格式为
+
 
 ## 平台相关命令说明
 

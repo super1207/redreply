@@ -3726,6 +3726,40 @@ def red_out(sw):
         let out2 = out_vec_t.iter().map(|x|x.as_str()).collect::<Vec<&str>>();
         Ok(Some(self_t.build_arr(out2)))
     });
+
+    add_fun(vec!["HTML解析"],|self_t,params|{
+        let mut html = self_t.get_param(params, 0)?;
+        if self_t.get_type(&html)? == "字节集" {
+            html = String::from_utf8(RedLang::parse_bin(&self_t.bin_pool, &html)?)?;
+        }
+        let css = self_t.get_param(params, 1)?;
+        let document = scraper::Html::parse_document(&html);
+        let selector = scraper::Selector::parse(&css).map_err(|err| err.to_string())?;
+
+        let mut retvec = vec![];
+
+        for element in document.select(&selector) {
+            let mut obj = BTreeMap::new();
+            obj.insert("html".to_owned(), element.html());
+            obj.insert("inner_html".to_owned(), element.inner_html());
+            let text = element.text().collect::<Vec<&str>>();
+            let mut text_str = String::new();
+            for i in 0..text.len() {
+                text_str.push_str(text[i]);
+            }
+            obj.insert("value".to_owned(),text_str);
+            let atters_map = element.value().attrs();
+            let mut atters_obj = BTreeMap::new();
+            for (key, value) in atters_map {
+                atters_obj.insert(key.to_string(), value.to_string());
+            }
+            let red_obj = self_t.build_obj(atters_obj);
+            obj.insert("attrs".to_owned(), red_obj);
+            retvec.push(self_t.build_obj(obj));
+        }
+        let out2 = retvec.iter().map(|x|x.as_str()).collect::<Vec<&str>>();
+        Ok(Some(self_t.build_arr(out2)))
+    });
     
 }
 
