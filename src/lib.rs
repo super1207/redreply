@@ -1357,6 +1357,23 @@ fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std
         // 删除旧脚本占用的内存
         del_pkg_memory(old_pkg_name);
         lk.insert(new_pkg_name.to_owned());
+
+        // 修改内存中的脚本
+        {
+            let mut new_script = vec![];
+            let mut wk = G_SCRIPT.write().unwrap();
+            for it in wk.as_array().ok_or("read G_SCRIPT err")? {
+                let it_name = read_json_str(it, "pkg_name");
+                if it_name == old_pkg_name {
+                    let mut it_t = it.to_owned();
+                    it_t["pkg_name"] = serde_json::Value::String(new_pkg_name.to_string());
+                    new_script.push(it_t);
+                }else {
+                    new_script.push(it.to_owned());
+                }
+            }
+            (*wk) = serde_json::Value::Array(new_script);
+        }
         
     }else{
         cq_add_log_w("改名错误：old_pkg_name 或 new_pkg_name为空").unwrap();
