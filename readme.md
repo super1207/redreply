@@ -45,9 +45,9 @@
 
 [llonebot](https://github.com/LLOneBot/LLOneBot) ：社区支持的三方QQ协议,使你的NTQQ支持OneBot11协议进行QQ机器人开发
 
-[chronocat](https://github.com/chrononeko/chronocat) ：社区支持的三方QQ协议,模块化的 Satori 框架
+[chronocat](https://github.com/chrononeko/chronocat) ：社区支持的三方QQ协议,模块化的 Satori 框架(satori协议)
 
-[NapCatQQ](https://github.com/NapNeko/NapCatQQ)：社区支持，基于NTQQ的无头Bot框架(satori协议)
+[NapCatQQ](https://github.com/NapNeko/NapCatQQ)：社区支持，基于NTQQ的无头Bot框架
 
 [Lagrange.Core](https://github.com/LagrangeDev/Lagrange.Core)：An Implementation of NTQQ Protocol, with Pure C#, Derived from Konata.Core(onebot协议)
 

@@ -60,8 +60,6 @@ pub fn init_web_ex_fun_map() {
     });
     add_fun(vec!["网络-访问体"],|self_t,_params|{
         if self_t.req_tx.is_none() ||  self_t.req_rx.is_none() {
-            self_t.req_rx = None;
-            self_t.req_tx = None;
             let ret = self_t.get_coremap("网络-访问体")?;
             return Ok(Some(ret.to_owned()));
         }
@@ -70,6 +68,8 @@ pub fn init_web_ex_fun_map() {
             let k =  self_t.req_rx.as_mut().unwrap().recv().await.unwrap();
             return k;
         });
+        self_t.req_rx = None;
+        self_t.req_tx = None;
         let ret = self_t.build_bin(ret_vec);
         self_t.set_coremap("网络-访问体", &ret)?;
         return Ok(Some(ret));
