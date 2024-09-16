@@ -1926,7 +1926,7 @@ return ""
 
 在<font color="red">延迟时间(ms)</font>后触发关键词为<font color="red">关键词</font>且触发方式为`延迟触发`的当前包脚本。平台相关的数据会被复制到被触发的脚本中，并且可使用【传递】命令取出<font color="red">传递数据</font>。
 
-## 排列
+### 排列
 
 【排列@<font color="red">排列数组</font>@<font color="red">选取元素个数</font>】
 
@@ -1936,7 +1936,7 @@ return ""
 
 例:`【排列【数组@a@b@c】@2】`返回`[[a,b],[b,a],[a,c],[c,a],[b,c],[c,b]]`
 
-## 组合
+### 组合
 
 【组合@<font color="red">组合数组</font>@<font color="red">选取元素个数</font>】
 
@@ -1946,7 +1946,7 @@ return ""
 
 例:`【组合【数组@a@b@c】@2】`返回`[[a,b],[a,c],[b,c]]`
 
-## HTML解析
+### HTML解析
 
 【HTML解析@<font color="red">HTML文本或字节集</font>@<font color="red">CSS选择器</font>】
 
@@ -1990,7 +1990,11 @@ return ""
 ]
 ```
 
-其中格式为
+### 当前脚本
+
+【当前脚本】
+
+获得当前运行的脚本的脚本名。
 
 
 ## 平台相关命令说明

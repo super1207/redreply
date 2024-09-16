@@ -1793,6 +1793,9 @@ pub fn init_core_fun_map() {
         }
         return Ok(Some(ret));
     });
+    add_fun(vec!["当前脚本"],|self_t,_params|{
+        Ok(Some(self_t.script_name.to_owned()))
+    });
 }
 
 impl RedLang {
