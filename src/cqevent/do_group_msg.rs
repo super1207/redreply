@@ -27,6 +27,7 @@ fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result< (),
         let user_id = read_json_str(root,"user_id");
         let self_id = read_json_str(root,"self_id");
         let group_id = read_json_str(root,"group_id");
+        let message_id = read_json_str(root,"message_id");
         let vec_lk = G_INPUTSTREAM_VEC.read()?;
         let vec_len = vec_lk.len();
         for i in 0..vec_len {
@@ -41,7 +42,8 @@ fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result< (),
                     let k_arc = st.tx.clone().unwrap();
                     let to_send = serde_json::json!({
                         "发送者ID":user_id,
-                        "消息":msg
+                        "消息":msg,
+                        "消息ID":message_id
                     });
                     k_arc.lock().unwrap().send(to_send.to_string())?;
                 }

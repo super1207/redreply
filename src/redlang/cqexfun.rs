@@ -845,6 +845,7 @@ pub fn init_cq_ex_fun_map() {
                 let mut mp:BTreeMap::<String,String> = BTreeMap::new();
                 mp.insert("发送者ID".to_string(), js_obj["发送者ID"].as_str().unwrap().to_owned());
                 mp.insert("消息".to_string(), js_obj["消息"].as_str().unwrap().to_owned());
+                mp.insert("消息ID".to_string(), js_obj["消息ID"].as_str().unwrap().to_owned());
                 ret_str = self_t.build_obj(mp);
                 return Ok(Some(ret_str));
             }
