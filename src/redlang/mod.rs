@@ -662,8 +662,11 @@ pub fn init_core_fun_map() {
         self_t.xh_vec.push([false, false]);
         let mut last_type = 0;
         let xh_len = self_t.xh_vec.len();
-        while self_t.get_param(params, 0)? == "真" {
+        loop {
             self_t.xh_vec[xh_len - 1][0] = false;
+            if self_t.get_param(params, 0)? != "真" {
+                break;
+            }
             let v = self_t.get_param(params, 1)?;
             RedLang::conect_arr(&self_t.bin_pool,&mut last_type,&mut ret_str,&v)?;
             if self_t.xh_vec[xh_len - 1][1] == true {
