@@ -2330,15 +2330,20 @@ pub fn init_ex_fun_map() {
     });
 
     #[cfg(target_os = "windows")]
-    add_fun(vec!["截屏"],|self_t,_params|{
-        let monitors = xcap::Monitor::all()?;
-        if monitors.len() > 0 {
-            let image = monitors[0].capture_image()?;
-            let mut bytes: Vec<u8> = Vec::new();
-            image.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-            return Ok(Some(self_t.build_bin(bytes)));
+    add_fun(vec!["截屏"],|self_t,params|{
+        let num_str = self_t.get_param(params, 0)?;
+        let mut num = 0usize;
+        if num_str != "" {
+            num = num_str.parse::<usize>()?;
         }
-        return Ok(Some(self_t.build_bin(vec![])));
+        let monitors = xcap::Monitor::all()?;
+        if num + 1 > monitors.len() {
+            return Ok(Some(self_t.build_bin(vec![])));
+        }
+        let image = monitors[num].capture_image()?;
+        let mut bytes: Vec<u8> = Vec::new();
+        image.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
+        return Ok(Some(self_t.build_bin(bytes)));
     });
     
     add_fun(vec!["文件信息"],|self_t,params|{
