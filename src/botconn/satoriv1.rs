@@ -191,9 +191,9 @@ impl Satoriv1Connect {
             lk.clear();
             for item in logins {
                 let platform = read_json_str(item, "platform");
-                let self_id = read_json_str(item, "self_id");
+                let self_id = item["user"]["id"].as_str().ok_or("login中不存在user-id字段")?;
                 cq_add_log_w(&format!("add account:`{}`:`{}`",platform,self_id)).unwrap();
-                lk.push((platform,self_id));
+                lk.push((platform,self_id.to_owned()));
             }
         }else if op == "0" {
             // 业务
