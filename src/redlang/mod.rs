@@ -2492,7 +2492,22 @@ impl RedLang {
                 return Err(RedLang::make_err(&format!("数组不能与其它类型`{}`直接连接",chs_out)));
             }
             *status = 2;
-        } else if new_str.starts_with(&(crate::REDLANG_UUID.to_string() + "B")) {
+        } else if new_str.starts_with(&(crate::REDLANG_UUID.to_string() + "O")) {
+            if *status == 3 {
+                // 这里要进行对象合并，因为之前是对象
+                let mut new_obj = RedLang::parse_obj(new_str)?;
+                let mut old_obj = RedLang::parse_obj(chs_out)?;
+                old_obj.append(&mut new_obj);
+                let new_obj_str = RedLang::build_obj_with_uid(&crate::REDLANG_UUID, old_obj);
+                chs_out.clear();
+                chs_out.push_str(&new_obj_str);
+            } else if *status == 0 { // 之前没有
+                chs_out.push_str(&new_str);
+            } else { // 之前是其它类型
+                return Err(RedLang::make_err(&format!("对象不能与其它类型`{}`直接连接",chs_out)));
+            }
+            *status = 3;
+        }else if new_str.starts_with(&(crate::REDLANG_UUID.to_string() + "B")) {
             if *status == 4 {
                 // 这里要进行字节集合并，因为之前是字节集
                 if chs_out.contains("96ad849c-8e7e-7886-7742-e4e896cc5b86") { // 之前是图片
@@ -2525,6 +2540,9 @@ impl RedLang {
             if new_str.len() != 0 {
                 if *status == 2 {
                     return Err(RedLang::make_err(&format!("`{}`不能与数组类型直接连接",new_str)));
+                }
+                if *status == 3 {
+                    return Err(RedLang::make_err(&format!("`{}`不能与对象类型直接连接",new_str)));
                 }
                 if *status == 4 {
                     return Err(RedLang::make_err(&format!("`{}`不能与字节集类型直接连接",new_str)));

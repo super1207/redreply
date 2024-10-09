@@ -59,7 +59,7 @@ hyper-util = { version = "0.1", features = ["full"] }
 bytes = "1.6.1"
 zip = "2.1.5"
 crc64 = "2.0.0"
-headless_chrome = "1.0.12"
+headless_chrome = "1.0.15"
 path-clean = "1.0.1"
 rust-ini = "0.21.0"
 mlua = { version = "0.9.9", features = ["lua54", "vendored"] }
