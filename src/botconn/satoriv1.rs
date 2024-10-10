@@ -91,7 +91,7 @@ impl Satoriv1Connect {
         }
     }
 
-    fn satori_msg_to_cq_msg(html:&str) -> Result<String,Box<dyn std::error::Error + Send + Sync>> {
+    fn satori_msg_to_cq_msg(html:&str,channel_id:&str) -> Result<String,Box<dyn std::error::Error + Send + Sync>> {
         let dom = tl::parse(html, tl::ParserOptions::default())?;
         let childen = dom.nodes();
         let mut out = String::new();
@@ -109,11 +109,19 @@ impl Satoriv1Connect {
                         out += &format!("[CQ:at,qq={}]", cq_params_encode(&id));
                     }
                     
-                }else if tag.name() == "img" || tag.name() == "image" {
+                } else if tag.name() == "img" || tag.name() == "image" {
                     let img_str = tag.attributes().get("src").ok_or("No src at img element")?.ok_or("No src at img element")?.as_utf8_str();
                     let img = html_escape::decode_html_entities(&img_str);
                     let cq_img =  cq_params_encode(&img);
                     out += &format!("[CQ:image,file={cq_img},url={cq_img}]");
+                }
+                else if tag.name() == "quote" {
+                    let id_str = tag.attributes().get("id").ok_or("No id at quote element")?.ok_or("No id at quote element")?.as_utf8_str();
+                    let id = html_escape::decode_html_entities(&id_str);
+                    let cq_id =  cq_params_encode(&id);
+                    let channel_id_t = cq_params_encode(&channel_id);
+                    let cq_id_t = format!("{cq_id}b73d7536-d8fa-4dda-b194-4acc51898a91{channel_id_t}");
+                    out += &format!("[CQ:reply,id={cq_id_t}]");
                 }
             } else{
                 let text_str = child.as_raw().ok_or("No text at at element")?.as_utf8_str();
@@ -153,7 +161,9 @@ impl Satoriv1Connect {
             }
             else if tp == "reply" {
                 let id = it.get("data").ok_or("data not found")?.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?;
-                out += &format!("<quote id={} />", serde_json::json!(id));
+                let t = id.split("b73d7536-d8fa-4dda-b194-4acc51898a91").collect::<Vec<&str>>();
+                let real_id = t.get(0).ok_or("can't get message_id")?;
+                out += &format!("<quote id={} />", serde_json::json!(real_id));
             }
             else if tp == "record" {
                 let file = it.get("data").ok_or("data not found")?.get("file").ok_or("file not found")?.as_str().ok_or("file not a string")?;
@@ -237,9 +247,9 @@ impl Satoriv1Connect {
                 let user_id = read_json_str(&user, "id");
                 let nickname =  read_json_str(&user, "name");
                 let content = read_json_str(message, "content");
-                let cq_msg = Self::satori_msg_to_cq_msg(&content)?;
                 let channel = body.get("channel").ok_or("channel 不存在")?; // 没有channel就无法回复
                 let channel_id =read_json_str(channel, "id");
+                let cq_msg = Self::satori_msg_to_cq_msg(&content,&channel_id)?;
                 if guild_opt.is_some(){ //group
                     if user_id == self_id { //机器人自己的消息，忽略
                         return Ok(());
