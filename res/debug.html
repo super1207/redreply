@@ -30,18 +30,20 @@
         <h1 style="text-align: center;color: red;">红色问答调试</h1>
         <div style="display: flex; flex-direction: row;">
             <div style="display: flex;flex-direction: column;">
-                <span>平台:</span>
-                <span>机器人ID:</span>
-                <span>群组ID:</span>
-                <span>群ID:</span>
-                <span>用户ID:</span>
+                <span style="margin: 2px;">平台:</span>
+                <span style="margin: 2px;">机器人ID:</span>
+                <span style="margin: 2px;">群组ID:</span>
+                <span style="margin: 2px;">群ID:</span>
+                <span style="margin: 2px;">用户ID:</span>
+                <span style="margin: 2px;">包名(为空表示默认包):</span>
             </div>
             <div style="display: flex;flex-direction: column;flex-grow: 1;">
                 <input v-model = "platform" @input="change_platform"></input>
                 <input v-model = "bot_id" @input="change_bot_id"></input>
-                <input v-model = "groups_id" @input="change_groups_id" disabled></input>
+                <input v-model = "groups_id" @input="change_groups_id"></input>
                 <input v-model = "group_id" @input="change_group_id"></input>
                 <input v-model = "user_id" @input="change_user_id"></input>
+                <input v-model = "pkg_name" @input="change_pkg_name"></input>
             </div>
         </div>
         <div style="height: 0; flex-grow: 1;display: flex;flex-direction: column;flex-grow: 1;">
@@ -67,8 +69,9 @@
                 // 用于显示
                 platform:"onebot11",
                 bot_id:"1736293901",
-                groups_id:"暂不支持",
+                groups_id:"920220179",
                 group_id:"920220179",
+                pkg_name:"",
                 user_id:"",
                 result:"",
                 img_src:"",
@@ -96,7 +99,7 @@
             if (groups_id_t) {
                 this.groups_id = groups_id_t
             }else {
-                this.groups_id = "暂不支持"
+                this.groups_id = ""
             }
             let group_id_t = window.localStorage.getItem('debug_group_id');
             if (group_id_t) {
@@ -109,6 +112,12 @@
                 this.user_id = user_id_t
             }else {
                 this.user_id = ""
+            }
+            let pkg_name_t = window.localStorage.getItem('debug_pkg_name');
+            if (pkg_name_t) {
+                this.pkg_name = pkg_name_t
+            }else {
+                this.pkg_name = ""
             }
 
             setInterval(() => {
@@ -181,6 +190,9 @@
             change_groups_id(){
                 window.localStorage.setItem('debug_groups_id',this.groups_id)
             },
+            change_pkg_name(){
+                window.localStorage.setItem('debug_pkg_name',this.pkg_name)
+            },
             run_script(){
                 let content = this.$refs.child.getQuill().getText();
                 let script = {
@@ -189,7 +201,8 @@
                     "groups_id":this.groups_id,
                     "group_id":this.group_id,
                     "user_id":this.user_id,
-                    "content":content
+                    "content":content,
+                    "pkg_name":this.pkg_name
                 }
                 this.result = "正在提交..."
                 axios.post("/run_code",script)
@@ -212,7 +225,8 @@
                     "groups_id":this.groups_id,
                     "group_id":this.group_id,
                     "user_id":this.user_id,
-                    "content":content
+                    "content":content,
+                    "pkg_name":this.pkg_name
                 }
                 this.result = "正在执行..."
                 this.has_img = false

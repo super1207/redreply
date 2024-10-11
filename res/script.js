@@ -275,7 +275,6 @@ app = createApp({
                 audio.pause()
                 this.playbkmusic = "播放背景音乐"
             }
-            
         },
         play_music(){
             window.open("/pluscenter.html", "_blank");

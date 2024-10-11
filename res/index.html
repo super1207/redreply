@@ -176,6 +176,19 @@
                     </form>
                 </div>
             </dialog>
+            <audio src="https://files.catbox.moe/ij0viz.mp3" ref="mybackmusic" loop="loop" hidden></audio>
+            <dialog id = "other_dlg" style="margin: auto;">
+                <div style="display: flex;flex-direction:column;">
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="old_ui_btn()">旧版UI</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="debug_btn()">调试</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="help_web()">文档</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="watch_log()">日志</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="pluscenter_btn()">脚本商店</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="gobal_filter_btn()">全局过滤器</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="playmusic_btn()">{{playbkmusic}}</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="other_close()">取消</button>
+                </div>  
+            </dialog>
             <h1 class="atitle" @click="title_click()">
                 红色问答 {{version}}
                 <div class="atitle__horizontal"></div>
@@ -198,7 +211,7 @@
             <div id="cmd_content" style="display: flex;flex: 0 0 2.5em;padding: 0.5em;background-color: #b6cde4;">
                 <button @click="connect_ob()" style="flex: 1 0 auto;">连接平台协议</button>
                 <button @click="add_click()" style="flex: 1 0 auto;">新增</button>
-                <button @click="other_fun()" style="flex: 1 0 auto;">旧版UI</button>
+                <button @click="other_fun()" style="flex: 1 0 auto;">其它</button>
                 <button @click="quit_redreply()" style="flex: 1 0 auto;">退出</button>
             </div>
         </div>
@@ -226,7 +239,8 @@
                         version:"",
                         pkg_vec:[],
                         select_name:"",
-                        add_pkg_name:""
+                        add_pkg_name:"",
+                        playbkmusic:"播放背景音乐",
                     }
                 },
                 computed:{
@@ -286,8 +300,42 @@
                             axios.get("/close")
                         }
                     },
-                    other_fun(){
+                    old_ui_btn(){
                         window.open("/index_old.html", "_blank");
+                    },
+                    other_fun(event) {
+                        document.getElementById('other_dlg').showModal();
+                    },
+                    other_close(event) {
+                        document.getElementById('other_dlg').close();
+                    },
+                    help_web() {
+                        window.open("/docs/index.html#/detailref/", "_blank");
+                    },
+                    watch_log() {
+                        window.open("/watchlog.html", "_blank");
+                    },
+                    debug_btn() {
+                        window.open("/debug.html", "_blank");
+                    },
+                    pluscenter_btn(){
+                        window.open("/pluscenter.html", "_blank");
+                    },
+                    gobal_filter_btn() {
+                        window.open("/gobal_filter.html","_blank");
+                    },
+                    playmusic_btn(){
+                        let audio = this.$refs.mybackmusic
+                        if(this.playbkmusic == "播放背景音乐"){
+                            audio.play()
+                            this.playbkmusic = "暂停播放背景音乐"
+                        }else{
+                            audio.pause()
+                            this.playbkmusic = "播放背景音乐"
+                        }
+                    },
+                    play_music(){
+                        window.open("/pluscenter.html", "_blank");
                     },
                     add_click() {
                         this.add_pkg_name = "包_"+randomString(4)

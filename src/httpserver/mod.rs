@@ -504,13 +504,19 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         let user_id = read_json_str(&root, "user_id");
         let group_id = read_json_str(&root, "group_id");
         let code = read_json_str(&root, "content");
+        let mut pkg_name = read_json_str(&root, "pkg_name");
+        if pkg_name == "默认包" {
+            pkg_name = "".to_owned();
+        }
+        let groups_id = read_json_str(&root, "groups_id");
         thread::spawn(move ||{
             let mut rl = RedLang::new();
             rl.set_exmap("机器人ID", &bot_id).unwrap();
             rl.set_exmap("群ID", &group_id).unwrap();
+            rl.set_exmap("群组ID", &groups_id).unwrap();
             rl.set_exmap("发送者ID", &user_id).unwrap();
             rl.set_exmap("机器人平台", &platform).unwrap();
-            rl.pkg_name = "".to_owned(); // 默认包
+            rl.pkg_name = pkg_name;
             rl.script_name = "网页调试".to_owned();
             rl.can_wrong = true;
             if let Err(err) = do_script(&mut rl, &code,"normal") {
@@ -536,6 +542,11 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         let user_id = read_json_str(&root, "user_id");
         let group_id = read_json_str(&root, "group_id");
         let code = read_json_str(&root, "content");
+        let mut pkg_name = read_json_str(&root, "pkg_name");
+        if pkg_name == "默认包" {
+            pkg_name = "".to_owned();
+        }
+        let groups_id = read_json_str(&root, "groups_id");
 
         
         let (tx, rx) =  tokio::sync::oneshot::channel();
@@ -543,9 +554,10 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
             let mut rl = RedLang::new();
             rl.set_exmap("机器人ID", &bot_id).unwrap();
             rl.set_exmap("群ID", &group_id).unwrap();
+            rl.set_exmap("群组ID", &groups_id).unwrap();
             rl.set_exmap("发送者ID", &user_id).unwrap();
             rl.set_exmap("机器人平台", &platform).unwrap();
-            rl.pkg_name = "".to_owned(); // 默认包
+            rl.pkg_name = pkg_name;
             rl.script_name = "网页调试".to_owned();
             rl.can_wrong = true;
             let ret_rst = rl.parse(&code);

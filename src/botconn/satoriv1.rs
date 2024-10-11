@@ -171,7 +171,7 @@ impl Satoriv1Connect {
                     out += &format!("<audio src={} />", serde_json::json!(file));
                 }else if file.starts_with("base64://") {
                     let b64 = file.split_at(9).1;
-                    out += &format!("<audio src={} />", serde_json::json!("data:image/png;base64,".to_owned() + b64));
+                    out += &format!("<audio src={} />", serde_json::json!("data:audio/mp3;base64,".to_owned() + b64));
                 }
             }
             else if tp == "poke" {
