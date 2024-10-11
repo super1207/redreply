@@ -75,6 +75,55 @@ fn get_json_dat(msg:Result<hyper_tungstenite::tungstenite::Message, hyper_tungst
     return Some(json_dat);
 }
 
+struct SatoriNode {
+    pub tag_name:String,
+    pub attr_map:HashMap<String,String>,
+    pub content:String
+}
+
+fn pre_parse_satori_msg(html:&str) -> Result<Vec<SatoriNode>,Box<dyn std::error::Error + Send + Sync>> {
+    let mut to_ret = vec![];
+    let mut deep = 0;
+    for token in html5gum::Tokenizer::new(html).infallible() {
+        match token {
+            html5gum::Token::StartTag(tag) => {
+                let name = tag.name.0;
+                    let mut mp = HashMap::new();
+                    for (k,v) in tag.attributes {
+                        mp.insert(String::from_utf8(k.0)?, String::from_utf8(v.0)?);
+                    }
+                    let to_add = SatoriNode {
+                        tag_name: String::from_utf8(name)?,
+                        attr_map: mp,
+                        content: "".to_owned()
+                    };
+                    to_ret.push(to_add);
+                if !tag.self_closing {
+                    deep += 1;
+                }
+            }
+            html5gum::Token::String(text) => {
+                if deep == 0 {
+                    to_ret.push({
+                        SatoriNode{
+                            tag_name: "text".to_owned(),
+                            attr_map: HashMap::new(),
+                            content: String::from_utf8(text.0)?,
+                        }
+                    });
+                }
+            }
+            html5gum::Token::EndTag(_tag) => {
+                deep -= 1;
+            }
+            _ => {
+
+            },
+        }
+    }
+    Ok(to_ret)
+}
+
 
 impl Satoriv1Connect {
     pub fn build(url:&str) -> Self {
@@ -92,44 +141,42 @@ impl Satoriv1Connect {
     }
 
     fn satori_msg_to_cq_msg(html:&str,channel_id:&str) -> Result<String,Box<dyn std::error::Error + Send + Sync>> {
-        let dom = tl::parse(html, tl::ParserOptions::default())?;
-        let childen = dom.nodes();
         let mut out = String::new();
+        let childen = pre_parse_satori_msg(html)?;
+
         for child in childen {
-            if let Some(tag) = child.as_tag() {
-                if tag.name() == "at" {
-                    if let Some(tp) = tag.attributes().get("type") {
-                        let tp_t = tp.ok_or("tp is none")?.as_utf8_str();
-                        if tp_t == "all" {
-                            out += "[CQ:at,qq=all]";
-                        }
-                    } else {
-                        let id_str = tag.attributes().get("id").ok_or("No id at at element")?.ok_or("No id at at element")?.as_utf8_str();
-                        let id = html_escape::decode_html_entities(&id_str);
-                        out += &format!("[CQ:at,qq={}]", cq_params_encode(&id));
+            if child.tag_name == "at" {
+                
+                if let Some(tp) = child.attr_map.get("type") {
+                    let tp_t = tp;
+                    if tp_t == "all" {
+                        out += "[CQ:at,qq=all]";
                     }
-                    
-                } else if tag.name() == "img" || tag.name() == "image" {
-                    let img_str = tag.attributes().get("src").ok_or("No src at img element")?.ok_or("No src at img element")?.as_utf8_str();
-                    let img = html_escape::decode_html_entities(&img_str);
-                    let cq_img =  cq_params_encode(&img);
-                    out += &format!("[CQ:image,file={cq_img},url={cq_img}]");
-                }
-                else if tag.name() == "quote" {
-                    let id_str = tag.attributes().get("id").ok_or("No id at quote element")?.ok_or("No id at quote element")?.as_utf8_str();
+                } else {
+                    let id_str = child.attr_map.get("id").ok_or("No id at at element")?;
                     let id = html_escape::decode_html_entities(&id_str);
-                    let cq_id =  cq_params_encode(&id);
-                    let channel_id_t = cq_params_encode(&channel_id);
-                    let cq_id_t = format!("{cq_id}b73d7536-d8fa-4dda-b194-4acc51898a91{channel_id_t}");
-                    out += &format!("[CQ:reply,id={cq_id_t}]");
+                    out += &format!("[CQ:at,qq={}]", cq_params_encode(&id));
                 }
-            } else{
-                let text_str = child.as_raw().ok_or("No text at at element")?.as_utf8_str();
+            } else if child.tag_name == "img" || child.tag_name == "image" {
+                let img_str = child.attr_map.get("src").ok_or("No src at img element")?;
+                let img = html_escape::decode_html_entities(&img_str);
+                let cq_img =  cq_params_encode(&img);
+                out += &format!("[CQ:image,file={cq_img},url={cq_img}]");
+            }
+            else if child.tag_name == "quote" {
+                let id_str = child.attr_map.get("id").ok_or("No id at quote element")?;
+                let id = html_escape::decode_html_entities(&id_str);
+                let cq_id =  cq_params_encode(&id);
+                let channel_id_t = cq_params_encode(&channel_id);
+                let cq_id_t = format!("{cq_id}b73d7536-d8fa-4dda-b194-4acc51898a91{channel_id_t}");
+                out += &format!("[CQ:reply,id={cq_id_t}]");
+            }
+            else if child.tag_name == "text" {
+                let text_str = child.content;
                 let text = html_escape::decode_html_entities(&text_str);
                 out += &cq_text_encode(&text);
             }
         }
-        // println!("out:{}", out);
         Ok(out)
     }
 
@@ -262,34 +309,31 @@ impl Satoriv1Connect {
                     group_groups_map.upgrade().ok_or("upgrade group_groups_map失败")?.write().unwrap().insert(key,guild_id.to_owned());
                     if content.starts_with("<chronocat:poke") {
                         // chronocat的戳一戳事件
-                        let dom = tl::parse(&content, tl::ParserOptions::default())?;
-                        let childen = dom.nodes();
+                        let childen = pre_parse_satori_msg(&content)?;
                         for child in childen {
-                            if let Some(tag) = child.as_tag() {
-                                if tag.name() == "chronocat:poke" {
-                                    let id_str = tag.attributes().get("user-id").ok_or("No user-id at chronocat:poke element")?.ok_or("No user-id at chronocat:poke element")?.as_utf8_str();
-                                    let id = html_escape::decode_html_entities(&id_str);
-                                    let oid_str = tag.attributes().get("operator-id").ok_or("No operator-id at chronocat:poke element")?.ok_or("No operator-id at chronocat:poke element")?.as_utf8_str();
-                                    let oid = html_escape::decode_html_entities(&oid_str);
-                                    let event_json = serde_json::json!({
-                                        "time":tm,
-                                        "self_id":self_id,
-                                        "platform":platform,
-                                        "post_type":"notice",
-                                        "message_id":format!("{message_id}b73d7536-d8fa-4dda-b194-4acc51898a91{channel_id}"), // 这里仍然加入msg_id，以方便进行回复
-                                        "notice_type":"notify",
-                                        "sub_type":"poke",
-                                        "group_id":channel_id,
-                                        "groups_id":guild_id,
-                                        "user_id":oid,
-                                        "target_id":id,
-                                    });
-                                    tokio::task::spawn_blocking(move ||{
-                                        if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                                            crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
-                                        }
-                                    });
-                                }
+                            if child.tag_name == "chronocat:poke" {
+                                let id_str = child.attr_map.get("user-id").ok_or("No user-id at chronocat:poke element")?;
+                                let id = html_escape::decode_html_entities(&id_str);
+                                let oid_str = child.attr_map.get("operator-id").ok_or("No operator-id at chronocat:poke element")?;
+                                let oid = html_escape::decode_html_entities(&oid_str);
+                                let event_json = serde_json::json!({
+                                    "time":tm,
+                                    "self_id":self_id,
+                                    "platform":platform,
+                                    "post_type":"notice",
+                                    "message_id":format!("{message_id}b73d7536-d8fa-4dda-b194-4acc51898a91{channel_id}"), // 这里仍然加入msg_id，以方便进行回复
+                                    "notice_type":"notify",
+                                    "sub_type":"poke",
+                                    "group_id":channel_id,
+                                    "groups_id":guild_id,
+                                    "user_id":oid,
+                                    "target_id":id,
+                                });
+                                tokio::task::spawn_blocking(move ||{
+                                    if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
+                                        crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                                    }
+                                });
                             }
                         }
                     } else {

@@ -697,7 +697,7 @@ pub fn init_cq_ex_fun_map() {
         for it in &message {
             let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
             if tp == "text" {
-                let data = it.get("data").ok_or("data not found in image cq code")?;
+                let data = it.get("data").ok_or("data not found in text cq code")?;
                 let text = read_json_str(data, "text");
                 ret_vec.push(text);
             }
