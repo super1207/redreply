@@ -6,7 +6,7 @@ use hyper::header::HeaderValue;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{tungstenite, connect_async};
 
-use crate::{cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory1}, mytool::read_json_str, RT_PTR};
+use crate::{cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory1}, mytool::{read_json_str, str_msg_to_arr}, RT_PTR};
 
 use super::BotConnectTrait;
 
@@ -72,10 +72,29 @@ impl OneBot11Connect {
         }
     }
 
+    async fn get_poke_segment(&self,json: &mut serde_json::Value) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let platform = self.get_platform().await?;
+        if !(platform == "lagrange" || platform == "llonebot" || platform == "napcat") {
+            return Ok("".to_owned());
+        }
+        let mut ret_id = "".to_owned();
+        let params = json.get_mut("params").ok_or("params is none")?;
+        if let Some(message) = params.get_mut("message") {
+            let msg_arr = message.as_array_mut().ok_or("message is not array")?;
+            if msg_arr.len() == 1 {
+                let tp = read_json_str(&message[0], "type");
+                if tp == "poke" {
+                    ret_id = read_json_str(&message[0]["data"], "id");
+                }
+            }
+        }
+        Ok(ret_id)
+    }
+
     async fn deal_music_segment(&self,json: &mut serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let platform = self.get_platform().await?;
-        if platform != "qq" {
+        if !(platform == "lagrange" || platform == "llonebot" || platform == "cqhttp" || platform == "napcat") {
             return Ok(());
         }
 
@@ -163,23 +182,27 @@ impl OneBot11Connect {
             let self_id = self.self_id.read().unwrap().to_owned();
             let ret = self.call_api("onebot11", &self_id, "", &mut send_json).await?;
             let platform = ret["data"]["app_name"].as_str().unwrap_or("").to_ascii_lowercase();
-            if platform.contains("lagrange") || platform.contains("llonebot") || platform.contains("cqhttp") || platform.contains("napcat") {
-                *self.real_platform.write().unwrap() = Some("qq".to_string());
+            if platform.contains("lagrange") {
+                *self.real_platform.write().unwrap() = Some("lagrange".to_string());
+            } else if platform.contains("llonebot") {
+                *self.real_platform.write().unwrap() = Some("lagrange".to_string());
+            } else if platform.contains("cqhttp") {
+                *self.real_platform.write().unwrap() = Some("cqhttp".to_string());
+            } else if platform.contains("napcat") {
+                *self.real_platform.write().unwrap() = Some("napcat".to_string());
             } else {
                 *self.real_platform.write().unwrap() = Some("".to_string());
             }
         }
         let read_platform = self.real_platform.read().unwrap().to_owned();
         if let Some(platform) = read_platform {
-            if platform == "qq" {
-                return Ok("qq".to_string());
-            }
+            return Ok(platform);
         }
         return Ok("".to_string());
     }
     pub async fn get_avatar(&self,user_id:&str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let platform = self.get_platform().await?;
-        if platform == "qq" {
+        if platform == "lagrange" || platform == "llonebot" || platform == "cqhttp" || platform == "napcat" {
             return Ok(format!("https://thirdqq.qlogo.cn/g?b=qq&nk={user_id}&s=640"));
         }
         return Err("can't get avatar".into());
@@ -466,7 +489,46 @@ impl BotConnectTrait for OneBot11Connect {
         }
 
         if action == "send_msg" || action == "send_group_msg" || action == "send_private_msg" {
+            let message = json["params"].get_mut("message").ok_or("not found message segment")?;
+            if message.is_string() {
+                let message_arr = str_msg_to_arr(message).map_err(|x|{
+                    format!("str_msg_to_arr err:{:?}",x)
+                })?;
+                *message = message_arr;
+            }
             self.deal_music_segment(json).await?;
+            let to_poke = self.get_poke_segment(json).await?;
+            if to_poke != "" {
+                let group_id = read_json_str(&json["params"], "group_id");
+                if group_id != "" {
+                    let group_id = &json["params"]["group_id"];
+                    let mut to_send = serde_json::json!({
+                        "action":"group_poke",
+                        "params":{
+                            "group_id": group_id,
+                            "user_id": to_poke.parse::<u64>()?
+                        }
+                    });
+                    self.call_api("", "", "", &mut to_send).await?;
+                }else {
+                    let mut to_send = serde_json::json!({
+                        "action":"friend_poke",
+                        "params":{
+                            "user_id": to_poke.parse::<u64>()?
+                        }
+                    });
+                    self.call_api("", "", "", &mut to_send).await?;
+                }
+                let ret_json = serde_json::json!({
+                    "status":"ok",
+                    "retcode":0,
+                    "data": {
+                        "message_id":crate::redlang::get_random()?.to_string()
+                    },
+                    "echo":echo
+                });
+                return Ok(ret_json);
+            }
         }
 
         let (tx_ay, mut rx_ay) =  tokio::sync::mpsc::channel::<serde_json::Value>(1);

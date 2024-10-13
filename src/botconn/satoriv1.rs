@@ -140,7 +140,7 @@ impl Satoriv1Connect {
         }
     }
 
-    fn satori_msg_to_cq_msg(html:&str,channel_id:&str) -> Result<String,Box<dyn std::error::Error + Send + Sync>> {
+    fn satori_msg_to_cq_msg(html:&str,channel_id:&str,platform:&str) -> Result<String,Box<dyn std::error::Error + Send + Sync>> {
         let mut out = String::new();
         let childen = pre_parse_satori_msg(html)?;
 
@@ -175,6 +175,13 @@ impl Satoriv1Connect {
                 let text_str = child.content;
                 let text = html_escape::decode_html_entities(&text_str);
                 out += &cq_text_encode(&text);
+            }
+            else if child.tag_name == "face" {
+                if platform == "llonebot" {
+                    let face_id = child.attr_map.get("id").ok_or("No id at llonebot face element")?;
+                    let face_id_t = cq_params_encode(&face_id);
+                    out += &format!("[CQ:face,id={face_id_t}]");
+                }
             }
         }
         Ok(out)
@@ -227,6 +234,12 @@ impl Satoriv1Connect {
                     out += &format!("<chronocat:poke user-id={} />", serde_json::json!(id));
                 }
                 
+            }
+            else if tp == "face" {
+                if platform == "llonebot" {
+                    let id: &str = it.get("data").ok_or("data not found")?.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?;
+                    out += &format!("<face id={} />", serde_json::json!(id));
+                }
             }
         }
         Ok(out)
@@ -296,7 +309,7 @@ impl Satoriv1Connect {
                 let content = read_json_str(message, "content");
                 let channel = body.get("channel").ok_or("channel 不存在")?; // 没有channel就无法回复
                 let channel_id =read_json_str(channel, "id");
-                let cq_msg = Self::satori_msg_to_cq_msg(&content,&channel_id)?;
+                let cq_msg = Self::satori_msg_to_cq_msg(&content,&channel_id,&platform)?;
                 if guild_opt.is_some(){ //group
                     if user_id == self_id { //机器人自己的消息，忽略
                         return Ok(());
@@ -733,6 +746,84 @@ impl Satoriv1Connect {
         }));
    
     }
+    async fn get_msg(self_t:&Satoriv1Connect,json:&serde_json::Value,platform:&str,self_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+
+        let params = read_json_obj_or_null(json, "params");
+
+        let new_message_id = read_json_str(&params, "message_id");
+
+        let t = new_message_id.split("b73d7536-d8fa-4dda-b194-4acc51898a91").collect::<Vec<&str>>();
+        let message_id = t.get(0).ok_or("can't get message_id")?;
+        let channel_id = t.get(1).ok_or("can't get channel_id")?;
+            
+        let to_send = serde_json::json!({
+            "channel_id":channel_id,
+            "message_id":message_id,
+        });
+
+        let satori_msg = http_post(&format!("{}/message.get",self_t.http_url),platform,self_id,&self_t.token,&to_send).await?;
+
+        let content = satori_msg["content"].as_str().ok_or("not found content in satori message")?;
+
+        let cq_message = Self::satori_msg_to_cq_msg(content,channel_id,platform)?;
+        let created_at_str = read_json_str(&satori_msg, "created_at");
+        let mut created_at = 0;
+        if created_at_str != "" {
+            created_at = created_at_str.parse::<u64>()?;
+        }
+        let guild = &satori_msg["guild"];
+        let mut message_type = "group".to_owned();
+        if !guild.is_object() || guild.as_object().unwrap().is_empty() {
+            message_type = "private".to_owned();
+        }
+
+        let user = &satori_msg["user"];
+        let sender;
+        if user.is_object() && !user.as_object().unwrap().is_empty() {
+            if message_type == "group" {
+                sender = serde_json::json!({
+                    "user_id":read_json_str(&user, "id"),
+                    "nickname":read_json_str(&user, "name"),
+                    "card":read_json_str(&user, "nick"),
+                    "sex":"unknown",
+                    "age":0,
+                    "area":"",
+                    "level":"0",
+                    "role":"member",
+                    "title":""
+                });
+            }else {
+                let nick = read_json_str(&user, "nick");
+                let name = read_json_str(&user, "name");
+                let nickname;
+                if nick != "" {
+                    nickname = nick;
+                }else {
+                    nickname = name;
+                }
+                sender = serde_json::json!({
+                    "user_id":read_json_str(&user, "id"),
+                    "nickname":nickname,
+                    "sex":"unknown",
+                    "age":0,
+                });
+            }
+        }else {
+            sender = serde_json::Value::Null;
+        }
+        return Ok(serde_json::json!({
+            "retcode":0,
+            "status":"ok",
+            "data":{
+                "time":created_at,
+                "message_type":message_type,
+                "message_id":new_message_id,
+                "sender":sender,
+                "message":cq_message
+            }
+        }));
+   
+    }
 }
 
 
@@ -920,6 +1011,9 @@ impl BotConnectTrait for Satoriv1Connect {
         }
         else if action == "delete_msg" {
             return Self::delete_msg(self,json,platform,self_id).await;
+        }
+        else if action == "get_msg" {
+            return Self::get_msg(self,json,platform,self_id).await;
         }
         return Ok(serde_json::json!({
             "retcode":1404,
