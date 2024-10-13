@@ -769,7 +769,7 @@ impl Satoriv1Connect {
         let created_at_str = read_json_str(&satori_msg, "created_at");
         let mut created_at = 0;
         if created_at_str != "" {
-            created_at = created_at_str.parse::<u64>()?;
+            created_at = created_at_str.parse::<u64>()? / 1000;
         }
         let guild = &satori_msg["guild"];
         let mut message_type = "group".to_owned();
