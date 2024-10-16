@@ -426,6 +426,7 @@ impl Satoriv1Connect {
                     "platform":platform,
                     "post_type":"notice",
                     "notice_type":"group_increase",
+                    "sub_type":"approve",
                     "groups_id":guild_id,
                     "user_id":user_id
                 });
@@ -435,7 +436,41 @@ impl Satoriv1Connect {
                         crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
                     }
                 });
-            } else if type_t == "message-deleted" {
+            } else if type_t == "guild-member-removed" {
+                let tm = body.get("timestamp").ok_or("timestamp 不存在")?.as_u64().ok_or("timestamp不是数字")? / 1000;
+                let self_id = read_json_str(body, "self_id");
+                let platform = read_json_str(body, "platform");
+                let guild = read_json_obj(body, "guild").ok_or("guild 不存在")?;
+                let guild_id = read_json_str(guild, "id");
+                let user = read_json_obj_or_null(body, "user");
+                let user_id = read_json_str(&user, "id");
+
+                let mut sub_type = "leave".to_owned();
+                let mut operator_id = user_id.to_owned();
+                if user_id == self_id {
+                    sub_type = "kick_me".to_owned();
+                    operator_id = "".to_owned();
+                }
+
+                let event_json = serde_json::json!({
+                    "time":tm,
+                    "self_id":self_id,
+                    "platform":platform,
+                    "post_type":"notice",
+                    "sub_type":sub_type,
+                    "notice_type":"group_decrease",
+                    "groups_id":guild_id,
+                    "user_id":user_id,
+                    "operator_id":operator_id
+                });
+
+                tokio::task::spawn_blocking(move ||{
+                    if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
+                        crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                    }
+                });
+            }  
+            else if type_t == "message-deleted" {
                 let tm = body.get("timestamp").ok_or("timestamp 不存在")?.as_u64().ok_or("timestamp不是数字")? / 1000;
                 let self_id = read_json_str(body, "self_id");
                 let platform = read_json_str(body, "platform");
