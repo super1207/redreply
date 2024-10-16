@@ -411,7 +411,7 @@ impl Satoriv1Connect {
                         }
                     });
                 }
-            }else if type_t == "guild-member-added" {
+            } else if type_t == "guild-member-added" {
                 let tm = body.get("timestamp").ok_or("timestamp 不存在")?.as_u64().ok_or("timestamp不是数字")? / 1000;
                 let self_id = read_json_str(body, "self_id");
                 let platform = read_json_str(body, "platform");
@@ -435,6 +435,64 @@ impl Satoriv1Connect {
                         crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
                     }
                 });
+            } else if type_t == "message-deleted" {
+                let tm = body.get("timestamp").ok_or("timestamp 不存在")?.as_u64().ok_or("timestamp不是数字")? / 1000;
+                let self_id = read_json_str(body, "self_id");
+                let platform = read_json_str(body, "platform");
+                let user = body.get("user").ok_or("user 不存在")?;
+                let user_id = read_json_str(&user, "id");
+                let channel = body.get("channel").ok_or("channel 不存在")?;
+                let channel_id =read_json_str(channel, "id");
+                let operator = read_json_obj_or_null(body, "operator");
+                let mut operator_id =read_json_str(&operator, "id");
+                if operator_id == "" {
+                    operator_id = user_id.to_owned();
+                }
+                let message = body.get("message").ok_or("message 不存在")?;
+                let raw_message_id = read_json_str(message, "id");
+                let message_id = format!("{raw_message_id}b73d7536-d8fa-4dda-b194-4acc51898a91{channel_id}");
+
+
+                if let Some(guild) = read_json_obj(body, "guild") {
+                    // 群消息撤回
+                    let guild_id = read_json_str(guild, "id");
+                    let event_json = serde_json::json!({
+                        "time":tm,
+                        "self_id":self_id,
+                        "platform":platform,
+                        "post_type":"notice",
+                        "notice_type":"group_recall",
+                        "groups_id":guild_id,
+                        "group_id":channel_id,
+                        "user_id":user_id,
+                        "operator_id":operator_id,
+                        "message_id":message_id
+                    });
+                    tokio::task::spawn_blocking(move ||{
+                        if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
+                            crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                        }
+                    });
+                } else {
+                    // 私聊消息撤回
+                    // 更新 user 和 channel 的对应关系
+                    let key = format!("{platform} {self_id} {user_id}");
+                    user_channel_map.upgrade().ok_or("upgrade user_channel_map失败")?.write().unwrap().insert(key,channel_id.clone());
+                    let event_json = serde_json::json!({
+                        "time":tm,
+                        "self_id":self_id,
+                        "platform":platform,
+                        "post_type":"notice",
+                        "notice_type":"friend_recall",
+                        "user_id":user_id,
+                        "message_id":message_id
+                    });
+                    tokio::task::spawn_blocking(move ||{
+                        if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
+                            crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                        }
+                    });
+                }
             }
         }
         Ok(())
@@ -699,7 +757,7 @@ impl Satoriv1Connect {
             "user_id":user_id
         });
 
-
+        crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}", to_send).as_str()).unwrap();
         let user = http_post(&format!("{}/user.get",self_t.http_url),platform,self_id,&self_t.token,&to_send).await?;
 
         let mut nickname = read_json_str(&user, "name");
@@ -735,6 +793,8 @@ impl Satoriv1Connect {
             "channel_id":channel_id,
             "message_id":message_id,
         });
+
+        crate::cqapi::cq_add_log(format!("发送数据(platform:{platform},self_id:{self_id}):{}", to_send).as_str()).unwrap();
 
         http_post(&format!("{}/message.delete",self_t.http_url),platform,self_id,&self_t.token,&to_send).await?;
 
