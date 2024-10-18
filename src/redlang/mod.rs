@@ -697,7 +697,7 @@ pub fn init_core_fun_map() {
     });
     add_fun(vec!["函数定义"],|self_t,params|{
         let func = params.get(0).ok_or("函数定义:读取参数失败")?;
-        let fun = self_t.parse_fun(&func)?;
+        let fun = self_t.parse_fun(&func,false)?;
         let func_t = format!("{}F{}",self_t.type_uuid,fun);
         let ret_str = func_t;
         return Ok(Some(ret_str));
@@ -705,7 +705,7 @@ pub fn init_core_fun_map() {
     add_fun(vec!["定义命令"],|self_t,params|{
         let func_name = self_t.get_param(params, 0)?;
         let func = params.get(1).ok_or("定义命令:读取参数失败")?;
-        let fun = self_t.parse_fun(&func)?;
+        let fun = self_t.parse_fun(&func,false)?;
         let mut w = crate::G_CMD_MAP.write()?;
         match w.get_mut(&self_t.pkg_name){
             Some(r) => {
@@ -722,7 +722,7 @@ pub fn init_core_fun_map() {
     add_fun(vec!["定义二类命令"],|self_t,params|{
         let func_name = self_t.get_param(params, 0)?;
         let func = params.get(1).ok_or("定义命令:读取参数失败")?;
-        let fun = format!("1FC0F025-BFE7-63A4-CA66-FC3FD8A55B7B{}",self_t.parse_fun(&func)?);
+        let fun = format!("1FC0F025-BFE7-63A4-CA66-FC3FD8A55B7B{}",self_t.parse_fun(&func,false)?);
         let mut w = crate::G_CMD_MAP.write()?;
         match w.get_mut(&self_t.pkg_name){
             Some(r) => {
@@ -1132,6 +1132,10 @@ pub fn init_core_fun_map() {
         let data = self_t.get_param(params, 0)?;
         let ret_str = self_t.get_len(&data)?.to_string(); 
         return Ok(Some(ret_str));
+    });
+    add_fun(vec!["闭包"],|self_t,params|{
+        let data = self_t.get_param(params, 0)?;
+        return Ok(Some(data));
     });
     add_fun(vec!["转文本"],|self_t,params|{
         let data = self_t.get_param(params, 0)?;
@@ -1978,7 +1982,8 @@ let k = &*self.exmap;
                     let mut fun_params_t: Vec<String> = vec![];
                     for i in fun_params {
                         if is_cmd2 {
-                            fun_params_t.push(i.to_string()); // 二类命令不进行参数解析
+                            let kk = self.parse_fun(i,true)?;
+                            fun_params_t.push(kk); // 二类命令不进行参数解析
                         } else {
                             let p = self.parse(i)?;
                             fun_params_t.push(p);
@@ -2726,16 +2731,6 @@ impl RedLang {
         Ok(chs_out)
     }
 
-    fn parse_r(&self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
-        let mut ret = String::new();
-        for i in input.chars() {
-            if i == '\\' || i == '@' || i == '【' || i == '】' {
-                ret.push('\\');
-            }
-            ret.push(i);
-        }
-        Ok(ret)
-    }
     pub fn parse_r_with_black(&self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
         let mut ret = String::new();
         for i in input.chars() {
@@ -2758,7 +2753,7 @@ impl RedLang {
         }
         return None;
     }
-    fn parse_fun(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
+    fn parse_fun(&mut self, input: &str,is_2_params:bool) -> Result<String, Box<dyn std::error::Error>> {
         // 得到utf8字符数组
         let chs = input.chars().collect::<Vec<char>>();
 
@@ -2793,9 +2788,7 @@ impl RedLang {
                         chs_out.push('\\');
                         chs_out.push(*c);
                         i += 1;
-                    } else if self.is_black_char(ch) {
-                        // do nothing
-                    } else {
+                    }else {
                         chs_out.push(ch);
                     }
                 }
@@ -2818,14 +2811,50 @@ impl RedLang {
                     let s = cq_code.iter().collect::<String>();
                     let params = self.parse_params(&s)?;
                     let cmd = self.parse(&params[0])?;
-                    if cmd == "闭包" {
+                    let cmd = crate::mytool::str_to_jt(&cmd);
+                    if cmd == "闭包" && is_2_params == false {
                         let cqout = self.get_param(&params, 1)?;
-                        let cqout_r = self.parse_r(&cqout)?;
+                        let cqout_r = self.parse_r_with_black(&cqout)?;
+                        cq_add_log_w(&format!("cqout:{cqout} cqout_r:{cqout_r}")).unwrap();
                         for c in cqout_r.chars() {
                             chs_out.push(c);
                         }
-                    } else {
-                        for c in s.chars() {
+                    } else if is_2_params {
+                        if cmd == "二类参数" {
+                            let k1 = self.get_param(&params, 1)?.parse::<usize>()?;
+                            let ret_str = self.parse(&format!("【二类参数@{k1}】"))?;
+                            let cqout_r = self.parse_r_with_black(&ret_str)?;
+                            for c in cqout_r.chars() {
+                                chs_out.push(c);
+                            }
+                        } else if cmd == "参数" {
+                            let k1 =  self.get_param(&params, 1)?.parse::<usize>()?;
+                            
+                            let ret_str = self.parse(&format!("【参数@{k1}】"))?;
+                            let cqout_r = self.parse_r_with_black(&ret_str)?;
+                            for c in cqout_r.chars() {
+                                chs_out.push(c);
+                            }
+                        } else {
+                            let mut r_v = vec![];
+                            for it in params {
+                                let r = self.parse_fun(&it, is_2_params)?;
+                                r_v.push(r);
+                            }
+                            let rrr = format!("【{}】",r_v.join("@"));
+                            for c in rrr.chars() {
+                                chs_out.push(c);
+                            }
+                        }
+                    }  
+                    else {
+                        let mut r_v = vec![];
+                        for it in params {
+                            let r = self.parse_fun(&it, is_2_params)?;
+                            r_v.push(r);
+                        }
+                        let rrr = format!("【{}】",r_v.join("@"));
+                        for c in rrr.chars() {
                             chs_out.push(c);
                         }
                     }
