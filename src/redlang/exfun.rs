@@ -393,7 +393,11 @@ pub fn init_ex_fun_map() {
             }
             let sub_len:usize;
             if len == "" {
-                sub_len = chs.len() - begen_pos;
+                if chs.len() < begen_pos {
+                    sub_len = 0;
+                } else {
+                    sub_len = chs.len() - begen_pos;
+                }
             }else{
                 sub_len = len.parse::<usize>()?;
             }
@@ -420,7 +424,11 @@ pub fn init_ex_fun_map() {
             }
             let sub_len:usize;
             if len == "" {
-                sub_len = arr.len() - begen_pos;
+                if arr.len() < begen_pos {
+                    sub_len = 0;
+                } else {
+                    sub_len = arr.len() - begen_pos;
+                }
             }else{
                 sub_len = len.parse::<usize>()?;
             }
