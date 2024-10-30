@@ -694,12 +694,21 @@ pub fn init_cq_ex_fun_map() {
             message = raw_json.get("message").ok_or(err)?.as_array().ok_or(err)?.clone();
         }
         let mut ret_vec:Vec<String> = vec![];
+        let mut should_new = 1;
         for it in &message {
             let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
             if tp == "text" {
                 let data = it.get("data").ok_or("data not found in text cq code")?;
                 let text = read_json_str(data, "text");
-                ret_vec.push(text);
+                if should_new == 1 {
+                    ret_vec.push(text);
+                } else {
+                    let len = ret_vec.len();
+                    ret_vec[len - 1].push_str(&text);
+                }
+                should_new = 0;
+            } else {
+                should_new = 1;
             }
         }
         let ret = self_t.build_arr(ret_vec.iter().map(|x| x.as_str()).collect());
