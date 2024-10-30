@@ -3516,26 +3516,41 @@ def red_out(sw):
         return Ok(Some(lua_ret));
     });
     add_fun(vec!["TTS"],|self_t,params|{
-        fn to_audio(text:&str,player:&str) -> Result<Vec<u8>,Box<dyn std::error::Error>>{
-            let voices = msedge_tts::voice::get_voices_list()?;
+        fn to_audio(text:&str,player:&str,proxy:&str) -> Result<Vec<u8>,Box<dyn std::error::Error>>{
+            let voices;
+            if proxy == "" {
+                voices = msedge_tts::voice::get_voices_list()?;
+            } else {
+                voices = msedge_tts::voice::get_voices_list_proxy(proxy.parse()?,None,None)?;
+            }
             for voice in &voices {
                 if voice.name.contains(player) {
                     let config = msedge_tts::tts::SpeechConfig::from(voice);
-                    let mut tts = msedge_tts::tts::client::connect()?;
-                    let audio = tts
-                        .synthesize(text, &config)?;
-                    let bt = audio.audio_bytes;
-                    return Ok(bt);
+                    if proxy == "" {
+                        let mut tts = msedge_tts::tts::client::connect()?;
+                        let audio: msedge_tts::tts::client::SynthesizedAudio = tts
+                            .synthesize(text, &config)?;
+                        let bt = audio.audio_bytes;
+                        return Ok(bt);
+                    } else {
+                        let mut tts = msedge_tts::tts::client::connect_proxy(proxy.parse()?,None,None)?;
+                        let audio: msedge_tts::tts::client::SynthesizedAudio = tts
+                            .synthesize(text, &config)?;
+                        let bt = audio.audio_bytes;
+                        return Ok(bt);
+                    }
+                    
                 }
             }
             return Err(format!("player `{player}` not found").into());
         }
+        let proxy = self_t.get_coremap("代理")?;
         let text = self_t.get_param(params, 0)?;
         let mut player = self_t.get_param(params, 1)?;
         if player == "" {
             player = "YunyangNeural".to_owned();
         }
-        let bin_mp3 = to_audio(&text,&player)?;
+        let bin_mp3 = to_audio(&text,&player,&proxy)?;
         let ret = self_t.build_bin(bin_mp3);
         return Ok(Some(ret));
     });
