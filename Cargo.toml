@@ -70,7 +70,7 @@ minimp3_fixed ="0.5.4"
 silk-rs-no-llvm = {git = "https://github.com/super1207/silk-rs-no-llvm"}
 lewton = "0.10.2"
 
-msedge-tts = "0.2.1"
+msedge-tts = {git = "https://github.com/super1207/msedge-tts"}
 
 imap = { git = "https://github.com/jonhoo/rust-imap"}
 native-tls = "0.2.12"
