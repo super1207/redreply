@@ -107,11 +107,12 @@ impl EmailConnect {
                 let uids = imap_session.search("NEW")?;
                 if uids.is_empty() {
                     let mut handle = imap_session.idle();
-                    handle.timeout(Duration::from_secs(5));
-                    let _ = handle.wait_while(|_x|{
+                    let _ = handle
+                    .timeout(Duration::from_secs(15))
+                    .keepalive(false)
+                    .wait_while(|_|{
                         return false;
                     });
-                    // handle.wait_with_timeout(Duration::from_secs(5))?;
                     continue;
                 }else {
                     for uid in uids {
