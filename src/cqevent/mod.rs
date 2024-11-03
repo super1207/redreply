@@ -104,13 +104,18 @@ pub fn do_paging(outstr:&str) -> Result<Vec<&str>, Box<dyn std::error::Error>> {
 pub fn get_msg_type(rl:& RedLang) -> &'static str {
     let user_id_str = rl.get_exmap("发送者ID").to_string();
     let group_id_str = rl.get_exmap("群ID").to_string();
+    let message_type = rl.get_exmap("消息类型").to_string();
     let msg_type:&str;
-    if group_id_str != "" {
-        msg_type = "group";
-    }else if user_id_str  != "" {
-        msg_type = "private";
-    }else{
+    if user_id_str == "" && group_id_str == "" { // 不能发送消息
         msg_type = "";
+    } else if user_id_str != "" && group_id_str != "" && message_type == "private"{ // 发送时消息
+        msg_type = "private_temp";
+    } else if group_id_str != "" { // 发送群消息
+        msg_type = "group";
+    } else if user_id_str != "" { // 发送私聊消息
+        msg_type = "private"; 
+    } else {
+        msg_type = ""; // 不能发送消息
     }
     return msg_type;
 }
@@ -212,6 +217,7 @@ fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Bo
     rl.set_exmap("原始事件", &root.to_string())?;
     rl.set_exmap("机器人平台", &read_json_str(root,"platform"))?;
     rl.set_exmap("消息ID", &read_json_str(root,"message_id"))?;
+    rl.set_exmap("消息类型", &read_json_str(root,"message_type"))?;
     if let Some(sender) = root.get("sender") {
         if let Some(js_v) = sender.get("nickname") {
             rl.set_exmap("发送者昵称", js_v.as_str().unwrap_or(""))?;

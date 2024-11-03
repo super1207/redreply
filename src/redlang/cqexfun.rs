@@ -24,7 +24,7 @@ fn get_platform(self_t:&RedLang) -> String{
 
 fn get_sub_id(rl:& RedLang,msg_type:&str) -> String {
     let sub_id;
-    if msg_type == "group" {
+    if msg_type == "group" || msg_type == "private_temp" {
         sub_id = rl.get_exmap("群ID").to_string();
     } else {
         sub_id = "".to_owned();
@@ -62,7 +62,17 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
                 "message":arr_msg
             }
         });
-    }else{
+    } else if msg_type == "private_temp" {
+        send_json = serde_json::json!( {
+            "action":"send_private_msg",
+            "params":{
+                "user_id":(*rl.get_exmap("发送者ID")),
+                "group_id":sub_id,
+                "message":arr_msg
+            }
+        });
+    }
+    else{
         return Err(RedLang::make_err(&("不支持的输出流:".to_string() + msg_type)));
     }
     let self_id = rl.get_exmap("机器人ID");
