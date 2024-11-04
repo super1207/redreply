@@ -15,7 +15,7 @@ fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result<(), 
         for i in 0..vec_len {
             let st = vec_lk.get(i).unwrap();
             if st.stream_type == "输入流" {
-                if self_id == st.self_id && user_id == st.user_id && st.group_id == "" {
+                if self_id == st.self_id && user_id == st.user_id {
                     let k_arc = st.tx.clone().unwrap();
                     k_arc.lock().unwrap().send(msg.clone())?;
                 }
