@@ -469,8 +469,13 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["输出流"],|self_t,params|{
         let msg = self_t.get_param(params, 0)?;
-        let msg_id = send_one_msg(&self_t,&msg)?;
-        return Ok(Some(msg_id));
+        match send_one_msg(&self_t,&msg) {
+            Ok(msg_id) => return Ok(Some(msg_id)),
+            Err(e) => {
+                   cq_add_log_w(&format!("输出流失败，{}",e)).unwrap();
+                   return Ok(Some("".to_string()));
+            }
+        }
     });
     add_fun(vec!["艾特"],|self_t,params|{
         let mut user_id = self_t.get_param(params, 0)?;
