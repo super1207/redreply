@@ -2344,9 +2344,12 @@ onebot事件json对应的RedLang对象。
 
 ### 表情回应(目前仅少量适配器可用)
 
+
 【表情回应@<font color="red">emoji表情</font>】】
 
 对当前消息进行表情回应，目前仅支持部分emoji。例子：`【表情回应@😘】`
+
+特别说明，在qq平台，支持使用表情ID，如`【表情回应@4】`，支持的表情ID可以在[这里](https://bot.q.qq.com/wiki/develop/api-v2/openapi/emoji/model.html#emoji%E5%88%97%E8%A1%A8)查询。
 
 ### 输入流
 

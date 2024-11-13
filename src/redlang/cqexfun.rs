@@ -447,13 +447,18 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["表情回应"],|self_t,params|{
         let emoji_id = self_t.get_param(params, 0)?;
         let message_id = self_t.get_exmap("消息ID");
-        let emojis = emoji_id.chars().collect::<Vec<char>>();
-        if emojis.len() != 1 {
-            cq_add_log_w(&format!("表情回应失败，表情ID错误1")).unwrap();
-            return Ok(Some("".to_string())); 
+        let emoji_num;
+        if let Ok(emoji_id_t) = emoji_id.parse::<i32>() {
+            emoji_num = emoji_id_t;
+        } else {
+            let emojis = emoji_id.chars().collect::<Vec<char>>();
+            if emojis.len() != 1 {
+                cq_add_log_w(&format!("表情回应失败，表情ID错误1")).unwrap();
+                return Ok(Some("".to_string())); 
+            }
+            let emoji: char = emojis[0];
+            emoji_num = emoji as i32;
         }
-        let emoji: char = emojis[0];
-        let emoji_num = emoji as i32;
         let send_json = serde_json::json!({
             "action":"set_msg_emoji_like",
             "params":{
