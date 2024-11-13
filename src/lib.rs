@@ -89,6 +89,8 @@ lazy_static! {
     pub static ref CLEAR_UUID:String = "a1e72c64-4d18-4529-bc19-e61c5a836e8c".to_owned();
     // 用于记录常量:包名-常量名-常量值(x)
     pub static ref G_CONST_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
+    // 用于记录信号:uuid-包名-信号名-信号值
+    pub static ref G_SINGAL_ARR:RwLock<Vec<(String, String,String,Option<String>)>> = RwLock::new(vec![]);
     // 用于记录临时常量:包名-常量名-常量值-过期时间(x)
     pub static ref G_TEMP_CONST_MAP:RwLock<HashMap<String,HashMap<String, (String, u128)>>> = RwLock::new(HashMap::new());
     // 用于撤回消息
@@ -224,7 +226,7 @@ pub fn pkg_can_run(pkg_name:&str,script_type:&str) -> bool {
     if G_PKG_QUIT_FLAG.read().unwrap().contains(pkg_name) {
         return false;
     }
-    if script_type != "init" && script_type != "输入流" && script_type != "延时" {
+    if script_type != "init" && script_type != "输入流" && script_type != "延时" && script_type != "等待信号" {
         if G_LOADING_SCRIPT_FLAG.read().unwrap().contains(pkg_name) {
             return false;
         }

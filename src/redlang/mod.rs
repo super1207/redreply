@@ -1,8 +1,9 @@
 use std::{any::Any, cell::RefCell, collections::{BTreeMap, HashMap, HashSet, VecDeque}, error, ffi::{c_char, c_int, CStr, CString}, fmt, rc::Rc, sync::Arc, thread, time::SystemTime, vec};
 use encoding::Encoding;
+use exfun::get_raw_data;
 use image::{ImageBuffer, Rgba};
 
-use crate::{cqapi::cq_add_log_w, cqevent::do_script, G_CONST_MAP, G_LOCK, G_TEMP_CONST_MAP, REDLANG_UUID};
+use crate::{cqapi::cq_add_log_w, cqevent::do_script, pkg_can_run, G_CONST_MAP, G_LOCK, G_SINGAL_ARR, G_TEMP_CONST_MAP, REDLANG_UUID};
 use libloading::Symbol;
 
 pub mod exfun;
@@ -1666,6 +1667,63 @@ pub fn init_core_fun_map() {
             return Ok(Some("".to_string()));
         }
     });
+    add_fun(vec!["发送信号"],|self_t,params|{
+        let sigal_name = self_t.get_param(params, 0)?; //信号名称
+        let mut to_send = self_t.get_param(params, 1)?; //信号名称
+        if to_send.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
+            to_send = get_raw_data(self_t, to_send)?;
+        }
+        let mut lk = G_SINGAL_ARR.write().unwrap();
+        for (_,pkg_name,singal_name_t,data) in  &mut *lk { // 遍历所有信号
+            if *pkg_name == self_t.pkg_name && *singal_name_t == sigal_name {
+                *data = Some(to_send.to_owned());
+            }
+        }
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["等待信号"],|self_t,params|{
+        let sigal_name = self_t.get_param(params, 0)?; //信号名称
+        let tm = self_t.get_param(params, 1)?; 
+        let tm = tm.parse::<u64>().unwrap_or(15000); // 超时
+        let uid = uuid::Uuid::new_v4().to_string(); // 生成唯一id
+        {
+            let mut lk_vec = G_SINGAL_ARR.write().unwrap();
+            lk_vec.push((uid.to_owned(),self_t.pkg_name.to_owned(),sigal_name,None));
+        }
+        let _guard = scopeguard::guard(uid.to_owned(), |uid| {
+            let mut lk_vec = G_SINGAL_ARR.write().unwrap();
+            let mut index = 0usize;
+            for it in &*lk_vec {
+                if uid == it.0 {
+                    break;
+                }
+                index += 1;
+            }
+            lk_vec.remove(index);
+        });
+        let mut tm = tm;
+        loop {
+            {
+                let lk = G_SINGAL_ARR.read().unwrap();
+                for (uid_t,_,_,data) in  &*lk {
+                    if uid == *uid_t && data.is_some() {
+                        let dat = data.clone().unwrap();
+                        return Ok(Some(dat));
+                    }
+                }
+            }
+            if pkg_can_run(&self_t.pkg_name,"等待信号") == false {
+                return Err("等待信号终止，因用户要求退出".into());
+            }
+            if tm < 10 {
+                break;
+            }
+            tm -= 10;
+            let time_struct = core::time::Duration::from_millis(10);
+            std::thread::sleep(time_struct);
+        }
+        return Ok(Some("".to_string()));
+    });
     add_fun(vec!["逻辑选择"],|self_t,params|{
         let loge_arr_str = self_t.get_param(params, 0)?;
         let loge_arr = RedLang::parse_arr(&loge_arr_str)?;
@@ -2838,8 +2896,13 @@ impl RedLang {
                         } else {
                             let mut r_v = vec![];
                             for it in params {
-                                let r = self.parse_fun(&it, is_2_params)?;
-                                r_v.push(r);
+                                if cmd != "函数定义" && cmd != "定义命令" && cmd != "定义二类命令" {
+                                    let r = self.parse_fun(&it, is_2_params)?;
+                                    r_v.push(r);
+                                } else {
+                                    let r = self.parse_fun(&it, false)?;
+                                    r_v.push(r);
+                                }
                             }
                             let rrr = format!("【{}】",r_v.join("@"));
                             for c in rrr.chars() {
@@ -2850,7 +2913,7 @@ impl RedLang {
                     else {
                         let mut r_v = vec![];
                         for it in params {
-                            let r = self.parse_fun(&it, is_2_params)?;
+                            let r = self.parse_fun(&it, false)?;
                             r_v.push(r);
                         }
                         let rrr = format!("【{}】",r_v.join("@"));

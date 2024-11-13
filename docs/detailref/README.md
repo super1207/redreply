@@ -2001,6 +2001,20 @@ return ""
 获得当前运行的脚本的脚本名。
 
 
+### 发送信号
+
+【发送信号@<font color="red">信号名</font>@<font color="red">信号内容</font>】
+
+向当前包中已经存在的信号名发送信号。
+
+
+### 等待信号
+
+【等待信号@<font color="red">信号名</font>@<font color="red">超时时间</font>】
+
+等待信号名为<font color="red">信号名</font>的信号，超时时间为<font color="red">超时时间</font>毫秒。若超时，则返回空文本，否则返回信号内容。
+
+
 ## 平台相关命令说明
 
 
