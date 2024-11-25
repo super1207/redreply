@@ -729,14 +729,14 @@ async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:
             if rst.is_err() {
                 let mut lk = G_PY_HANDER.write().await;
                 (*lk) = None;
-                cq_add_log_w("serve send1 of python err").unwrap();
+                cq_add_log_w(&format!("serve send1 of python err:{:?}",rst.err().unwrap() )).unwrap();
                 break;
             }
         }
         cq_add_log_w("serve send2 of python err").unwrap();
     });
 
-    async fn deal_msg(mut read_half:futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>>) -> Result<()> {
+    async fn deal_py_msg(mut read_half:futures_util::stream::SplitStream<tokio_tungstenite::WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>>) -> Result<()> {
         while let Some(msg_t) = read_half.next().await {
             {
                 let lk = G_PY_HANDER.read().await;
@@ -761,10 +761,10 @@ async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:
         }
         Ok(())
     }
-    let ret = deal_msg(read_half).await;
+    let ret = deal_py_msg(read_half).await;
     let mut lk = G_PY_HANDER.write().await;
     if ret.is_err() {
-        cq_add_log_w("serve recv of python err").unwrap();
+        cq_add_log_w(&format!("serve recv of python err:{:?}",ret.err().unwrap())).unwrap();
     }
     (*lk) = None;
     
@@ -1108,7 +1108,10 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
                 return Ok(res);
             }
             // ws协议升级返回
-            let (response, websocket) = hyper_tungstenite::upgrade(request, None)?;
+            let mut conf = tungstenite::protocol::WebSocketConfig::default();
+            conf.max_frame_size = Some(1024 * 1024 * 100); // 100MB
+
+            let (response, websocket) = hyper_tungstenite::upgrade(request, Some(conf))?;
 
             // 开启一个线程来处理ws
             tokio::spawn(async move {
