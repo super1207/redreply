@@ -1566,7 +1566,7 @@ pub fn init_core_fun_map() {
             for i in 0..params_vec.len() {
                 rl.params_vec[0].push(params_vec[i].clone());
             }
-            if let Err(err) = do_script(&mut rl, &code,"normal") {
+            if let Err(err) = do_script(&mut rl, &code,"normal",false) {
                 cq_add_log_w(&format!("{}",err)).unwrap();
             }
         });

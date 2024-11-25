@@ -121,17 +121,17 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
 }
 
 
-fn do_run_code_and_ret_check(rl:&mut RedLang,code:&str)-> Result<String, Box<dyn std::error::Error>> {
+fn do_run_code_and_ret_check(rl:&mut RedLang,code:&str,can_ret_raw:bool)-> Result<String, Box<dyn std::error::Error>> {
     let ret = rl.parse(code)?;
 
     // 检查是否包含类型标记
-    if ret.contains(&*REDLANG_UUID) {
+    if !can_ret_raw && ret.contains(&*REDLANG_UUID) {
         return Err(RedLang::make_err("尝试输出非文本类型"));
     }
     return Ok(ret.to_owned());
 }
 
-pub fn do_script(rl:&mut RedLang,code:&str,script_type:&str) -> Result<String, Box<dyn std::error::Error>>{
+pub fn do_script(rl:&mut RedLang,code:&str,script_type:&str,can_ret_raw:bool) -> Result<String, Box<dyn std::error::Error>>{
     // 增加脚本运行计数
     if add_running_script_num(&rl.pkg_name,&rl.script_name,script_type) == false {
         return Ok("".to_owned());
@@ -143,7 +143,7 @@ pub fn do_script(rl:&mut RedLang,code:&str,script_type:&str) -> Result<String, B
     });
 
     // 执行脚本
-    let out_str_t_rst = do_run_code_and_ret_check(rl,code);
+    let out_str_t_rst = do_run_code_and_ret_check(rl,code,can_ret_raw);
 
     // 处理脚本执行错误
     if let Err(err) = out_str_t_rst {
@@ -183,7 +183,7 @@ pub fn do_script(rl:&mut RedLang,code:&str,script_type:&str) -> Result<String, B
                             rl2.script_name = script_name.clone();
                             rl2.set_coremap("错误信息", &err_str)?;
                             rl2.can_wrong = false;
-                            if let Err(err) = crate::cqevent::do_script(&mut rl2,&code,"normal") {
+                            if let Err(err) = crate::cqevent::do_script(&mut rl2,&code,"normal",false) {
                                 cq_add_log_w(&format!("{}",err)).unwrap();
                             }
                         }      

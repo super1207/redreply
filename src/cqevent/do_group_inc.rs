@@ -17,7 +17,7 @@ fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result< (),
             set_normal_evt_info(&mut rl, root)?;
             rl.pkg_name = pkg_name.to_owned();
             rl.script_name = name.to_owned();
-            if let Err(e) = super::do_script(&mut rl,code,"normal") {
+            if let Err(e) = super::do_script(&mut rl,code,"normal",false) {
                 cq_add_log_w(format!("err in do_group_increase:do_group_increase:{}", e.to_string()).as_str()).unwrap();
             }
         }

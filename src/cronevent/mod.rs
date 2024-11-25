@@ -94,7 +94,7 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
                                 let mut rl = crate::redlang::RedLang::new();
                                 rl.pkg_name = pkg_name_t;
                                 rl.script_name = name_t;
-                                if let Err(err) = crate::cqevent::do_script(&mut rl,&code_t,"normal") {
+                                if let Err(err) = crate::cqevent::do_script(&mut rl,&code_t,"normal",false) {
                                     cq_add_log_w(&format!("{}",err)).unwrap();
                                 }
                             });
@@ -152,7 +152,7 @@ fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
                         rl.pkg_name = pkg_name_t.to_owned();
                         rl.script_name = script_name_t.to_owned();
                         rl.set_coremap("隐藏", &sub_data).unwrap();
-                        if let Err(err) = crate::cqevent::do_script(&mut rl,&code_t,"normal") {
+                        if let Err(err) = crate::cqevent::do_script(&mut rl,&code_t,"normal",false) {
                             cq_add_log_w(&format!("{}",err)).unwrap();
                         }
                     });

@@ -519,7 +519,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
             rl.pkg_name = pkg_name;
             rl.script_name = "网页调试".to_owned();
             rl.can_wrong = true;
-            if let Err(err) = do_script(&mut rl, &code,"normal") {
+            if let Err(err) = do_script(&mut rl, &code,"normal",false) {
                 cq_add_log_w(&format!("{}",err)).unwrap();
             }
         });
