@@ -1444,6 +1444,14 @@ bbb=2
 
 图片模糊使用高斯模糊，<font color="red">sigma</font>为高斯函数中的sigma参数，必须大于0（否则原样输出），越大越模糊。
 
+### 图片锐化
+
+
+【图片锐化@<font color="red">图片字节集</font>@<font color="red">sigma</font>@<font color="red">threshold</font>】
+
+图片锐化使用[Unsharp masking](https://en.wikipedia.org/wiki/Unsharp_masking)，<font color="red">sigma</font>须大于0，越大越锐化，比如10。<font color="red">threshold</font>默认为0，可以省略。
+
+
 
 ### GIF合成
 

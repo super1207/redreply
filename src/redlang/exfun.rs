@@ -956,6 +956,23 @@ pub fn init_ex_fun_map() {
         return Ok(Some(ret));
     });
 
+    add_fun(vec!["图片锐化","图像锐化"],|self_t,params|{
+        let text1 = self_t.get_param(params, 0)?;
+        let (_,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
+        let sigma = self_t.get_param(params, 1)?.parse::<f32>()?;
+        let threshold_text = self_t.get_param(params, 2)?;
+        let threshold;
+        if threshold_text == "" {
+            threshold = 0;
+        }else{
+            threshold = threshold_text.parse::<i32>()?;
+        }
+        let img_out;
+        img_out = image::imageops::unsharpen(&img,sigma,threshold);
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_out));
+        return Ok(Some(ret));
+    });
+
     add_fun(vec!["图片上叠加","图像上叠加"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
