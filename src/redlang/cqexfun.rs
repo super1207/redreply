@@ -1,6 +1,6 @@
-use std::{fs, collections::BTreeMap, path::{Path, PathBuf}, vec, str::FromStr, sync::Arc, thread, time::SystemTime};
+use std::{cell::RefCell, collections::BTreeMap, fs, path::{Path, PathBuf}, rc::Rc, str::FromStr, sync::Arc, thread, time::SystemTime, vec};
 
-use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, pkg_can_run, redlang::{exfun::get_raw_data, get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID};
+use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, pkg_can_run, read_code_cache, redlang::{exfun::get_raw_data, get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID, RT_PTR};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -1202,6 +1202,32 @@ pub fn init_cq_ex_fun_map() {
             }
         }
         crate::redlang::set_const_val(&mut self_t.bin_pool,&self_t.pkg_name, "0b863263-484c-4447-9990-0469186b3d97", master_arr_str)?;
+        return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["重定向"],|self_t,params|{
+        let plus_name = self_t.get_param(params, 0)?;
+        let script_json = read_code_cache()?;
+        for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
+            // 默认包可能没有包名，这个时候要认为是`""`
+            let pkg_name = script_json[i]["pkg_name"].as_str().unwrap_or_default();
+            let name = script_json[i]["name"].as_str().ok_or("name not str")?;
+            if self_t.pkg_name != pkg_name || plus_name != name {
+                continue;
+            }
+            let code = script_json[i]["content"]["code"].as_str().ok_or("脚本中code不是str")?.to_owned();
+            let exmap = (*self_t.exmap).borrow().clone();
+            let pkg_name = self_t.pkg_name.to_owned();
+            let name = plus_name.to_owned();
+            RT_PTR.spawn_blocking(move ||{
+                let mut rl = RedLang::new();
+                rl.exmap = Rc::new(RefCell::new(exmap));
+                rl.pkg_name = pkg_name;
+                rl.script_name = name;
+                if let Err(e) = super::do_script(&mut rl,&code,"normal",false) {
+                    cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e.to_string()).as_str()).unwrap();
+                }
+            });
+        }
         return Ok(Some("".to_string()));
     });
 }
