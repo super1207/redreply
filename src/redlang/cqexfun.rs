@@ -1021,6 +1021,30 @@ pub fn init_cq_ex_fun_map() {
             return Ok(Some(self_t.build_arr(ret_vec)));
         }
     });
+
+    add_fun(vec!["脚本输出-增加ID"],|self_t,params|{
+        let src_msg_id = self_t.get_exmap("消息ID"); // self_t.get_param(params, 0)?;
+        let to_add_msg_id = self_t.get_param(params, 0)?;
+        let self_id = self_t.get_exmap("机器人ID");
+        let key = format!("{}|{}|{}",self_t.pkg_name,self_id,src_msg_id);
+        let mut lk = G_SCRIPT_RELATE_MSG.write()?;
+        let val_opt = lk.get_mut(&key);
+        if val_opt.is_none() {
+            let tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
+            lk.insert(key, ScriptRelatMsg{
+                self_id:(*self_id).to_owned(),
+                msg_id_vec:[to_add_msg_id].to_vec(),
+                create_time:tm
+            });
+            return Ok(Some("".to_owned()));
+        }else{
+            let val = val_opt.unwrap();
+            val.msg_id_vec.push(to_add_msg_id);
+            return Ok(Some("".to_owned()));
+        }
+    });
+
+    
     add_fun(vec!["积分-增加"],|self_t,params|{
         let key1 = self_t.get_exmap("群ID");
         let group_id = format!("{}",key1);
