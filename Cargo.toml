@@ -79,6 +79,7 @@ lettre = { version = "0.11",features = ["tokio1-native-tls"]}
 
 scraper = "0.20.0"
 tungstenite = "0.23.0"
+markdown = "1.0.0-alpha.21"
 
 [build-dependencies]
 embed-resource = "2.4.3"

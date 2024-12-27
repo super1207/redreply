@@ -3404,6 +3404,13 @@ def red_out(sw):
         resvg::render(&tree, transform,&mut pixmapmut);
         Ok(Some(self_t.build_bin(pixmapmut.to_owned().encode_png()?)))
     });
+
+    add_fun(vec!["__MD转HTML"],|self_t,params|{
+        let md_text = self_t.get_param(params, 0)?;
+        let out_html = markdown::to_html(&md_text);
+        Ok(Some(out_html))
+    });
+
     add_fun(vec!["转繁体"],|self_t,params|{
         let msg = self_t.get_param(params, 0)?;
         let ret = crate::mytool::str_to_ft(msg.as_str());
