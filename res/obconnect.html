@@ -90,6 +90,7 @@
                             <option value="qqguild_public">QQ频道/群公域</option>
                             <option value="kook">kook</option>
                             <option value="email">邮件</option>
+                            <option value="telegram">telegram</option>
                         </select>
                         <button @click="help_shame()">填写帮助</button>
                     </div>
@@ -115,6 +116,7 @@
                   <div class = "ws_set" v-show = "qq_Token_show"><span>Token:&nbsp;&nbsp;</span><input id = "qq_Token" v-model = "qq_Token"></input></div>
 
                   <div class = "ws_set" v-show = "kook_Token_show"><span>Token:&nbsp;&nbsp;</span><input id = "kook_Token" v-model = "kook_Token"></input></div>
+                  <div class = "ws_set" v-show = "telegram_Token_show"><span>Token:&nbsp;&nbsp;</span><input id = "telegram_Token" v-model = "telegram_Token"></input></div>
 
                   <div class = "ws_set" v-show = "email_username_show"><span>邮箱地址:&nbsp;&nbsp;</span><input id = "email_username" v-model = "email_username"></input></div>
                   <div class = "ws_set" v-show = "email_password_show"><span>邮箱密码:&nbsp;&nbsp;</span><input id = "email_password" v-model = "email_password"></input></div>
@@ -172,6 +174,7 @@
                         qq_Token:"",
                         qq_withgroup:"0",
                         kook_Token:"",
+                        telegram_Token:"",
                         email_username:"",
                         email_password:"",
                         imap_server:"",
@@ -187,7 +190,8 @@
                             "qqguild_private":"不会吧不会吧不会有人不知道怎么填吧",
                             "qqguild_public":"不会吧不会吧不会有人不知道怎么填吧\n如果你没有Q群权限，请不要选支持Q群\n接收消息时将会自动去除第一个at和at后紧跟的空格以及空格后紧跟的/",
                             "kook":"不会吧不会吧不会有人不知道怎么填吧",
-                            "email":"小常识：\n99%的情况下，IMAP的端口号为993，SMTP的端口号为587，SSL都选择是。"
+                            "email":"小常识：\n99%的情况下，IMAP的端口号为993，SMTP的端口号为587，SSL都选择是。",
+                            "telegram":"不会吧不会吧不会有人不知道怎么填吧",
                         }
                     }
                 },
@@ -287,7 +291,13 @@
                             return true;
                         }
                         return false;
-                    }
+                    },
+                    telegram_Token_show(){
+                        if(this.shame == "telegram"){
+                            return true;
+                        }
+                        return false;
+                    },
                 },
                 mounted () {
                     axios
@@ -316,6 +326,7 @@
                         this.qq_AppSecret = ""
                         this.qq_Token = ""
                         this.kook_Token = ""
+                        this.telegram_Token = ""
                         this.qq_withgroup = "0"
                         this.email_username = ""
                         this.email_password = ""
@@ -357,6 +368,10 @@
                                 jsobj = JSON.parse(raw_url.slice(7))
                                 this.kook_Token = jsobj["Token"]
                                 this.shame = "kook"
+                            }else if(raw_url.startsWith("telegram://")){
+                                jsobj = JSON.parse(raw_url.slice(11))
+                                this.telegram_Token = jsobj["Token"]
+                                this.shame = "telegram"
                             }
                             else if(raw_url.startsWith("email://")){
                                 jsobj = JSON.parse(raw_url.slice(8))
@@ -431,7 +446,13 @@
                                 "Token":this.kook_Token,
                             };
                             return  "kook://" + JSON.stringify(json_dat)
-                        }else if(this.shame == "email"){
+                        }else if(this.shame == "telegram"){
+                            json_dat = {
+                                "Token":this.telegram_Token,
+                            };
+                            return  "telegram://" + JSON.stringify(json_dat)
+                        }
+                        else if(this.shame == "email"){
                             json_dat = {
                                 "username":this.email_username,
                                 "password":this.email_password,

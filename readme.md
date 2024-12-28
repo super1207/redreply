@@ -55,6 +55,8 @@
 
 [redreply](https://github.com/super1207/redreply)：是的，没看错，redreply可以导出onebot11接口，所以一个redreply可以连接另一个redreply，但是请不要自己连接自己（笑）
 
+[telegram](https://telegram.org)：一款国外的著名通信软件
+
 
 ## 操作平台支持
 

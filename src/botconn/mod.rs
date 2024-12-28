@@ -6,6 +6,7 @@ mod qqguild_public;
 mod qq_guild_all;
 mod kook;
 mod email;
+mod telegram;
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
@@ -13,6 +14,7 @@ use async_trait::async_trait;
 
 use email::EmailConnect;
 use kook::KookConnect;
+use telegram::TeleTramConnect;
 use tokio::sync::RwLock;
 
 use crate::{cqapi::cq_add_log_w, RT_PTR};
@@ -169,6 +171,13 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                                 let mut bot = EmailConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到email失败:{url_t},{err:?}")).unwrap();
+                                } else {
+                                    G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
+                                }
+                            }else if url_t.starts_with("telegram://") {
+                                let mut bot = TeleTramConnect::build(&url_t);
+                                if let Err(err) = bot.connect().await {
+                                    cq_add_log_w(&format!("连接到telegram失败:{url_t},{err:?}")).unwrap();
                                 } else {
                                     G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
                                 }
