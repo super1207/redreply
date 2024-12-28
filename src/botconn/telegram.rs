@@ -19,6 +19,7 @@ pub struct TeleTramConnect {
     pub self_id: Arc<RwLock<String>>,
     pub token: Arc<RwLock<String>>,
     pub url: String,
+    pub proxy: Arc<RwLock<String>>,
     pub is_stop: Arc<AtomicBool>,
     msg_ids: Arc<RwLock<VecDeque<MsgIdPair>>>,
 }
@@ -51,17 +52,42 @@ struct MsgIdPair {
     raw_msg_ids: Vec<RawMsgId>,
 }
 
+
+
+
 impl TeleTramConnect {
     pub fn build(url: &str) -> Self {
         return Self {
             self_id: Arc::new(RwLock::new("".to_owned())),
             token: Arc::new(RwLock::new("".to_owned())),
             url: url.to_owned(),
+            proxy: Arc::new(RwLock::new("".to_owned())),
             is_stop: Arc::new(AtomicBool::new(false)),
             msg_ids: Arc::new(RwLock::new(VecDeque::new())),
         };
     }
 
+
+    fn get_req_client(&self) -> Result<reqwest::Client, Box<dyn std::error::Error + Send + Sync>> {
+        let proxy;
+        {
+            let lk = self.proxy.read().unwrap();
+            proxy = lk.to_owned();
+        }
+        if proxy == "" {
+            Ok(reqwest::Client::builder()
+                .no_proxy()
+                .build()?)
+        } else {
+            Ok(reqwest::Client::builder()
+                .proxy(reqwest::Proxy::all(proxy.as_str())?)
+                .build()?)
+        }
+    }
+
+    async fn proxyrequest(&self, url: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(self.get_req_client()?.get(url).send().await?.text().await?)
+    }
 
     fn make_msg_with_at(text_message:&str,entities:&serde_json::Value) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let mut ret_cq_msg = "".to_owned(); 
@@ -123,7 +149,7 @@ impl TeleTramConnect {
             let photo_file_id = photo[photo_len - 1]["file_id"]
                 .as_str()
                 .ok_or("file_id not str")?;
-            let get_file_path_ret = reqwest::get(
+            let get_file_path_ret = self.proxyrequest(
                 format!(
                     "https://api.telegram.org/bot{}/getFile?file_id={}",
                     self.token.read().unwrap(),
@@ -131,8 +157,6 @@ impl TeleTramConnect {
                 )
                 .as_str(),
             )
-            .await?
-            .text()
             .await?;
             let get_file_path_json: serde_json::Value = serde_json::from_str(&get_file_path_ret)?;
             let file_path = get_file_path_json["result"]["file_path"]
@@ -286,7 +310,7 @@ impl TeleTramConnect {
             "https://api.telegram.org/bot{}/getUpdates",
             self.token.read().unwrap()
         );
-        let ret = reqwest::get(url).await?.text().await?;
+        let ret = self.proxyrequest(&url).await?;
         let event_json: serde_json::Value = serde_json::from_str(&ret)?;
         let result = event_json
             .get("result")
@@ -320,7 +344,7 @@ impl TeleTramConnect {
                     last_update_id.unwrap()
                 );
             }
-            let ret = reqwest::get(url).await?.text().await?;
+            let ret = self.proxyrequest(&url).await?;
             if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
@@ -471,8 +495,8 @@ impl TeleTramConnect {
                     continue;
                 }
                 let qq = Self::to_json_str(it.get("data").ok_or("data not found")?.get("qq").ok_or("qq not found")?);
-                let ret = reqwest::get(format!("https://api.telegram.org/bot{}/getChatMember?chat_id={}&user_id={}",self.token.read().unwrap(),group_id,qq).as_str()).await?;
-                let ret_json: serde_json::Value = ret.text().await?.parse()?;
+                let ret = self.proxyrequest(&format!("https://api.telegram.org/bot{}/getChatMember?chat_id={}&user_id={}",self.token.read().unwrap(),group_id,qq).as_str()).await?;
+                let ret_json: serde_json::Value = ret.parse()?;
                 let username = ret_json["result"]["user"]["username"].as_str().ok_or("username not found")?;
                 let at_str = &format!(" @{} ",username);
                 if last_type == "text" && to_send_data.len() != 0 {
@@ -506,7 +530,7 @@ impl TeleTramConnect {
         for (tp, msg) in &to_send_data.clone() {
             if *tp == "text" {
                 // do post
-                let client = reqwest::Client::builder().build()?;
+                let client = self.get_req_client()?;
                 let mut data_json = serde_json::json!({
                     "chat_id":chat_id.parse::<i64>()?,
                     "text":msg,
@@ -543,7 +567,7 @@ impl TeleTramConnect {
                     chat_id: chat_id.to_owned(),
                 });
             } else if *tp == "url_image" {
-                let client = reqwest::Client::builder().build()?;
+                let client = self.get_req_client()?;
                 let mut data_json = serde_json::json!({
                     "chat_id":chat_id.parse::<i64>()?,
                     "photo":msg,
@@ -588,7 +612,7 @@ impl TeleTramConnect {
                     msg,
                 )?;
 
-                let client = reqwest::Client::builder().build()?;
+                let client = self.get_req_client()?;
                 let mut form = reqwest::multipart::Form::new()
                     .part(
                         "photo",
@@ -719,8 +743,7 @@ impl TeleTramConnect {
             return Err("msg_id not found")?;
         }
         for it in msg_ids {
-            let ret = reqwest::get(format!("https://api.telegram.org/bot{}/deleteMessage?chat_id={}&message_id={}",self.token.read().unwrap(),it.chat_id,it.msg_id).as_str()).await?;
-            let ret_text = ret.text().await?;
+            let ret_text = self.proxyrequest(&format!("https://api.telegram.org/bot{}/deleteMessage?chat_id={}&message_id={}",self.token.read().unwrap(),it.chat_id,it.msg_id).as_str()).await?;
             let ret_json: serde_json::Value = serde_json::from_str(&ret_text)?;
             let result = ret_json.get("result").ok_or("result not found")?.as_bool().ok_or("result not bool")?;
             if !result {
@@ -736,8 +759,7 @@ impl TeleTramConnect {
         Ok(send_json)
     }
     async fn deal_ob_get_login_info(&self,_params:&serde_json::Value,echo:&serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let resp = reqwest::get(format!("https://api.telegram.org/bot{}/getMe",self.token.read().unwrap()).as_str()).await?;
-        let ret_text = resp.text().await?;
+        let ret_text = self.proxyrequest(&format!("https://api.telegram.org/bot{}/getMe",self.token.read().unwrap()).as_str()).await?;
         let ret_json: serde_json::Value = serde_json::from_str(&ret_text)?;
         let info = serde_json::json!({
             "user_id":ret_json["result"]["id"].as_i64().ok_or("id not i64")?,
@@ -774,9 +796,14 @@ impl BotConnectTrait for TeleTramConnect {
             .ok_or("token not found")?
             .as_str()
             .ok_or("token not str")?;
-        let ret_resp =
-            reqwest::get(format!("https://api.telegram.org/bot{}/getMe", token).as_str()).await?;
-        let ret_text = ret_resp.text().await?;
+        let proxy = config_json
+            .get("Proxy")
+            .ok_or("proxy not found")?
+            .as_str()
+            .ok_or("proxy not str")?;
+        self.proxy.write().unwrap().push_str(proxy);
+        let ret_text =
+            self.proxyrequest(format!("https://api.telegram.org/bot{}/getMe", token).as_str()).await?;
         let ret_json: serde_json::Value = serde_json::from_str(&ret_text)?;
         let self_id = ret_json
             .get("result")

@@ -117,6 +117,7 @@
 
                   <div class = "ws_set" v-show = "kook_Token_show"><span>Token:&nbsp;&nbsp;</span><input id = "kook_Token" v-model = "kook_Token"></input></div>
                   <div class = "ws_set" v-show = "telegram_Token_show"><span>Token:&nbsp;&nbsp;</span><input id = "telegram_Token" v-model = "telegram_Token"></input></div>
+                  <div class = "ws_set" v-show = "telegram_Proxy_show"><span>Proxy:&nbsp;&nbsp;</span><input id = "telegram_Proxy" v-model = "telegram_Proxy"></input></div>
 
                   <div class = "ws_set" v-show = "email_username_show"><span>邮箱地址:&nbsp;&nbsp;</span><input id = "email_username" v-model = "email_username"></input></div>
                   <div class = "ws_set" v-show = "email_password_show"><span>邮箱密码:&nbsp;&nbsp;</span><input id = "email_password" v-model = "email_password"></input></div>
@@ -175,6 +176,7 @@
                         qq_withgroup:"0",
                         kook_Token:"",
                         telegram_Token:"",
+                        telegram_Proxy:"",
                         email_username:"",
                         email_password:"",
                         imap_server:"",
@@ -191,7 +193,7 @@
                             "qqguild_public":"不会吧不会吧不会有人不知道怎么填吧\n如果你没有Q群权限，请不要选支持Q群\n接收消息时将会自动去除第一个at和at后紧跟的空格以及空格后紧跟的/",
                             "kook":"不会吧不会吧不会有人不知道怎么填吧",
                             "email":"小常识：\n99%的情况下，IMAP的端口号为993，SMTP的端口号为587，SSL都选择是。",
-                            "telegram":"不会吧不会吧不会有人不知道怎么填吧",
+                            "telegram":"Proxy支持http代理，如`http://127.0.0.1:7890`",
                         }
                     }
                 },
@@ -298,6 +300,12 @@
                         }
                         return false;
                     },
+                    telegram_Proxy_show(){
+                        if(this.shame == "telegram"){
+                            return true;
+                        }
+                        return false;
+                    },
                 },
                 mounted () {
                     axios
@@ -327,6 +335,7 @@
                         this.qq_Token = ""
                         this.kook_Token = ""
                         this.telegram_Token = ""
+                        this.telegram_Proxy = ""
                         this.qq_withgroup = "0"
                         this.email_username = ""
                         this.email_password = ""
@@ -371,6 +380,7 @@
                             }else if(raw_url.startsWith("telegram://")){
                                 jsobj = JSON.parse(raw_url.slice(11))
                                 this.telegram_Token = jsobj["Token"]
+                                this.telegram_Proxy = jsobj["Proxy"]
                                 this.shame = "telegram"
                             }
                             else if(raw_url.startsWith("email://")){
@@ -449,6 +459,7 @@
                         }else if(this.shame == "telegram"){
                             json_dat = {
                                 "Token":this.telegram_Token,
+                                "Proxy":this.telegram_Proxy
                             };
                             return  "telegram://" + JSON.stringify(json_dat)
                         }
