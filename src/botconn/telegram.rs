@@ -129,10 +129,14 @@ impl TeleTramConnect {
         let reply_to_message = &message_obj["reply_to_message"];
         let mut reply_id = "".to_owned();
         if reply_to_message.is_object() {
-            reply_id = reply_to_message["message_id"]
+            // 频道里面的自动转发消息不是回复
+            let is_automatic_forward = Self::get_json_bool(reply_to_message, "is_automatic_forward");
+            if !is_automatic_forward {
+                reply_id = reply_to_message["message_id"]
                 .as_i64()
                 .ok_or("message_id not i64")?
                 .to_string();
+            }
         }
 
         let text_message = read_json_str(&message_obj, "text");
@@ -234,9 +238,14 @@ impl TeleTramConnect {
         let chat = &event["message"]["chat"];
         let from = &event["message"]["from"];
 
-        let username = from["username"].as_str().ok_or("username not str")?;
+        let mut username = read_json_str(from, "username");
         let user_id = from["id"].as_i64().ok_or("id not i64")?;
-        add_username2userid(&format!("@{username}"), user_id);
+        if username != "" {
+            add_username2userid(&format!("@{username}"), user_id);
+        } else {
+            // 如果是频道消息，username为空
+            username = read_json_str(from, "first_name");
+        }
         let group_id = chat["id"].as_i64().ok_or("id not i64")?.to_string();
         let message_id = message_obj["message_id"]
             .as_i64()

@@ -2957,11 +2957,11 @@ pub fn init_ex_fun_map() {
             let mut data:Vec<u8> = vec![];
             data.append(&mut "--".as_bytes().to_owned());
             data.append(&mut bound.as_bytes().to_owned());
-            data.append(&mut "\r\nContent-Disposition: form-data; name=\"reqtype\"\r\n\r\nfileupload\r\n".as_bytes().to_owned());
+            data.append(&mut "\r\nContent-Disposition: form-data; name=\"step\"\r\n\r\n0\r\n".as_bytes().to_owned());
             data.append(&mut "--".as_bytes().to_owned());
             data.append(&mut bound.as_bytes().to_owned());
             let fname:String = url::form_urlencoded::byte_serialize(filename.as_bytes()).collect();
-            data.append(&mut format!("\r\nContent-Disposition: form-data; name=\"fileToUpload\";filename=\"{fname}\"\r\n\r\n").as_bytes().to_owned());
+            data.append(&mut format!("\r\nContent-Disposition: form-data; name=\"file\";filename=\"{fname}\"\r\n\r\n").as_bytes().to_owned());
             data.append(file_data);
             data.append(&mut "\r\n--".as_bytes().to_owned());
             data.append(&mut bound.as_bytes().to_owned());
@@ -2985,12 +2985,14 @@ pub fn init_ex_fun_map() {
                 };
                 return ret;
             });
-            Ok(String::from_utf8(content.0)?)
+            let json:serde_json::Value = serde_json::from_slice(&content.0)?;
+            let url = json["data"].as_str().ok_or(format!("can't upload file:{json:?}", ))?;
+            Ok(url.to_owned())
         }
         let bin_text = self_t.get_param(params, 0)?;
         let filename = self_t.get_param(params, 1)?;
         let mut bin = RedLang::parse_bin(&mut self_t.bin_pool,&bin_text)?;
-        let url = "https://catbox.moe/user/api.php";
+        let url = "https://uhsea.com/Frontend/upload";
         match access(self_t,&filename,&url,&mut bin) {
             Ok(ret) => Ok(Some(ret)),
             Err(err) => {
