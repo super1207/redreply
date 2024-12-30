@@ -515,6 +515,42 @@ impl TeleTramConnect {
                     to_send_data.push(("text",at_str.to_owned()));
                     last_type = "text";
                 }
+            } else if tp == "record" {
+                let data = it.get("data").ok_or("data not found")?;
+                let file = read_json_str(data, "file");
+                if file.starts_with("http") {
+                    to_send_data.push(("url_record", file.to_owned()));
+                    last_type = "url_record";
+                } else {
+                    if file.starts_with("base64://") {
+                        let b64_str = file.get(9..).unwrap();
+                        to_send_data.push(("file_record", b64_str.to_owned()));
+                        last_type = "file_record";
+                    }
+                }
+            }else if tp == "music"{
+                let music_type = it.get("data").ok_or("data not found")?.get("type").ok_or("type not found")?.as_str().ok_or("type not str")?;
+                if music_type == "custom" {
+                    let data = it.get("data").ok_or("data not found")?;
+                    let mut audio = read_json_str(data, "audio");
+                    if audio == "" {
+                        audio = read_json_str(data, "voice");
+                    }
+                    let title = read_json_str(data, "title");
+                    let image = read_json_str(data, "image");
+                    let url = read_json_str(data, "url");
+                    let content = read_json_str(data, "content");
+                    let js = serde_json::json!({
+                        "type": "audio",
+                        "title": title,
+                        "audio": audio,
+                        "image": image,
+                        "content": content,
+                        "url": url 
+                    });
+                    to_send_data.push(("music",js.to_string()));
+                    last_type = "music";
+                }
             }
         }
         Ok((to_send_data, quote))
@@ -661,8 +697,165 @@ impl TeleTramConnect {
                     msg_id,
                     chat_id: chat_id.to_owned(),
                 });
+            } else if *tp == "url_record" {
+                let client = self.get_req_client()?;
+                let mut data_json = serde_json::json!({
+                    "chat_id":chat_id.parse::<i64>()?,
+                    "audio":msg,
+                });
+                if quote != "" {
+                    data_json["reply_parameters"] = serde_json::json!({
+                        "message_id":quote.parse::<i64>()?
+                    });
+                    quote = "".to_owned();
+                }
+                let mut req = client
+                    .post(
+                        format!(
+                            "https://api.telegram.org/bot{}/sendAudio",
+                            self.token.read().unwrap()
+                        )
+                        .as_str(),
+                    )
+                    .body(reqwest::Body::from(data_json.to_string()))
+                    .build()?;
+                req.headers_mut().append(
+                    HeaderName::from_str("Content-type")?,
+                    HeaderValue::from_str("application/json")?,
+                );
+                let resp = client.execute(req).await?;
+                let ret_json: serde_json::Value = resp.text().await?.parse()?;
+                // cq_add_log(&format!("ret_json:{:?}", ret_json)).unwrap();
+                let msg_id = ret_json["result"]["message_id"].as_i64() 
+                    .ok_or("message_id not i64")?
+                    .to_string();
+                msg_ids.push(RawMsgId {
+                    msg_id,
+                    chat_id: chat_id.to_owned(),
+                });
+            } else if *tp == "file_record" {
+                let file_bin = base64::Engine::decode(
+                    &base64::engine::GeneralPurpose::new(
+                        &base64::alphabet::STANDARD,
+                        base64::engine::general_purpose::PAD,
+                    ),
+                    msg,
+                )?;
+
+                let client = self.get_req_client()?;
+                let mut form = reqwest::multipart::Form::new()
+                    .part(
+                        "audio",
+                        reqwest::multipart::Part::bytes(file_bin).file_name("语音"),
+                    )
+                    .part(
+                        "chat_id",
+                        reqwest::multipart::Part::text(chat_id.to_owned()),
+                    );
+                    if quote != "" {
+                        form = form.part(
+                            "reply_parameters",
+                            reqwest::multipart::Part::text(serde_json::json!({
+                                "message_id":quote.parse::<i64>()?
+                            }).to_string()),
+                        );
+                        quote = "".to_owned();
+                    }
+                let req = client
+                    .post(
+                        format!(
+                            "https://api.telegram.org/bot{}/sendAudio",
+                            self.token.read().unwrap()
+                        )
+                        .as_str(),
+                    )
+                    .multipart(form)
+                    .build()?;
+                let resp = client.execute(req).await?;
+                let ret_json: serde_json::Value = resp.text().await?.parse()?;
+                // cq_add_log(&format!("ret_json:{:?}", ret_json)).unwrap();
+                let msg_id = ret_json["result"]["message_id"]
+                    .as_i64()
+                    .ok_or("message_id not i64")?
+                    .to_string();
+                msg_ids.push(RawMsgId {
+                    msg_id,
+                    chat_id: chat_id.to_owned(),
+                });
+            }else if *tp == "music" {
+                let client = self.get_req_client()?;
+                let msg_json:serde_json::Value = serde_json::from_str(msg)?;
+                let title = msg_json["title"].as_str().ok_or("title not str")?.to_owned();
+                let audio = msg_json["audio"].as_str().ok_or("audio not str")?.to_owned();
+                let image = msg_json["image"].as_str().ok_or("image not str")?;
+                let content = msg_json["content"].as_str().ok_or("content not str")?;
+                let url = msg_json["url"].as_str().ok_or("url not str")?;
+
+                let mut form = reqwest::multipart::Form::new();
+
+                if image != "" {
+                    let cli = self.get_req_client()?;
+                    let resp = cli.get(image).send().await?;
+                    let image_bin = resp.bytes().await?;
+                    form = form.part(
+                        "thumbnail",
+                        reqwest::multipart::Part::bytes(image_bin.to_vec()).file_name("image.jpg"),
+                    )
+                }
+
+                {
+                    let cli = self.get_req_client()?;
+                    let resp = cli.get(audio).send().await?;
+                    let audio_bin = resp.bytes().await?;
+                    form = form.part(
+                        "audio",
+                        reqwest::multipart::Part::bytes(audio_bin.to_vec()).file_name(title),
+                    )
+                }
+
+                let mut caption = "".to_owned();
+                if url != "" {
+                    caption.push_str("\n");
+                    caption.push_str(url);
+                }
+                if content != "" {
+                    caption.push_str("\n");
+                    caption.push_str(content);
+                }
+
+                form = form.part(
+                    "caption",
+                    reqwest::multipart::Part::text(caption.trim().to_owned()),
+                );
+
+                form = form.part(
+                    "chat_id",
+                    reqwest::multipart::Part::text(chat_id.to_owned()),
+                );
+
+                let req = client
+                    .post(
+                        format!(
+                            "https://api.telegram.org/bot{}/sendAudio",
+                            self.token.read().unwrap()
+                        )
+                        .as_str(),
+                    )
+                    .multipart(form)
+                    .build()?;
+                let resp = client.execute(req).await?;
+                let ret_json: serde_json::Value = resp.text().await?.parse()?;
+                cq_add_log(&format!("music card ret:{:?}", ret_json)).unwrap();
+                let msg_id = ret_json["result"]["message_id"]
+                    .as_i64()
+                    .ok_or("message_id not i64")?
+                    .to_string();
+                msg_ids.push(RawMsgId {
+                    msg_id,
+                    chat_id: chat_id.to_owned(),
+                });
             }
-        }
+        } 
         let msg_id = self.add_msg_id(&msg_ids);
         Ok(msg_id)
     }
