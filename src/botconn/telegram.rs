@@ -788,8 +788,8 @@ impl TeleTramConnect {
                 let title = msg_json["title"].as_str().ok_or("title not str")?.to_owned();
                 let audio = msg_json["audio"].as_str().ok_or("audio not str")?.to_owned();
                 let image = msg_json["image"].as_str().ok_or("image not str")?;
-                let content = msg_json["content"].as_str().ok_or("content not str")?;
-                let url = msg_json["url"].as_str().ok_or("url not str")?;
+                let content = msg_json["content"].as_str().ok_or("content not str")?.to_owned();
+                let url = msg_json["url"].as_str().ok_or("url not str")?.to_owned();
 
                 let mut form = reqwest::multipart::Form::new();
 
@@ -809,24 +809,30 @@ impl TeleTramConnect {
                     let audio_bin = resp.bytes().await?;
                     form = form.part(
                         "audio",
-                        reqwest::multipart::Part::bytes(audio_bin.to_vec()).file_name(title),
+                        reqwest::multipart::Part::bytes(audio_bin.to_vec()).file_name(title.clone()),
                     )
                 }
 
-                let mut caption = "".to_owned();
-                if url != "" {
-                    caption.push_str("\n");
-                    caption.push_str(url);
-                }
-                if content != "" {
-                    caption.push_str("\n");
-                    caption.push_str(content);
+                if title != "" {
+                    form = form.part(
+                        "title",
+                        reqwest::multipart::Part::text(title),
+                    );
                 }
 
-                form = form.part(
-                    "caption",
-                    reqwest::multipart::Part::text(caption.trim().to_owned()),
-                );
+                if content != "" {
+                    form = form.part(
+                        "performer",
+                        reqwest::multipart::Part::text(content),
+                    );
+                }
+
+                if url != "" {
+                    form = form.part(
+                        "caption",
+                        reqwest::multipart::Part::text(url),
+                    );
+                }    
 
                 form = form.part(
                     "chat_id",
