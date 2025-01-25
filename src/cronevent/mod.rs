@@ -172,6 +172,9 @@ pub fn do_cron_event() -> Result<i32, Box<dyn std::error::Error>> {
             if let Err(err) = do_timer_event_t2(){
                 cq_add_log_w(&err.to_string()).unwrap();
             }
+            if let Err(err) = crate::status::the_500ms_timer() {
+                cq_add_log_w(&err.to_string()).unwrap();
+            }
             let time_struct = core::time::Duration::from_millis(500);
             std::thread::sleep(time_struct);
         }

@@ -43,6 +43,7 @@ mod test;
 mod libload;
 mod pluscenter;
 mod onebot11s;
+mod status;
 
 #[macro_use]
 extern crate lazy_static; 
@@ -487,6 +488,7 @@ pub fn wait_for_quit() -> ! {
         }
         std::thread::sleep(core::time::Duration::from_millis(1));
     }
+    status::flush_cache_to_db().unwrap() ;
     std::process::exit(0);
 }
 

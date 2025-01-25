@@ -23,6 +23,7 @@ use serde_json::json;
 use tokio_util::bytes::Buf;
 use bytes::Bytes;
 use futures_util::TryStreamExt;
+use crate::status::get_status;
 
 
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
@@ -619,6 +620,28 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         }
         res.headers_mut().insert("Location", HeaderValue::from_static("/index.html"));
         Ok(res)
+    }
+    else if url_path == "/get_send_recv_status" {
+        if !can_read {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        match get_status() {
+            Ok(status) => {
+                let ret = json!({
+                    "retcode": 0,
+                    "data": status
+                });
+                let mut res = hyper::Response::new(full(ret.to_string()));
+                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+                Ok(res)
+            },
+            Err(err) => {
+                let mut res = hyper::Response::new(full(err.to_string()));
+                *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
+                Ok(res)
+            },
+        }
     }
     else if url_path.starts_with("/user") {
         let (tx, rx) =  tokio::sync::oneshot::channel();

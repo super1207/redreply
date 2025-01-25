@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::BTreeMap, fs, path::{Path, PathBuf}, rc::Rc, str::FromStr, sync::Arc, thread, time::SystemTime, vec};
 
-use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, pkg_can_run, read_code_cache, redlang::{exfun::get_raw_data, get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID, RT_PTR};
+use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, pkg_can_run, read_code_cache, redlang::{exfun::get_raw_data, get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, status::{add_send_group_msg, add_send_private_msg}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID, RT_PTR};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -78,6 +78,17 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
     let self_id = rl.get_exmap("机器人ID");
     let platform = get_platform(&rl);
     let passive_id = rl.get_exmap("消息ID");
+
+    // 数据统计
+    {
+        if msg_type == "group" {
+            add_send_group_msg(&platform,&*self_id)?;
+        } else {
+            add_send_private_msg(&platform,&*self_id)?;
+        }
+        
+    }
+
     let cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str());
     let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
     let err = "输出流调用失败,retcode 不为0";

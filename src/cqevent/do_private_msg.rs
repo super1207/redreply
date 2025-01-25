@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::{cqapi::*, redlang::RedLang, mytool::{json_to_cq_str, read_json_str}, read_code_cache, G_INPUTSTREAM_VEC};
+use crate::{cqapi::*, mytool::{json_to_cq_str, read_json_str}, read_code_cache, redlang::RedLang, status::add_recv_private_msg, G_INPUTSTREAM_VEC};
 
 use super::{is_key_match, get_script_info, set_normal_message_info};
 
@@ -22,6 +22,14 @@ fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result<(), 
             }
         }
     }
+
+    // 数据统计
+    {
+        let platform = read_json_str(root,"platform");
+        let bot_id = read_json_str(root,"self_id");
+        add_recv_private_msg(&platform,&bot_id)?;
+    }
+
     let script_json = read_code_cache()?;
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
         let (keyword,cffs,code,ppfs,name,pkg_name) = get_script_info(&script_json[i])?;
