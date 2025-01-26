@@ -10,79 +10,217 @@
         <!-- 引入样式 -->
         <title>连接平台协议</title>
         <style>
-            html,body{
+            html, body {
                 width: 100%;
-                height: 100%;
-                display: flex;
+                height: 100vh; /* 使用视口高度单位 */
                 margin: 0;
+                background: #fff0f5;
+                font-family: "Comic Sans MS", cursive, sans-serif;
+                display: flex;
+                justify-content: center;
+                align-items: stretch; /* 改为 stretch 以铺满高度 */
             }
             #app {
                 display: flex;
-                flex: 1 0 auto;
                 flex-direction: column;
+                width: 100%; /* 改为100%宽度 */
+                height: 100%; /* 保持100%高度 */
+                background: #fff5f8;
+                border: 3px solid #ffd1dc;
+                border-radius: 20px;
+                box-shadow: 0 8px 30px rgba(255,105,180,0.3);
+                padding: 2em;
+                box-sizing: border-box;
+                margin: 0; /* 移除外边距 */
             }
-
-            #app > h1 {
-                color: red;
+            @media (max-width: 600px) {
+                #app {
+                    border-radius: 0; /* 在小屏幕上移除圆角 */
+                    padding: 1em; /* 在小屏幕上减小内边距 */
+                    border: none; /* 在小屏幕上移除边框 */
+                }
+            }
+            h1 {
+                color: #ff69b4;
+                font-size: 2em;
                 text-align: center;
+                margin-bottom: 1em;
             }
-            #show{
+            #show {
                 display: flex;
                 flex-direction: column;
-                height: 0;
-                flex: 1 0 auto;
+                flex: 1 1 auto; /* 修改为 1 1 auto 使其能够伸展和收缩 */
+                overflow-y: auto;
+                margin-bottom: 1em;
+                min-height: 0; /* 添加最小高度为0 */
             }
             #show > div {
-                border-style:solid;
+                border: 2px solid #ffd1dc;
+                border-radius: 10px;
+                padding: 0.5em;
+                margin-top: 0.5em;
                 cursor: pointer;
-                margin-top: 1px;
+                transition: all 0.3s ease;
+                background: #fff;
+                word-wrap: break-word;      /* 添加这行 */
+                word-break: break-all;      /* 添加这行 */
+                overflow-wrap: break-word;   /* 添加这行 */
             }
-            #foot{
+            #show > div:hover:not(.name_active) {
+                background: #ffebf0;
+            }
+            .name_active {
+                background: #ff69b4 !important;
+                color: #ffffff !important;
+                border-color: #ff69b4;
+            }
+            #foot {
                 display: flex;
-                flex: 0 0 3em;
+                justify-content: space-around;
+                margin-top: 1em;
             }
             #foot > button {
-                flex: 1 0 auto;
+                flex: 1;
+                margin: 0 0.5em;
+                border: none;
+                border-radius: 25px;
+                padding: 0.8em 1.5em;
+                background: #ff69b4;
+                color: white;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                font-size: 1.1em;
+                box-shadow: 0 4px 15px rgba(255,105,180,0.2);
             }
-            .name_active { /* 点中名字，变色属性 */
-                color: red;
+            #foot > button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(255,105,180,0.4);
             }
-            #favDialog {
-                margin: auto;
-                /* height: 5em; */
-                width: 20em;
+            dialog {
+                border: 3px solid #ffd1dc;
+                border-radius: 20px;
+                box-shadow: 0 8px 30px rgba(255,105,180,0.3);
+                padding: 2em;
+                background: #fff5f8;
+                animation: dialogPopIn 0.3s ease-out;
+            }
+            @keyframes dialogPopIn {
+                from {
+                    opacity: 0;
+                    transform: scale(0.9) translateY(10px);
+                }
+                to {
+                    opacity: 1;
+                    transform: scale(1) translateY(0);
+                }
+            }
+            dialog::backdrop {
+                background: rgba(255,105,180,0.15);
+                backdrop-filter: blur(3px);
+            }
+            dialog button {
+                border: none;
+                border-radius: 25px;
+                padding: 0.8em 1.5em;
+                background: #ff69b4;
+                color: white;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                font-size: 1.1em;
+                box-shadow: 0 4px 15px rgba(255,105,180,0.2);
+            }
+            dialog button:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(255,105,180,0.4);
+            }
+            dialog input, dialog select {
+                border: 3px solid #ffd1dc;
+                border-radius: 15px;
+                padding: 0.8em;
+                outline: none;
+                transition: all 0.3s ease;
+                font-size: 1em;
+                background: rgba(255,255,255,0.9);
+                margin: 0.5em 0;
+                width: 100%;
+                box-sizing: border-box;
+            }
+            dialog input:focus, dialog select:focus {
+                border-color: #ff69b4;
+                box-shadow: 0 0 15px rgba(255,105,180,0.3);
             }
             #dialog_set {
-                width: 100%;
-                height: 100%;
                 display: flex;
                 flex-direction: column;
                 justify-content: space-around;
             }
-            
-            #dialog_set > div{
-                padding: 3px;
+            #dialog_set > div {
                 display: flex;
+                align-items: center;
+                margin-bottom: 1em;
             }
-            #dialog_set > div > input{
-                flex: 1 0 auto;
+            #dialog_set > div > span {
+                flex: 0 0 100px;
+                color: #ff69b4;
+                font-size: 1.1em;
             }
-            #dialog_set > div > select{
-                flex: 1 0 auto;
+            #dialog_set > div > select {
+                flex: 1;
+                margin-right: 10px;
             }
-            
+            #dialog_set > div > button {
+                flex: 0 0 auto;
+                white-space: nowrap;
+                padding: 0.5em 1em;
+            }
             #dialog_set > form {
                 display: flex;
                 justify-content: space-around;
             }
+            .notification {
+                position: fixed;
+                top: -100px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: #fff;
+                padding: 15px 30px;
+                border-radius: 15px;
+                box-shadow: 0 4px 20px rgba(255,105,180,0.3);
+                border: 2px solid;
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                transition: top 0.3s ease-in-out;
+                z-index: 1000;
+            }
+            .notification.success {
+                border-color: #4CAF50;
+                color: #4CAF50;
+            }
+            .notification.error {
+                border-color: #ff4444;
+                color: #ff4444;
+            }
+            .notification.show {
+                top: 20px;
+            }
+            @media (max-height: 600px) {
+                #app {
+                    border-radius: 0;
+                    padding: 1em;
+                }
+            }
         </style>
     </head>
     <body>
+        <div class="notification" id="notification">
+            <span id="notification-message"></span>
+        </div>
         <div id="app">
-            <dialog id = "favDialog">
-                <div id = "dialog_set">
-                    <div class = "ws_set" ><span>type:&nbsp;&nbsp;&nbsp;&nbsp;</span>
-                        <select v-model = "shame" :disabled="is_add==false">
+            <dialog id="favDialog">
+                <div id="dialog_set">
+                    <div class="ws_set"><span>type:</span>
+                        <select v-model="shame" :disabled="is_add==false">
                             <option value="onebot11">onebot11</option>
                             <option value="olivos">olivos</option>
                             <option value="satori">satori</option>
@@ -94,68 +232,61 @@
                         </select>
                         <button @click="help_shame()">填写帮助</button>
                     </div>
-                    <div class = "ws_set" v-show = "use_tls_show"><span>tls:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
-                        <select v-model = "use_tls">
+                    <div class="ws_set" v-show="use_tls_show"><span>tls:</span>
+                        <select v-model="use_tls">
                             <option value="0">否</option>
                             <option value="1">是</option>
                         </select>
                     </div>
-
-                    <div class = "ws_set" v-show = "qq_withgroup_show"><span>支持Q群:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
-                        <select v-model = "qq_withgroup">
+                    <div class="ws_set" v-show="qq_withgroup_show"><span>支持Q群:</span>
+                        <select v-model="qq_withgroup">
                             <option value="0">否</option>
                             <option value="1">是</option>
                         </select>
                     </div>
-                    
-                  <div class = "ws_set" v-show = "ws_url_show"><span>uri:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><input id = "ws_url_id" v-model = "ws_url"></input></div>
-                  <div class = "ws_set" v-show = "token_show"><span>token:&nbsp;&nbsp;</span><input id = "token" v-model = "token"></input></div>
-
-                  <div class = "ws_set" v-show = "qq_AppID_show"><span>AppID:&nbsp;&nbsp;</span><input id = "qq_AppID" v-model = "qq_AppID"></input></div>
-                  <div class = "ws_set" v-show = "qq_AppSecret_show"><span>AppSecret:&nbsp;&nbsp;</span><input id = "qq_AppSecret" v-model = "qq_AppSecret"></input></div>
-                  <div class = "ws_set" v-show = "qq_Token_show"><span>Token:&nbsp;&nbsp;</span><input id = "qq_Token" v-model = "qq_Token"></input></div>
-
-                  <div class = "ws_set" v-show = "kook_Token_show"><span>Token:&nbsp;&nbsp;</span><input id = "kook_Token" v-model = "kook_Token"></input></div>
-                  <div class = "ws_set" v-show = "telegram_Token_show"><span>Token:&nbsp;&nbsp;</span><input id = "telegram_Token" v-model = "telegram_Token"></input></div>
-                  <div class = "ws_set" v-show = "telegram_Proxy_show"><span>Proxy:&nbsp;&nbsp;</span><input id = "telegram_Proxy" v-model = "telegram_Proxy"></input></div>
-
-                  <div class = "ws_set" v-show = "email_username_show"><span>邮箱地址:&nbsp;&nbsp;</span><input id = "email_username" v-model = "email_username"></input></div>
-                  <div class = "ws_set" v-show = "email_password_show"><span>邮箱密码:&nbsp;&nbsp;</span><input id = "email_password" v-model = "email_password"></input></div>
-                  <div class = "ws_set" v-show = "imap_server_show"><span>IMAP服务器:&nbsp;&nbsp;</span><input id = "imap_server" v-model = "imap_server"></input></div>
-                  <div class = "ws_set" v-show = "imap_port_show"><span>IMAP端口号:&nbsp;&nbsp;</span><input id = "imap_port" v-model = "imap_port"></input></div>
-                  <div class = "ws_set" v-show = "imap_ssl_show"><span>IMAP使用SSL:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
-                    <select v-model = "imap_ssl">
-                        <option value="0">否</option>
-                        <option value="1">是</option>
-                    </select>
-                  </div>
-                  <div class = "ws_set" v-show = "smtp_server_show"><span>SMTP服务器:&nbsp;&nbsp;</span><input id = "smtp_server" v-model = "smtp_server"></input></div>
-                  <div class = "ws_set" v-show = "smtp_port_show"><span>SMTP端口号:&nbsp;&nbsp;</span><input id = "smtp_port" v-model = "smtp_port"></input></div>
-                  <div class = "ws_set" v-show = "smtp_ssl_show"><span>SMTP使用SSL:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span>
-                    <select v-model = "smtp_ssl">
-                        <option value="0">否</option>
-                        <option value="1">是</option>
-                    </select>
-                  </div>
-
-                  
-                  <form method="dialog">
-                    <button @click="dialog_ok">确定</button>
-                    <button @click="dialog_cancel">取消</button>
-                  </form>
+                    <div class="ws_set" v-show="ws_url_show"><span>uri:</span><input id="ws_url_id" v-model="ws_url"></div>
+                    <div class="ws_set" v-show="token_show"><span>token:</span><input id="token" v-model="token"></div>
+                    <div class="ws_set" v-show="qq_AppID_show"><span>AppID:</span><input id="qq_AppID" v-model="qq_AppID"></div>
+                    <div class="ws_set" v-show="qq_AppSecret_show"><span>AppSecret:</span><input id="qq_AppSecret" v-model="qq_AppSecret"></div>
+                    <div class="ws_set" v-show="qq_Token_show"><span>Token:</span><input id="qq_Token" v-model="qq_Token"></div>
+                    <div class="ws_set" v-show="kook_Token_show"><span>Token:</span><input id="kook_Token" v-model="kook_Token"></div>
+                    <div class="ws_set" v-show="telegram_Token_show"><span>Token:</span><input id="telegram_Token" v-model="telegram_Token"></div>
+                    <div class="ws_set" v-show="telegram_Proxy_show"><span>Proxy:</span><input id="telegram_Proxy" v-model="telegram_Proxy"></div>
+                    <div class="ws_set" v-show="email_username_show"><span>邮箱地址:</span><input id="email_username" v-model="email_username"></div>
+                    <div class="ws_set" v-show="email_password_show"><span>邮箱密码:</span><input id="email_password" v-model="email_password"></div>
+                    <div class="ws_set" v-show="imap_server_show"><span>IMAP服务器:</span><input id="imap_server" v-model="imap_server"></div>
+                    <div class="ws_set" v-show="imap_port_show"><span>IMAP端口号:</span><input id="imap_port" v-model="imap_port"></div>
+                    <div class="ws_set" v-show="imap_ssl_show"><span>IMAP使用SSL:</span>
+                        <select v-model="imap_ssl">
+                            <option value="0">否</option>
+                            <option value="1">是</option>
+                        </select>
+                    </div>
+                    <div class="ws_set" v-show="smtp_server_show"><span>SMTP服务器:</span><input id="smtp_server" v-model="smtp_server"></div>
+                    <div class="ws_set" v-show="smtp_port_show"><span>SMTP端口号:</span><input id="smtp_port" v-model="smtp_port"></div>
+                    <div class="ws_set" v-show="smtp_ssl_show"><span>SMTP使用SSL:</span>
+                        <select v-model="smtp_ssl">
+                            <option value="0">否</option>
+                            <option value="1">是</option>
+                        </select>
+                    </div>
+                    <form method="dialog">
+                        <button @click="dialog_ok">确定</button>
+                        <button @click="dialog_cancel">取消</button>
+                    </form>
                 </div>
             </dialog>
             <h1>连接平台协议</h1>
-            <div id = "show">
+            <div id="show">
                 <div v-for="(url,index) in ws_urls" @click="select_name_index=index" :class="{name_active:index==select_name_index}">
                     {{ url }}
                 </div>
             </div>
-            <div id = "foot">
-                <button id = "add" @click="add_endpoint()">新增</button>
-                <button id = "del" @click="del_endpoint()">删除</button>
-                <button id = "edit" @click="edit_endpoint()">编辑</button>
-                <button id = "save" @click="save_endpoint()">保存</button>
+            <div id="foot">
+                <button id="add" @click="add_endpoint()">新增</button>
+                <button id="del" @click="del_endpoint()">删除</button>
+                <button id="edit" @click="edit_endpoint()">编辑</button>
+                <button id="save" @click="save_endpoint()">保存</button>
             </div>
         </div>
         <script>
@@ -163,166 +294,181 @@
             createApp({
                 data() {
                     return {
-                        is_add:true,
+                        is_add: true,
                         select_name_index: -1,
-                        ws_urls : [],
-                        ws_url:"",
-                        token:"",
-                        shame:"onebot11",
-                        use_tls:"0",
-                        qq_AppID:"",
-                        qq_AppSecret:"",
-                        qq_Token:"",
-                        qq_withgroup:"0",
-                        kook_Token:"",
-                        telegram_Token:"",
-                        telegram_Proxy:"",
-                        email_username:"",
-                        email_password:"",
-                        imap_server:"",
-                        imap_port:993,
-                        imap_ssl:"1",
-                        smtp_server:"",
-                        smtp_port:587,
-                        smtp_ssl:"1",
-                        shame_helps:{
-                            "onebot11":"onebot11示例uri: \nws://127.0.0.1:5700\nws://127.0.0.1:5700?access_token=77156\nwss://127.0.0.1:5700",
-                            "olivos":"olivos示例uri:（注意:通常情况下您不应该手动设置这个）\n127.0.0.1:1123",
-                            "satori":"satori\ntls：是否使用https/wss，通常情况下选择否\nuri:127.0.0.1:8080/v1\ntoken：通常情况下保持空，除非您使用了satori的token验证",
-                            "qqguild_private":"不会吧不会吧不会有人不知道怎么填吧",
-                            "qqguild_public":"不会吧不会吧不会有人不知道怎么填吧\n如果你没有Q群权限，请不要选支持Q群\n接收消息时将会自动去除第一个at和at后紧跟的空格以及空格后紧跟的/",
-                            "kook":"不会吧不会吧不会有人不知道怎么填吧",
-                            "email":"小常识：\n99%的情况下，IMAP的端口号为993，SMTP的端口号为587，SSL都选择是。",
-                            "telegram":"Proxy支持http代理，如`http://127.0.0.1:7890`",
+                        ws_urls: [],
+                        ws_url: "",
+                        token: "",
+                        shame: "onebot11",
+                        use_tls: "0",
+                        qq_AppID: "",
+                        qq_AppSecret: "",
+                        qq_Token: "",
+                        qq_withgroup: "0",
+                        kook_Token: "",
+                        telegram_Token: "",
+                        telegram_Proxy: "",
+                        email_username: "",
+                        email_password: "",
+                        imap_server: "",
+                        imap_port: 993,
+                        imap_ssl: "1",
+                        smtp_server: "",
+                        smtp_port: 587,
+                        smtp_ssl: "1",
+                        shame_helps: {
+                            "onebot11": "onebot11示例uri: \nws://127.0.0.1:5700\nws://127.0.0.1:5700?access_token=77156\nwss://127.0.0.1:5700",
+                            "olivos": "olivos示例uri:（注意:通常情况下您不应该手动设置这个）\n127.0.0.1:1123",
+                            "satori": "satori\ntls：是否使用https/wss，通常情况下选择否\nuri:127.0.0.1:8080/v1\ntoken：通常情况下保持空，除非您使用了satori的token验证",
+                            "qqguild_private": "不会吧不会吧不会有人不知道怎么填吧",
+                            "qqguild_public": "不会吧不会吧不会有人不知道怎么填吧\n如果你没有Q群权限，请不要选支持Q群\n接收消息时将会自动去除第一个at和at后紧跟的空格以及空格后紧跟的/",
+                            "kook": "不会吧不会吧不会有人不知道怎么填吧",
+                            "email": "小常识：\n99%的情况下，IMAP的端口号为993，SMTP的端口号为587，SSL都选择是。",
+                            "telegram": "Proxy支持http代理，如`http://127.0.0.1:7890`",
                         }
                     }
                 },
-                computed:{
-                    token_show(){
-                        if(this.shame == "satori"){
+                computed: {
+                    token_show() {
+                        if (this.shame == "satori") {
                             return true;
                         }
                         return false
                     },
-                    ws_url_show(){
-                        if(this.shame == "satori" || this.shame == "onebot11" || this.shame == "olivos"){
+                    ws_url_show() {
+                        if (this.shame == "satori" || this.shame == "onebot11" || this.shame == "olivos") {
                             return true;
                         }
                         return false;
                     },
-                    use_tls_show(){
-                        if(this.shame == "satori"){
+                    use_tls_show() {
+                        if (this.shame == "satori") {
                             return true;
                         }
                         return false
                     },
-                    qq_withgroup_show(){
-                        if(this.shame == "qqguild_public"){
+                    qq_withgroup_show() {
+                        if (this.shame == "qqguild_public") {
                             return true;
                         }
                         return false
                     },
-                    qq_AppID_show(){
-                        if(this.shame == "qqguild_private" || this.shame == "qqguild_public"){
+                    qq_AppID_show() {
+                        if (this.shame == "qqguild_private" || this.shame == "qqguild_public") {
                             return true;
                         }
                         return false;
                     },
-                    qq_AppSecret_show(){
-                        if(this.shame == "qqguild_private" || this.shame == "qqguild_public"){
+                    qq_AppSecret_show() {
+                        if (this.shame == "qqguild_private" || this.shame == "qqguild_public") {
                             return true;
                         }
                         return false;
                     },
-                    qq_Token_show(){
-                        if(this.shame == "qqguild_private" || this.shame == "qqguild_public"){
+                    qq_Token_show() {
+                        if (this.shame == "qqguild_private" || this.shame == "qqguild_public") {
                             return true;
                         }
                         return false;
                     },
-                    kook_Token_show(){
-                        if(this.shame == "kook"){
+                    kook_Token_show() {
+                        if (this.shame == "kook") {
                             return true;
                         }
                         return false;
                     },
-                    email_username_show(){
-                        if(this.shame == "email"){
+                    email_username_show() {
+                        if (this.shame == "email") {
                             return true;
                         }
                         return false;
                     },
-                    email_password_show(){
-                        if(this.shame == "email"){
+                    email_password_show() {
+                        if (this.shame == "email") {
                             return true;
                         }
                         return false;
                     },
-                    imap_server_show(){
-                        if(this.shame == "email"){
+                    imap_server_show() {
+                        if (this.shame == "email") {
                             return true;
                         }
                         return false;
                     },
-                    imap_port_show(){
-                        if(this.shame == "email"){
+                    imap_port_show() {
+                        if (this.shame == "email") {
                             return true;
                         }
                         return false;
                     },
-                    imap_ssl_show(){
-                        if(this.shame == "email"){
+                    imap_ssl_show() {
+                        if (this.shame == "email") {
                             return true;
                         }
                         return false;
                     },
-                    smtp_server_show(){
-                        if(this.shame == "email"){
+                    smtp_server_show() {
+                        if (this.shame == "email") {
                             return true;
                         }
                         return false;
                     },
-                    smtp_port_show(){
-                        if(this.shame == "email"){
+                    smtp_port_show() {
+                        if (this.shame == "email") {
                             return true;
                         }
                         return false;
                     },
-                    smtp_ssl_show(){
-                        if(this.shame == "email"){
+                    smtp_ssl_show() {
+                        if (this.shame == "email") {
                             return true;
                         }
                         return false;
                     },
-                    telegram_Token_show(){
-                        if(this.shame == "telegram"){
+                    telegram_Token_show() {
+                        if (this.shame == "telegram") {
                             return true;
                         }
                         return false;
                     },
-                    telegram_Proxy_show(){
-                        if(this.shame == "telegram"){
+                    telegram_Proxy_show() {
+                        if (this.shame == "telegram") {
                             return true;
                         }
                         return false;
                     },
                 },
-                mounted () {
+                mounted() {
                     axios
-                    .get("/get_config")
-                    .then(
-                    res => {
-                        // console.log(res)
-                        let ret = res.data["data"];
-                        this.ws_urls = ret["ws_urls"]
-                        console.log(this.ws_urls)
-                    })
-                    .catch(function (error) {
-                        console.log(error);
-                    });
+                        .get("/get_config")
+                        .then(
+                            res => {
+                                // console.log(res)
+                                let ret = res.data["data"];
+                                this.ws_urls = ret["ws_urls"]
+                                console.log(this.ws_urls)
+                            })
+                        .catch(function (error) {
+                            console.log(error);
+                        });
                 },
                 methods: {
-                    help_shame(){
+                    showNotification(message, type) {
+                        const notification = document.getElementById('notification');
+                        const messageEl = document.getElementById('notification-message');
+                        
+                        notification.className = 'notification ' + type;
+                        messageEl.textContent = message;
+                        
+                        // Show notification
+                        setTimeout(() => notification.classList.add('show'), 100);
+                        
+                        // Hide notification after 3 seconds
+                        setTimeout(() => {
+                            notification.classList.remove('show');
+                        }, 3000);
+                    },
+                    help_shame() {
                         alert(this.shame_helps[this.shame])
                     },
                     add_endpoint(event) {
@@ -348,54 +494,54 @@
                         document.getElementById('favDialog').showModal();
                     },
                     edit_endpoint(event) {
-                        if(this.select_name_index != -1){
+                        if (this.select_name_index != -1) {
                             raw_url = this.ws_urls[this.select_name_index]
-                            if(raw_url.startsWith("satori://")){
+                            if (raw_url.startsWith("satori://")) {
                                 jsobj = JSON.parse(raw_url.slice(9))
                                 this.ws_url = jsobj["uri"]
                                 this.token = jsobj["token"]
-                                this.use_tls = jsobj["use_tls"]?"1":"0"
+                                this.use_tls = jsobj["use_tls"] ? "1" : "0"
                                 this.shame = "satori"
-                            }else if(raw_url.startsWith("ovo://")){
+                            } else if (raw_url.startsWith("ovo://")) {
                                 this.ws_url = raw_url.slice(6)
                                 this.shame = "olivos"
                             }
-                            else if(raw_url.startsWith("qqguild_private://")){
+                            else if (raw_url.startsWith("qqguild_private://")) {
                                 jsobj = JSON.parse(raw_url.slice(18))
                                 this.qq_AppID = jsobj["AppID"]
                                 this.qq_AppSecret = jsobj["AppSecret"]
                                 this.qq_Token = jsobj["Token"]
                                 this.shame = "qqguild_private"
-                            }else if(raw_url.startsWith("qqguild_public://")){
+                            } else if (raw_url.startsWith("qqguild_public://")) {
                                 jsobj = JSON.parse(raw_url.slice(17))
                                 this.qq_AppID = jsobj["AppID"]
                                 this.qq_AppSecret = jsobj["AppSecret"]
                                 this.qq_Token = jsobj["Token"]
                                 this.shame = "qqguild_public"
-                                this.qq_withgroup = jsobj["qq_withgroup"]?"1":"0"
-                            }else if(raw_url.startsWith("kook://")){
+                                this.qq_withgroup = jsobj["qq_withgroup"] ? "1" : "0"
+                            } else if (raw_url.startsWith("kook://")) {
                                 jsobj = JSON.parse(raw_url.slice(7))
                                 this.kook_Token = jsobj["Token"]
                                 this.shame = "kook"
-                            }else if(raw_url.startsWith("telegram://")){
+                            } else if (raw_url.startsWith("telegram://")) {
                                 jsobj = JSON.parse(raw_url.slice(11))
                                 this.telegram_Token = jsobj["Token"]
                                 this.telegram_Proxy = jsobj["Proxy"]
                                 this.shame = "telegram"
                             }
-                            else if(raw_url.startsWith("email://")){
+                            else if (raw_url.startsWith("email://")) {
                                 jsobj = JSON.parse(raw_url.slice(8))
                                 this.email_username = jsobj["username"]
                                 this.email_password = jsobj["password"]
                                 this.imap_port = jsobj["imap_port"].toString()
                                 this.imap_server = jsobj["imap_server"]
-                                this.imap_ssl = jsobj["imap_ssl"]?"1":"0"
+                                this.imap_ssl = jsobj["imap_ssl"] ? "1" : "0"
                                 this.smtp_port = jsobj["smtp_port"].toString()
                                 this.smtp_server = jsobj["smtp_server"]
-                                this.smtp_ssl = jsobj["smtp_ssl"]?"1":"0"
+                                this.smtp_ssl = jsobj["smtp_ssl"] ? "1" : "0"
                                 this.shame = "email"
                             }
-                            else{
+                            else {
                                 this.ws_url = this.ws_urls[this.select_name_index]
                                 this.shame = "onebot11"
                             }
@@ -405,82 +551,82 @@
                     },
                     save_endpoint(event) {
                         axios
-                        .post("/set_ws_urls",this.ws_urls)
-                        .then(function (res){
-                            if(res.data['retcode'] == 0){
-                                alert("保存成功")
-                            }else {
-                                alert("保存失败")
-                            }
-                        })
-                        .catch(function (error) {
-                            console.log(error);
-                            alert("保存失败")
-                        });
+                            .post("/set_ws_urls", this.ws_urls)
+                            .then(res => {
+                                if (res.data['retcode'] == 0) {
+                                    this.showNotification("保存成功", "success");
+                                } else {
+                                    this.showNotification("保存失败", "error");
+                                }
+                            })
+                            .catch(error => {
+                                console.log(error);
+                                this.showNotification("保存失败", "error");
+                            });
                     },
                     del_endpoint(event) {
-                        if(this.select_name_index != -1){
-                            this.ws_urls.splice(this.select_name_index,1);
+                        if (this.select_name_index != -1) {
+                            this.ws_urls.splice(this.select_name_index, 1);
                             this.select_name_index -= 1;
                         }
                     },
                     make_ws_url() {
-                        if(this.shame == "onebot11"){
-                            return  this.ws_url
-                        }else if(this.shame == "olivos"){
-                            return  "ovo://" + this.ws_url
-                        }else if(this.shame == "satori"){
+                        if (this.shame == "onebot11") {
+                            return this.ws_url
+                        } else if (this.shame == "olivos") {
+                            return "ovo://" + this.ws_url
+                        } else if (this.shame == "satori") {
                             json_dat = {
-                                "uri":this.ws_url,
-                                "token":this.token,
-                                "use_tls":(this.use_tls == "1")?true:false
+                                "uri": this.ws_url,
+                                "token": this.token,
+                                "use_tls": (this.use_tls == "1") ? true : false
                             };
-                            return  "satori://" + JSON.stringify(json_dat)
-                        }else if(this.shame == "qqguild_private"){
+                            return "satori://" + JSON.stringify(json_dat)
+                        } else if (this.shame == "qqguild_private") {
                             json_dat = {
-                                "AppID":this.qq_AppID,
-                                "AppSecret":this.qq_AppSecret,
-                                "Token":this.qq_Token
+                                "AppID": this.qq_AppID,
+                                "AppSecret": this.qq_AppSecret,
+                                "Token": this.qq_Token
                             };
-                            return  "qqguild_private://" + JSON.stringify(json_dat)
-                        }else if(this.shame == "qqguild_public"){
+                            return "qqguild_private://" + JSON.stringify(json_dat)
+                        } else if (this.shame == "qqguild_public") {
                             json_dat = {
-                                "AppID":this.qq_AppID,
-                                "AppSecret":this.qq_AppSecret,
-                                "Token":this.qq_Token,
-                                "qq_withgroup":(this.qq_withgroup == "1")?true:false
+                                "AppID": this.qq_AppID,
+                                "AppSecret": this.qq_AppSecret,
+                                "Token": this.qq_Token,
+                                "qq_withgroup": (this.qq_withgroup == "1") ? true : false
                             };
-                            return  "qqguild_public://" + JSON.stringify(json_dat)
-                        }else if(this.shame == "kook"){
+                            return "qqguild_public://" + JSON.stringify(json_dat)
+                        } else if (this.shame == "kook") {
                             json_dat = {
-                                "Token":this.kook_Token,
+                                "Token": this.kook_Token,
                             };
-                            return  "kook://" + JSON.stringify(json_dat)
-                        }else if(this.shame == "telegram"){
+                            return "kook://" + JSON.stringify(json_dat)
+                        } else if (this.shame == "telegram") {
                             json_dat = {
-                                "Token":this.telegram_Token,
-                                "Proxy":this.telegram_Proxy
+                                "Token": this.telegram_Token,
+                                "Proxy": this.telegram_Proxy
                             };
-                            return  "telegram://" + JSON.stringify(json_dat)
+                            return "telegram://" + JSON.stringify(json_dat)
                         }
-                        else if(this.shame == "email"){
+                        else if (this.shame == "email") {
                             json_dat = {
-                                "username":this.email_username,
-                                "password":this.email_password,
-                                "imap_server":this.imap_server,
-                                "imap_port":parseInt(this.imap_port, 10),
-                                "imap_ssl":(this.imap_ssl == "1")?true:false,
-                                "smtp_server":this.smtp_server,
-                                "smtp_port":parseInt(this.smtp_port, 10),
-                                "smtp_ssl":(this.smtp_ssl == "1")?true:false,
+                                "username": this.email_username,
+                                "password": this.email_password,
+                                "imap_server": this.imap_server,
+                                "imap_port": parseInt(this.imap_port, 10),
+                                "imap_ssl": (this.imap_ssl == "1") ? true : false,
+                                "smtp_server": this.smtp_server,
+                                "smtp_port": parseInt(this.smtp_port, 10),
+                                "smtp_ssl": (this.smtp_ssl == "1") ? true : false,
                             };
-                            return  "email://" + JSON.stringify(json_dat)
+                            return "email://" + JSON.stringify(json_dat)
                         }
                     },
                     dialog_ok(event) {
-                        if(this.is_add){
+                        if (this.is_add) {
                             this.ws_urls.push(this.make_ws_url())
-                        }else{
+                        } else {
                             this.ws_urls[this.select_name_index] = this.make_ws_url();
                         }
                     },
