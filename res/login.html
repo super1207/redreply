@@ -2,17 +2,83 @@
 <html lang="zh-CN">
 
 <head>
-   <meta charset="UTF-8">
-   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   <title>红色问答登录</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>红色问答登录</title>
+    <style>
+        html, body {
+            width: 100%;
+            height: 100%;
+            margin: 0;
+            background: #fff0f5;
+            font-family: "Comic Sans MS", cursive, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .login-container {
+            background: #fff5f8;
+            border: 3px solid #ffd1dc;
+            border-radius: 20px;
+            box-shadow: 0 8px 30px rgba(255,105,180,0.3);
+            padding: 2em;
+            text-align: center;
+            width: 300px;
+        }
+        .login-container h1 {
+            color: #ff69b4;
+            font-size: 2em;
+            margin-bottom: 1em;
+        }
+        .login-container label {
+            color: #ff69b4;
+            font-size: 1.1em;
+        }
+        .login-container input[type="password"] {
+            border: 3px solid #ffd1dc;
+            border-radius: 15px;
+            padding: 0.8em;
+            margin: 0.5em 0;
+            width: 100%;
+            box-sizing: border-box;
+            outline: none;
+            transition: all 0.3s ease;
+            font-size: 1em;
+            background: rgba(255,255,255,0.9);
+        }
+        .login-container input[type="password"]:focus {
+            border-color: #ff69b4;
+            box-shadow: 0 0 15px rgba(255,105,180,0.3);
+        }
+        .login-container input[type="submit"] {
+            border: none;
+            border-radius: 25px;
+            padding: 0.8em 1.5em;
+            background: #ff69b4;
+            color: white;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 1.1em;
+            box-shadow: 0 4px 15px rgba(255,105,180,0.2);
+            margin-top: 1em;
+        }
+        .login-container input[type="submit"]:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255,105,180,0.4);
+        }
+    </style>
 </head>
 
 <body>
-   <form action="/login" method="post">
-      UserName: <span>Administrator</span><br />
-      Password: <input type="password" name="password">
-      <input type="submit">
-   </form>
+    <div class="login-container">
+        <h1>红色问答登录</h1>
+        <form action="/login" method="post">
+            <label>UserName: <span>Administrator</span></label><br />
+            <label>Password:</label><br />
+            <input type="password" name="password"><br />
+            <input type="submit" value="登录">
+        </form>
+    </div>
 </body>
 
 </html>
