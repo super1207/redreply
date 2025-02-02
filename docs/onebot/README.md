@@ -7,7 +7,7 @@
 注：
 
 红色问答目前直接支持的平台为：
-onebot11、olivos、satori、qq频道私区域(qqguild_private)、qq频道(qqguild_public)/群(qqgroup_public)公域。
+onebot11、olivos、satori、qq频道私区域(qqguild_private)、qq频道(qqguild_public)/群(qqgroup_public)公域、邮件、kook、telegram。
 
 间接支持**几乎所有聊天平台**
 
@@ -19,7 +19,7 @@ websocket地址：`ws://localhost:[redport]:/onebot/[机器人平台]/[机器人
 
 如：`ws://localhost:1207/onebot/onebot11/1875159423`
 
-当只有一个平台一个账号时，可以简写为(不推荐)：
+当只有一个平台一个账号时，可以简写为(不推荐,没有测试过)：
 
 `ws://127.0.0.1:1207/onebot`
 
