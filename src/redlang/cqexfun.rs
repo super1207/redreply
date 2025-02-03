@@ -470,11 +470,13 @@ pub fn init_cq_ex_fun_map() {
             let emoji: char = emojis[0];
             emoji_num = emoji as i32;
         }
+        let group_id = self_t.get_exmap("群ID");
         let send_json = serde_json::json!({
             "action":"set_msg_emoji_like",
             "params":{
                 "message_id": *message_id,
                 "emoji_id": emoji_num.to_string(),
+                "group_id": *group_id
             }
         });
         let self_id = self_t.get_exmap("机器人ID");

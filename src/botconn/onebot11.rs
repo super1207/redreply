@@ -171,6 +171,36 @@ impl OneBot11Connect {
         Ok(())
     }
 
+    async fn deal_set_msg_emoji_like(&self,json: &mut serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let platform = self.get_platform().await?;
+        if platform == "lagrange"{
+            let params = json.get_mut("params").ok_or("params is none")?;
+            let group_id = read_json_str(params, "group_id");
+            let code = read_json_str(params, "emoji_id");
+            params["code"] = serde_json::json!(code);
+            params["group_id"] = serde_json::json!(group_id.parse::<u64>()?);
+            params["is_add"] = serde_json::Value::Bool(true);
+            params.as_object_mut().ok_or("params is not object")?.remove("emoji_id");
+            json["action"] = serde_json::json!("set_group_reaction");
+        } else if platform == "cqhttp" {
+            let params = json.get_mut("params").ok_or("params is none")?;
+            let code = read_json_str(params, "emoji_id");
+            params["icon_id"] = serde_json::json!(code);
+            params["is_add"] = serde_json::Value::Bool(true);
+            if code.len() >= 4 {
+                params["icon_type"] = serde_json::json!(2);
+            } else {
+                params["icon_type"] = serde_json::json!(1);
+            }
+            params.as_object_mut().ok_or("params is not object")?.remove("emoji_id");
+            json["action"] = serde_json::json!("set_group_reaction");
+        }
+        else if platform == "napcat" || platform == "llonebot"  {
+            // do nothing
+        }
+        Ok(())
+    }
+
     pub async fn get_platform(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let read_platform = self.real_platform.read().unwrap().to_owned();
         if read_platform == None {
@@ -488,6 +518,7 @@ impl BotConnectTrait for OneBot11Connect {
             is_add_avatar = true;
         }
 
+
         if action == "send_msg" || action == "send_group_msg" || action == "send_private_msg" {
             let message = json["params"].get_mut("message").ok_or("not found message segment")?;
             if message.is_string() {
@@ -529,7 +560,9 @@ impl BotConnectTrait for OneBot11Connect {
                 });
                 return Ok(ret_json);
             }
-        }
+        } else if action == "set_msg_emoji_like" {
+            self.deal_set_msg_emoji_like(json).await?;
+        } 
 
         let (tx_ay, mut rx_ay) =  tokio::sync::mpsc::channel::<serde_json::Value>(1);
         G_ECHO_MAP.write().await.insert(echo.clone(), tx_ay);
