@@ -50,63 +50,87 @@ fn get_script_info2<'a>(script_json:&'a serde_json::Value) -> Result<(&'a str,&'
     return Ok((keyword,cffs,code,ppfs,name,pkg_name));
 }
 
+// 负责cron触发
 fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
-    
+    // 获得当前时间（单位为秒）
+    let now_time = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)?
+        .as_secs() as i64;
 
-    // 获得当前时间
-    let now_time = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs() as i64;
-    
-    // 获得当前时间与上一次时间之间经过的时间
-    let mut to_deal_time: Vec<i64> = vec![];
-    {
+    // 使用上一次处理时间作为基准，并更新为当前时间，同时处理系统时间倒流的情况
+    // 如果时间倒流在30秒以内，则不重新触发已经执行过的 cron；如果超过30秒，则补偿触发
+    let (baseline, trigger_threshold) = {
         let mut last_time_lk = G_LAST_RUN_TIME.lock()?;
-        if last_time_lk.is_none() {
-            to_deal_time.push(now_time);
-        }else if now_time > last_time_lk.unwrap() {
-            for i in ((*last_time_lk).unwrap()) .. now_time{
-                to_deal_time.push(i);
+        if let Some(prev_time) = *last_time_lk {
+            if now_time < prev_time {
+                let diff = prev_time - now_time;
+                if diff > 30 {
+                    cq_add_log_w(&format!("检测到时间大幅倒流 ({} 秒)，进行补偿触发", diff)).unwrap();
+                    let baseline = now_time;
+                    let trigger_threshold = prev_time;
+                    *last_time_lk = Some(prev_time);
+                    (baseline, trigger_threshold)
+                } else {
+                    cq_add_log_w(&format!("检测到时间小幅倒流 ({} 秒)，不补偿触发", diff)).unwrap();
+                    let baseline = prev_time;
+                    let trigger_threshold = now_time;
+                    *last_time_lk = Some(prev_time);
+                    (baseline, trigger_threshold)
+                }
+            } else {
+                let baseline = prev_time;
+                let trigger_threshold = now_time;
+                *last_time_lk = Some(now_time);
+                (baseline, trigger_threshold)
             }
+        } else {
+            *last_time_lk = Some(now_time);
+            (now_time, now_time)
         }
-        (*last_time_lk) =  Some(now_time);
-    }
+    };
 
     let script_json = read_code_cache()?;
-    for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
-        let (keyword,cffs,code,name,pkg_name) = get_script_info(&script_json[i])?;
+    for i in 0..script_json
+        .as_array()
+        .ok_or("script.json文件不是数组格式")?
+        .len()
+    {
+        let (keyword, cffs, code, name, pkg_name) = get_script_info(&script_json[i])?;
         if cffs == "CRON定时器" {
             let schedule = <cron::Schedule as std::str::FromStr>::from_str(&keyword)?;
-            for timestamp in to_deal_time.clone() {
-                let datetime_rst = chrono::prelude::Local.timestamp_opt(timestamp, 0);
-                if let chrono::LocalResult::Single(data) = datetime_rst {
-                    // 获得以指定时间为基准，定时器下一次触发的时间
-                    let mut timestamp_vec:Vec<i64> = vec![];
-                    for datetime in schedule.after(&data).take(1) {
-                        timestamp_vec.push(datetime.timestamp());
-                    }
-                    if timestamp_vec.len() != 0 {
-                        let dst_time = timestamp_vec[0] as i64;
-                        // 如果下一次触发时间在当前时间之前，则触发
-                        if dst_time <= now_time {
-                            let pkg_name_t = pkg_name.to_string();
-                            let name_t = name.to_string();
-                            let code_t = code.to_string();
-                            thread::spawn(move ||{
-                                let mut rl = crate::redlang::RedLang::new();
-                                rl.pkg_name = pkg_name_t;
-                                rl.script_name = name_t;
-                                if let Err(err) = crate::cqevent::do_script(&mut rl,&code_t,"normal",false) {
-                                    cq_add_log_w(&format!("{}",err)).unwrap();
-                                }
-                            });
+
+            // 以上次处理时间为基准，获取在这段时间内是否有触发时间
+            let dt_baseline = chrono::Local.timestamp_opt(baseline, 0)
+                .single()
+                .ok_or("Invalid baseline timestamp")?;
+            let mut upcoming = schedule.after(&dt_baseline);
+
+            // 持续触发期间内所有调度点
+            while let Some(next_datetime) = upcoming.next() {
+                if next_datetime.timestamp() <= trigger_threshold {
+                    // 触发任务，连续触发多个漏掉的调度点
+                    let pkg_name_t = pkg_name.to_string();
+                    let name_t = name.to_string();
+                    let code_t = code.to_string();
+                    thread::spawn(move || {
+                        let mut rl = crate::redlang::RedLang::new();
+                        rl.pkg_name = pkg_name_t;
+                        rl.script_name = name_t;
+                        if let Err(err) = crate::cqevent::do_script(&mut rl, &code_t, "normal", false) {
+                            cq_add_log_w(&format!("{}", err)).unwrap();
                         }
-                    }
+                    });
+                    // 不退出循环，继续检测是否有下一个漏掉的调度点
+                } else {
+                    break;
                 }
             }
-        }      
+        }
     }
     Ok(0)
 }
 
+// 负责延迟触发
 fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
     let now_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis() as i64;
     let mut run_vec = vec![];
