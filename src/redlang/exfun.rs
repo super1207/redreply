@@ -3581,6 +3581,9 @@ def red_out(sw):
         return Ok(Some(ret));
     });
     add_fun(vec!["执行频率"],|self_t,params|{
+
+        self_t.set_coremap("剩余次数", &0.to_string())?;
+
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let sql_file = app_dir + "reddat.db";
         let sql_file = crate::mytool::path_to_os_str(&sql_file);
@@ -3623,6 +3626,7 @@ def red_out(sw):
                     can_run = true;
                     let value = format!("{tm13}-{times}");
                     conn.execute("REPLACE INTO RUN_FREQ_TABLE (KEY,VALUE) VALUES (?,?)", [key,value])?;
+                    self_t.set_coremap("剩余次数", &times.to_string())?;
                 } else {
                     // 没过期
                     if r_times != 0 {
@@ -3631,8 +3635,10 @@ def red_out(sw):
                         let r_times = r_times - 1;
                         let value = format!("{start_time}-{r_times}");
                         conn.execute("REPLACE INTO RUN_FREQ_TABLE (KEY,VALUE) VALUES (?,?)", [key,value])?;
+                        self_t.set_coremap("剩余次数", &r_times.to_string())?;
                     } else {
                         // 不能执行
+                        self_t.set_coremap("剩余次数", &0.to_string())?;
                         can_run = false;
                     }
                 }
@@ -3641,6 +3647,7 @@ def red_out(sw):
                 can_run = true;
                 let value = format!("{tm13}-{times}");
                 conn.execute("REPLACE INTO RUN_FREQ_TABLE (KEY,VALUE) VALUES (?,?)", [key,value])?;
+                self_t.set_coremap("剩余次数", &times.to_string())?;
             }
         }
         if !can_run {
@@ -3648,6 +3655,13 @@ def red_out(sw):
             return Ok(Some(self_t.get_param(params, 3)?));
         }
         return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["剩余次数"],|self_t,_params|{
+        let count = self_t.get_coremap("剩余次数")?;
+        if count == "" {
+            return Ok(Some("0".to_string()));
+        }
+        Ok(Some(count))
     });
     add_fun(vec!["设置延迟触发"],|self_t,params|{
         // 【设置延迟触发@关键词@时间@传递数据】
