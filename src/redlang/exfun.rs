@@ -3814,7 +3814,56 @@ def red_out(sw):
         let out2 = retvec.iter().map(|x|x.as_str()).collect::<Vec<&str>>();
         Ok(Some(self_t.build_arr(out2)))
     });
-    
+    add_fun(vec!["计数"],|self_t,params|{
+        let content = self_t.get_param(params, 0)?;
+        let ele = self_t.get_param(params, 1)?;
+
+        let tp = self_t.get_type(&content)?;
+        let count = if tp == "文本" {
+            let mut pos = 0;
+            let mut text_count = 0;
+            while let Some(found) = content[pos..].find(&ele) {
+                text_count += 1;
+                pos += found + ele.len();
+            }
+            text_count
+        } else if tp == "字节集" {
+            let bin_content = RedLang::parse_bin(&self_t.bin_pool, &content)?;
+            let bin_ele = RedLang::parse_bin(&self_t.bin_pool, &ele)?;
+            let mut bin_count = 0;
+            let mut pos = 0;
+            while pos + bin_ele.len() <= bin_content.len() {
+                if bin_content[pos..pos+bin_ele.len()] == bin_ele[..] {
+                    bin_count += 1;
+                    pos += bin_ele.len();
+                } else {
+                    pos += 1;
+                }
+            }
+            bin_count
+        } else if tp == "数组" {
+            let arr_content = RedLang::parse_arr(&content)?;
+            let arr_ele;
+            if ele.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
+                arr_ele = get_raw_data(self_t, ele)?;
+            } else {
+                arr_ele = ele;
+            }
+            arr_content.iter().filter(|x| {
+                if x.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
+                    match get_raw_data(self_t, (*x).to_string()) {
+                        Ok(raw_data) => arr_ele == raw_data,
+                        Err(_) => false
+                    }
+                } else {
+                    arr_ele == (*x).to_string()
+                }
+            }).count()
+        } else {
+            return Err(RedLang::make_err(&format!("计数不支持的类型:{}",tp)));
+        };
+        Ok(Some(count.to_string()))
+    });
 }
 
 
