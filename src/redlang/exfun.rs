@@ -3820,6 +3820,9 @@ def red_out(sw):
 
         let tp = self_t.get_type(&content)?;
         let count = if tp == "文本" {
+            if ele == "" {
+                return Err(RedLang::make_err("计数的元素不能为空"));
+            }
             let mut pos = 0;
             let mut text_count = 0;
             while let Some(found) = content[pos..].find(&ele) {
@@ -3830,6 +3833,9 @@ def red_out(sw):
         } else if tp == "字节集" {
             let bin_content = RedLang::parse_bin(&self_t.bin_pool, &content)?;
             let bin_ele = RedLang::parse_bin(&self_t.bin_pool, &ele)?;
+            if bin_ele.len() == 0 {
+                return Err(RedLang::make_err("计数的元素不能为空"));
+            }
             let mut bin_count = 0;
             let mut pos = 0;
             while pos + bin_ele.len() <= bin_content.len() {
