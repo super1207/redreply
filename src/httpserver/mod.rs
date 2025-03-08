@@ -1211,7 +1211,13 @@ pub fn init_http_server() -> Result<()> {
     let addr1 = web_uri.parse::<std::net::SocketAddr>().unwrap();
 
     RT_PTR.spawn(async move {
-        let socket = tokio::net::TcpSocket::new_v4().unwrap();
+
+        let socket;
+        if addr1.is_ipv4() {
+            socket = tokio::net::TcpSocket::new_v4().unwrap();
+        } else {
+            socket = tokio::net::TcpSocket::new_v6().unwrap();
+        } 
         
         // win 下不需要设置这个
         #[cfg(not(windows))]

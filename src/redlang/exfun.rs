@@ -3426,7 +3426,7 @@ def red_out(sw):
     add_fun(vec!["github代理"],|_self_t,_params|{
         let config = crate::read_config().map_err(|_|"无法读取配置文件")?;
         let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
-        let url = format!("http://127.0.0.1:{}/5350b16b-b5e2-425a-bba1-d33d92813ab4/",port);
+        let url = format!("http://localhost:{}/5350b16b-b5e2-425a-bba1-d33d92813ab4/",port);
         return Ok(Some(url));
     });
     add_fun(vec!["运行lua"],|self_t,params|{

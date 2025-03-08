@@ -326,7 +326,7 @@ pub fn get_local_python_uid() -> Result<String,Box<dyn std::error::Error>> {
 pub fn show_ctrl_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
     let config = read_config()?;
     let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
-    opener::open(format!("http://127.0.0.1:{port}"))?;
+    opener::open(format!("http://localhost:{port}"))?;
     Ok(())
 }
 
