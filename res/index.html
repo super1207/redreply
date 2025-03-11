@@ -451,20 +451,25 @@
                     del_pkg(){
                         if(this.select_name == "默认包") {
                             alert("不可以删除默认包")
+                            this.downdown()
+                            return
                         }
-                        axios.post("/del_one_pkg",{
-                                "pkg_name":this.select_name,
-                            })
-                            .then((res) => {
-                                if(res.data['retcode'] == 0){
-                                    this.flash_pkg_name()
-                                }else {
+                        let is_delete = confirm("是否真的要删除包 " + this.select_name + "?")
+                        if(is_delete){
+                            axios.post("/del_one_pkg",{
+                                    "pkg_name":this.select_name,
+                                })
+                                .then((res) => {
+                                    if(res.data['retcode'] == 0){
+                                        this.flash_pkg_name()
+                                    }else {
+                                        alert("failed")
+                                    }
+                                })
+                                .catch(function (error) {
                                     alert("failed")
-                                }
-                            })
-                            .catch(function (error) {
-                                alert("failed")
-                            });
+                                });
+                        }
                         this.downdown()
                     },
                     rename_pkg(){
