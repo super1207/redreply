@@ -1768,7 +1768,7 @@ pub fn init_core_fun_map() {
         
         // 如果旧命令不存在，则什么也不做
         let exret = get_core_cmd(&old_cmd, pkg_name);
-        if exret == None {
+        if exret.is_none() {
             return Ok(Some("".to_string()));
         }
         // 构造新命令

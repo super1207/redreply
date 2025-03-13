@@ -1435,6 +1435,16 @@ pub fn read_code_cache() -> Result<serde_json::Value, Box<dyn std::error::Error>
     Ok((*wk).clone())
 }
 
+pub fn backup_code() -> Result<(),Box<dyn std::error::Error>> {
+    let wk = G_SCRIPT.read()?;
+    let backup_path = cq_get_app_directory1().map_err(|err|err.to_string())? + "backup";
+    std::fs::create_dir_all(&backup_path)?;
+    let time_str = chrono::Local::now().format("%Y-%m-%d-%H-%M-%S").to_string();
+    let backup_file = backup_path + &std::path::MAIN_SEPARATOR.to_string() + &time_str + ".json";
+    fs::write(backup_file,(*wk).to_string())?;
+    Ok(())
+}
+
 pub fn read_one_pkg(pkg_name:&str) -> Result<Vec<serde_json::Value>, Box<dyn std::error::Error>> {
     let wk = G_SCRIPT.read()?;
     let mut ret_vec = vec![];

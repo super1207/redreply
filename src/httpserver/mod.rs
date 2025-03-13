@@ -71,6 +71,28 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
             },
         }
     }
+    else if url_path == "/backup_code" {
+        if !can_write {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        match crate::backup_code() {
+            Ok(code) => {
+                let ret = json!({
+                    "retcode":0,
+                    "data":code
+                });
+                let mut res = hyper::Response::new(full(ret.to_string()));
+                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+                Ok(res)
+            },
+            Err(err) => {
+                let mut res = hyper::Response::new(full(err.to_string()));
+                *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
+                Ok(res)
+            },
+        }
+    }
     else if url_path == "/test_cron" {
         if !can_read {
             let res = hyper::Response::new(full("api not found"));

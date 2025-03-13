@@ -287,6 +287,7 @@
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="watch_log()">日志</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="pluscenter_btn()">脚本商店</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="gobal_filter_btn()">全局过滤器</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="backup_code_btn()">备份所有脚本</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="playmusic_btn()">{{playbkmusic}}</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="other_close()">取消</button>
                 </div>  
@@ -425,6 +426,21 @@
                     },
                     gobal_filter_btn() {
                         window.open("/gobal_filter.html","_blank");
+                    },
+                    backup_code_btn() {
+                        axios.post("/backup_code",{
+                            "pkg_name":this.select_name,
+                        })
+                        .then((res) => {
+                            if(res.data['retcode'] == 0){
+                                alert("备份完成，您可以在backup目录中查看")
+                            }else {
+                                alert("备份失败")
+                            }
+                        })
+                        .catch(function (error) {
+                            alert("备份失败，网络错误")
+                        });
                     },
                     playmusic_btn(){
                         let audio = this.$refs.mybackmusic
