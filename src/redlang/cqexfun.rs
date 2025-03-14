@@ -333,10 +333,19 @@ pub fn init_cq_ex_fun_map() {
         }
         return Ok(Some(ret));
     });
+    add_fun(vec!["设置图片参数"],|self_t,params|{
+        let key = self_t.get_param(params, 0)?;
+        let val = self_t.get_param(params, 1)?;
+        if key.to_uppercase() == "SUMMARY" {
+            self_t.set_exmap("图片SUMMARY", &val)?;
+        }
+        return Ok(Some("".to_string()));
+    });
     add_fun(vec!["图片"],|self_t,params|{
         let pic = self_t.get_param(params, 0)?;
         let tp = self_t.get_type(&pic)?;
         let mut ret:String = String::new();
+        let summary = self_t.get_exmap("图片SUMMARY");
         if tp == "字节集" {
             let bin = RedLang::parse_bin(&mut self_t.bin_pool,&pic)?;
             if bin.len() == 0 {
@@ -344,20 +353,38 @@ pub fn init_cq_ex_fun_map() {
                 return Ok(Some("".to_owned()));
             }
             let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
-            ret = format!("[CQ:image,file=base64://{}]",b64_str);
+            if *summary != "" {
+                ret = format!("[CQ:image,file=base64://{},summary={}]",b64_str,cq_params_encode(&*summary));
+            } else {
+                ret = format!("[CQ:image,file=base64://{},summary={}]",b64_str,cq_params_encode(&*summary));
+            }
+            
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
                 let not_use_cache = self_t.get_param(params, 1)?;
                 if  not_use_cache == "假" {
-                    ret = format!("[CQ:image,file={},cache=0]",cq_params_encode(&pic));
+                    if *summary != "" {
+                        ret = format!("[CQ:image,file={},cache=0,summary={}]",cq_params_encode(&pic),cq_params_encode(&*summary));
+                    } else {
+                        ret = format!("[CQ:image,file={},cache=0,summary={}]",cq_params_encode(&pic),cq_params_encode(&*summary));
+                    }
                 }else {
-                    ret = format!("[CQ:image,file={}]",cq_params_encode(&pic));
+                    if *summary != "" {
+                        ret = format!("[CQ:image,file={},summary={}]",cq_params_encode(&pic),cq_params_encode(&*summary));
+                    } else {
+                        ret = format!("[CQ:image,file={},summary={}]",cq_params_encode(&pic),cq_params_encode(&*summary));
+                    }
+                    
                 }
             }else{
                 let path = Path::new(&pic);
                 let bin = std::fs::read(path)?;
                 let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
-                ret = format!("[CQ:image,file=base64://{}]",b64_str);
+                if *summary != "" {
+                    ret = format!("[CQ:image,file=base64://{},summary={}]",b64_str,cq_params_encode(&*summary));
+                } else {
+                    ret = format!("[CQ:image,file=base64://{},summary={}]",b64_str,cq_params_encode(&*summary));
+                }
             }
         }
         return Ok(Some(ret));

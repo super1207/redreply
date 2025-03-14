@@ -2259,6 +2259,14 @@ CQ码**外部**的字符需要CQ转义，以上三个命令的作用可以参考
 当为http/https连接时，如果第二个参数为`假`，则不使用缓存，否则使用缓存。
 
 
+### 设置图片参数
+
+【设置图片参数@<font color="red">key</font>@<font color="red">val</font>】
+
+在【图片】命令之前使用，在QQ等聊天平台，可以给图片附加一些特殊参数。目前<font color="red">key</font>支持summary。
+
+示例：【设置图片参数@summary@[涩图]】
+
 ### 语音
 
 
