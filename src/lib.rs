@@ -1038,13 +1038,17 @@ fn get_all_pkg_code() -> Result<Vec<serde_json::Value>, Box<dyn std::error::Erro
             }
         }
         
-        let script = fs::read_to_string(&script_path)?;
+        let content = fs::read_to_string(&script_path)?;
+
+        // 去除BOM头(如果有的话)
+        let script = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
+        
         let mut pkg_script_vec:Vec<serde_json::Value>;
-        match serde_json::from_str(&script) {
+        match serde_json::from_str(script) {
             Ok(v) => pkg_script_vec = v,
             Err(err) => {
-                let sc = script_path.as_os_str().to_string_lossy();
-                return Err(format!("解析脚本文件`{sc}`失败(不是合法的json)：{err:?}").into());
+            let sc = script_path.as_os_str().to_string_lossy();
+            return Err(format!("解析脚本文件`{sc}`失败(不是合法的json)：{err:?}").into());
             },
         };
         for js in &mut pkg_script_vec {
