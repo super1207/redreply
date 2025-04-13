@@ -52,10 +52,12 @@ fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result<(), 
             set_normal_evt_info(&mut rl, root)?;
             let key_vec = keyword.split(":").collect::<Vec<&str>>();
             let mut is_match = true;
-            for j in 0..key_vec.len() {
-                if &key_vec.get(j).unwrap_or(&"").trim() != evt_flag.get(j).unwrap_or(&""){
-                    is_match = false;
-                    break;
+            if !(key_vec.len() == 1 && key_vec[0].trim() == "") { // 如果关键字为空，则直接匹配
+                for j in 0..key_vec.len() {
+                    if &key_vec.get(j).unwrap_or(&"").trim() != evt_flag.get(j).unwrap_or(&""){
+                        is_match = false;
+                        break;
+                    }
                 }
             }
             if is_match {

@@ -72,9 +72,10 @@
             <option value="内容过滤">内容过滤</option>
             <option value="延迟触发">延迟触发</option>
         </select>
-        <div style="display: flex;" v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div">
+        <div style="display: flex; align-items: center;" v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div"> <!-- Added align-items: center for vertical alignment -->
             <span>关键词：</span>
-            <input id="script_keyword" v-model="script_keyword"  style="flex: 1 0 auto;"></input>
+            <input id="script_keyword" v-model="script_keyword" :style="script_cffs == '网络触发' && script_ppfs == '完全匹配' ? { flex: '1' } : { flex: '1 0 auto' }"></input>
+            <button v-if="script_cffs == '网络触发' && script_ppfs == '完全匹配'" @click="openWebTriggerUrl()" :style="{ flex: '1', marginLeft: '0.5em' }"><b>打开网页</b></button>
         </div>
         <select id="script_ppfs" v-model="script_ppfs" v-if="(script_cffs == '群聊触发') || (script_cffs == '私聊触发') || (script_cffs == '群、私聊触发') || (script_cffs == '网络触发') || (script_cffs == '延迟触发')" style="margin-top: 0.2em;height: 1.5em;cursor: pointer;">
             <option disabled value="匹配方式">匹配方式</option>
@@ -291,6 +292,21 @@
             //拖曳相關--end---↑↑--
             cron(){
                 window.open("/crontool.html", "_blank");
+            },
+            openWebTriggerUrl() {
+                const protocol = window.location.protocol; // Gets "http:" or "https:"
+                const host = window.location.host; // Gets "hostname:port"
+                const keyword = this.script_keyword || ""; // Use empty string if keyword is empty
+                let urlPath;
+
+                if (this.pkg_name === "默认包") {
+                    urlPath = `/user/${keyword}`;
+                } else {
+                    urlPath = `/user/${encodeURIComponent(this.pkg_name)}${keyword}`;
+                }
+
+                const fullUrl = `${protocol}//${host}${urlPath}`; // Use the detected protocol
+                window.open(fullUrl, '_blank');
             },
             save(index){
                 this.pkg_codes[this.select_index]["content"]["code"] = this.$refs.child.getText()
