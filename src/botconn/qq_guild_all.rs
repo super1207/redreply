@@ -107,8 +107,6 @@ fn make_qq_text(text:&str) -> String {
 
 //  决定要发到哪里
 pub fn get_msg_type(self_t:&SelfData,params:&serde_json::Value,passive_id:&str) -> Result<MsgTargetType, Box<dyn std::error::Error + Send + Sync>> {
-    
-    
     if passive_id == "" {
         return Ok(MsgTargetType::NoDeal);
     }
@@ -130,12 +128,11 @@ pub fn get_msg_type(self_t:&SelfData,params:&serde_json::Value,passive_id:&str) 
     // 根据群ID反查群组ID
     let mut has_guild_id = false;
     let lk = id_event_map_t.read().unwrap();
-    for (_key,(_tm,event)) in &*lk {
+    if let Some((_,event)) = lk.get(passive_id) {
         let d = read_json_or_default(event, "d",&serde_json::Value::Null);
         let guild_id = read_json_str(d, "guild_id");
         if guild_id != "" {
             has_guild_id = true;
-            break;
         }
     }
 
