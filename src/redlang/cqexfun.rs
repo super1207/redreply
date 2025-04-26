@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::BTreeMap, fs, path::{Path, PathBuf}, rc::Rc, str::FromStr, sync::Arc, thread, time::SystemTime, vec};
 
-use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, read_json_str}, pkg_can_run, read_code_cache, redlang::{exfun::get_raw_data, get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, status::{add_send_group_msg, add_send_private_msg}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID, RT_PTR};
+use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, json_to_cq_str, read_json_str}, pkg_can_run, read_code_cache, redlang::{exfun::get_raw_data, get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, status::{add_send_group_msg, add_send_private_msg}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID, RT_PTR};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -805,6 +805,13 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["当前消息"],|self_t,_params|{
         let msg = self_t.get_exmap("当前消息");
+        if *msg == "" {
+            let raw_data = self_t.get_exmap("原始事件");
+            let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+            if let Ok(message) = json_to_cq_str(&raw_json) {
+                return Ok(Some(message));
+            }
+        }
         return Ok(Some(msg.to_string()));
     });
     add_fun(vec!["输入流"],|self_t,params|{
