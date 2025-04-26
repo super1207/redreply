@@ -228,19 +228,15 @@ async fn send_group_msg(self_t:&SelfData,json:&serde_json::Value,passive_id:&str
     // 获得群id
     let group_id = read_json_str(&params, "group_id");
 
-    if msg_target_type == MsgTargetType::GuildZd || msg_target_type == MsgTargetType::GuildBd { // 频道
-        let qq_msg_node = cq_msg_to_qq(&self_t,&message,MsgSrcType::GuildPub,&group_id).await?;
-
-        if msg_target_type == MsgTargetType::GuildBd { // 被动消息
-            // 获得消息ID
-            let reply_id = get_reply_id(&self_t, passive_id)?;
-            if reply_id.raw_ids.len() > 0 {
-                let to_reply_id = &reply_id.raw_ids[0];
-                return send_qqguild_msg(self_t, &group_id, &to_reply_id,passive_id,qq_msg_node,reply_id.is_event).await;
-            }
-        }else { // 主动消息
-            return send_qqguild_msg(self_t, &group_id, "","",qq_msg_node,false).await;
+    if msg_target_type == MsgTargetType::Guild { // 频道
+        let qq_msg_node = cq_msg_to_qq(&self_t,&message,MsgSrcType::Guild,&group_id).await?;
+        // 获得消息ID
+        let reply_id = get_reply_id(&self_t, passive_id)?;
+        if reply_id.raw_ids.len() > 0 {
+            let to_reply_id = &reply_id.raw_ids[0];
+            return send_qqguild_msg(self_t, &group_id, &to_reply_id,passive_id,qq_msg_node,reply_id.is_event).await;
         }
+
     }
     return Ok(serde_json::json!({
         "retcode":1404,

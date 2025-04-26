@@ -260,6 +260,42 @@ async fn conv_event(self_t:&SelfData,root:serde_json::Value) -> Result<(), Box<d
                 crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
             }
         });
+    } else if tp == "C2C_MESSAGE_CREATE" {
+        let d = root.get("d").ok_or("No d")?;
+        let tm_str = read_json_str(&d, "timestamp");
+        let tm = chrono::DateTime::parse_from_rfc3339(&tm_str)?.timestamp();
+        let content = read_json_str(&d, "content");
+        let user = read_json_obj_or_null(&d, "author");
+        let user_id = read_json_str(&user, "id");
+        let avatar = read_json_str(&user, "avatar");
+        let nickname =  read_json_str(&user, "username");
+        let cq_msg_t = qq_content_to_cqstr(&self_t.bot_id,&self_id,&content)?;
+        let cq_msg = cq_msg_t + &deal_attachments(&d)?;
+        let cq_msg = deal_message_reference(&d,&self_t.id_event_map)? + &cq_msg;
+        let  event_json = serde_json::json!({
+            "time":tm,
+            "self_id":self_id,
+            "platform":"qqgroup_public",
+            "post_type":"message",
+            "message_type":"private",
+            "sub_type":"friend",
+            "message_id":event_id,
+            "user_id":user_id,
+            "message":cq_msg,
+            "raw_message":content,
+            "font":0,
+            "sender":{
+                "user_id":user_id,
+                "nickname":nickname,
+                "remark":nickname,
+                "avatar":avatar
+            }
+        });
+        tokio::task::spawn_blocking(move ||{
+            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
+                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+            }
+        });
     }
     Ok(())
 }
@@ -409,6 +445,93 @@ async fn send_qqgroup_msg(self_t:&SelfData,group_id:&str,to_reply_id:&str,passiv
 }
 
 
+pub async fn send_qqpri_msg(self_t:&SelfData,message:&serde_json::Value,passive_id:&str,user_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    let reply_id = get_reply_id(self_t,passive_id)?;
+    if reply_id.raw_ids.len() > 0 {
+        let to_reply_id = &reply_id.raw_ids[0];
+        // 获取已经发送的消息的msg_seq
+        let mut msg_seq = get_msg_seq(self_t,passive_id)?;
+        if msg_seq >= 5 {
+            return None.ok_or("回复消息已经超过5条，无法继续回复")?;
+        }
+        let mut id = "".to_owned();
+        let qq_msg_node = cq_msg_to_qq(&self_t,&message,MsgSrcType::QQPri,&user_id).await?;
+        if qq_msg_node.content != "" { // 先发送文本
+            msg_seq += 1;
+            let json_data = serde_json::json!({
+                "content":qq_msg_node.content,
+                "msg_type":0,
+                "msg_seq":msg_seq,
+                "msg_id":to_reply_id
+            });
+            crate::cqapi::cq_add_log(format!("发送qq private API数据(`{}`):{}",user_id,json_data.to_string()).as_str()).unwrap();
+            let api_ret = do_qq_json_post(self_t,&format!("/v2/users/{user_id}/messages"),json_data).await?;
+            crate::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret.to_string()).as_str()).unwrap();
+            // 构造消息id
+            if id != "" {
+                id += "|";
+            }
+            id += &api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
+            set_msg_seq(self_t,passive_id,msg_seq)?;
+        }
+        // 发送markdown
+        if qq_msg_node.markdown != None {
+            msg_seq += 1;
+            let mut json_data = serde_json::json!(qq_msg_node.markdown);
+            let obj = json_data.as_object_mut().ok_or("markdown err")?;
+            obj.insert("msg_type".to_owned(), serde_json::json!(2));
+            obj.insert("msg_seq".to_owned(), serde_json::json!(msg_seq));
+            obj.insert("msg_id".to_owned(), serde_json::json!(to_reply_id));
+            crate::cqapi::cq_add_log(format!("发送qq private API数据(`{}`):{}",user_id,json_data.to_string()).as_str()).unwrap();
+            let api_ret = do_qq_json_post(self_t,&format!("/v2/users/{user_id}/messages"),json_data).await?;
+            crate::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret.to_string()).as_str()).unwrap();
+            // 构造消息id
+            if id != "" {
+                id += "|";
+            }
+            id += &api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
+            set_msg_seq(self_t,passive_id,msg_seq)?;
+        }
+        // 再发送图片、语音、视频、文件
+        for img_info in &qq_msg_node.img_infos {
+            msg_seq += 1;
+            let json_data = serde_json::json!({
+                "content":" ", // 文档要求发送一个空格
+                "msg_type":7, // 富文本
+                "msg_seq":msg_seq,
+                "msg_id":to_reply_id,
+                "media":{
+                    "file_info":img_info
+                }
+            });
+            crate::cqapi::cq_add_log(format!("发送qq private API数据(`{}`):{}",user_id,json_data.to_string()).as_str()).unwrap();
+            let api_ret = do_qq_json_post(self_t,&format!("/v2/users/{user_id}/messages"),json_data).await?;
+            crate::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret.to_string()).as_str()).unwrap();
+            // 构造消息id
+            if id != "" {
+                id += "|";
+            }
+            id += api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?;
+            set_msg_seq(self_t,passive_id,msg_seq)?;
+        }
+        let event_id = set_event_id(self_t,&serde_json::json!({"t":"send_private_msg","d":{"id":id,"channel_id":user_id}}),5 * 60)?;
+        return Ok(serde_json::json!({
+            "retcode":0,
+            "status":"ok",
+            "data":{
+                "message_id":event_id
+            }
+        }));
+    }
+    return Ok(serde_json::json!({
+        "retcode":1404,
+        "status":"failed",
+        "message":"can't get reply_id",
+        "data":{}
+    }));
+}
+
+
 
 
 
@@ -430,32 +553,21 @@ async fn send_group_msg(self_t:&SelfData,json:&serde_json::Value,passive_id:&str
     // 获得群id
     let group_id = read_json_str(&params, "group_id");
 
-    if msg_target_type == MsgTargetType::GroupBd || msg_target_type == MsgTargetType::GroupZd { // 群
-        let qq_msg_node = cq_msg_to_qq(&self_t,&message,MsgSrcType::GroupPub,&group_id).await?;
-        if msg_target_type == MsgTargetType::GroupBd { // 被动消息
-            // 获得消息ID
-            let reply_id = get_reply_id(&self_t, passive_id)?;
-            if reply_id.raw_ids.len() > 0 && !reply_id.is_event { // QQ群不支持对事件进行回复
-                let to_reply_id = &reply_id.raw_ids[0];
-                return send_qqgroup_msg(self_t, &group_id, &to_reply_id,passive_id,qq_msg_node).await;
-            }
-        }
-        else { // 主动消息
-            return send_qqgroup_msg(self_t, &group_id, "","",qq_msg_node).await;
+    if msg_target_type == MsgTargetType::QQGroup { // 群
+        let qq_msg_node = cq_msg_to_qq(&self_t,&message,MsgSrcType::QQGroup,&group_id).await?;
+        let reply_id = get_reply_id(&self_t, passive_id)?;
+        if reply_id.raw_ids.len() > 0 && !reply_id.is_event { // QQ群不支持对事件进行回复
+            let to_reply_id = &reply_id.raw_ids[0];
+            return send_qqgroup_msg(self_t, &group_id, &to_reply_id,passive_id,qq_msg_node).await;
         }
     } 
-    else if msg_target_type == MsgTargetType::GuildZd || msg_target_type == MsgTargetType::GuildBd { // 频道
-        let qq_msg_node = cq_msg_to_qq(&self_t,&message,MsgSrcType::GuildPub,&group_id).await?;
-
-        if msg_target_type == MsgTargetType::GuildBd { // 被动消息
-            // 获得消息ID
-            let reply_id = get_reply_id(&self_t, passive_id)?;
-            if reply_id.raw_ids.len() > 0 {
-                let to_reply_id = &reply_id.raw_ids[0];
-                return send_qqguild_msg(self_t, &group_id, &to_reply_id,passive_id,qq_msg_node,reply_id.is_event).await;
-            }
-        }else { // 主动消息
-            return send_qqguild_msg(self_t, &group_id, "","",qq_msg_node,false).await;
+    else if msg_target_type == MsgTargetType::Guild { // 频道
+        let qq_msg_node = cq_msg_to_qq(&self_t,&message,MsgSrcType::Guild,&group_id).await?;
+        // 获得消息ID
+        let reply_id = get_reply_id(&self_t, passive_id)?;
+        if reply_id.raw_ids.len() > 0 {
+            let to_reply_id = &reply_id.raw_ids[0];
+            return send_qqguild_msg(self_t, &group_id, &to_reply_id,passive_id,qq_msg_node,reply_id.is_event).await;
         }
     }
     return Ok(serde_json::json!({
