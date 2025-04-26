@@ -85,6 +85,9 @@ impl OneBot11Connect {
                 let tp = read_json_str(&message[0], "type");
                 if tp == "poke" {
                     ret_id = read_json_str(&message[0]["data"], "id");
+                    if ret_id == "" {
+                        ret_id = read_json_str(&message[0]["data"], "qq");
+                    }
                 }
             }
         }
