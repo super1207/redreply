@@ -72,26 +72,35 @@ impl OneBot11Connect {
         }
     }
 
-    async fn get_poke_segment(&self,json: &mut serde_json::Value) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    async fn get_poke_segment(&self, json: &mut serde_json::Value) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
         let platform = self.get_platform().await?;
         if !(platform == "lagrange" || platform == "llonebot" || platform == "napcat") {
-            return Ok("".to_owned());
+            return Ok(vec![]);
         }
-        let mut ret_id = "".to_owned();
+        let mut ret_ids = Vec::new();
         let params = json.get_mut("params").ok_or("params is none")?;
         if let Some(message) = params.get_mut("message") {
             let msg_arr = message.as_array_mut().ok_or("message is not array")?;
-            if msg_arr.len() == 1 {
-                let tp = read_json_str(&message[0], "type");
+            // 收集poke id并移除poke元素
+            let mut i = 0;
+            while i < msg_arr.len() {
+                let tp = read_json_str(&msg_arr[i], "type");
                 if tp == "poke" {
-                    ret_id = read_json_str(&message[0]["data"], "id");
+                    let mut ret_id = read_json_str(&msg_arr[i]["data"], "id");
                     if ret_id == "" {
-                        ret_id = read_json_str(&message[0]["data"], "qq");
+                        ret_id = read_json_str(&msg_arr[i]["data"], "qq");
                     }
+                    if !ret_id.is_empty() {
+                        ret_ids.push(ret_id);
+                    }
+                    msg_arr.remove(i);
+                    // 不递增i，因为移除了当前元素
+                } else {
+                    i += 1;
                 }
             }
         }
-        Ok(ret_id)
+        Ok(ret_ids)
     }
 
     async fn deal_music_segment(&self,json: &mut serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -218,7 +227,7 @@ impl OneBot11Connect {
             if platform.contains("lagrange") {
                 *self.real_platform.write().unwrap() = Some("lagrange".to_string());
             } else if platform.contains("llonebot") {
-                *self.real_platform.write().unwrap() = Some("lagrange".to_string());
+                *self.real_platform.write().unwrap() = Some("llonebot".to_string());
             } else if platform.contains("cqhttp") {
                 *self.real_platform.write().unwrap() = Some("cqhttp".to_string());
             } else if platform.contains("napcat") {
@@ -523,36 +532,41 @@ impl BotConnectTrait for OneBot11Connect {
 
 
         if action == "send_msg" || action == "send_group_msg" || action == "send_private_msg" {
-            let message = json["params"].get_mut("message").ok_or("not found message segment")?;
-            if message.is_string() {
-                let message_arr = str_msg_to_arr(message).map_err(|x|{
-                    format!("str_msg_to_arr err:{:?}",x)
-                })?;
-                *message = message_arr;
+            {
+                let message = json["params"].get_mut("message").ok_or("not found message segment")?;
+                if message.is_string() {
+                    let message_arr = str_msg_to_arr(message).map_err(|x|{
+                        format!("str_msg_to_arr err:{:?}",x)
+                    })?;
+                    *message = message_arr;
+                }
             }
             self.deal_music_segment(json).await?;
             let to_poke = self.get_poke_segment(json).await?;
-            if to_poke != "" {
+            if !to_poke.is_empty() {
                 let group_id = read_json_str(&json["params"], "group_id");
-                if group_id != "" {
-                    let group_id = &json["params"]["group_id"];
-                    let mut to_send = serde_json::json!({
-                        "action":"group_poke",
-                        "params":{
-                            "group_id": group_id,
-                            "user_id": to_poke.parse::<u64>()?
-                        }
-                    });
-                    self.call_api("", "", "", &mut to_send).await?;
-                }else {
-                    let mut to_send = serde_json::json!({
-                        "action":"friend_poke",
-                        "params":{
-                            "user_id": to_poke.parse::<u64>()?
-                        }
-                    });
-                    self.call_api("", "", "", &mut to_send).await?;
+                for poke_id in to_poke.iter() {
+                    if group_id != "" {
+                        let group_id = &json["params"]["group_id"];
+                        let mut to_send = serde_json::json!({
+                            "action":"group_poke",
+                            "params":{
+                                "group_id": group_id,
+                                "user_id": poke_id.parse::<u64>()?
+                            }
+                        });
+                        self.call_api("", "", "", &mut to_send).await?;
+                    }else {
+                        let mut to_send = serde_json::json!({
+                            "action":"friend_poke",
+                            "params":{
+                                "user_id": poke_id.parse::<u64>()?
+                            }
+                        });
+                        self.call_api("", "", "", &mut to_send).await?;
+                    }
                 }
+                
                 let ret_json = serde_json::json!({
                     "status":"ok",
                     "retcode":0,
@@ -561,7 +575,14 @@ impl BotConnectTrait for OneBot11Connect {
                     },
                     "echo":echo
                 });
-                return Ok(ret_json);
+                // 如果 message里面已经没有其它元素了，就直接返回，否则就继续发送
+                let message = json["params"].get_mut("message").ok_or("not found message segment")?;
+                if message.is_array() {
+                    let arr = message.as_array().unwrap();
+                    if arr.len() == 0 {
+                        return Ok(ret_json);
+                    }
+                }
             }
         } else if action == "set_msg_emoji_like" {
             self.deal_set_msg_emoji_like(json).await?;
