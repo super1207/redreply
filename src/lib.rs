@@ -44,6 +44,7 @@ mod libload;
 mod pluscenter;
 mod onebot11s;
 mod status;
+mod mqttclient;
 
 #[macro_use]
 extern crate lazy_static; 
@@ -563,9 +564,12 @@ pub fn initialize() -> i32 {
     redlang::exfun::init_ex_fun_map();
     redlang::init_core_fun_map();
 
+    // 释放文件
     if let Err(err) = release_file(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
+
+    // 初始化HTTP服务器
     if let Err(err) = init_http_server(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
@@ -582,16 +586,26 @@ pub fn initialize() -> i32 {
         cq_add_log_w(&err.to_string()).unwrap();
     }
     
+    // 初始化red脚本
     if let Err(err) = init_code(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
 
+    // 初始化bot适配器
     if let Err(err) = botconn::do_conn_event(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
+    
+    // 初始化定时器
     if let Err(err) = cronevent::do_cron_event(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
+
+    // 初始化MQTT客户端
+    if let Err(err) = mqttclient::init_mqttclient(){
+        cq_add_log_w(&err.to_string()).unwrap();
+    }
+
     cq_add_log("资源初始化完成！").unwrap();
 
     
