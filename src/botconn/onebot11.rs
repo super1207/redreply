@@ -596,16 +596,9 @@ impl BotConnectTrait for OneBot11Connect {
             });
         });
 
-        // 处理日志
-        {
-            let js_str = json.to_string();
-            let out_str = js_str.get(0..2000);
-            if out_str.is_some() {
-                crate::cqapi::cq_add_log(format!("发送数据:{}...", out_str.unwrap()).as_str()).unwrap();
-            }else {
-                crate::cqapi::cq_add_log(format!("发送数据:{}", json.to_string()).as_str()).unwrap();
-            }
-        }
+
+        crate::cqapi::cq_add_log(format!("发送数据:{}", json.to_string()).as_str()).unwrap();
+        
         self.tx.clone().ok_or("tx is none")?.send((*json).clone()).await?;
 
         tokio::select! {

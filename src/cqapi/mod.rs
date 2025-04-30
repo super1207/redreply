@@ -111,7 +111,12 @@ fn cq_add_log_t(_log_level:i32,log_msg: &str) -> Result<i32, Box<dyn std::error:
 
 // 打印日志，utf8编码
 pub fn cq_add_log(log_msg: &str) -> Result<i32, Box<dyn std::error::Error>> {
-    Ok(cq_add_log_t(0,log_msg)?)
+    let out_str = log_msg.get(0..2000);
+    if out_str.is_some() {
+        Ok(cq_add_log_t(0,&format!("{}...",out_str.unwrap()))?)
+    }else {
+        Ok(cq_add_log_t(0,log_msg)?)
+    }
 }
 
 // 打印日志，utf8编码

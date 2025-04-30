@@ -230,15 +230,7 @@ impl BotConnectTrait for OneBot115Connect {
         json_obj.insert("platform".to_string(), serde_json::to_value(&platform)?);
 
         // 处理日志
-        {
-            let js_str = json.to_string();
-            let out_str = js_str.get(0..2000);
-            if out_str.is_some() {
-                crate::cqapi::cq_add_log(format!("发送数据:{}...", out_str.unwrap()).as_str()).unwrap();
-            }else {
-                crate::cqapi::cq_add_log(format!("发送数据:{}", json.to_string()).as_str()).unwrap();
-            }
-        }
+        crate::cqapi::cq_add_log(format!("发送数据:{}", json.to_string()).as_str()).unwrap();
 
         let mut http_url = self.url.to_owned();
         http_url = http_url.replacen("ovo://", "http://", 1);
