@@ -223,6 +223,7 @@ fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Bo
     rl.set_exmap("机器人平台", &read_json_str(root,"platform"))?;
     rl.set_exmap("消息ID", &read_json_str(root,"message_id"))?;
     rl.set_exmap("消息类型", &read_json_str(root,"message_type"))?;
+    rl.set_exmap("远程MQTT客户端ID", &read_json_str(root,"mqtt_client_id"))?;
     if let Some(sender) = root.get("sender") {
         if let Some(js_v) = sender.get("nickname") {
             rl.set_exmap("发送者昵称", js_v.as_str().unwrap_or(""))?;

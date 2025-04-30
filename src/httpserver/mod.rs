@@ -913,7 +913,7 @@ async fn serve_onebot_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut
                     echo = None;
                 }
                 let ret = tokio::task::spawn_blocking(move ||{
-                    let ret = cq_call_api(&platform.clone(), &self_id.clone(), &passive_id, &root_str);
+                    let ret = cq_call_api(&platform.clone(), &self_id.clone(), &passive_id, &root_str,"");
                     let ret_red_json:serde_json::Value = serde_json::from_str(&ret).unwrap();
                     let ret_ob_json = crate::onebot11s::red_ret_to_ob(ret_red_json,echo);
                     ret_ob_json

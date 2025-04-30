@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::{httpserver::add_ws_log, G_HISTORY_LOG, RT_PTR};
+use crate::{httpserver::add_ws_log, mqttclient::call_mqtt_remote, G_HISTORY_LOG, RT_PTR};
 
 fn add_history_log(msg:&str) -> Result<(), Box<dyn std::error::Error>> {
     let mut lk = G_HISTORY_LOG.write()?;
@@ -50,7 +50,7 @@ pub fn cq_get_app_directory2() -> Result<String, Box<dyn std::error::Error + Sen
 }
 
 // 用于发送Onebot原始数据，返回OneBot原始数据，utf8编码
-pub fn cq_call_api(platform:&str,self_id:&str,passive_id:&str,json_str: &str) -> String {
+pub fn cq_call_api(platform:&str,self_id:&str,passive_id:&str,json_str: &str,remote_id:&str) -> String {
     let js_rst = serde_json::from_str(json_str);
     if let Err(err) = js_rst {
         return serde_json::json!({
@@ -60,6 +60,21 @@ pub fn cq_call_api(platform:&str,self_id:&str,passive_id:&str,json_str: &str) ->
         }).to_string();
     }
     let mut js = js_rst.unwrap();
+
+    if remote_id != "" {
+        let ret_rsp = call_mqtt_remote(platform,self_id,passive_id,js,remote_id);
+        if let Ok(ret) = ret_rsp {
+            return ret.to_string();
+        } else {
+            let err = ret_rsp.err().unwrap();
+            cq_add_log_w(&format!("调用mqtt远程失败:{:?}", err)).unwrap();
+            return serde_json::json!({
+                "retcode":-1,
+                "status":"failed",
+                "data":format!("call mqtt remote error:{:?}", err)
+            }).to_string();
+        }
+    }
     let out_str = RT_PTR.block_on(async {
         let ret = crate::botconn::call_api(platform,self_id,passive_id,&mut js).await;
         if let Ok(ret) =  ret {

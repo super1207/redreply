@@ -39,7 +39,7 @@ sevenz-rust = "0.6.1"
 jsonpath-rust = "0.7.0"
 rusttype = "0.9.3"
 # markdown = "1.0.0-alpha.7"
-reqwest = {version = "0.12.5",default-features = false,features = ["native-tls-vendored","multipart"]}
+reqwest = {version = "0.12.15",default-features = false,features = ["native-tls-vendored","multipart"]}
 time = { version = "0.3.36", features = ["formatting", "macros"] }
 # headless_chrome = {version="1.0.5",default-features = false}
 webp = "0.3.0"
@@ -73,14 +73,14 @@ lewton = "0.10.2"
 msedge-tts = {git = "https://github.com/super1207/msedge-tts"}
 
 imap = { git = "https://github.com/jonhoo/rust-imap"}
-native-tls = "0.2.12"
+native-tls = "0.2.14"
 mail-parser = "0.9.3"
 lettre = { version = "0.11",features = ["tokio1-native-tls"]}
 
 scraper = "0.20.0"
 tungstenite = "0.23.0"
 markdown = "1.0.0-alpha.21"
-rumqttc = "0.24.0"
+rumqttc = {git = "https://github.com/super1207/rumqtt"}
 
 [build-dependencies]
 embed-resource = "2.4.3"

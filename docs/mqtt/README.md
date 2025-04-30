@@ -2,7 +2,9 @@
 
 ## 概述
 
-红色问答对外公开MQTT接口，红色问答作为消息发布者。红色问答会将收到的机器人平台事件转化为类似 [onebot11](https://github.com/botuniverse/onebot-11) 格式推送。同时也会公开API调用接口，让订阅者可以调用API机器人平台的API。
+红色问答对外公开MQTT接口，红色问答作为消息发布者。红色问答会将收到的机器人平台事件转化为类似 [onebot11](https://github.com/botuniverse/onebot-11) 格式推送。同时也会公开API调用接口，让订阅者可以调用机器人平台的API。
+
+除此之外，还可以连接多个红色问答，达到共享脚本和适配器的效果。
 
 要使用此推送服务，您需要先自行准备一个支持 mqtt 5.0 的mqtt broker。
 
@@ -21,6 +23,8 @@
 `broker_username`: mqtt broker的用户名，如果没有可以不填或者填 `null`。
 
 `broker_password`: mqtt broker的密码，如果没有可以不填 `null`。
+
+`remote_clients`: 其它红色问答的 `client_id`，配置了之后，可以接收并处理其它红色问答推送的事件。如果想要处理所有远程红色问答的推送，可以写为:`"remote_clients":["+"]`。
 
 配置好后，要<strong>重启红色问答</strong>才能生效。之后，红色问答会将收到的消息和事件进行推送。
 
