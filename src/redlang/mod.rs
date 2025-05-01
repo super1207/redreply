@@ -401,6 +401,7 @@ pub struct RedLang {
     stack:VecDeque<String>,
     scriptcallstackdeep:Rc::<RefCell<usize>>, // 记录脚本调用栈的深度
     pub bin_pool:HashMap<String, RedLangBinPoolVarType>,
+    is_dealed_comment:bool, // 记录是否已经处理了注释
 }
 
 #[derive(Debug, Clone)]
@@ -1138,7 +1139,7 @@ pub fn init_core_fun_map() {
         let data = self_t.get_param(params, 0)?;
         return Ok(Some(data));
     });
-    add_fun(vec!["转文本"],|self_t,params|{
+    add_fun(vec!["转文本"],|self_t,params|{ 
         let data = self_t.get_param(params, 0)?;
         let tp = self_t.get_type(&data)?;
         fn obj_to_text(self_t:&mut RedLang,data:& str,params:&[String]) -> Result<String, Box<dyn std::error::Error>>{
@@ -1537,6 +1538,7 @@ pub fn init_core_fun_map() {
     });
     add_fun(vec!["反射执行"],|self_t,params|{
         let code = self_t.get_param(params, 0)?;
+        self_t.is_dealed_comment = false; // 反射执行仍然需要处理注释
         let ret_str = self_t.parse(&code)?;
         return Ok(Some(ret_str));
     });
@@ -1875,7 +1877,6 @@ impl RedLang {
         }
         return Arc::new("".to_string());
     }
-    #[allow(dead_code)]
     pub fn set_exmap(
         &mut self,
         key: &str,
@@ -1900,7 +1901,6 @@ let k = &*self.exmap;
             return Ok("".to_string());
         }
     }
-    #[allow(dead_code)]
     pub fn set_coremap(
         &mut self,
         key: &str,
@@ -2363,7 +2363,8 @@ impl RedLang {
             can_wrong:true,
             stack:VecDeque::new(),
             scriptcallstackdeep: Rc::new(RefCell::new(0)),
-            bin_pool:HashMap::new()
+            bin_pool:HashMap::new(),
+            is_dealed_comment:false,
         }
     }
 
@@ -2625,18 +2626,26 @@ impl RedLang {
             if i >= chs.len() {
                 break;
             }
-            if mode == 0 && chs[i] == '\\' {
-                ret.push(chs[i]);
-                i += 1;
-                ret.push(*chs.get(i).ok_or("\\ in the last position of code")?);
-
-            } else if mode == 0 && chs[i] == '#' &&  i + 1 < chs.len() && chs[i+1] == '#'{
-                mode = 1;
-            } else if  chs[i] == '\n' || chs[i] == '\r' {
-                mode = 0;
-                ret.push(chs[i]);
-            } else if mode == 0 {
-                ret.push(chs[i]);
+            if mode == 0 { // 正常模式
+                if chs[i] == '#' && i + 1 < chs.len() && chs[i+1] == '#' {
+                    // 出现连续两个#，进入注释模式
+                    mode = 1;
+                    i += 1;
+                } else if chs[i] == '\\' && i + 2 < chs.len() && chs[i+1] == '#' && chs[i+2] == '#'{
+                    // 出现一个\和连续两个#，把两个#当做普通字符输出
+                    ret.push('#');
+                    ret.push('#');
+                    i += 2;
+                } else {
+                    // 正常模式下，直接输出
+                    ret.push(chs[i]);
+                }
+            } else {
+                // 注释模式下，遇到换行符或者回车符，退出注释模式
+                if  chs[i] == '\n' || chs[i] == '\r' {
+                    mode = 0;
+                    ret.push(chs[i]);
+                }
             }
             i += 1;
         }
@@ -2647,7 +2656,7 @@ impl RedLang {
 
         let cc = &(*self.scriptcallstackdeep);
 
-        if *cc.borrow() > 200 {
+        if *cc.borrow() > 500 {
             return Err(RedLang::make_err("too deep call stack"));
         }
 
@@ -2658,8 +2667,12 @@ impl RedLang {
             *cc.borrow_mut() -= 1;
         });
 
-        // 得到utf8字符数组
-        let chs = Self::remove_comment(&input.chars().collect::<Vec<char>>())?;
+        // 移除注释
+        let mut chs = input.chars().collect::<Vec<char>>();
+        if self.is_dealed_comment == false {
+            chs = Self::remove_comment(&chs)?;
+            self.is_dealed_comment = true;
+        }
 
         // 输出
         let mut chs_out: String = String::new();
