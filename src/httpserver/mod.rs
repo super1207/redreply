@@ -752,7 +752,7 @@ async fn serve_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:tok
     
     while let Some(msg) = rx.recv().await { // 当所有tx被释放时,tx.recv会返回None
         // log::info!("recive:{}",msg);
-        write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string())).await?;
+        write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.into())).await?;
     }
     Ok(())
 }
@@ -770,7 +770,7 @@ async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await { // 当所有tx被释放时,tx.recv会返回None
             // log::info!("recive:{}",msg);
-            let rst = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string())).await;
+            let rst = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.into())).await;
             if rst.is_err() {
                 let mut lk = G_PY_HANDER.write().await;
                 (*lk) = None;
@@ -860,12 +860,12 @@ async fn serve_onebot_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut
         "sub_type":"connect"
     }).to_string();
 
-    write_half.send(hyper_tungstenite::tungstenite::Message::Text(connect_event)).await?;
+    write_half.send(hyper_tungstenite::tungstenite::Message::Text(connect_event.into())).await?;
 
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await { // 当所有tx被释放时,tx.recv会返回None
             // log::info!("recive:{}",msg);
-            let rst = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string())).await;
+            let rst = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.into())).await;
             if rst.is_err() {
                 let mut lk = G_PY_HANDER.write().await;
                 (*lk) = None;

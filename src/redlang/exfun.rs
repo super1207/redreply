@@ -3,11 +3,12 @@ use chrono::TimeZone;
 use encoding::Encoding;
 use flate2::{read::{GzDecoder, ZlibDecoder}, write::{GzEncoder, ZlibEncoder}, Compression};
 use ini::Ini;
-use jsonpath_rust::JsonPathQuery;
+use jsonpath_rust::JsonPath;
 use md5::{Md5, Digest};
 use mlua::MultiValue;
 use rusttype::Scale;
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
+use sysinfo::{ProcessRefreshKind, ProcessesToUpdate};
 use time::UtcOffset;
 use super::RedLang;
 use reqwest::header::HeaderName;
@@ -471,8 +472,8 @@ pub fn init_ex_fun_map() {
         let jsonpath = self_t.get_param(params, 1)?;
         let json_parse_out;
         if jsonpath != "" {
-            if let Ok(v) = json_data.path(&jsonpath) {
-                json_parse_out = do_json_parse(&v,&self_t.type_uuid)?;
+            if let Ok(v) = json_data.query(&jsonpath) {
+                json_parse_out = do_json_parse(&serde_json::json!(v),&self_t.type_uuid)?;
             }
             else{
                 cq_add_log_w("jsonpath解析失败").unwrap();
@@ -3322,7 +3323,7 @@ def red_out(sw):
     add_fun(vec!["CPU使用"],|_self_t,_params|{
         let mut s = sysinfo::System::new_all();
         std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
-        sysinfo::System::refresh_processes_specifics(&mut s, sysinfo::ProcessRefreshKind::everything());
+        s.refresh_processes_specifics(ProcessesToUpdate::All,true,ProcessRefreshKind::everything());
         let pid = sysinfo::Pid::from(std::process::id() as usize);
         let process = sysinfo::System::process(&s, pid).unwrap();
         return Ok(Some((sysinfo::Process::cpu_usage(process) /  sysinfo::System::cpus(&s).len() as f32).to_string()));
@@ -3454,7 +3455,7 @@ def red_out(sw):
                     return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                 };
                 let mut s_t = s_t.borrow_mut();
-                let mut red_code = "【".to_string()+red_cmd;
+                let mut red_code = "【".to_string()+&red_cmd;
                 for it in muti_params.iter().skip(1){
                     let it_t = if it.is_string() {
                         it.as_str().unwrap()
@@ -3462,7 +3463,7 @@ def red_out(sw):
                         return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                     };
                     red_code += "@";
-                    red_code += &s_t.parse_r_with_black(it_t).unwrap();
+                    red_code += &s_t.parse_r_with_black(&it_t).unwrap();
                 }
                 red_code += "】";
                 let ret_str = s_t.parse(&red_code);
@@ -3510,7 +3511,7 @@ def red_out(sw):
                     return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                 };
                 let mut s_t = s_t.borrow_mut();
-                let mut red_code = "【".to_string()+red_cmd;
+                let mut red_code = "【".to_string()+&red_cmd;
                 for it in muti_params.iter().skip(1){
                     let it_t = if it.is_string() {
                         it.as_str().unwrap()
@@ -3518,7 +3519,7 @@ def red_out(sw):
                         return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                     };
                     red_code += "@";
-                    red_code += &s_t.parse_r_with_black(it_t).unwrap();
+                    red_code += &s_t.parse_r_with_black(&it_t).unwrap();
                 }
                 red_code += "】";
                 let ret_str = s_t.parse(&red_code);

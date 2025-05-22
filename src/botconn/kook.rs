@@ -1567,7 +1567,7 @@ impl BotConnectTrait for KookConnect {
                         "sn": sn_ptr.load(std::sync::atomic::Ordering::Relaxed)
                     }).to_string();
                     // cq_add_log(&format!("发送KOOK心跳:{json_str}")).unwrap();
-                    let foo = write_halt.send(tungstenite::Message::Text(json_str)).await;
+                    let foo = write_halt.send(tungstenite::Message::Text(json_str.into())).await;
                     if foo.is_err() {
                         cq_add_log_w("发送KOOK心跳发送失败").unwrap();
                         break;
@@ -1583,7 +1583,7 @@ impl BotConnectTrait for KookConnect {
             use crate::botconn::kook::tungstenite::protocol::frame::coding::CloseCode::Normal;
             let _err = write_halt.send(tungstenite::Message::Close(Some(CloseFrame{ 
                 code: Normal, 
-                reason: std::borrow::Cow::Borrowed("byebye")
+                reason: "byebye".into()
             }))).await;
             cq_add_log_w("KOOK心跳断开").unwrap();
         });
@@ -1605,7 +1605,7 @@ impl BotConnectTrait for KookConnect {
                     Some(msg_rst) = read_halt.next() => {
                         if let Ok(raw_msg) = msg_rst {
                             let bin = raw_msg.into_data();
-                            let mut d = ZlibDecoder::new(bin.as_slice());
+                            let mut d = ZlibDecoder::new(std::io::Cursor::new(bin));
                             let mut s = String::new();
                             if let Ok(_) = d.read_to_string(&mut s) {
                                 tokio::spawn(async move {

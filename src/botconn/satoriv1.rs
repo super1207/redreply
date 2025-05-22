@@ -84,7 +84,7 @@ struct SatoriNode {
 fn pre_parse_satori_msg(html:&str) -> Result<Vec<SatoriNode>,Box<dyn std::error::Error + Send + Sync>> {
     let mut to_ret = vec![];
     let mut deep = 0;
-    for token in html5gum::Tokenizer::new(html).infallible() {
+    for Ok(token) in html5gum::Tokenizer::new(html) {
         match token {
             html5gum::Token::StartTag(tag) => {
                 let name = tag.name.0;
@@ -1061,7 +1061,7 @@ impl BotConnectTrait for Satoriv1Connect {
                 cq_add_log_w(&format!("satori心跳已断开:{url_str2}")).unwrap();
             });
             while let Some(msg) = rx_ay.recv().await {
-                let rst = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string())).await;
+                let rst = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string().into())).await;
                 if rst.is_err() {
                     break;
                 }

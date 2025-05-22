@@ -195,6 +195,21 @@ hellohellohellohellohello
 将前面入栈的内容出栈。若栈空，则返回空文本。
 
 
+### 栈顶
+
+【栈顶@<font color="red">序号</font>】
+
+查看从栈顶开始数的第<font color="red">序号</font>个元素。
+
+<font color="red">序号</font>为0代表查看栈顶元素，序号从0开始数。
+
+<font color="red">序号</font>不存在或者为空文本代表查看栈顶元素。
+
+<font color="red">序号</font>越界返回空文件。
+
+<font color="red">序号</font>应该为非负整数或者空或者不存在，否则报错。
+
+
 ### 屏蔽
 
 

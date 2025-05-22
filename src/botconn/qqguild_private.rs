@@ -465,7 +465,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                 cq_add_log_w(&format!("qqguild_private 心跳已断开:{url_str2}")).unwrap();
             });
             while let Some(msg) = rx_ay.recv().await {
-                let rst = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string())).await;
+                let rst = write_half.send(hyper_tungstenite::tungstenite::Message::Text(msg.to_string().into())).await;
                 if rst.is_err() {
                     break;
                 }

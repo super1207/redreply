@@ -431,7 +431,7 @@ impl error::Error for MyStrError {
 
 pub fn get_random() -> Result<usize, getrandom::Error> {
     let mut rand_buf = [0u8; std::mem::size_of::<usize>()];
-    getrandom::getrandom(&mut rand_buf)?;
+    getrandom::fill(&mut rand_buf)?;
     let mut num = 0usize;
     for i in 0..std::mem::size_of::<usize>() {
         num = (num << 8) + (rand_buf[i] as usize);
@@ -515,6 +515,22 @@ pub fn init_core_fun_map() {
     add_fun(vec!["出栈"],|self_t,_params|{
         let ele = self_t.stack.pop_back().unwrap_or_default();
         return Ok(Some(ele));
+    });
+    add_fun(vec!["栈顶"],|self_t,params|{
+        let index = self_t.get_param(params, 0)?;
+        if index == "" {
+            let ele = self_t.stack.back().unwrap_or(&"".to_string()).clone();
+            return Ok(Some(ele));
+        }
+        let index_num = index.parse::<usize>()?;
+        let stack = &self_t.stack;
+        let len = stack.len();
+        if len >= 1 + index_num {
+            let ele = stack.get(len - 1 - index_num).unwrap_or(&"".to_string()).clone();
+            return Ok(Some(ele));
+        } else {
+            return Ok(Some("".to_string()));
+        }
     });
     add_fun(vec!["定义变量"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;

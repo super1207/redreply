@@ -6,64 +6,64 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-fancy-regex = "0.13.0"
+fancy-regex = "0.14.0"
 encoding = "0.2.33"
-getrandom = "0.2.15"
+getrandom = "0.3.3"
 base64 = "0.22.1"
-serde_json = "1.0.121"
-serde_derive = "1.0.204"
-serde = {version = "1.0.204",features = ["derive"]}
-uuid = {version = "1.10.0",features = ["v4","fast-rng"]}
+serde_json = "1.0.140"
+serde_derive = "1.0.219"
+serde = {version = "1.0.219",features = ["derive"]}
+uuid = {version = "1.16.0",features = ["v4","fast-rng"]}
 lazy_static = "1.5.0"
-chrono = "0.4.38"
+chrono = "0.4.41"
 md-5 = "0.10.6"
 rcnb-rs = "0.1.0"
-rust-embed = {version="8.5.0",features = ["compression"]}
-image = "0.25.2"
+rust-embed = {version="8.7.2",features = ["compression"]}
+image = "0.25.6"
 imageproc = "0.25.0"
 gif = "0.13.1"
-cron = "0.12.1"
+cron = "0.15.0"
 hyper = { version = "1", features = ["full"] }
-tokio = { version = "1", features = ["full"] }
-url = "2.5.2"
-futures-util = "0.3.30"
-hyper-tungstenite = "0.14.0"
-tokio-tungstenite = { version = "0.23.1", default-features = false, features = ["native-tls-vendored"] }
+tokio = { version = "1.45.0", features = ["full"] }
+url = "2.5.4"
+futures-util = "0.3.31"
+hyper-tungstenite = "0.17.0"
+tokio-tungstenite = { version = "0.26.2", default-features = false, features = ["native-tls-vendored"] }
 scopeguard = "1.2.0"
-log = "0.4.22"
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter","time","local-time"]}
-opener = "0.7.1"
-rusqlite = {version = "0.31.0",features = ["bundled","functions"]}
+log = "0.4.27"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter","time","local-time"]}
+opener = "0.8.1"
+rusqlite = {version = "0.35.0",features = ["bundled","functions"]}
 sevenz-rust = "0.6.1"
-jsonpath-rust = "0.7.0"
+jsonpath-rust = "1.0.2"
 rusttype = "0.9.3"
 # markdown = "1.0.0-alpha.7"
 reqwest = {version = "0.12.15",default-features = false,features = ["native-tls-vendored","multipart"]}
-time = { version = "0.3.36", features = ["formatting", "macros"] }
+time = { version = "0.3.41", features = ["formatting", "macros"] }
 # headless_chrome = {version="1.0.5",default-features = false}
 webp = "0.3.0"
-sysinfo = "0.30.13"
-usvg = "0.42.0"
-resvg = { version = "0.42.0", default-features = false, features = [ "text", "raster-images"  ] }
-fontdb = { version = "0.18.0", default-features = false, features = [ "fs" ] }
-flate2 = { version = "1.0.30",default-features = false}
-zhconv = {version  = "0.3.1", features = ["opencc","compress"]}
-async-trait = "0.1.81"
-html5gum = "0.5.7"
+sysinfo = "0.35.1"
+usvg = "0.45.1"
+resvg = { version = "0.45.1", default-features = false, features = [ "text", "raster-images"  ] }
+fontdb = { version = "0.23.0", default-features = false, features = [ "fs" ] }
+flate2 = { version = "1.1.1",default-features = false}
+zhconv = {version  = "0.3.3", features = ["opencc","compress"]}
+async-trait = "0.1.88"
+html5gum = "0.7.0"
 html-escape = "0.2.13"
-libloading = "0.8.5"
-tokio-util = { version = "0.7.11", default-features = false, features = [ "io" ] }
-http-body-util = "0.1"
-hyper-util = { version = "0.1", features = ["full"] }
-bytes = "1.6.1"
-zip = "2.1.5"
+libloading = "0.8.7"
+tokio-util = { version = "0.7.15", default-features = false, features = [ "io" ] }
+http-body-util = "0.1.3"
+hyper-util = { version = "0.1.12", features = ["full"] }
+bytes = "1.10.1"
+zip = "4.0.0"
 crc64 = "2.0.0"
-headless_chrome = "1.0.15"
+headless_chrome = "1.0.17"
 path-clean = "1.0.1"
 rust-ini = "0.21.0"
-mlua = { version = "0.9.9", features = ["lua54", "vendored"] }
-ab_glyph = "0.2.28"
+mlua = { version = "0.10.3", features = ["lua54", "vendored"] }
+ab_glyph = "0.2.29"
 
 claxon = "0.4.3"
 minimp3_fixed ="0.5.4"
@@ -74,23 +74,23 @@ msedge-tts = {git = "https://github.com/super1207/msedge-tts"}
 
 imap = { git = "https://github.com/jonhoo/rust-imap"}
 native-tls = "0.2.14"
-mail-parser = "0.9.3"
-lettre = { version = "0.11",features = ["tokio1-native-tls"]}
+mail-parser = "0.11.0"
+lettre = { version = "0.11.16",features = ["tokio1-native-tls"]}
 
-scraper = "0.20.0"
-tungstenite = "0.23.0"
+scraper = "0.23.1"
+tungstenite = "0.26.2"
 markdown = "1.0.0-alpha.21"
 rumqttc = {git = "https://github.com/super1207/rumqtt",default-features = false}
 
 [build-dependencies]
-embed-resource = "2.4.3"
+embed-resource = "3.0.2"
 
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.52.0"
-xcap = "0.0.10"
+winreg = "0.55.0"
+xcap = "0.6.0"
 winconsole = "0.11.1"
-tray-icon = "0.14.3"
+tray-icon = "0.20.1"
 fltk = { version = "1.4.33"}
 
 [profile.release]
