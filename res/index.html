@@ -13,24 +13,10 @@
         <title>红色问答控制台</title>
         <link href='live2d/pio.css' rel='stylesheet' type='text/css'/>
         <style>
-            html,body {
+            html,body{
                 width: 100%;
                 height: 100%;
                 margin: 0;
-                background: #fff0f5;
-                font-family: "Comic Sans MS", cursive, sans-serif;
-                background-image: radial-gradient(#ffd1dc 1px, transparent 1px);
-                background-size: 20px 20px;
-                cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%23ff69b4"><path d="M12 2C6.47 2 2 6.47 2 12s4.47 10 10 10 10-4.47 10-10S17.53 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z"/><circle cx="12" cy="12" r="3"/></svg>') 12 12, auto;
-            }
-            button, .acard, a, [onclick], [role="button"] {
-                cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%23ff69b4"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>') 12 12, pointer;
-            }
-            input {
-                cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%23ff69b4"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>') 12 12, text;
-            }
-            dialog::backdrop {
-                cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%23ff69b4"><path d="M19 9h-2v2h2v2h-2v2h2v-2h2v2h-2v2h2v-2h2v-2h-2v-2h2v-2h-2V7h2V5h-2v2h-2V5h-2v2h2v2h-2v2h2V9zm-6 8c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2zm-4-8c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2 2 .9 2 2z"/></svg>') 12 12, move;
             }
             #app {
                 display: flex;
@@ -39,189 +25,105 @@
                 height: 100%;
             }
             .atitle {
-                margin: 1em auto;
-                text-align: center;
-                color: #ff69b4;
-                font-size: 2.2em;
-                text-shadow: 3px 3px 0 #ffd1dc;
-                transition: all 0.3s ease;
+                margin: 0.5em;
+                --offset: 10px;
+                --border-size: 2px;
+                display: block;
                 position: relative;
-                cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%23ff69b4"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>') 12 12, pointer;
+                text-align: center;
+                padding: 0.5em;
+                appearance: none;
+                border: 0;
+                background: transparent;
+                color: #e55743;
+                text-transform: uppercase;
+                letter-spacing: 0.25em;
+                outline: none;
+                cursor: pointer;
+                font-weight: bold;
+                border-radius: 0;
+                box-shadow: inset 0 0 0 var(--border-size) currentcolor;
+                transition: background 0.8s ease;
             }
-            .atitle:after {
-                content: "❤";
-                font-size: 0.5em;
+            .atitle:hover {
+                background: rgba(100, 0, 0, 0.03);
+            }
+            .atitle__horizontal, .atitle__vertical {
                 position: absolute;
-                top: -10px;
-                right: -20px;
-                color: #ff69b4;
-                animation: float 2s ease-in-out infinite;
+                top: var(--horizontal-offset, 0);
+                right: var(--vertical-offset, 0);
+                bottom: var(--horizontal-offset, 0);
+                left: var(--vertical-offset, 0);
+                transition: transform 0.8s ease;
+                will-change: transform;
             }
-            @keyframes float {
-                0%, 100% { transform: translateY(0); }
-                50% { transform: translateY(-10px); }
+            .atitle__horizontal::before, .atitle__vertical::before {
+                content: "";
+                position: absolute;
+                border: inherit;
+            }
+            .atitle__horizontal {
+                --vertical-offset: calc(var(--offset) * -1);
+                border-top: var(--border-size) solid currentcolor;
+                border-bottom: var(--border-size) solid currentcolor;
+            }
+            .atitle__horizontal::before {
+                top: calc(var(--vertical-offset) - var(--border-size));
+                bottom: calc(var(--vertical-offset) - var(--border-size));
+                left: calc(var(--vertical-offset) * -1);
+                right: calc(var(--vertical-offset) * -1);
+            }
+            .atitle:hover .atitle__horizontal {
+                transform: scaleX(0);
+            }
+            .atitle__vertical {
+                --horizontal-offset: calc(var(--offset) * -1);
+                border-left: var(--border-size) solid currentcolor;
+                border-right: var(--border-size) solid currentcolor;
+            }
+            .atitle__vertical::before {
+                top: calc(var(--horizontal-offset) * -1);
+                bottom: calc(var(--horizontal-offset) * -1);
+                left: calc(var(--horizontal-offset) - var(--border-size));
+                right: calc(var(--horizontal-offset) - var(--border-size));
+            }
+            .atitle:hover .atitle__vertical {
+                transform: scaleY(0);
             }
             .acard {
                 height: 5em;
                 width: 16em;
                 padding: 1em;
-                background-color: #fff;
-                border-radius: 20px;
-                box-shadow: 0 4px 15px rgba(255,105,180,0.2);
-                transition: all 0.3s ease;
-                border: 3px solid #ffd1dc;
-                font-size: 1.1em;
-                color: #ff69b4;
-                position: relative;
                 overflow: hidden;
-            }
-            .acard:before {
-                content: "✨";
-                position: absolute;
-                top: 5px;
-                left: 5px;
-                font-size: 0.8em;
+                background-color: #f3f5f6;
+                border-radius: 5%;
             }
             .acard:hover {
-                transform: translateY(-5px) rotate(2deg);
-                box-shadow: 0 8px 20px rgba(255,105,180,0.3);
-                background-color: #fff0f5;
-                border-color: #ff69b4;
-            }
-            #cmd_content {
-                display: flex;
-                flex: 0 0 3em;
-                padding: 1em;
-                background-color: rgba(255,255,255,0.9);
-                backdrop-filter: blur(5px);
-                box-shadow: 0 -4px 15px rgba(255,105,180,0.2);
-            }
-            #cmd_content button {
-                flex: 1 0 auto;
-                margin: 0 0.8em;
-                border: none;
-                border-radius: 25px;
-                background: linear-gradient(145deg, #ff69b4, #ff8da1);
-                color: white;
-                font-size: 1.1em;
-                transition: all 0.3s ease;
-                box-shadow: 0 4px 15px rgba(255,105,180,0.2);
-                cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="%23ff69b4"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>') 12 12, pointer;
-            }
-            #cmd_content button:hover {
-                transform: scale(1.05) translateY(-2px);
-                box-shadow: 0 6px 20px rgba(255,105,180,0.4);
-            }
-            .box {
-                width: 100%;
-                height: auto;
-                background: #fff5f8;
-                border-radius: 20px 20px 0 0;
-                box-shadow: 0 -4px 20px rgba(255,105,180,0.2);
-                border-top: 3px solid #ffd1dc;
-                display: flex;
-                flex-direction: column;
-            }
-            
-            .box .title {
-                padding: 1em;
-                text-align: center;
-                background-color: #ffd1dc;
-                color: #ff69b4;
-                font-weight: bold;
-                font-size: 1.1em;
-            }
-            
-            .box button {
-                flex: 1;
-                border: none;
-                background: #fff;
-                color: #ff69b4;
-                font-size: 1.1em;
-                padding: 1.5em;
-                transition: all 0.3s ease;
-                border-bottom: 2px solid #ffd1dc;
-            }
-            
-            .box button:last-child {
-                border-bottom: none;
-            }
-            
-            .box button:hover {
-                background: #ff69b4;
-                color: white;
-                transform: translateX(5px);
-            }
-            
-            dialog {
-                border: 3px solid #ffd1dc;
-                border-radius: 20px;
-                box-shadow: 0 8px 30px rgba(255,105,180,0.3);
-                padding: 2em;
-                background: #fff5f8;
-                animation: dialogPopIn 0.3s ease-out;
-            }
-
-            @keyframes dialogPopIn {
-                from {
-                    opacity: 0;
-                    transform: scale(0.9) translateY(10px);
-                }
-                to {
-                    opacity: 1;
-                    transform: scale(1) translateY(0);
-                }
-            }
-
-            dialog::backdrop {
-                background: rgba(255,105,180,0.15);
-                backdrop-filter: blur(3px);
-            }
-
-            dialog button {
-                border: none;
-                border-radius: 25px;
-                padding: 0.8em 1.5em;
-                background: #ff69b4;
+                box-shadow: 0px 0px 12px rgba(0, 0, 0, 0.24);
+                background-color: rgb(152, 152, 100);
                 color: white;
                 cursor: pointer;
-                transition: all 0.3s ease;
-                font-size: 1.1em;
-                box-shadow: 0 4px 15px rgba(255,105,180,0.2);
             }
-
-            dialog button:hover {
-                transform: translateY(-2px);
-                box-shadow: 0 6px 20px rgba(255,105,180,0.4);
-            }
-
-            dialog input {
-                border: 3px solid #ffd1dc;
-                border-radius: 15px;
-                padding: 0.8em;
-                outline: none;
-                transition: all 0.3s ease;
-                font-size: 1em;
-                background: rgba(255,255,255,0.9);
-            }
-
-            dialog input:focus {
-                border-color: #ff69b4;
-                box-shadow: 0 0 15px rgba(255,105,180,0.3);
-            }
-
-            .moveFromBottom {
+            .moveFromBottom{
                 position: fixed;
                 left: 0;
                 right: 0;
                 bottom: 0;
                 opacity: 0;
+                -webkit-transform: translate(0, 100%);
                 transform: translate(0, 100%);
+                -webkit-transition: all ease-in-out .3s;
                 transition: all ease-in-out .3s;
-                z-index: 1000;
             }
-            
-            .mask {
+            .box{
+                width: 100%;
+                height: 10em;
+                background: #fff;
+                display: flex;
+                flex-direction: column;
+                justify-content: space-between;
+            }
+            .mask{
                 position: fixed;
                 top: 0;
                 left: 0;
@@ -229,13 +131,11 @@
                 bottom: 0;
                 background: rgba(0, 0, 0, .5);
                 display: none;
-                z-index: 999;
-                backdrop-filter: blur(3px);
             }
-            
             .showMove {
                 opacity: 1;
-                transform: translate(0, 0);
+                -webkit-transform: translate(0, 0);
+                transform: translate(0,0);
             }
         </style>
         
@@ -249,16 +149,14 @@
         <div id="app" style="display: flex;flex-direction:column;">
             
             <dialog id = "favDialog">
-                <div style="display: flex;flex-direction: column;min-width: 300px;">
+                <div style="display: flex;flex-direction: column;">
                     <form method="dialog">
-                        <div style="font-weight: bold;text-align: center;background: linear-gradient(145deg, #ff69b4, #ffd1dc);padding: 1em;margin: -2em -2em 1em -2em;border-radius: 17px 17px 0 0;color: white;">✨ 新增一个包 ✨</div>
-                        <div style="padding: 1em;">
-                            <label style="color: #ff69b4;font-size: 1.1em;">包名：</label>
-                            <input v-model="add_pkg_name" style="width: 100%;box-sizing: border-box;margin: 0.5em 0;"></input>
-                            <div style="display: flex;margin-top: 1.5em;">
-                                <button @click="add_pkg_dialog_ok" style="flex: 1;margin: 0 0.5em;background: linear-gradient(145deg, #ff69b4, #ff8da1);">确定</button>
-                                <button style="flex: 1;margin: 0 0.5em;background: #ffd1dc;">取消</button>
-                            </div>
+                        <div style="font-weight: bold;text-align: center;background-color: aquamarine;margin: 0.5em;color: red;">新增一个包</div>
+                        <span>包名：</span>
+                        <input v-model = "add_pkg_name"></input><br />
+                        <div style="display: flex;margin: 0.5em;">
+                            <button @click="add_pkg_dialog_ok" style="flex: 1 0 auto;margin: 0.5em;">确定</button>
+                            <button style="flex: 1 0 auto;margin: 0.5em;">取消</button>
                         </div>
                     </form>
                 </div>
@@ -281,15 +179,14 @@
             <audio src="https://files.catbox.moe/ij0viz.mp3" ref="mybackmusic" loop="loop" hidden></audio>
             <dialog id = "other_dlg" style="margin: auto;">
                 <div style="display: flex;flex-direction:column;">
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="old_ui_btn()">旧版UI</button>
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="debug_btn()">调试</button>
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="help_web()">文档</button>
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="watch_log()">日志</button>
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="pluscenter_btn()">脚本商店</button>
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="gobal_filter_btn()">全局过滤器</button>
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="backup_code_btn()">备份所有脚本</button>
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="playmusic_btn()">{{playbkmusic}}</button>
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);color: #ff69b4;" @click="other_close()">取消</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="old_ui_btn()">旧版UI</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="debug_btn()">调试</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="help_web()">文档</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="watch_log()">日志</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="pluscenter_btn()">脚本商店</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="gobal_filter_btn()">全局过滤器</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="playmusic_btn()">{{playbkmusic}}</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="other_close()">取消</button>
                 </div>  
             </dialog>
             <h1 class="atitle" @click="title_click()">
@@ -306,10 +203,10 @@
             </div>
             <div class="mask" @click="downdown()"></div>
             <div id="box1" class="box moveFromBottom">
-                <div class="title">{{select_name}}</div>
-                <button @click="edit_click()">编辑</button>
-                <button @click="rename_pkg()">改名</button>
-                <button @click="del_pkg()">删除</button>
+                <div style="flex: 1 0 auto; text-align: center;background-color: rgb(220, 238, 238);font-weight: bold;display: flex;flex-direction: column;justify-content: center;"><span>{{select_name}}</span></div>
+                <button style="flex: 1 0 auto;" @click="edit_click()">编辑</button>
+                <button @click="rename_pkg()" style="flex: 1 0 auto;">改名</button>
+                <button @click="del_pkg()" style="flex: 1 0 auto;">删除</button>
             </div>
             <div id="cmd_content" style="display: flex;flex: 0 0 2.5em;padding: 0.5em;background-color: #b6cde4;">
                 <button @click="connect_ob()" style="flex: 1 0 auto;">连接平台协议</button>
@@ -427,21 +324,6 @@
                     gobal_filter_btn() {
                         window.open("/gobal_filter.html","_blank");
                     },
-                    backup_code_btn() {
-                        axios.post("/backup_code",{
-                            "pkg_name":this.select_name,
-                        })
-                        .then((res) => {
-                            if(res.data['retcode'] == 0){
-                                alert("备份完成，您可以在backup目录中查看")
-                            }else {
-                                alert("备份失败")
-                            }
-                        })
-                        .catch(function (error) {
-                            alert("备份失败，网络错误")
-                        });
-                    },
                     playmusic_btn(){
                         let audio = this.$refs.mybackmusic
                         if(this.playbkmusic == "播放背景音乐"){
@@ -463,28 +345,27 @@
                         console.log("edit")
                         window.open("/pkg_edit.html?pkg_name=" + encodeURIComponent(this.select_name), "_blank");
                         this.downdown()
-                    },
-                    del_pkg(){
+                    },                    del_pkg(){
                         if(this.select_name == "默认包") {
                             alert("不可以删除默认包")
                             this.downdown()
                             return
                         }
-                        let is_delete = confirm("是否真的要删除包 " + this.select_name + "?")
-                        if(is_delete){
+                        let is_del = confirm("是否确定要删除 '" + this.select_name + "' 包？此操作不可恢复。")
+                        if(is_del) {
                             axios.post("/del_one_pkg",{
-                                    "pkg_name":this.select_name,
-                                })
-                                .then((res) => {
-                                    if(res.data['retcode'] == 0){
-                                        this.flash_pkg_name()
-                                    }else {
-                                        alert("failed")
-                                    }
-                                })
-                                .catch(function (error) {
-                                    alert("failed")
-                                });
+                                "pkg_name":this.select_name,
+                            })
+                            .then((res) => {
+                                if(res.data['retcode'] == 0){
+                                    this.flash_pkg_name()
+                                }else {
+                                    alert("删除失败")
+                                }
+                            })
+                            .catch(function (error) {
+                                alert("删除失败")
+                            });
                         }
                         this.downdown()
                     },
