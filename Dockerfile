@@ -8,7 +8,7 @@ RUN apt-get update  -y \
     && wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
     && apt-get install -y ./google-chrome-stable_current_amd64.deb \ 
     && rm google-chrome-stable_current_amd64.deb \
-    && wget -O /usr/share/fonts/simsun.ttf https://pfh-file-store.oss-cn-hangzhou.aliyuncs.com/simsun.ttf \
+    && wget -O /usr/share/fonts/simsun.ttf https://file.uhsea.com/2506/cb8b989d3a5bd9e836fd27c475cadf0dU6.ttf \
     && apt-get clean
 ADD "https://red.super1207.top/version/latest_nightly_version.php" skipcache
 RUN wget -O radlang.zip https://red.super1207.top/download/latest_nightly_linux_x86_64.php \
