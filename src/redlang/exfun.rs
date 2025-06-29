@@ -1889,7 +1889,12 @@ pub fn init_ex_fun_map() {
     
     add_fun(vec!["网页截图"],|self_t,params|{
         fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
-            let path = self_t.get_param(params, 0)?;
+            let mut path = self_t.get_param(params, 0)?;
+            if !cfg!(target_os = "windows") {
+                if path.starts_with("/") {
+                    path = format!("file://{}", &path);
+                }
+            }
             let sec = self_t.get_param(params, 1)?;
             let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
             let proxy_str = self_t.get_coremap("代理")?;
