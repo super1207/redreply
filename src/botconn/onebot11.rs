@@ -3,12 +3,16 @@ use std::{collections::{HashMap, HashSet}, ops::{Index, IndexMut}, str::FromStr,
 use async_trait::async_trait;
 use futures_util::{StreamExt, SinkExt};
 use hyper::header::HeaderValue;
+use crate::mytool::all_to_silk::all_to_silk;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{tungstenite, connect_async};
 
 use crate::{cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory1}, mytool::{read_json_str, str_msg_to_arr}, RT_PTR};
 
 use super::BotConnectTrait;
+
+use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
+const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
 #[derive(Debug)]
 pub struct OneBot11Connect {
@@ -110,22 +114,9 @@ impl OneBot11Connect {
             return Ok(());
         }
 
-        let plus_dir = cq_get_app_directory1()?;
-        let config = plus_dir + "adapter_onebot11_config.json";
-        let config_str;
-        if let Ok(config_str_t) = tokio::fs::read_to_string(config).await {
-            config_str = config_str_t;
-        }else {
-            return Ok(());
-        }
-        let config_json:serde_json::Value = serde_json::from_str(&config_str)?;
-        let mut music_card_sign = read_json_str(&config_json, "music_card_sign");
-        if music_card_sign == "" {
-            return  Ok(());
-        }
-        if !music_card_sign.ends_with("/") {
-            music_card_sign.push_str("/");
-        }
+        let mut music_card_sign = String::new();
+
+        
 
         let params = json.get_mut("params").ok_or("params is none")?;
         if let Some(message) = params.get_mut("message") {
@@ -136,6 +127,31 @@ impl OneBot11Connect {
                 if msgobj["data"]["type"].as_str().ok_or("data type is not str")? != "custom" {
                     continue;
                 }
+
+                if music_card_sign == "" {
+                    let plus_dir = cq_get_app_directory1()?;
+                    let config = plus_dir + "adapter_onebot11_config.json";
+                    let config_str;
+                    if let Ok(config_str_t) = tokio::fs::read_to_string(config).await {
+                        config_str = config_str_t;
+                    }else {
+                        return Ok(());
+                    }
+                    let config_json:serde_json::Value = serde_json::from_str(&config_str)?;
+                    music_card_sign = read_json_str(&config_json, "music_card_sign");
+                    if music_card_sign == "" {
+                        return  Ok(());
+                    }
+                    if !music_card_sign.ends_with("/") {
+                        music_card_sign.push_str("/");
+                    }  
+                }
+
+                if music_card_sign == "" {
+                    return Ok(());
+                }
+
+
                 let data = &msgobj["data"];
     
                 let url = read_json_str(data, "url");
@@ -178,6 +194,86 @@ impl OneBot11Connect {
                 *msgobj.get_mut("data").ok_or("get data err")? = serde_json::json!({
                     "data": music_json
                 });
+            }
+        }
+        Ok(())
+    }
+
+    async fn all_to_silk_async(input:&Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+        let rt_ptr = RT_PTR.clone();
+        let input = input.clone();
+        let silk_bin = rt_ptr.spawn_blocking(move || {
+            // Ensure the error type is Send + Sync + 'static
+            all_to_silk(&input).map_err(|e| {
+                // Convert error to Box<dyn Error + Send + Sync>
+                // Convert error to a string and wrap it in a std::io::Error
+                let s = format!("{:?}", e);
+                Box::new(std::io::Error::new(std::io::ErrorKind::Other, s)) as Box<dyn std::error::Error + Send + Sync>
+            })
+        }).await??;
+        Ok(silk_bin)
+    }
+
+    async fn deal_record_segment(&self,json: &mut serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+
+        let platform = self.get_platform().await?;
+        if !(platform == "lagrange" || platform == "llonebot" || platform == "cqhttp" || platform == "napcat") {
+            return Ok(());
+        }
+
+        let mut is_convert = false; 
+
+        
+        let params = json.get_mut("params").ok_or("params is none")?;
+        if let Some(message) = params.get_mut("message") {
+            for msgobj in message.as_array_mut().ok_or("message is not array")? {
+                if msgobj["type"].as_str().ok_or("type is not str")? != "record" {
+                    continue;
+                }
+
+                if is_convert == false {
+                    let plus_dir = cq_get_app_directory1()?;
+                    let config = plus_dir + "adapter_onebot11_config.json";
+                    let config_str;
+                    if let Ok(config_str_t) = tokio::fs::read_to_string(&config).await {
+                        config_str = config_str_t;
+                    }else {
+                        return Ok(());
+                    }
+                    let config_json:serde_json::Value = serde_json::from_str(&config_str)?;
+                    let auto_convert_record = &config_json["auto_convert_record"];
+                    if auto_convert_record.as_bool().unwrap_or_default() == false {
+                        return Ok(());
+                    }
+                    is_convert = true;
+                }
+
+                let data = &msgobj["data"];
+    
+                let uri = read_json_str(data, "file");
+                let file_bin;
+                if uri.starts_with("base64://") {
+                    let b64_str = uri.get(9..).unwrap();
+                    file_bin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+                &base64::alphabet::STANDARD,
+                base64::engine::general_purpose::PAD), b64_str)?;
+                }else if uri.starts_with("file://") {
+                    let file_path;
+                    if cfg!(target_os = "windows") {
+                        file_path = uri.get(8..).ok_or("can't get file_path")?;
+                    } else {
+                        file_path = uri.get(7..).ok_or("can't get file_path")?;
+                    }
+                    let path = std::path::Path::new(&file_path);
+                    file_bin = tokio::fs::read(path).await?;
+                } else {
+                    continue;
+                }
+                cq_add_log_w("自动将语音文件转换到silk").unwrap();
+                let silk_bin = Self::all_to_silk_async(&file_bin).await?;
+                // 用 silk_bin 替换原来的 file
+                let b64_str = BASE64_CUSTOM_ENGINE.encode(silk_bin);
+                msgobj["data"]["file"] = serde_json::json!(format!("base64://{}", b64_str));
             }
         }
         Ok(())
@@ -542,6 +638,7 @@ impl BotConnectTrait for OneBot11Connect {
                 }
             }
             self.deal_music_segment(json).await?;
+            self.deal_record_segment(json).await?;
             let to_poke = self.get_poke_segment(json).await?;
             if !to_poke.is_empty() {
                 let group_id = read_json_str(&json["params"], "group_id");

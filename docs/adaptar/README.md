@@ -15,6 +15,15 @@
 ```
 就可以自动使用独角兽的API来签名custom类型的音乐卡片了。
 
+如果是QQ平台，目前可以自动将语音文件转换到silk。在`config.json`同级目录，创建一个`adapter_onebot11_config.json`文件，内容为:
+
+```json
+{
+    "auto_convert_record":true
+}
+```
+就可以自动将语音文件转换到silk，然后再发送到协议端了，这样协议端可以不需要配置ffmpeg。
+
 ## olivos
 
 [OlivOS](https://github.com/OlivOS-Team/OlivOS) 平台的opk插件自动配置，测试中，进主页交流群了解更多信息...
