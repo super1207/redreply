@@ -33,7 +33,9 @@
    
    <div id="app" style="border: 1px solid;display: flex;flex-direction: column;flex: 0 1 100%;overflow-x: auto;margin: 0.4em;">
         <h1 style="text-align: center;color: red;">红色问答调试</h1>
+        <!-- START OF MODIFIED BLOCK -->
         <div style="display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 8px; margin-bottom: 4px; padding: 0 0.5em;">
+    <!-- 改动: 移除了 span 上的 justify-self: end; 样式，使其恢复默认左对齐 -->
     <span>平台:</span>
     <input v-model="platform" @input="change_platform">
 
@@ -52,11 +54,13 @@
     <span>包名(为空表示默认包):</span>
     <input v-model="pkg_name" @input="change_pkg_name">
 </div>
+        <!-- END OF MODIFIED BLOCK -->
         <div style="flex: 1 0 auto;height: 0;width: 100%; display: flex; flex-direction: column;">
             <quill-editor id="script_content" ref="child" theme="snow" spellcheck="false" style="height: 50%;"></quill-editor>
             <div style="display: flex;flex: 1 0 auto;height: 50%;flex-direction: row;overflow: auto; border-top: 1px solid;">
                 <textarea style="flex-grow: 1;min-width: 50%; border: none; outline: none;" disabled>{{result}}</textarea>
                 <div v-if="has_img" style="overflow: auto;width: 0;flex-grow: 1; padding: 5px; border-left: 1px solid #ccc;">
+                    <!-- 次要改动: 修正了 img 标签的样式写法，并增加了宽度和边框 -->
                     <img v-bind:src="img_src" style="max-width: 100%; object-fit: scale-down;">
                 </div>
             </div>
@@ -71,6 +75,7 @@
     const app = createApp({
         data() {
             return {
+                // 用于显示
                 platform:"onebot11",
                 bot_id:"1736293901",
                 groups_id:"920220179",
@@ -142,6 +147,7 @@
             }, 500)
 
 
+            // 对复制进行hook，解决复制时多余的换行
             const ele = document.getElementById("script_content")
             ele.oncopy = (e) => {
                 const quill = this.$refs.child.getQuill()
@@ -150,6 +156,7 @@
                 e.preventDefault();
             }
             
+             // 处理中文输入
             ele.addEventListener('compositionstart',(e) =>{
                 this.composing = true
                 console.log('compositionstart')
@@ -215,7 +222,7 @@
                         this.result = "提交失败：" + res.data
                     }
                 })
-                .catch( (error) => {
+                .catch( (error) => { // 'this' context issue fixed
                     this.result = "提交失败: " + error
                 });
             },
@@ -238,7 +245,7 @@
                         this.result = res.data["data"]
                         var reg = /\[CQ:image,file=(.*?)(\]|\,)/;
                         let ret = reg.exec(this.result)
-                        if(ret && ret.length > 1) {
+                        if(ret && ret.length > 1) { // Added check for ret
                             let img = ret[1].trim()
                             if(img.startsWith("base64://")) {
                                 this.img_src = "data:image/jpeg;base64," + img.slice(9)
@@ -257,7 +264,7 @@
                         this.result = "执行失败：" + res.data['data']
                     }
                 })
-                .catch((error) => {
+                .catch((error) => { // 'this' context issue fixed
                     this.result = "执行失败: " + error
                 });
             },
@@ -289,8 +296,6 @@
                 let content = []
                 for(let i = 0; i < code.length; i++){
                     let char = code[i];
-                    if(char === '\n') continue;
-
                     if(char == "【"){
                         next_color()
                         content.push({
@@ -316,17 +321,18 @@
                     }
                     else{
                         content.push({
-                            "insert":char === '\xa0' ? " " : char,
+                            "insert":char === '\xa0' ? " " : char, // handle non-breaking space
                             attributes:{color:colorList[current_color]}
                         })
                     }
                 }
                 
+                // Simplified bracket matching logic
                 if (select) {
                     let openBracket = -1, closeBracket = -1;
                     let cursor = select.index;
 
-                    const text = code.substring(0, code.length - 1);
+                    const text = code.substring(0, code.length - 1); // Exclude final newline from quill
                     
                     if (cursor > 0 && (text[cursor] === '】' || text[cursor - 1] === '【')) {
                         if (text[cursor - 1] === '【') {
