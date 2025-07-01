@@ -13,6 +13,7 @@ fn create_windows() {
     let help_web = tray_icon::menu::MenuItem::new("帮助文档", true, None);
     let log_web = tray_icon::menu::MenuItem::new("查看日志", true, None);
     let dir_web = tray_icon::menu::MenuItem::new("软件目录", true, None);
+    let debug_web = tray_icon::menu::MenuItem::new("红色调试", true, None);
     let quit = tray_icon::menu::MenuItem::new("退出软件", true, None);
     let _tray_icon = {
         let icon_data = redlang::Asset::get("res/favicon.ico").unwrap().data;
@@ -27,6 +28,7 @@ fn create_windows() {
             &help_web,
             &log_web,
             &dir_web,
+            &debug_web,
             &tray_icon::menu::PredefinedMenuItem::separator(),
             &quit
         ]).unwrap();
@@ -102,6 +104,8 @@ fn create_windows() {
                 let _err = redlang::show_log_web();
             } else if event.id == dir_web.id() {
                 let _err = redlang::show_dir_web();
+            } else if event.id == debug_web.id() {
+                let _err = redlang::show_debug_web();
             }
         }
         if let Ok(event) = tray_channel.try_recv() {

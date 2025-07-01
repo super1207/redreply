@@ -352,6 +352,13 @@ pub fn show_dir_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
     Ok(())
 }
 
+pub fn show_debug_web() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
+    let config = read_config()?;
+    let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
+    opener::open(format!("http://localhost:{port}/debug.html"))?;
+    Ok(())
+}
+
 pub fn add_egg_click() -> Result<i64,Box<dyn std::error::Error + Send + Sync>> {
     let app_dir = crate::cqapi::cq_get_app_directory1()?;
     let sql_file = app_dir + "reddat.db";

@@ -13,17 +13,33 @@
             html,body{
                 width: 100%;
                 height: 100%;
-                display: flex;
                 margin: 0;
+                display: flex;
+                flex-direction: column;
+            }
+            body {
+                background-color: #f5f2f0;
+                flex: 1;
+            }
+            button,textarea,body,select,input{
+                font-family: fusion-pixel-12px-monospaced-zh_hant, serif;
+            }
+            #dialog_set button:hover {
+                background: rgba(100, 0, 0, 0.03);
+            }
+            .name_active { /* 点中名字，变色属性 */
+                color: #e55743;
+                font-weight: bold;
             }
             #app {
                 display: flex;
                 flex: 1 0 auto;
                 flex-direction: column;
+                height: 100%;
             }
 
             #app > h1 {
-                color: red;
+                color: #e55743;
                 text-align: center;
             }
             #show{
@@ -31,26 +47,33 @@
                 flex-direction: column;
                 height: 0;
                 flex: 1 0 auto;
+                border: 2px solid #e55743;
+                background-color:#f5f2f0;
+                overflow-y: auto;
+                margin: 0.5em;
             }
             #show > div {
-                border-style:solid;
                 cursor: pointer;
-                margin-top: 1px;
+                margin: 0.2em;
+                padding: 0.3em;
+                border: 1px solid #e55743;
+            }
+            #show > div:hover {
+                background: rgba(100, 0, 0, 0.03);
             }
             #foot{
                 display: flex;
-                flex: 0 0 3em;
+                flex: 0 0 2.5em;
+                padding: 0.5em;
+                background-color: #b6cde4;
             }
             #foot > button {
                 flex: 1 0 auto;
             }
-            .name_active { /* 点中名字，变色属性 */
-                color: red;
-            }
             #favDialog {
                 margin: auto;
-                /* height: 5em; */
                 width: 20em;
+                border: 2px solid #e55743;
             }
             #dialog_set {
                 width: 100%;

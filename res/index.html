@@ -179,7 +179,6 @@
             <audio src="https://files.catbox.moe/ij0viz.mp3" ref="mybackmusic" loop="loop" hidden></audio>
             <dialog id = "other_dlg" style="margin: auto;">
                 <div style="display: flex;flex-direction:column;">
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="old_ui_btn()">旧版UI</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="debug_btn()">调试</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="help_web()">文档</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="watch_log()">日志</button>
@@ -299,9 +298,6 @@
                             },1000);
                             axios.get("/close")
                         }
-                    },
-                    old_ui_btn(){
-                        window.open("/index_old.html", "_blank");
                     },
                     other_fun(event) {
                         document.getElementById('other_dlg').showModal();
