@@ -800,7 +800,7 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 ### 追加文件 
 
 
-【追加文件@<font color="red">文件路径</font>@<font color="red">字节集</font>】
+【追加文件@<font color="red">文件路径</font>@<font color="red">字节集或文本</font>】
 
 在文件后面追加内容。若路径不存在，会自动创建路径。若文件不存在，则会先创建文件。
 

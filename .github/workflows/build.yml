@@ -9,104 +9,128 @@ on:
         default: 'warning'
 
 jobs:
-  test:
-    name: build project
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        include:
-          # Linux x86_64
-          - os: ubuntu-latest
-
-          # Windows
-          - os: windows-latest
+  build-linux-x86_64:
+    name: Build Linux x86_64
+    runs-on: ubuntu-latest
     steps:
     - name: Checkout
       uses: actions/checkout@master
-
-    - name: install_ubuntu_dependencies
-      if: startsWith(matrix.os, 'ubuntu-') 
-      run: |
-        cargo install cross --git https://github.com/cross-rs/cross
-
-    - name: build_ubuntu
-      if: startsWith(matrix.os, 'ubuntu-') 
-      run: |
-        CROSS_NO_WARNINGS=0 cross build --target i686-unknown-linux-musl --release
-        CROSS_NO_WARNINGS=0 cross build --target x86_64-unknown-linux-musl --release
-        CROSS_NO_WARNINGS=0 cross build --target aarch64-linux-android --release
-        CROSS_NO_WARNINGS=0 cross build --target aarch64-unknown-linux-musl --release
-
-    - name: build_windows
-      if: startsWith(matrix.os, 'windows-') 
-      run: |
-        rustup target add i686-pc-windows-msvc
-        rustup target add x86_64-pc-windows-msvc
-        cargo build --release --target i686-pc-windows-msvc
-        cargo build --release --target x86_64-pc-windows-msvc
-      shell: pwsh
-        
-    - name: before_ubuntu_upload
-      if: startsWith(matrix.os, 'ubuntu-') 
+    - name: Install cross
+      run: cargo install cross --git https://github.com/cross-rs/cross
+    - name: Build
+      run: CROSS_NO_WARNINGS=0 cross build --target x86_64-unknown-linux-musl --release
+    - name: Prepare artifact
       run: |
         mkdir Release
         cp target/x86_64-unknown-linux-musl/release/redlang Release/redlang_linux_x86_64
-        cp target/aarch64-linux-android/release/redlang Release/redlang_android_aarch64
-        cp target/aarch64-unknown-linux-musl/release/redlang Release/redlang_linux_aarch64
-        cp target/i686-unknown-linux-musl/release/redlang Release/redlang_linux_i686
-
-    - name: before_windows_upload
-      if: startsWith(matrix.os, 'windows-') 
-      run: |
-        mkdir Release
-        cp target/i686-pc-windows-msvc/release/redlang.exe Release/redlang_windows_i686.exe
-        cp target/x86_64-pc-windows-msvc/release/redlang.exe Release/redlang_windows_x86_64.exe
-      shell: pwsh
-
-    - name: upload file1
-      if: startsWith(matrix.os, 'windows-') 
-      uses: actions/upload-artifact@v4
-      with:
-        name: redlang_windows_i686.exe
-        path: 
-            Release/redlang_windows_i686.exe
-
-    - name: upload file2
-      if: startsWith(matrix.os, 'windows-') 
-      uses: actions/upload-artifact@v4
-      with:
-        name: redlang_windows_x86_64.exe
-        path: 
-            Release/redlang_windows_x86_64.exe
-
-    - name: upload file3
-      if: startsWith(matrix.os, 'ubuntu-') 
-      uses: actions/upload-artifact@v4
-      with:
-        name: redlang_linux_aarch64
-        path: 
-            Release/redlang_linux_aarch64
-
-    - name: upload file4
-      if: startsWith(matrix.os, 'ubuntu-') 
-      uses: actions/upload-artifact@v4
-      with:
-        name: redlang_linux_i686
-        path: 
-          Release/redlang_linux_i686
-
-    - name: upload file5
-      if: startsWith(matrix.os, 'ubuntu-') 
-      uses: actions/upload-artifact@v4
-      with:
-        name: redlang_android_aarch64
-        path: 
-          Release/redlang_android_aarch64
-          
-    - name: upload file6
-      if: startsWith(matrix.os, 'ubuntu-') 
+    - name: Upload artifact
       uses: actions/upload-artifact@v4
       with:
         name: redlang_linux_x86_64
-        path: 
-          Release/redlang_linux_x86_64
+        path: Release/redlang_linux_x86_64
+
+  build-linux-i686:
+    name: Build Linux i686
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@master
+    - name: Install cross
+      run: cargo install cross --git https://github.com/cross-rs/cross
+    - name: Build
+      run: CROSS_NO_WARNINGS=0 cross build --target i686-unknown-linux-musl --release
+    - name: Prepare artifact
+      run: |
+        mkdir Release
+        cp target/i686-unknown-linux-musl/release/redlang Release/redlang_linux_i686
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: redlang_linux_i686
+        path: Release/redlang_linux_i686
+
+  build-linux-aarch64:
+    name: Build Linux aarch64
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@master
+    - name: Install cross
+      run: cargo install cross --git https://github.com/cross-rs/cross
+    - name: Build
+      run: CROSS_NO_WARNINGS=0 cross build --target aarch64-unknown-linux-musl --release
+    - name: Prepare artifact
+      run: |
+        mkdir Release
+        cp target/aarch64-unknown-linux-musl/release/redlang Release/redlang_linux_aarch64
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: redlang_linux_aarch64
+        path: Release/redlang_linux_aarch64
+
+  build-android-aarch64:
+    name: Build Android aarch64
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@master
+    - name: Install cross
+      run: cargo install cross --git https://github.com/cross-rs/cross
+    - name: Build
+      run: CROSS_NO_WARNINGS=0 cross build --target aarch64-linux-android --release
+    - name: Prepare artifact
+      run: |
+        mkdir Release
+        cp target/aarch64-linux-android/release/redlang Release/redlang_android_aarch64
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: redlang_android_aarch64
+        path: Release/redlang_android_aarch64
+
+  build-windows-x86_64:
+    name: Build Windows x86_64
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@master
+    - name: Add target
+      run: rustup target add x86_64-pc-windows-msvc
+      shell: pwsh
+    - name: Build
+      run: cargo build --release --target x86_64-pc-windows-msvc
+      shell: pwsh
+    - name: Prepare artifact
+      run: |
+        mkdir Release
+        cp target/x86_64-pc-windows-msvc/release/redlang.exe Release/redlang_windows_x86_64.exe
+      shell: pwsh
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: redlang_windows_x86_64.exe
+        path: Release/redlang_windows_x86_64.exe
+
+  build-windows-i686:
+    name: Build Windows i686
+    runs-on: windows-latest
+    steps:
+    - name: Checkout
+      uses: actions/checkout@master
+    - name: Add target
+      run: rustup target add i686-pc-windows-msvc
+      shell: pwsh
+    - name: Build
+      run: cargo build --release --target i686-pc-windows-msvc
+      shell: pwsh
+    - name: Prepare artifact
+      run: |
+        mkdir Release
+        cp target/i686-pc-windows-msvc/release/redlang.exe Release/redlang_windows_i686.exe
+      shell: pwsh
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: redlang_windows_i686.exe
+        path: Release/redlang_windows_i686.exe
