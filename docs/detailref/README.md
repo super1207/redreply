@@ -791,9 +791,11 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 ### 写文件 
 
 
-【写文件@<font color="red">文件路径</font>@<font color="red">字节集</font>】
+【写文件@<font color="red">文件路径</font>@<font color="red">字节集或文本</font>】
 
 创建文件，并写文件。若路径不存在，会自动创建路径。若文件存在，则会先清空文件，再写文件。
+
+如果是写文本，那么会自动将文本按`utf-8`转为字节集。
 
 ### 追加文件 
 
@@ -801,6 +803,8 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 【追加文件@<font color="red">文件路径</font>@<font color="red">字节集</font>】
 
 在文件后面追加内容。若路径不存在，会自动创建路径。若文件不存在，则会先创建文件。
+
+如果是追加文本，那么会自动将文本按`utf-8`转为字节集。
 
 
 ### 读配置

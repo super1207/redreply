@@ -1832,10 +1832,19 @@ pub fn init_ex_fun_map() {
         }
         return Ok(Some("".to_string()));
     });
+    fn text_to_bin_data(text: &str) -> Vec<u8> {
+        text.as_bytes().to_vec()
+    }
     add_fun(vec!["写文件"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
         let path = crate::mytool::path_to_os_str(&path);
-        let bin_data = self_t.get_param(params, 1)?;
+        let bin_data_text = self_t.get_param(params, 1)?;
+        let bin_data;
+        if self_t.get_type(&bin_data_text)? == "文本" {
+            bin_data = text_to_bin_data(&bin_data_text);
+        } else {
+            bin_data = RedLang::parse_bin(&mut self_t.bin_pool,&bin_data_text)?;
+        }
         let parent_path = Path::new(&path).parent().ok_or("写文件：无法创建目录或文件")?;
         fs::create_dir_all(parent_path)?;
         add_file_lock(&path);
@@ -1843,14 +1852,19 @@ pub fn init_ex_fun_map() {
             del_file_lock(&path);
         });
         let mut f = fs::File::create(path)?;
-        let bin = RedLang::parse_bin(&mut self_t.bin_pool,&bin_data)?;
-        std::io::Write::write_all(&mut f, bin.as_bytes())?;
+        std::io::Write::write_all(&mut f, &bin_data)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["追加文件"],|self_t,params|{
         let path = self_t.get_param(params, 0)?;
         let path = crate::mytool::path_to_os_str(&path);
-        let bin_data = self_t.get_param(params, 1)?;
+        let bin_data_text = self_t.get_param(params, 1)?;
+        let bin_data;
+        if self_t.get_type(&bin_data_text)? == "文本" {
+            bin_data = text_to_bin_data(&bin_data_text);
+        } else {
+            bin_data = RedLang::parse_bin(&mut self_t.bin_pool,&bin_data_text)?;
+        }
         let parent_path = Path::new(&path).parent().ok_or("写文件：无法创建目录或文件")?;
         fs::create_dir_all(parent_path)?;
         add_file_lock(&path);
@@ -1863,8 +1877,7 @@ pub fn init_ex_fun_map() {
         }else {
             f = fs::File::create(path)?;
         }
-        let bin = RedLang::parse_bin(&mut self_t.bin_pool,&bin_data)?;
-        std::io::Write::write_all(&mut f, bin.as_bytes())?;
+        std::io::Write::write_all(&mut f, &bin_data)?;
         return Ok(Some("".to_string()));
     });
     
