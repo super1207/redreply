@@ -490,7 +490,10 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["表情回应"],|self_t,params|{
         let emoji_id = self_t.get_param(params, 0)?;
-        let message_id = self_t.get_exmap("消息ID");
+        let mut message_id = self_t.get_param(params, 1)?;
+        if message_id == "" {
+            message_id = self_t.get_exmap("消息ID").to_string();
+        }
         let emoji_num;
         if let Ok(emoji_id_t) = emoji_id.parse::<i32>() {
             emoji_num = emoji_id_t;
