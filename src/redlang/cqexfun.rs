@@ -748,6 +748,15 @@ pub fn init_cq_ex_fun_map() {
                 if url.starts_with("http://") || url.starts_with("https://") {
                     ret_vec.push(url);
                 }
+            } else if tp == "mface" {
+                let data = it.get("data").ok_or("data not found in image cq code")?;
+                let mut url = read_json_str(data, "url");
+                if url == "" {
+                    url = read_json_str(data, "file");
+                }
+                if url.starts_with("http://") || url.starts_with("https://") {
+                    ret_vec.push(url);
+                }
             }
         }
         let ret = self_t.build_arr(ret_vec.iter().map(|x| x.as_str()).collect());
