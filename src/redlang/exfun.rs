@@ -3067,7 +3067,9 @@ def red_out(sw):
 
         let tmp_dir = get_tmp_dir().map_err(|x|{format!("get_tmp_dir err:{:?}",x)})?;
         let python_id = crate::get_local_python_uid()?;
-        let python_dir = format!("{}pymain_{}_{}",tmp_dir,self_t.pkg_name,python_id);
+
+        // 末尾有分隔符
+        let python_dir = format!("{}pymain_{}_{}{}",tmp_dir,self_t.pkg_name,python_id,std::path::MAIN_SEPARATOR.to_string());
 
         fs::create_dir_all(&python_dir)?;
 
