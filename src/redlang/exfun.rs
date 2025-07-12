@@ -3242,6 +3242,109 @@ def red_out(sw):
         }
         Ok(Some(String::from_utf8(content_rst.unwrap())?))
     });
+        add_fun(vec!["运行特殊PY"],|self_t,params|{
+        let code = r#"
+import os
+import sysconfig
+import sys
+
+def myprint(*args,**kwargs):
+    pass
+
+red_print = sys.stdout.write
+
+sys.stdout.write = myprint
+
+def red_in():
+    import base64
+    inn = input()
+    sw = base64.b64decode(inn).decode()
+    return __red_py_decode(sw)
+
+def red_out(sw):
+    import base64
+    en = base64.b64encode(__to_red_type(sw).encode()).decode()
+    red_print(en)
+"#;
+    
+        let mut to_add_path = self_t.get_param(params, 0)?;
+        let code1 = self_t.get_param(params, 1)?;
+        let mut input = self_t.get_param(params, 2)?;
+        if input.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
+            input = get_raw_data(self_t,input)?;
+        }
+        let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
+        let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
+        let pip_in = std::process::Stdio::piped();
+
+        let red_py_decode = crate::G_RED_PY_DECODE.to_owned();
+
+
+        let curr_env = std::env::var("PATH").unwrap_or_default();
+        let new_env;
+        if to_add_path != "" {
+            new_env = if cfg!(target_os = "windows") {
+                if !to_add_path.ends_with(";") {
+                    to_add_path.push(';');
+                }
+                format!("{}{}",to_add_path,curr_env)
+            } else {
+                if !to_add_path.ends_with(":") {
+                    to_add_path.push(':');
+                }
+                format!("{}{}",to_add_path,curr_env)
+            };
+        } else {
+            new_env = curr_env;
+        }
+
+
+        #[cfg(windows)]
+        use std::os::windows::process::CommandExt;
+
+        #[cfg(not(windows))]
+        let mut p = std::process::Command::new(get_python_cmd_name().unwrap())
+        .stdin(pip_in)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(app_dir)
+        .env("PATH", new_env)
+        .arg("-c")
+        .arg(format!("{red_py_decode}{code}{code1}"))
+        .spawn()?;
+
+
+        #[cfg(windows)]
+        let mut p = std::process::Command::new(get_python_cmd_name().unwrap()).creation_flags(0x08000000)
+        .stdin(pip_in)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .current_dir(app_dir)
+        .env("PATH", new_env)
+        .arg("-c")
+        .arg(format!("{red_py_decode}{code}{code1}"))
+        .spawn()?;
+
+        let s = p.stdin.take();
+        if s.is_none() {
+            p.kill()?;
+        }else {
+            s.unwrap().write_all(input_b64.as_bytes())?;
+        }
+        let output = p.wait_with_output()?;
+        let out = String::from_utf8_lossy(&output.stdout).to_string();
+        let err = String::from_utf8_lossy(&output.stderr).to_string();
+        if err != "" {
+            cq_add_log_w(&format!("python中的警告或错误:{}",err)).unwrap();
+        }
+        let content_rst = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+            &base64::alphabet::STANDARD,
+            base64::engine::general_purpose::PAD), &out);
+        if content_rst.is_err() {
+            return Err(RedLang::make_err(&out));
+        }
+        Ok(Some(String::from_utf8(content_rst.unwrap())?))
+    });
     add_fun(vec!["默认字体"],|self_t,_params|{
         let mut ft_lk = G_DEFAULF_FONT.write().unwrap();
         if *ft_lk != "" {

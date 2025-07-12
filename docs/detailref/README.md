@@ -1787,7 +1787,7 @@ onedice参数的写法参考[onedice](https://github.com/OlivOS-Team/onedice)。
 
 ### 运行PY
 
-【运行PY@<font color="red">脚本内容</font>@<font color="red">参数文本</font>】
+【运行PY@<font color="red">脚本内容</font>@<font color="red">参数</font>】
 
 此命令用于调用机器上的python，来执行python。在<font color="red">脚本内容</font>中，可以使用如下内置函数：
 
@@ -1808,7 +1808,7 @@ red_install(pkg_name)：用于联网从pypi安装一个三方包(目前使用清
 
 ### 快速运行PY
 
-【快速运行PY@<font color="red">脚本内容</font>@<font color="red">参数文本</font>】
+【快速运行PY@<font color="red">脚本内容</font>@<font color="red">参数</font>】
 
 此命令用于调用机器上的python，来执行python。在<font color="red">脚本内容</font>中，可以使用如下内置函数：
 
@@ -1828,7 +1828,7 @@ red_install(pkg_name)：用于联网从pypi安装一个三方包(目前使用清
 
 ### 运行本地PY
 
-【运行本地PY@<font color="red">脚本内容</font>@<font color="red">参数文本</font>】
+【运行本地PY@<font color="red">脚本内容</font>@<font color="red">参数</font>】
 
 此命令用于调用机器上的python，来执行python。在<font color="red">脚本内容</font>中，可以使用如下内置函数：
 
@@ -1843,6 +1843,25 @@ red_out(str)：用于返回,作为命令的返回。
 此命令可以调用本地python安装的包，但是不能安装新的包
 
 运行目录为【应用目录】
+
+**注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
+
+### 运行特殊PY
+
+【运行特殊PY@<font color="red">python环境目录</font>@<font color="red">脚本内容</font>@<font color="red">参数</font>】
+
+在指定的python环境中运行python。
+
+<font color="red">python环境目录</font>为python.exe所在目录(windows上)。
+
+如果<font color="red">python环境目录</font>为空，则完全等效于【运行PY】。
+
+命令的其它参数信息，以及python中可以使用的额外函数同【运行PY】。
+
+例子:
+```
+【运行特殊PY@【@C:\Users\super1207\AppData\Local\Programs\Python\Python312】@red_out(sys.executable)】
+```
 
 **注意**：这是一个实验性质的api，用法很有可能会在之后的版本中发生变化(可能删除)
 
