@@ -1605,10 +1605,13 @@ CSS选择器可以选择要返回的元素，省略CSS选择器表示返回整�
 
 ### 命令行
 
-【命令行@<font color="red">文本</font>】
+【命令行@<font color="red">文本</font>@<font color="red">编码</font>】
 
 运行一个命令，返回命令输出。windows上，用cmd运行；linux上用sh运行。运行目录为脚本的script.json所在的目录。
 
+<font color="red">编码</font> 可以省略，默认为`GBK`,也支持`UTF-8`。
+
+<font color="red">编码</font> 目前只在windows上有效。
 
 ### 启动
 

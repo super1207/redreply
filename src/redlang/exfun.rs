@@ -611,7 +611,7 @@ pub fn init_ex_fun_map() {
         let code_t = self_t.get_param(params, 1)?;
         let code = code_t.to_lowercase();
         let str_vec:Vec<u8>;
-        if code == "" || code == "utf8" {
+        if code == "" || code == "utf8" || code == "utf-8" {
             str_vec = text.as_bytes().to_vec();
         }else if code == "gbk" {
             str_vec = encoding::Encoding::encode(encoding::all::GBK, &text, encoding::EncoderTrap::Ignore)?;
@@ -2151,7 +2151,15 @@ pub fn init_ex_fun_map() {
         };
         let mut output_str = 
         if cfg!(target_os = "windows") {
-            encoding::all::GBK.decode(&output.stdout, encoding::DecoderTrap::Ignore)?
+            let code_t = self_t.get_param(params, 1)?;
+            let code = code_t.to_lowercase();
+            if code == "utf8" || code == "utf-8" {
+                String::from_utf8_lossy(&output.stdout).to_string()
+            } else if code == "gbk" || code == "" {
+                encoding::all::GBK.decode(&output.stdout, encoding::DecoderTrap::Ignore)?
+            } else {
+                return Err(RedLang::make_err(&("不支持的编码:".to_owned()+&code_t)));
+            }
         }else {
             String::from_utf8_lossy(&output.stdout).to_string()
         };

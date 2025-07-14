@@ -73,7 +73,7 @@ lewton = "0.10.2"
 msedge-tts = {git = "https://github.com/super1207/msedge-tts"}
 
 imap = { git = "https://github.com/jonhoo/rust-imap"}
-native-tls = "0.2.14"
+native-tls = { version = "0.2.14", features = ["vendored"] }
 mail-parser = "0.11.0"
 lettre = { version = "0.11.16",features = ["tokio1-native-tls"]}
 

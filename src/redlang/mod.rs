@@ -1228,7 +1228,7 @@ pub fn init_core_fun_map() {
             let code_t = self_t.get_param(params, 1)?;
             let code = code_t.to_lowercase();
             let u8_vec = RedLang::parse_bin(&mut self_t.bin_pool,data)?;
-            if code == "" || code == "utf8" {
+            if code == "" || code == "utf8" || code == "utf-8" {
                 ret_str = String::from_utf8(u8_vec)?;
             }else if code == "gbk" {
                 ret_str = encoding::all::GBK.decode(&u8_vec, encoding::DecoderTrap::Ignore)?;
