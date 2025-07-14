@@ -1,5 +1,4 @@
-# for ubuntu 24.04
-FROM ubuntu
+FROM ubuntu:24.04
 RUN sed -i 's/security.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list.d/ubuntu.sources
 RUN sed -i 's/archive.ubuntu.com/mirrors.ustc.edu.cn/g' /etc/apt/sources.list.d/ubuntu.sources
 RUN apt-get update  -y \
@@ -18,7 +17,8 @@ RUN wget -O radlang.zip https://red.super1207.top/download/latest_nightly_linux_
 EXPOSE 1207
 CMD if [ ! -f "/plus_dir/config.json" ]; \
     then echo '{"web_port":1207,"web_host":"0.0.0.0","ws_urls":[],"not_open_browser":true}' > /plus_dir/config.json; fi \
-    && ./redlang_linux_x86_64
+    && cp redlang_linux_x86_64 redlang \
+    && ./redlang
 
 # 构建镜像：
 #    docker build  -t super1207/redreply .
