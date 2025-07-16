@@ -564,7 +564,16 @@
     })
     const globalOptions = {
         modules: {
-        toolbar: ""
+            toolbar: "",
+             keyboard: {
+                bindings: {
+                    'list autofill': {
+                        key: ' ',
+                        prefix: /^-$/,
+                        handler: () => true
+                    }
+                }
+            }
         },
         placeholder: '脚本内容',
         theme: 'snow'
