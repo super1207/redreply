@@ -114,6 +114,7 @@
                             <option value="kook">kook</option>
                             <option value="email">邮件</option>
                             <option value="telegram">telegram</option>
+                            <option value="yunhu">云湖</option>
                         </select>
                         <button @click="help_shame()">填写帮助</button>
                     </div>
@@ -160,6 +161,10 @@
                         <option value="1">是</option>
                     </select>
                   </div>
+
+                  <div class = "ws_set" v-show = "yunhu_Token_show"><span>Token:&nbsp;&nbsp;</span><input id = "yunhu_Token" v-model = "yunhu_Token"></input></div>
+                  <div class = "ws_set" v-show = "yunhu_Url_show"><span>Url:&nbsp;&nbsp;</span><input id = "yunhu_Url" v-model = "yunhu_Url"></input></div>
+                  <div class = "ws_set" v-show = "yunhu_SelfId_show"><span>SelfId:&nbsp;&nbsp;</span><input id = "yunhu_SelfId" v-model = "yunhu_SelfId"></input></div>
 
                   
                   <form method="dialog">
@@ -208,6 +213,9 @@
                         smtp_server:"",
                         smtp_port:587,
                         smtp_ssl:"1",
+                        yunhu_Token:"",
+                        yunhu_Url:"",
+                        yunhu_SelfId:"",
                         shame_helps:{
                             "onebot11":"onebot11示例uri: \nws://127.0.0.1:5700\nws://127.0.0.1:5700?access_token=77156\nwss://127.0.0.1:5700",
                             "olivos":"olivos示例uri:（注意:通常情况下您不应该手动设置这个）\n127.0.0.1:1123",
@@ -217,6 +225,7 @@
                             "kook":"不会吧不会吧不会有人不知道怎么填吧",
                             "email":"小常识：\n99%的情况下，IMAP的端口号为993，SMTP的端口号为587，SSL都选择是。",
                             "telegram":"Proxy支持http代理，如`http://127.0.0.1:7890`",
+                            "yunhu":"喵喵喵，自用，若有需要请联系红色问答作者",
                         }
                     }
                 },
@@ -329,6 +338,24 @@
                         }
                         return false;
                     },
+                    yunhu_Token_show() {
+                        if(this.shame == "yunhu"){
+                            return true;
+                        }
+                        return false;
+                    },
+                    yunhu_Url_show() {
+                        if(this.shame == "yunhu"){
+                            return true;
+                        }
+                        return false;
+                    },
+                    yunhu_SelfId_show() {
+                        if(this.shame == "yunhu"){
+                            return true;
+                        }
+                        return false;
+                    },
                 },
                 mounted () {
                     axios
@@ -365,9 +392,12 @@
                         this.imap_port = "993"
                         this.imap_server = ""
                         this.imap_ssl = "1"
-                        this.smtp_port = "465"
+                        this.smtp_port = "578"
                         this.smtp_server = ""
                         this.smtp_ssl = "1"
+                        this.yunhu_Url = ""
+                        this.yunhu_Token = ""
+                        this.yunhu_SelfId = ""
                         document.getElementById('favDialog').showModal();
                     },
                     edit_endpoint(event) {
@@ -417,6 +447,13 @@
                                 this.smtp_server = jsobj["smtp_server"]
                                 this.smtp_ssl = jsobj["smtp_ssl"]?"1":"0"
                                 this.shame = "email"
+                            }
+                            else if(raw_url.startsWith("yunhu://")){
+                                jsobj = JSON.parse(raw_url.slice(8))
+                                this.yunhu_Url = jsobj["url"]
+                                this.yunhu_SelfId = jsobj["self_id"]
+                                this.yunhu_Token = jsobj["token"]
+                                this.shame = "yunhu"
                             }
                             else{
                                 this.ws_url = this.ws_urls[this.select_name_index]
@@ -498,6 +535,14 @@
                                 "smtp_ssl":(this.smtp_ssl == "1")?true:false,
                             };
                             return  "email://" + JSON.stringify(json_dat)
+                        }
+                        else if(this.shame == "yunhu"){
+                            json_dat = {
+                                "url":this.yunhu_Url,
+                                "token":this.yunhu_Token,
+                                "self_id":this.yunhu_SelfId,
+                            };
+                            return  "yunhu://" + JSON.stringify(json_dat)
                         }
                     },
                     dialog_ok(event) {

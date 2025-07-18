@@ -7,6 +7,7 @@ mod qq_guild_all;
 mod kook;
 mod email;
 mod telegram;
+mod yunhuv1;
 
 use std::{collections::HashMap, sync::Arc, time::Duration};
 
@@ -17,7 +18,7 @@ use kook::KookConnect;
 use telegram::TeleTramConnect;
 use tokio::sync::RwLock;
 
-use crate::{cqapi::cq_add_log_w, RT_PTR};
+use crate::{botconn::yunhuv1::Yunhuv1Connect, cqapi::cq_add_log_w, RT_PTR};
 
 use self::{onebot11::OneBot11Connect, onebot115::OneBot115Connect, qqguild_private::QQGuildPrivateConnect, qqguild_public::QQGuildPublicConnect, satoriv1::Satoriv1Connect};
 
@@ -178,6 +179,13 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                                 let mut bot = TeleTramConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到telegram失败:{url_t},{err:?}")).unwrap();
+                                } else {
+                                    G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
+                                }
+                            }else if url_t.starts_with("yunhu://") {
+                                let mut bot = Yunhuv1Connect::build(&url_t);
+                                if let Err(err) = bot.connect().await {
+                                    cq_add_log_w(&format!("连接到yunhu失败:{url_t},{err:?}")).unwrap();
                                 } else {
                                     G_BOT_MAP.write().await.insert(url_t,Arc::new(RwLock::new(bot)));
                                 }
