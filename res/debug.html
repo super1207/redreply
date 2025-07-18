@@ -152,9 +152,14 @@
             quill.root.addEventListener('paste', (evt) => {
                 evt.preventDefault();
                 const text = (evt.clipboardData || window.clipboardData).getData('text/plain');
-                const range = quill.getSelection(true);
-                quill.insertText(range.index, text, 'user');
-                quill.setSelection(range.index + text.length, 0, 'user');
+                const range = quill.getSelection(false); // 不自动修正
+                if (range) {
+                    if (range.length > 0) {
+                        quill.deleteText(range.index, range.length, 'user');
+                    }
+                    quill.insertText(range.index, text, 'user');
+                    quill.setSelection(range.index + text.length, 0, 'user');
+                }
             }, true); 
 
 

@@ -88,7 +88,19 @@ impl Yunhuv1Connect {
     }
 
     async fn proxyrequest(&self, url: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(self.get_req_client()?.get(url).send().await?.text().await?)
+        use std::time::Duration;
+        use tokio::time::sleep;
+        use tokio::select;
+        let client = self.get_req_client()?;
+        let fut = async {
+            let resp = client.get(url).send().await?;
+            let text = resp.text().await?;
+            Ok::<String, Box<dyn std::error::Error + Send + Sync>>(text)
+        };
+        select! {
+            res = fut => res,
+            _ = sleep(Duration::from_secs(30)) => Err("proxyrequest timeout".into()),
+        }
     }
 
     fn to_ob_event(
@@ -457,23 +469,6 @@ impl Yunhuv1Connect {
             return false;
         }
     }
-
-    // fn get_auto_escape_from_params(&self, params: &serde_json::Value) -> bool {
-    //     let is_auto_escape = Self::get_json_bool(params, "auto_escape");
-    //     return is_auto_escape;
-    // }
-    // pub fn to_json_str(val:&serde_json::Value) -> String {
-    //     if val.is_i64() {
-    //         return val.as_i64().unwrap().to_string();
-    //     }
-    //     if val.is_u64() {
-    //         return val.as_u64().unwrap().to_string();
-    //     }
-    //     if val.is_string() {
-    //         return val.as_str().unwrap().to_string();
-    //     }
-    //     return "".to_owned();
-    // }
 
     async fn upload_image(&self,file_bin:Vec<u8>)-> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let token = self.token.read().unwrap().to_owned();
