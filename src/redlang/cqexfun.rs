@@ -798,8 +798,9 @@ pub fn init_cq_ex_fun_map() {
         return Ok(Some(PAGING_UUID.to_string()));
     });
     add_fun(vec!["设置来源"],|self_t,params|{
-        let key = self_t.get_param(params, 0)?;
+        let key_t = self_t.get_param(params, 0)?;
         let val = self_t.get_param(params, 1)?;
+        let key = crate::mytool::str_to_jt(&key_t);
         self_t.set_exmap(&key, &val)?;
         return Ok(Some("".to_string()));
     });
