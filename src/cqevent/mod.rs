@@ -5,7 +5,7 @@ mod do_group_inc;
 
 use std::{rc::Rc, collections::{HashMap, HashSet}, sync::Arc, cell::RefCell};
 
-use crate::{add_running_script_num, cqapi::cq_add_log_w, dec_running_script_num, get_gobal_filter_code, httpserver::send_onebot_event, mqttclient::publish_mqtt_event, mytool::read_json_str, read_code_cache, redlang::RedLang, PAGING_UUID, REDLANG_UUID, RT_PTR};
+use crate::{add_running_script_num, cqapi::cq_add_log_w, dec_running_script_num, get_gobal_filter_code, httpserver::send_onebot_event, mqttclient::publish_mqtt_event, mytool::read_json_str, read_code_cache, redlang::RedLang, G_SKIP_MSG_TIME, PAGING_UUID, REDLANG_UUID, RT_PTR};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
@@ -32,7 +32,7 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
     // 不处理10分钟之前的消息，made by tongyi ai
     if let Some(time) = root.get("time") {
         if let Some(time) = time.as_i64() {
-            if time < (chrono::Local::now().timestamp() - 600) {
+            if time < (chrono::Local::now().timestamp() - *G_SKIP_MSG_TIME.read().unwrap()) {
                 // 打印日志
                 cq_add_log_w(&format!("10分钟前的消息，放弃处理本条消息：`{}`",onebot_json_str)).unwrap();
                 return Ok(0);

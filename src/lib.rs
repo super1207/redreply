@@ -136,6 +136,8 @@ lazy_static! {
     static ref G_HISTORY_LOG:std::sync::RwLock<VecDeque<String>> = std::sync::RwLock::new(VecDeque::new());
     // 全局过滤器缓存
     pub static ref G_GOBAL_FILTER:std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+    // 跳过多长时间的消息
+    pub static ref G_SKIP_MSG_TIME:RwLock<i64> = RwLock::new(600);
 
     // py解析red变量
     pub static ref G_RED_PY_DECODE:String =  r#"
@@ -565,6 +567,9 @@ pub fn initialize() -> i32 {
     // 初始化配置文件
     init_config();
 
+    // 从配置文件初始化全局变量
+    init_global_var();
+
     // 初始化命令
     redlang::webexfun::init_web_ex_fun_map();
     redlang::cqexfun::init_cq_ex_fun_map();
@@ -885,6 +890,15 @@ conn_fun()
     });
     Ok(())
 }
+
+
+pub fn init_global_var(){
+    let cfg = read_config().unwrap();
+    if let Some(tm) = cfg.get("skip_msg_time") {
+        *G_SKIP_MSG_TIME.write().unwrap() = tm.as_i64().unwrap();
+    }
+}
+
 
 pub fn init_config() {
     let script_path = cq_get_app_directory1().unwrap() + "config.json";
