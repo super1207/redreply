@@ -10,7 +10,7 @@ use crate::httpevent::do_http_event;
 use crate::mytool::read_json_str;
 use crate::onebot11s::event_to_onebot;
 use crate::pluscenter::PlusCenterPlusBase;
-use crate::{read_config, set_gobal_filter_code, G_AUTO_CLOSE};
+use crate::{read_config, set_gobal_filter_code, set_gobal_init_code, G_AUTO_CLOSE};
 use crate::redlang::RedLang;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 use futures_util::{SinkExt, StreamExt};
@@ -352,12 +352,79 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         let mut res = hyper::Response::new(full(ret.to_string()));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)    
-    } else if url_path == "/get_gobal_filter_code" {
+    }
+    else if url_path == "/set_gobal_init_code" {
+        if can_write == false {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let body = request.collect().await?.aggregate().reader();
+        let js:serde_json::Value = serde_json::from_reader(body)?;
+        let (tx, rx) =  tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let js = js;
+            let code = &js["data"];
+            if code.is_string() {
+                
+                let rst = set_gobal_init_code(code.as_str().unwrap());
+                if rst.is_err() {
+                    let ret = json!({
+                        "retcode":-1,
+                    });
+                    let rst = tx.send(ret);
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }else {
+                    let ret = json!({
+                        "retcode":0,
+                    });
+                    let rst = tx.send(ret);
+                    if rst.is_err() {
+                        cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                    }
+                }     
+            }else {
+                let ret = json!({
+                    "retcode":-1,
+                });
+                let rst = tx.send(ret);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
+            }
+        }).await?;
+        let ret = rx.await?;
+        let mut res = hyper::Response::new(full(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)    
+    } 
+    else if url_path == "/get_gobal_filter_code" {
         if !can_read {
             let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
         match crate::get_gobal_filter_code() {
+            Ok(code) => {
+                let ret = json!({
+                    "retcode":0,
+                    "data":code
+                });
+                let mut res = hyper::Response::new(full(ret.to_string()));
+                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+                Ok(res)
+            },
+            Err(err) => {
+                let mut res = hyper::Response::new(full(err.to_string()));
+                *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
+                Ok(res)
+            },
+        }
+    }
+    else if url_path == "/get_gobal_init_code" {
+        if !can_read {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        match crate::get_gobal_init_code() {
             Ok(code) => {
                 let ret = json!({
                     "retcode":0,

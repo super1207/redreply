@@ -4,7 +4,7 @@
 <head>
    <meta charset="UTF-8">
    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   <title>红色问答全局过滤器</title>
+   <title>红色问答全局初始化</title>
    <style>
     html,body{
         width: 100%;
@@ -27,7 +27,7 @@
 <body>
    
    <div id="app" style="padding:0.5em; border: 1px solid;margin: 0.2em;display: flex;flex-direction: column;flex-grow: 1;">
-        <h1 style="text-align: center;color: red;">红色问答全局过滤器</h1>
+        <h1 style="text-align: center;color: red;">红色问答全局初始化</h1>
         <div style="height: 0; flex-grow: 1;display: flex;flex-direction: column;flex-grow: 1;">
             <quill-editor id = "script_content"  ref="child" theme="snow" spellcheck = false style="flex-grow: 1; height: 0;"></quill-editor>
             <button style="height: 40px;font-size: medium;font-weight: bold;" @click="save_code()">保存</button>
@@ -145,7 +145,7 @@
             });
 
             axios
-            .get("/get_gobal_filter_code")
+            .get("/get_gobal_init_code")
             .then(
             res => {
                 let code = res.data["data"]
@@ -163,7 +163,7 @@
                     "data":content
                 }
                 axios
-                .post("/set_gobal_filter_code",script)
+                .post("/set_gobal_init_code",script)
                 .then((res) => {
                     if(res.data['retcode'] == 0){
                         this.rename_pkg_process = []
@@ -326,7 +326,7 @@
             },
         }
     })
-
+    
     const globalOptions = {
         modules: {
             toolbar: "",

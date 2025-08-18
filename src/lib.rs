@@ -28,6 +28,8 @@ use rust_embed::RustEmbed;
 use cqapi::cq_add_log_w;
 use cqapi::cq_get_app_directory1;
 
+use crate::initevent::do_gobal_init_event;
+
 
 mod cqapi;
 mod cqevent;
@@ -136,6 +138,8 @@ lazy_static! {
     static ref G_HISTORY_LOG:std::sync::RwLock<VecDeque<String>> = std::sync::RwLock::new(VecDeque::new());
     // 全局过滤器缓存
     pub static ref G_GOBAL_FILTER:std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+    // 全局初始化缓存
+    pub static ref G_GOBAL_INIT:std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
     // 跳过多长时间的消息
     pub static ref G_SKIP_MSG_TIME:RwLock<i64> = RwLock::new(600);
 
@@ -1165,6 +1169,27 @@ fn get_gobal_filter_code_from_sql() -> Result<String, Box<dyn std::error::Error>
     return Ok(ret_str);
 }
 
+fn get_gobal_init_code_from_sql() -> Result<String, Box<dyn std::error::Error>> {
+    let app_dir = crate::cqapi::cq_get_app_directory1().unwrap();
+    let sql_file = app_dir + "reddat.db";
+    let sql_file = mytool::path_to_os_str(&sql_file);
+    add_file_lock(&sql_file);
+    let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+        del_file_lock(&sql_file);
+    });
+
+    let conn = rusqlite::Connection::open(sql_file)?;
+    conn.execute("CREATE TABLE IF NOT EXISTS GOBAL_INIT_TABLE (GOBAL_INIT_NAME TEXT,VALUE TEXT DEFAULT '',PRIMARY KEY(GOBAL_INIT_NAME));", [])?;
+    let ret_rst:Result<String,rusqlite::Error> = conn.query_row("SELECT VALUE FROM GOBAL_INIT_TABLE WHERE GOBAL_INIT_NAME = ?", ["CODE"], |row| row.get(0));
+    let ret_str:String;
+    if let Ok(ret) =  ret_rst {
+        ret_str = ret;
+    }else {
+        ret_str = "".to_owned();
+    }
+    return Ok(ret_str);
+}
+
 pub fn set_gobal_filter_code(code:&str) -> Result<(), Box<dyn std::error::Error>> {
     let app_dir = crate::cqapi::cq_get_app_directory1().unwrap();
     let sql_file = app_dir + "reddat.db";
@@ -1182,6 +1207,27 @@ pub fn set_gobal_filter_code(code:&str) -> Result<(), Box<dyn std::error::Error>
     return Ok(());
 }
 
+pub fn set_gobal_init_code(code:&str) -> Result<(), Box<dyn std::error::Error>> {
+    {
+        let app_dir = crate::cqapi::cq_get_app_directory1().unwrap();
+        let sql_file = app_dir + "reddat.db";
+        let sql_file = mytool::path_to_os_str(&sql_file);
+        add_file_lock(&sql_file);
+        let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
+            del_file_lock(&sql_file);
+        });
+
+        let conn = rusqlite::Connection::open(sql_file)?;
+        conn.execute("CREATE TABLE IF NOT EXISTS GOBAL_INIT_TABLE (GOBAL_INIT_NAME TEXT,VALUE TEXT DEFAULT '',PRIMARY KEY(GOBAL_INIT_NAME));", [])?;
+        conn.execute("REPLACE INTO GOBAL_INIT_TABLE (GOBAL_INIT_NAME,VALUE) VALUES (?,?)", ["CODE",code])?;
+        let mut wk = G_GOBAL_INIT.write().unwrap();
+        *wk = Some(code.to_owned());
+    }
+    // 设置预初始化脚本的时候先执行一次预初始化脚本
+    do_gobal_init_event(None)?;
+    return Ok(());
+}
+
 pub fn get_gobal_filter_code() -> Result<String, Box<dyn std::error::Error>> {
     {
         let wk = G_GOBAL_FILTER.read().unwrap();
@@ -1191,6 +1237,20 @@ pub fn get_gobal_filter_code() -> Result<String, Box<dyn std::error::Error>> {
     }
     let mut wk = G_GOBAL_FILTER.write().unwrap();
     let code = get_gobal_filter_code_from_sql()?;
+    *wk = Some(code);
+    let ret = wk.as_ref().unwrap().to_owned();
+    return Ok(ret);
+}
+
+pub fn get_gobal_init_code() -> Result<String, Box<dyn std::error::Error>> {
+    {
+        let wk = G_GOBAL_INIT.read().unwrap();
+        if wk.is_some() {
+            return Ok(wk.as_ref().unwrap().to_owned());
+        }
+    }
+    let mut wk = G_GOBAL_INIT.write().unwrap();
+    let code = get_gobal_init_code_from_sql()?;
     *wk = Some(code);
     let ret = wk.as_ref().unwrap().to_owned();
     return Ok(ret);

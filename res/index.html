@@ -184,6 +184,7 @@
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="watch_log()">日志</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="pluscenter_btn()">脚本商店</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="gobal_filter_btn()">全局过滤器</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="gobal_init_btn()">全局初始化器</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="playmusic_btn()">{{playbkmusic}}</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="other_close()">取消</button>
                 </div>  
@@ -319,6 +320,9 @@
                     },
                     gobal_filter_btn() {
                         window.open("/gobal_filter.html","_blank");
+                    },
+                    gobal_init_btn() {
+                        window.open("/gobal_init.html","_blank");
                     },
                     playmusic_btn(){
                         let audio = this.$refs.mybackmusic
