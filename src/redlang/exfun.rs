@@ -455,32 +455,71 @@ pub fn init_ex_fun_map() {
         return Ok(Some(ret))
     });
     add_fun(vec!["JSON解析"],|self_t,params|{
-        let json_obj = self_t.get_param(params, 0)?;
-        let mut json_str = json_obj.to_owned() ;
-        let tp = self_t.get_type(&json_str)?;
+
+        fn red_to_serde_value(self_t: &RedLang, red_str: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+            let tp = self_t.get_type(red_str)?;
+            match tp.as_str() {
+                "文本" => {
+                    if let Ok(num) = red_str.parse::<i64>() {
+                        Ok(serde_json::Value::Number(num.into()))
+                    } else if let Ok(num) = red_str.parse::<f64>() {
+                        Ok(serde_json::json!(num))
+                    } else if red_str == "真" {
+                        Ok(serde_json::Value::Bool(true))
+                    } else if red_str == "假" {
+                        Ok(serde_json::Value::Bool(false))
+                    } else {
+                        Ok(serde_json::Value::String(red_str.to_string()))
+                    }
+                }
+                "数组" => {
+                    let arr = RedLang::parse_arr(red_str)?;
+                    let mut json_arr = Vec::new();
+                    for item in arr {
+                        json_arr.push(red_to_serde_value(self_t, item)?);
+                    }
+                    Ok(serde_json::Value::Array(json_arr))
+                }
+                "对象" => {
+                    let obj = RedLang::parse_obj(red_str)?;
+                    let mut json_map = serde_json::Map::new();
+                    for (key, value) in obj {
+                        json_map.insert(key, red_to_serde_value(self_t, &value)?);
+                    }
+                    Ok(serde_json::Value::Object(json_map))
+                }
+                "字节集" => Err(RedLang::make_err("字节集不能直接转换为JSON值")),
+                _ => Err(RedLang::make_err(&format!("不支持的类型向JSON转换: {}", tp))),
+            }
+        }
+
+        let json_obj_str = self_t.get_param(params, 0)?;
+        let tp = self_t.get_type(&json_obj_str)?;
+
+        let json_data: serde_json::Value;
+
         if tp == "字节集" {
-            let u8_vec = RedLang::parse_bin(&mut self_t.bin_pool,&json_obj)?;
-            json_str = String::from_utf8(u8_vec)?;
+            let u8_vec = RedLang::parse_bin(&mut self_t.bin_pool, &json_obj_str)?;
+            let json_str = String::from_utf8(u8_vec)?;
+            json_data = serde_json::from_str(&json_str).map_err(|e| format!("字节集内容JSON解析失败: {}", e))?;
+        } else if tp == "对象" {
+            json_data = red_to_serde_value(self_t, &json_obj_str)?;
+        } else {
+            let json_str = &json_obj_str;
+            json_data = serde_json::from_str(&json_str).map_err(|e| format!("文本内容JSON解析失败: {}", e))?;
         }
-        let json_data_rst = serde_json::from_str(&json_str);
-        if json_data_rst.is_err() {
-            cq_add_log_w("json解析失败").unwrap();
-            return Ok(Some("".to_string())); 
-        }
-        
-        let json_data:serde_json::Value = json_data_rst.unwrap();
+
         let jsonpath = self_t.get_param(params, 1)?;
         let json_parse_out;
         if jsonpath != "" {
             if let Ok(v) = json_data.query(&jsonpath) {
-                json_parse_out = do_json_parse(&serde_json::json!(v),&self_t.type_uuid)?;
-            }
-            else{
+                json_parse_out = do_json_parse(&serde_json::json!(v), &self_t.type_uuid)?;
+            } else {
                 cq_add_log_w("jsonpath解析失败").unwrap();
-                return Ok(Some("".to_string())); 
+                return Ok(Some("".to_string()));
             }
-        }else {
-            json_parse_out = do_json_parse(&json_data,&self_t.type_uuid)?;
+        } else {
+            json_parse_out = do_json_parse(&json_data, &self_t.type_uuid)?;
         }
         return Ok(Some(json_parse_out));
     });

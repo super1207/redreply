@@ -780,6 +780,8 @@ jsonpath的规则参见[jsonpath-rust](https://github.com/besok/jsonpath-rust)�
 
 若<font color="red">Json内容</font>为字节集，则会自动先按utf-8转换成文本，再进行Json解析。
 
+若<font color="red">Json内容</font>为对象(需要符合json中的类型定义)，则原样返回，但是支持使用jsonpath来提取元素。
+
 
 ### 读文件 
 
