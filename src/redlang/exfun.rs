@@ -334,6 +334,22 @@ pub fn init_ex_fun_map() {
         }
     });
 
+    #[cfg(target_os = "windows")]
+    add_fun(vec!["设置桌面背景"],|self_t,params|{
+        let image_path = self_t.get_param(params, 0)?;
+        let image_path = std::ffi::CString::new(image_path).unwrap();
+        let image_path_c_ptr: *mut winapi::ctypes::c_void = image_path.as_ptr() as *mut winapi::ctypes::c_void;
+        unsafe {
+            winapi::um::winuser::SystemParametersInfoA(
+                winapi::um::winuser::SPI_SETDESKWALLPAPER,
+                0,
+                image_path_c_ptr,
+                winapi::um::winuser::SPIF_UPDATEINIFILE,
+            );
+        }
+        return Ok(Some("".to_string()));
+    });
+
     add_fun(vec!["设置访问超时"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
         k.parse::<u64>()?;
@@ -3620,7 +3636,7 @@ def red_out(sw):
                 }
                 let cmd = muti_params.get(0).unwrap();
                 let red_cmd = if cmd.is_string() {
-                    cmd.as_str().unwrap()
+                    cmd.as_string().and_then(|s| s.to_str().ok()).unwrap()
                 } else {
                     return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                 };
@@ -3628,7 +3644,7 @@ def red_out(sw):
                 let mut red_code = "【".to_string()+&red_cmd;
                 for it in muti_params.iter().skip(1){
                     let it_t = if it.is_string() {
-                        it.as_str().unwrap()
+                        it.as_string().and_then(|s| s.to_str().ok()).unwrap()
                     } else {
                         return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                     };
@@ -3676,7 +3692,7 @@ def red_out(sw):
                 }
                 let cmd = muti_params.get(0).unwrap();
                 let red_cmd = if cmd.is_string() {
-                    cmd.as_str().unwrap()
+                    cmd.as_string().and_then(|s| s.to_str().ok()).unwrap()
                 } else {
                     return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                 };
@@ -3684,7 +3700,7 @@ def red_out(sw):
                 let mut red_code = "【".to_string()+&red_cmd;
                 for it in muti_params.iter().skip(1){
                     let it_t = if it.is_string() {
-                        it.as_str().unwrap()
+                        it.as_string().and_then(|s| s.to_str().ok()).unwrap()
                     } else {
                         return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                     };

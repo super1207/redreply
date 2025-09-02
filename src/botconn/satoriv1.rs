@@ -90,7 +90,7 @@ fn pre_parse_satori_msg(html:&str) -> Result<Vec<SatoriNode>,Box<dyn std::error:
                 let name = tag.name.0;
                     let mut mp = HashMap::new();
                     for (k,v) in tag.attributes {
-                        mp.insert(String::from_utf8(k.0)?, String::from_utf8(v.0)?);
+                        mp.insert(String::from_utf8(k.0)?, String::from_utf8(v.0.clone())?);
                     }
                     let to_add = SatoriNode {
                         tag_name: String::from_utf8(name)?,
@@ -108,7 +108,7 @@ fn pre_parse_satori_msg(html:&str) -> Result<Vec<SatoriNode>,Box<dyn std::error:
                         SatoriNode{
                             tag_name: "text".to_owned(),
                             attr_map: HashMap::new(),
-                            content: String::from_utf8(text.0)?,
+                            content: String::from_utf8(text.0.clone())?,
                         }
                     });
                 }
