@@ -13,6 +13,8 @@ qq群号：920220179 556515826
 
 使用到的三方库：[Cargo.toml](https://github.com/super1207/redreply/blob/master/Cargo.toml)
 
+如果你感觉此文档太过复杂，下面有个AI整理后的文档：[整理版](/detailref/README_SIMPLE.md)
+
 
 ## 目标
 
