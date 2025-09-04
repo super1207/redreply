@@ -13,13 +13,13 @@ base64 = "0.22.1"
 serde_json = "1.0.143"
 serde_derive = "1.0.219"
 serde = {version = "1.0.219",features = ["derive"]}
-uuid = {version = "1.18.0",features = ["v4","fast-rng"]}
+uuid = {version = "1.18.1",features = ["v4","fast-rng"]}
 lazy_static = "1.5.0"
 chrono = "0.4.41"
 md-5 = "0.10.6"
 rcnb-rs = "0.1.0"
 rust-embed = {version="8.7.2",features = ["compression"]}
-image = "0.25.6"
+image = "0.25.8"
 imageproc = "0.25.0"
 gif = "0.13.1"
 cron = "0.15.0"
@@ -30,17 +30,17 @@ futures-util = "0.3.31"
 hyper-tungstenite = "0.18.0"
 tokio-tungstenite = { version = "0.27.0", default-features = false, features = ["native-tls-vendored"] }
 scopeguard = "1.2.0"
-log = "0.4.27"
+log = "0.4.28"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter","time","local-time"]}
-opener = "0.8.1"
+opener = "0.8.3"
 rusqlite = {version = "0.37.0",features = ["bundled","functions"]}
 sevenz-rust = "0.6.1"
 jsonpath-rust = "1.0.4"
 rusttype = "0.9.3"
 # markdown = "1.0.0-alpha.7"
 reqwest = {version = "0.12.23",default-features = false,features = ["native-tls-vendored","multipart"]}
-time = { version = "0.3.42", features = ["formatting", "macros"] }
+time = { version = "0.3.43", features = ["formatting", "macros"] }
 # headless_chrome = {version="1.0.5",default-features = false}
 webp = "0.3.1"
 sysinfo = "0.37.0"
@@ -52,14 +52,13 @@ zhconv = {version  = "0.3.3", features = ["opencc","compress"]}
 async-trait = "0.1.89"
 html5gum = "0.8.0"
 html-escape = "0.2.13"
-libloading = "0.8.8"
 tokio-util = { version = "0.7.16", default-features = false, features = [ "io" ] }
 http-body-util = "0.1.3"
 hyper-util = { version = "0.1.16", features = ["full"] }
 bytes = "1.10.1"
-zip = "4.6.0"
+zip = "4.6.1"
 crc64 = "2.0.0"
-headless_chrome = "1.0.17"
+headless_chrome = "1.0.18"
 path-clean = "1.0.1"
 rust-ini = "0.21.3"
 mlua = { version = "0.11.3", features = ["lua54", "vendored"] }

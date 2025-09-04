@@ -1,10 +1,9 @@
-use std::{any::Any, cell::RefCell, collections::{BTreeMap, HashMap, HashSet, VecDeque}, error, ffi::{c_char, c_int, CStr, CString}, fmt, rc::Rc, sync::Arc, thread, time::SystemTime, vec};
+use std::{any::Any, cell::RefCell, collections::{BTreeMap, HashMap, HashSet, VecDeque}, error, fmt, rc::Rc, sync::Arc, thread, time::SystemTime, vec};
 use encoding::Encoding;
 use exfun::get_raw_data;
 use image::{ImageBuffer, Rgba};
 
 use crate::{cqapi::cq_add_log_w, cqevent::do_script, pkg_can_run, G_CONST_MAP, G_LOCK, G_SINGAL_ARR, G_TEMP_CONST_MAP, REDLANG_UUID};
-use libloading::Symbol;
 
 pub mod exfun;
 pub(crate) mod cqexfun;
@@ -2087,54 +2086,6 @@ let k = &*self.exmap;
         }
         if is_cmd_ret {
             return Ok(ret_str);
-        }
-
-        // 执行三方命令
-        let mut libret: Box<Option<String>> = Box::new(None);
-        {
-            let mut lib_ptr_opt = None;
-            for (_ac,plus) in &*crate::G_LIB_MAP.read().unwrap() {
-                if plus.regist_fun.contains(cmd) {
-                    lib_ptr_opt = Some(plus.lib.clone());
-                    break;
-                }
-            }
-            if let Some(lib_ptr) = lib_ptr_opt {
-                
-                let call_cmd_fun_rst = unsafe {lib_ptr.get::<Symbol<extern "system" fn(*mut Option<String>,*const c_char,*const c_char,extern "system" fn(*mut Option<String>,*const c_char,c_int))>>(b"redreply_callcmd")};
-                if call_cmd_fun_rst.is_ok() {
-                    let mut fun_params_t: Vec<String> = vec![];
-                    for f in params {
-                        let ret = self.parse(f)?;
-                        fun_params_t.push(ret);
-                    }
-                    let bind = fun_params_t.iter().map(|x|x.as_str()).collect();
-                    let params_str = self.build_arr(bind);
-                    let cmd_cstr = CString::new(cmd)?;
-                    let params_cstr = CString::new(params_str)?;
-                    extern "system" fn callback(ctx:*mut Option<String>,ret_cstr:*const c_char,retcode:c_int) {
-                        let s = unsafe { CStr::from_ptr(ret_cstr) }.to_str().unwrap().to_owned();   
-                        if retcode == 0 {
-                            let s = unsafe { CStr::from_ptr(ret_cstr) }.to_str().unwrap().to_owned();
-                            unsafe {
-                                *ctx = Some(s);
-                            }
-                        } else {
-                            unsafe {
-                                *ctx = Some("".to_owned());
-                            }
-                            cq_add_log_w(&format!("err,retcode:{retcode},{s}")).unwrap();
-                        }
-                    }
-                    let call_cmd_fun = call_cmd_fun_rst.unwrap();
-                    call_cmd_fun(&mut *libret,cmd_cstr.as_ptr(),params_cstr.as_ptr(),callback);
-                   
-                }
-            }
-        }
-        if libret.is_some() {
-            let ret = (*libret).unwrap();
-            return Ok(ret);
         }
 
         // 执行核心命令与拓展命令

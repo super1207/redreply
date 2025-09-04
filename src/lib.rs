@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::collections::VecDeque;
 use std::fs;
-use std::os::raw::c_int;
 use std::panic;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -16,7 +15,6 @@ use cqapi::cq_get_app_directory2;
 use encoding::Encoding;
 use httpserver::init_http_server;
 
-use libload::init_lib;
 use md5::Digest;
 use md5::Md5;
 use mytool::read_json_str;
@@ -42,7 +40,6 @@ mod httpserver;
 mod httpevent;
 mod pyserver;
 mod test;
-mod libload;
 mod pluscenter;
 mod onebot11s;
 mod status;
@@ -71,13 +68,6 @@ pub struct ScriptRelatMsg {
     pub self_id:String,
     pub msg_id_vec:Vec<String>,
     pub create_time:u64
-}
-
-pub struct LibStruct {
-    pub lib:Arc<libloading::Library>,
-    pub path:String,
-    pub regist_fun:HashSet<String>,
-    pub ac:c_int
 }
 
 lazy_static! {
@@ -129,9 +119,6 @@ lazy_static! {
     pub static ref G_AUTO_CLOSE:Mutex<bool> = Mutex::new(false);
     // 默认字体
     pub static ref G_DEFAULF_FONT:RwLock<String> = RwLock::new(String::new());
-    // 注册的三方插件
-    pub static ref G_LIB_MAP:RwLock<HashMap<c_int,LibStruct>> = RwLock::new(HashMap::new());
-    pub static ref G_LIB_AC:Mutex<c_int> = Mutex::new(0);
     // 文件锁
     pub static ref G_FILE_MX:std::sync::Mutex<HashMap<String,i32>> = std::sync::Mutex::new(HashMap::new());
     // 历史日志
@@ -596,11 +583,6 @@ pub fn initialize() -> i32 {
             cq_add_log_w(&err.to_string()).unwrap();
         }
     });
-
-    // 初始化库文件
-    if let Err(err) = init_lib(){
-        cq_add_log_w(&err.to_string()).unwrap();
-    }
     
     // 初始化red脚本
     if let Err(err) = init_code(){
