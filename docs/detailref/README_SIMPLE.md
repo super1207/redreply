@@ -11,7 +11,7 @@ RedLang 是一种为文本生成和自动化任务设计的简单而强大的脚
 **核心信息:**
 
 *   **作者QQ：** `1875159423`
-*   **QQ群：** `920220179`, `556515826`
+*   **QQ群：** `556515826`
 *   **开源地址：** [https://github.com/super1207/redreply](https://github.com/super1207/redreply)
 *   **开源协议：** AGPL
 

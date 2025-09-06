@@ -67,7 +67,7 @@ fn create_windows() {
     let v = redlang::add_egg_click().unwrap();
     let button_title;
     if v > 100 {
-        button_title = format!("May the force be with you!Secret code:920220179\n\n\n当前:{}",v);
+        button_title = format!("May the force be with you!Secret code:556515826\n\n\n当前:{}",v);
     }else{
         button_title = format!("点我功德加一\n\n\n当前:{}",v);
     }
@@ -78,7 +78,7 @@ fn create_windows() {
     btn.set_callback(move |w|{
         let v = redlang::add_egg_click().unwrap();
         if v > 100 {
-            let button_title = format!("May the force be with you!Secret code:920220179\n\n\n当前:{}",v);
+            let button_title = format!("May the force be with you!Secret code:556515826\n\n\n当前:{}",v);
             w.set_label(&*button_title)
         } else {
             let button_title = format!("点我功德加一\n\n\n当前:{}",v);

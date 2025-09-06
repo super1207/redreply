@@ -5,7 +5,7 @@
 
 作者qq：1875159423
 
-qq群号：920220179 556515826
+qq群号：556515826 556515826
 
 开源地址：[https://github.com/super1207/redreply](https://github.com/super1207/redreply)
 
