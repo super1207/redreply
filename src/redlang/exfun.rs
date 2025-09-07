@@ -689,26 +689,21 @@ pub fn init_ex_fun_map() {
                     return Ok(Some(v1.to_owned()));
                 }
             }
-            return Err(RedLang::make_err("正则索引参数错误,参数越界"));
+            return Ok(Some("".to_owned()))
         } else if mode == 2 {
             let index0 = index0_str.parse::<usize>().unwrap();
             if let Some(v0) = sub_key_vec.get(index0) {
                 return Ok(Some(self_t.build_arr(v0.iter().map(AsRef::as_ref).collect())));
             }
-            return Err(RedLang::make_err("正则索引参数错误,参数越界"));
+            return Ok(Some("".to_owned()))
         } else { // mode == 3
-            let mut is_err = false;
             let ret_vec = sub_key_vec.iter().map(|temp_vec|{
                 if let Some(v1) = temp_vec.get(index1_str.parse::<usize>().unwrap()) {
                     v1.to_owned()
                 } else {
-                    is_err = true;
                     "".to_owned()
                 }
             }).collect::<Vec<String>>();
-            if is_err {
-                return Err(RedLang::make_err("正则索引参数错误,参数越界"));
-            }
             return Ok(Some(self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect())));
         }
     });
