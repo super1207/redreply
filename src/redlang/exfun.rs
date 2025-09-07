@@ -642,8 +642,28 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["正则"],|self_t,params|{
         let data_str = self_t.get_param(params, 0)?;
         let sub_str = self_t.get_param(params, 1)?;
+        let mut index0_str = self_t.get_param(params, 2)?;
+        if index0_str == "*" {
+            index0_str = "".to_string();
+        }
+        let mut index1_str = self_t.get_param(params, 3)?;
+        if index1_str == "*" {
+            index1_str = "".to_string();
+        }
+        let mode;
+        if index0_str.parse::<usize>().is_ok() && index1_str.parse::<usize>().is_ok() {
+            mode = 1; // 两个索引都在
+        } else if index0_str.parse::<usize>().is_ok()  && index1_str == "" {
+            mode = 2; // 只有第一个索引
+        } else if index0_str == "" && index1_str.parse::<usize>().is_ok() {
+            mode = 3; // 只有第二个索引
+        } else if index0_str == "" && index1_str == "" {
+            mode = 0; // 两个索引都为空
+        } else {
+            return Err(RedLang::make_err("正则索引参数错误"));
+        }
         let re = fancy_regex::Regex::new(&sub_str)?;
-        let mut sub_key_vec:Vec<String> = vec![];
+        let mut sub_key_vec:Vec<Vec<String>> = vec![];
         for cap_iter in re.captures_iter(&data_str) {
             let cap = cap_iter?;
             let len = cap.len();
@@ -653,9 +673,44 @@ pub fn init_ex_fun_map() {
                     temp_vec.push(s.as_str().to_owned());
                 }
             }
-            sub_key_vec.push(self_t.build_arr(temp_vec.iter().map(AsRef::as_ref).collect()));
+            sub_key_vec.push(temp_vec);
         }
-        return Ok(Some(self_t.build_arr(sub_key_vec.iter().map(AsRef::as_ref).collect())));
+        if mode == 0 {
+            let ret_vec:Vec<String> = sub_key_vec.iter().map(|temp_vec|{
+                let s = self_t.build_arr(temp_vec.iter().map(AsRef::as_ref).collect());
+                s
+           }).collect();
+           return Ok(Some(self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect())));
+        } else if mode == 1 {
+            let index0 = index0_str.parse::<usize>().unwrap();
+            let index1 = index1_str.parse::<usize>().unwrap();
+            if let Some(v0) = sub_key_vec.get(index0) {
+                if let Some(v1) = v0.get(index1) {
+                    return Ok(Some(v1.to_owned()));
+                }
+            }
+            return Err(RedLang::make_err("正则索引参数错误,参数越界"));
+        } else if mode == 2 {
+            let index0 = index0_str.parse::<usize>().unwrap();
+            if let Some(v0) = sub_key_vec.get(index0) {
+                return Ok(Some(self_t.build_arr(v0.iter().map(AsRef::as_ref).collect())));
+            }
+            return Err(RedLang::make_err("正则索引参数错误,参数越界"));
+        } else { // mode == 3
+            let mut is_err = false;
+            let ret_vec = sub_key_vec.iter().map(|temp_vec|{
+                if let Some(v1) = temp_vec.get(index1_str.parse::<usize>().unwrap()) {
+                    v1.to_owned()
+                } else {
+                    is_err = true;
+                    "".to_owned()
+                }
+            }).collect::<Vec<String>>();
+            if is_err {
+                return Err(RedLang::make_err("正则索引参数错误,参数越界"));
+            }
+            return Ok(Some(self_t.build_arr(ret_vec.iter().map(AsRef::as_ref).collect())));
+        }
     });
     add_fun(vec!["转字节集"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
