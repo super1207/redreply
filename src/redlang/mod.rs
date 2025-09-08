@@ -518,6 +518,10 @@ pub fn init_core_fun_map() {
         let ele = self_t.stack.pop_back().unwrap_or_default();
         return Ok(Some(ele));
     });
+    add_fun(vec!["栈长度"],|self_t,_params|{
+        let len = self_t.stack.len().to_string();
+        return Ok(Some(len));
+    });
     add_fun(vec!["栈顶"],|self_t,params|{
         let index = self_t.get_param(params, 0)?;
         if index == "" {

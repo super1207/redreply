@@ -212,6 +212,13 @@ hellohellohellohellohello
 <font color="red">序号</font>应该为非负整数或者空或者不存在，否则报错。
 
 
+### 栈长度
+
+【栈长度】
+
+返回栈的长度。
+
+
 ### 屏蔽
 
 
