@@ -14,7 +14,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::io::Write;
-use crate::{add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, cronevent::{OneTimeRunStruct, G_ONE_TIME_RUN}, del_file_lock, get_python_cmd_name, pkg_can_run, pyserver::call_py_block, redlang::get_random, G_DEFAULF_FONT, RT_PTR};
+use crate::{add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, cronevent::{OneTimeRunStruct, G_ONE_TIME_RUN}, del_file_lock, get_python_cmd_name, pkg_can_run, pyserver::call_py_block, redlang::{add_fun, get_random}, G_DEFAULF_FONT, RT_PTR};
 
 use image::{AnimationDecoder, EncodableLayout, GenericImageView, ImageBuffer, ImageFormat, Rgba};
 use imageproc::geometric_transformations::{Projection, warp_with, rotate_about_center};
@@ -104,33 +104,6 @@ pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,p
 }
 
 pub fn init_ex_fun_map() {
-    fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
-        let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
-        for it in k_vec {
-            let k = it.to_string().to_uppercase();
-            let k_t = crate::mytool::str_to_ft(&k);
-            if k == k_t {
-                if w.contains_key(&k) {
-                    let err_opt:Option<String> = None;
-                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
-                }
-                w.insert(k, fun);
-            }else {
-                if w.contains_key(&k) {
-                    let err_opt:Option<String> = None;
-                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
-                }
-                w.insert(k, fun);
-                if w.contains_key(&k_t) {
-                    let err_opt:Option<String> = None;
-                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k_t)).unwrap();
-                }
-                w.insert(k_t, fun);
-            }
-        }
-    }
-
-
     add_fun(vec!["返回头","取返回头"],|self_t,params|{
         let ret_headers = self_t.get_coremap("返回头")?.to_string();
         if ret_headers == "" {

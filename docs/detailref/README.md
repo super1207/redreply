@@ -207,7 +207,7 @@ hellohellohellohellohello
 
 <font color="red">序号</font>不存在或者为空文本代表查看栈顶元素。
 
-<font color="red">序号</font>越界返回空文件。
+<font color="red">序号</font>越界返回空文本。
 
 <font color="red">序号</font>应该为非负整数或者空或者不存在，否则报错。
 
@@ -2695,6 +2695,52 @@ onebot事件json对应的RedLang对象。
 **注意**：这是一个不太稳定的命令，目前有各种BUG
 
 
+## AI相关命令说明
+
+**注意**：目前所有AI相关命令都是不稳定的
+
+### GPT-创建单轮对话
+
+【GPT-创建单轮对话@<font color="red">端点url</font>@<font color="red">API密钥</font>@<font color="red">模型名</font>】
+
+此命令返回一个GPT结构体指针(文本类型)。
+
+
+### GPT-增加文本
+
+【GPT-增加文本@<font color="red">GPT结构体指针</font>@<font color="red">文本</font>】
+
+朝结构体中增加文本。
+
+### GPT-增加图片
+
+【GPT-增加图片@<font color="red">GPT结构体指针</font>@<font color="red">图片</font>】
+
+朝结构体中增加图片。图片可以是网络图片url(需要远程大模型支持)，也可以是图片字节集(需要远程大模型支持)。
+
+
+### GPT-发送请求
+
+【GPT-发送请求@<font color="red">GPT结构体指针</font>】
+
+发送请求。
+
+
+### GPT-获取回复
+
+【GPT-获取回复@<font color="red">GPT结构体指针</font>】
+
+获取回复，返回文本类型。
+
+
+### GPT-删除指针
+
+【GPT-删除指针@<font color="red">GPT结构体指针</font>】
+
+用于立即清理GPT结构体指针以释放内存。通常情况下不需要调用，如果忘记调用，那么GPT结构体指针将会在脚本结束后自动清理。
+
+
+
 ## 事件关键词
 
 
@@ -2797,6 +2843,8 @@ onebot事件json对应的RedLang对象。
 【网络-权限】
 
 返回`可写`、`只读`、或空文本。
+
+
 
 ## 内容过滤
 

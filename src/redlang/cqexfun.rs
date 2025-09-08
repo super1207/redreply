@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::BTreeMap, fs, path::{Path, PathBuf}, rc::Rc, str::FromStr, sync::Arc, thread, time::SystemTime, vec};
 
-use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, json_to_cq_str, read_json_str}, pkg_can_run, read_code_cache, redlang::{exfun::get_raw_data, get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, status::{add_send_group_msg, add_send_private_msg}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID, RT_PTR};
+use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, json_to_cq_str, read_json_str}, pkg_can_run, read_code_cache, redlang::{add_fun, exfun::get_raw_data, get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, status::{add_send_group_msg, add_send_private_msg}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID, RT_PTR};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -137,31 +137,6 @@ pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error:
 }
 
 pub fn init_cq_ex_fun_map() {
-    fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
-        let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
-        for it in k_vec {
-            let k = it.to_string().to_uppercase();
-            let k_t = crate::mytool::str_to_ft(&k);
-            if k == k_t {
-                if w.contains_key(&k) {
-                    let err_opt:Option<String> = None;
-                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
-                }
-                w.insert(k, fun);
-            }else {
-                if w.contains_key(&k) {
-                    let err_opt:Option<String> = None;
-                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
-                }
-                w.insert(k, fun);
-                if w.contains_key(&k_t) {
-                    let err_opt:Option<String> = None;
-                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k_t)).unwrap();
-                }
-                w.insert(k_t, fun);
-            }
-        }
-    }
     add_fun(vec!["取群列表","群列表"],|self_t,_params|{
         let groups_id = &*self_t.get_exmap("群组ID");
         let send_json;

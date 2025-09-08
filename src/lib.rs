@@ -565,6 +565,7 @@ pub fn initialize() -> i32 {
     redlang::webexfun::init_web_ex_fun_map();
     redlang::cqexfun::init_cq_ex_fun_map();
     redlang::exfun::init_ex_fun_map();
+    redlang::aifun::init_ai_fun_map();
     redlang::init_core_fun_map();
 
     // 释放文件

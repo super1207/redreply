@@ -8,6 +8,7 @@ use crate::{cqapi::cq_add_log_w, cqevent::do_script, pkg_can_run, G_CONST_MAP, G
 pub mod exfun;
 pub(crate) mod cqexfun;
 pub(crate) mod webexfun;
+pub(crate) mod aifun;
 
 lazy_static! {
     static ref OOP_MAP:HashMap<String,i32> = {
@@ -462,8 +463,8 @@ fn get_core_cmd(cmd:&str,pkg_name:&str) -> Option<fn(&mut RedLang, &[String]) ->
 }
 
 
-pub fn init_core_fun_map() {
-    fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
+
+pub fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
         let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
         for it in k_vec {
             let k = it.to_string().to_uppercase();
@@ -488,6 +489,8 @@ pub fn init_core_fun_map() {
             }
         }
     }
+
+pub fn init_core_fun_map() {
     add_fun(vec!["换行"],|_self_t,_params|{
         return Ok(Some(String::from("\n")));
     });
@@ -1923,9 +1926,45 @@ let k = &*self.exmap;
     ) -> Result<(), Box<dyn std::error::Error>> {
         let var_vec_len = self.var_vec.len();
         let mp = &mut self.var_vec[var_vec_len - 1];
-        let mut var = RedLangVarType::new();
-        var.set_string(&mut self.bin_pool,val.to_owned())?;
-        mp.insert(format!("{}46631549-6D26-68A5-E192-5EBE9A6EBA61", key), Rc::new(RefCell::new(var)));
+        
+        if val == "" {
+            mp.remove(&format!("{}46631549-6D26-68A5-E192-5EBE9A6EBA61", key));
+        } else {
+            let mut var = RedLangVarType::new();
+            var.set_string(&mut self.bin_pool,val.to_owned())?;
+            mp.insert(format!("{}46631549-6D26-68A5-E192-5EBE9A6EBA61", key), Rc::new(RefCell::new(var)));
+        }
+        Ok(())
+    }
+    pub fn get_gobalmap(
+        &mut self,
+        key: &str,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+
+        let k = format!("{}8bb64e93-143d-4209-8fad-3e3a6a43f191", key);
+        let var_ref = self.var_vec[0].get(&k);
+        if let Some(v) = var_ref {
+            let mut k = (*v).borrow_mut();
+            let val = k.get_string();
+            return Ok((*val).clone());
+        }else {
+            return Ok("".to_string());
+        }
+    }
+    pub fn set_gobalmap(
+        &mut self,
+        key: &str,
+        val: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mp = &mut self.var_vec[0];
+        
+        if val == "" {
+            mp.remove(&format!("{}8bb64e93-143d-4209-8fad-3e3a6a43f191", key));
+        } else {
+            let mut var = RedLangVarType::new();
+            var.set_string(&mut self.bin_pool,val.to_owned())?;
+            mp.insert(format!("{}8bb64e93-143d-4209-8fad-3e3a6a43f191", key), Rc::new(RefCell::new(var)));
+        }
         Ok(())
     }
     fn get_len(&self,data:&str) -> Result<usize, Box<dyn std::error::Error>> {

@@ -1,33 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::{redlang::RedLang, RT_PTR};
+use crate::{redlang::{add_fun, RedLang}, RT_PTR};
 
 pub fn init_web_ex_fun_map() {
-    fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>>){
-        let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
-        for it in k_vec {
-            let k = it.to_string().to_uppercase();
-            let k_t = crate::mytool::str_to_ft(&k);
-            if k == k_t {
-                if w.contains_key(&k) {
-                    let err_opt:Option<String> = None;
-                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
-                }
-                w.insert(k, fun);
-            }else {
-                if w.contains_key(&k) {
-                    let err_opt:Option<String> = None;
-                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k)).unwrap();
-                }
-                w.insert(k, fun);
-                if w.contains_key(&k_t) {
-                    let err_opt:Option<String> = None;
-                    err_opt.ok_or(&format!("不可以重复添加命令:{}",k_t)).unwrap();
-                }
-                w.insert(k_t, fun);
-            }
-        }
-    }
     add_fun(vec!["网络-设置返回头"],|self_t,params|{
         let http_header = self_t.get_coremap("网络-返回头")?.to_string();
         let mut http_header_map:BTreeMap<String, String> = BTreeMap::new();
