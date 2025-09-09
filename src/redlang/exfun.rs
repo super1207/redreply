@@ -706,17 +706,24 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["BASE64解码"],|self_t,params|{
         let b64_str = self_t.get_param(params, 0)?;
-        let content = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+        if let Ok(content) = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
             &base64::alphabet::STANDARD,
-            base64::engine::general_purpose::PAD), b64_str)?;
-        return Ok(Some(self_t.build_bin(content)));
+            base64::engine::general_purpose::PAD), b64_str) {
+                return Ok(Some(self_t.build_bin(content)));
+        } else {
+            // 解码出错返回空字节集
+            return Ok(Some(self_t.build_bin(Vec::new())));
+        }
     });
     add_fun(vec!["GZIP解码"],|self_t,params|{
         let gzip_str = self_t.get_param(params, 0)?;
         let gzip_bin = RedLang::parse_bin(&mut self_t.bin_pool,&gzip_str)?;
         let mut d = GzDecoder::new(gzip_bin.as_slice());
         let mut buf = vec![];
-        d.read_to_end(&mut buf)?;
+        if d.read_to_end(&mut buf).is_err() {
+            // 解码出错返回空字节集
+            return Ok(Some(self_t.build_bin(Vec::new())));
+        }
         return Ok(Some(self_t.build_bin(buf)));
     });
     add_fun(vec!["GZIP编码"],|self_t,params|{
@@ -732,7 +739,10 @@ pub fn init_ex_fun_map() {
         let zlib_bin = RedLang::parse_bin(&mut self_t.bin_pool,&zlib_str)?;
         let mut d = ZlibDecoder::new(zlib_bin.as_slice());
         let mut buf = vec![];
-        d.read_to_end(&mut buf)?;
+        if d.read_to_end(&mut buf).is_err() {
+            // 解码出错返回空字节集
+            return Ok(Some(self_t.build_bin(Vec::new())));
+        }
         return Ok(Some(self_t.build_bin(buf)));
     });
     add_fun(vec!["ZLIB编码"],|self_t,params|{
