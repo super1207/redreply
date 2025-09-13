@@ -2544,13 +2544,13 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["压缩"],|self_t,params|{
         let src_path = self_t.get_param(params, 0)?;
         let remote_path = self_t.get_param(params, 1)?;
-        sevenz_rust::compress_to_path(src_path, remote_path)?;
+        sevenz_rust2::compress_to_path(src_path, remote_path)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["解压"],|self_t,params|{
         let src_path = self_t.get_param(params, 0)?;
         let remote_path = self_t.get_param(params, 1)?;
-        sevenz_rust::decompress_file(src_path, remote_path)?;
+        sevenz_rust2::decompress_file(src_path, remote_path)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["去重"],|self_t,params|{

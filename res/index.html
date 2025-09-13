@@ -208,6 +208,7 @@
                 <button style="flex: 1 0 auto;" @click="edit_click()">编辑</button>
                 <button @click="rename_pkg()" style="flex: 1 0 auto;">改名</button>
                 <button @click="del_pkg()" style="flex: 1 0 auto;">删除</button>
+                <button @click="export_pkg()" style="flex: 1 0 auto;">导出</button>
             </div>
             <div id="cmd_content" style="display: flex;flex: 0 0 2.5em;padding: 0.5em;background-color: #b6cde4;">
                 <button @click="connect_ob()" style="flex: 1 0 auto;">连接平台协议</button>
@@ -371,6 +372,14 @@
                                 alert("删除失败")
                             });
                         }
+                        this.downdown()
+                    },
+                    export_pkg(){
+                        let url = "/download_pkg";
+                        if(this.select_name !== "默认包") {
+                            url += "?pkg_name=" + encodeURIComponent(this.select_name);
+                        }
+                        window.location.href = url;
                         this.downdown()
                     },
                     rename_pkg(){

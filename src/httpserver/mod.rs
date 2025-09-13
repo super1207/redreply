@@ -3,7 +3,7 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
-use std::thread;
+use std::{fs, thread};
 use std::time::SystemTime;
 use crate::cqapi::{cq_add_log, cq_call_api, cq_get_app_directory1, get_history_log};
 use crate::cqevent::do_script;
@@ -815,23 +815,28 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         let tmp_file_name = format!("{}.red.7z", uid);
         let tmp_file_path = file_dir.join(&tmp_file_name);
 
-        // 将文件写入文件
-        std::fs::write(&tmp_file_path, &file_content)?;
-       
-       // 删除临时文件
+
+        // 删除临时文件
         let _guard = scopeguard::guard(tmp_file_path.clone(), |path| {
             let _ = std::fs::remove_file(path);
         });
 
+        // 将文件写入文件
+        std::fs::write(&tmp_file_path, &file_content)?;
+
+
+
+
+
         // 解压文件
         let decompress_path = file_dir.join(&uid);
-        sevenz_rust::decompress_file(&tmp_file_path, &decompress_path)?;
 
         // 删除临时目录
         let _guard = scopeguard::guard(decompress_path.clone(), |path| {
             let _ = std::fs::remove_dir_all(path);
         });
 
+        sevenz_rust2::decompress_file(&tmp_file_path, &decompress_path)?;
 
         // 判断其中有无 script.json 文件
         let script_json_path = decompress_path.join("script.json");
@@ -852,7 +857,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         }
 
         // 将文件移动到 real_pkg_dir
-        sevenz_rust::decompress_file(tmp_file_path, &real_pkg_dir)?;
+        sevenz_rust2::decompress_file(tmp_file_path, &real_pkg_dir)?;
         
 
         let mut new_script = vec![];
@@ -893,6 +898,54 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         cq_add_log_w(&format!("上传文件大小为{}",content_len)).unwrap();
 
         let res = hyper::Response::new(full("ok"));
+        return Ok(res);
+    }  else if url_path == "/download_pkg" {
+        if can_write == false {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let params = crate::httpevent::get_params_from_uri(request.uri());
+        let pkg_name;
+        if let Some(name) = params.get("pkg_name") {
+            pkg_name = name.to_owned();
+        }else {
+            pkg_name = "".to_owned();
+        }
+        let pkg_dir;
+        let plus_dir = cq_get_app_directory1()?;
+        if pkg_name == "" {
+            pkg_dir = PathBuf::from_str(&plus_dir)?.join("default_pkg_dir");
+        } else {
+            pkg_dir = PathBuf::from_str(&plus_dir)?.join("pkg_dir").join(&pkg_name);
+        }
+
+        let tmp_dir = crate::cqapi::get_tmp_dir()?;
+        let file_dir = PathBuf::from(&tmp_dir).join("pkg");
+        
+        if !file_dir.exists() {
+            std::fs::create_dir_all(&file_dir)?;
+        }
+
+        let uid = uuid::Uuid::new_v4().to_string();
+        let tmp_file_name = format!("{}.red.7z", uid);
+        let tmp_file_path = file_dir.join(&tmp_file_name);
+
+        let _guard = scopeguard::guard(tmp_file_path.clone(), |path| {
+            let _ = std::fs::remove_file(path);
+        });
+
+        sevenz_rust2::compress_to_path(pkg_dir, &tmp_file_path)?;
+
+        let file_bin = fs::read(std::path::Path::new(&tmp_file_path))?;
+
+        let mut res = hyper::Response::new(full(file_bin));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/octet-stream"));
+        // 设置文件名为pkg_name.red.7z，如果pkg_name为空，则为default.red.7z
+        if pkg_name == "" {
+            res.headers_mut().insert("Content-Disposition", HeaderValue::from_str(&format!("attachment; filename=default.red.7z"))?);
+        } else {
+            res.headers_mut().insert("Content-Disposition", HeaderValue::from_str(&format!("attachment; filename={}.red.7z", pkg_name))?);
+        }
         return Ok(res);
     }
     else{
