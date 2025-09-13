@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>红色问答 - 插件包上传</title>
+    <style>
+        :root {
+            --primary-color: #e55743;
+            --primary-hover: #d14532;
+            --success-color: #28a745;
+            --error-color: #dc3545;
+            --border-color: #e2e8f0;
+            --bg-hover: rgba(229, 87, 67, 0.05);
+            --text-color: #2d3748;
+            --text-light: #718096;
+            --shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            --shadow-hover: 0 8px 15px rgba(0, 0, 0, 0.15);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            color: var(--text-color);
+        }
+
+        .upload-wrapper {
+            background: white;
+            border-radius: 16px;
+            box-shadow: var(--shadow);
+            padding: 40px;
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        .header {
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: var(--primary-color);
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            color: var(--text-light);
+            font-size: 16px;
+        }
+
+        .upload-container {
+            border: 3px dashed var(--border-color);
+            border-radius: 12px;
+            padding: 40px 30px;
+            transition: all 0.3s ease;
+            background: #fafafa;
+            cursor: pointer;
+            position: relative;
+        }
+
+        .upload-container:hover {
+            border-color: var(--primary-color);
+            background: var(--bg-hover);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-hover);
+        }
+
+        .upload-container.dragover {
+            border-color: var(--primary-color);
+            background: var(--bg-hover);
+            transform: scale(1.02);
+        }
+
+        .upload-icon {
+            width: 60px;
+            height: 60px;
+            margin: 0 auto 20px;
+            color: var(--primary-color);
+            fill: currentColor;
+        }
+
+        .upload-text h2 {
+            font-size: 20px;
+            font-weight: 500;
+            margin-bottom: 8px;
+            color: var(--text-color);
+        }
+
+        .upload-text p {
+            color: var(--text-light);
+            font-size: 14px;
+            margin-bottom: 20px;
+        }
+
+        .file-input {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .upload-btn {
+            background: var(--primary-color);
+            color: white;
+            padding: 12px 32px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            margin-top: 20px;
+        }
+
+        .upload-btn:hover:not(:disabled) {
+            background: var(--primary-hover);
+            transform: translateY(-1px);
+            box-shadow: var(--shadow);
+        }
+
+        .upload-btn:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .progress-container {
+            margin-top: 30px;
+            display: none;
+        }
+
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            font-size: 14px;
+            color: var(--text-light);
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 8px;
+            background: #edf2f7;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--primary-color), var(--success-color));
+            border-radius: 4px;
+            transition: width 0.3s ease;
+            position: relative;
+        }
+
+        .progress-fill::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.3) 50%, transparent 100%);
+            animation: shimmer 2s infinite;
+        }
+
+        @keyframes shimmer {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .status {
+            margin-top: 12px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .success {
+            color: var(--success-color);
+        }
+
+        .error {
+            color: var(--error-color);
+        }
+
+        .file-info {
+            margin-top: 15px;
+            padding: 12px;
+            background: #f7fafc;
+            border-radius: 8px;
+            border-left: 4px solid var(--primary-color);
+            text-align: left;
+            display: none;
+        }
+
+        .file-info p {
+            margin: 4px 0;
+            font-size: 14px;
+            color: var(--text-color);
+        }
+
+        .file-info .filename {
+            font-weight: 500;
+            color: var(--primary-color);
+        }
+
+        @media (max-width: 600px) {
+            .upload-wrapper {
+                padding: 30px 20px;
+                margin: 10px;
+            }
+            
+            .upload-container {
+                padding: 30px 20px;
+            }
+            
+            .header h1 {
+                font-size: 24px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="upload-wrapper">
+        <div class="header">
+            <h1>插件包上传</h1>
+            <p>上传 .red.7z 格式的插件包文件</p>
+        </div>
+        
+        <div id="uploadContainer" class="upload-container">
+            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="17 8 12 3 7 8"></polyline>
+                <line x1="12" y1="3" x2="12" y2="15"></line>
+            </svg>
+            
+            <div class="upload-text">
+                <h2>拖放文件到此处</h2>
+                <p>或点击选择文件</p>
+                <p>仅支持 .red.7z 格式</p>
+            </div>
+            
+            <input type="file" id="fileInput" class="file-input" accept=".red.7z">
+        </div>
+
+        <button id="uploadBtn" class="upload-btn" disabled>开始上传</button>
+        
+        <div id="fileInfo" class="file-info">
+            <p>文件名: <span class="filename" id="fileName"></span></p>
+            <p>文件大小: <span id="fileSize"></span></p>
+        </div>
+        
+        <div class="progress-container" id="progressContainer">
+            <div class="progress-info">
+                <span>上传进度</span>
+                <span id="progressPercent">0%</span>
+            </div>
+            <div class="progress-bar">
+                <div class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="status" id="statusText">准备上传...</div>
+        </div>
+    </div>
+
+    <script>
+        const uploadContainer = document.getElementById('uploadContainer');
+        const fileInput = document.getElementById('fileInput');
+        const uploadBtn = document.getElementById('uploadBtn');
+        const progressContainer = document.getElementById('progressContainer');
+        const progressFill = document.querySelector('.progress-fill');
+        const progressPercent = document.getElementById('progressPercent');
+        const statusText = document.getElementById('statusText');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const fileSize = document.getElementById('fileSize');
+
+        // --- 拖拽功能 ---
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            uploadContainer.addEventListener(eventName, preventDefaults, false);
+            document.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        ['dragenter', 'dragover'].forEach(eventName => {
+            uploadContainer.addEventListener(eventName, highlight, false);
+        });
+
+        ['dragleave', 'drop'].forEach(eventName => {
+            uploadContainer.addEventListener(eventName, unhighlight, false);
+        });
+
+        function highlight() {
+            uploadContainer.classList.add('dragover');
+        }
+
+        function unhighlight() {
+            uploadContainer.classList.remove('dragover');
+        }
+
+        // 处理拖放的文件
+        uploadContainer.addEventListener('drop', handleDrop, false);
+
+        function handleDrop(e) {
+            const dt = e.dataTransfer;
+            const files = dt.files;
+            handleFiles(files);
+        }
+
+        // --- 文件处理逻辑 ---
+        function handleFiles(files) {
+            if (files.length > 0) {
+                const file = files[0];
+                
+                // 验证文件后缀
+                if (!file.name.toLowerCase().endsWith('.red.7z')) {
+                    showError('请选择 .red.7z 格式的文件');
+                    resetUpload();
+                    return;
+                }
+                
+                fileInput.files = files;
+                showFileInfo(file);
+                uploadBtn.disabled = false;
+            }
+        }
+
+        // 显示文件信息
+        function showFileInfo(file) {
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            fileInfo.style.display = 'block';
+        }
+
+        // 格式化文件大小
+        function formatFileSize(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        // 显示错误信息
+        function showError(message) {
+            statusText.textContent = message;
+            statusText.className = 'status error';
+            progressContainer.style.display = 'block';
+            setTimeout(() => {
+                resetUpload();
+            }, 3000);
+        }
+
+        // 文件选择事件
+        fileInput.addEventListener('change', function() {
+            handleFiles(this.files);
+        });
+
+        // 上传按钮点击事件
+        uploadBtn.addEventListener('click', async function() {
+            const file = fileInput.files[0];
+            if (!file) return;
+
+            // 显示进度条
+            progressContainer.style.display = 'block';
+            statusText.textContent = '正在读取文件...';
+            statusText.className = 'status';
+            uploadBtn.disabled = true;
+
+            try {
+                // 读取文件为base64
+                const base64Content = await readFileAsBase64(file);
+                
+                // 准备上传数据
+                const uploadData = {
+                    filename: file.name,
+                    file_size: file.size,
+                    file_content: base64Content
+                };
+
+                // 更新状态
+                statusText.textContent = '正在上传...';
+                updateProgress(50);
+
+                // 发送POST请求
+                const response = await fetch('/upload_pkg', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(uploadData)
+                });
+
+                const responseText = await response.text();
+                
+                if (response.ok && responseText === 'ok') {
+                    updateProgress(100);
+                    statusText.textContent = '上传成功！请刷新主页查看导入的插件';
+                    statusText.className = 'status success';
+                    
+                    // 3秒后重置
+                    setTimeout(() => {
+                        resetUpload();
+                    }, 3000);
+                } else {
+                    throw new Error(`上传失败: ${response.status} ${response.statusText} - ${responseText}`);
+                }
+
+            } catch (error) {
+                console.error('上传错误:', error);
+                statusText.textContent = `上传失败: ${error.message}`;
+                statusText.className = 'status error';
+                uploadBtn.disabled = false;
+            }
+        });
+
+        // 更新进度条
+        function updateProgress(percent) {
+            progressFill.style.width = percent + '%';
+            progressPercent.textContent = percent + '%';
+        }
+
+        // 读取文件为base64
+        function readFileAsBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                
+                reader.onload = function(e) {
+                    const base64 = e.target.result.split(',')[1];
+                    resolve(base64);
+                };
+                
+                reader.onerror = function(error) {
+                    reject(error);
+                };
+                
+                reader.readAsDataURL(file);
+            });
+        }
+
+        // 重置上传状态
+        function resetUpload() {
+            fileInput.value = '';
+            uploadBtn.disabled = true;
+            progressContainer.style.display = 'none';
+            fileInfo.style.display = 'none';
+            updateProgress(0);
+            statusText.className = 'status';
+            statusText.textContent = '准备上传...';
+        }
+
+        // 添加点击容器触发文件选择
+        uploadContainer.addEventListener('click', function(e) {
+            if (e.target !== fileInput) {
+                fileInput.click();
+            }
+        });
+    </script>
+</body>
+</html>

@@ -186,6 +186,7 @@
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="gobal_filter_btn()">全局过滤器</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="gobal_init_btn()">全局初始化器</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="playmusic_btn()">{{playbkmusic}}</button>
+                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="quit_redreply()">退出</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="other_close()">取消</button>
                 </div>  
             </dialog>
@@ -212,7 +213,7 @@
                 <button @click="connect_ob()" style="flex: 1 0 auto;">连接平台协议</button>
                 <button @click="add_click()" style="flex: 1 0 auto;">新增</button>
                 <button @click="other_fun()" style="flex: 1 0 auto;">其它</button>
-                <button @click="quit_redreply()" style="flex: 1 0 auto;">退出</button>
+                <button @click="import_pkg()" style="flex: 1 0 auto;">导入包</button>
             </div>
         </div>
         <script>
@@ -287,6 +288,9 @@
                     },
                     connect_ob() {
                         window.open("/obconnect.html", "_blank");
+                    },
+                    import_pkg() {
+                        window.open("/uploadpkg.html", "_blank");
                     },
                     title_click() {
                         window.open("https://github.com/super1207/redreply", "_blank");

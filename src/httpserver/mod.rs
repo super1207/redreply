@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::io::Read;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::thread;
 use std::time::SystemTime;
@@ -10,7 +11,7 @@ use crate::httpevent::do_http_event;
 use crate::mytool::read_json_str;
 use crate::onebot11s::event_to_onebot;
 use crate::pluscenter::PlusCenterPlusBase;
-use crate::{read_config, set_gobal_filter_code, set_gobal_init_code, G_AUTO_CLOSE};
+use crate::{initevent, read_config, set_gobal_filter_code, set_gobal_init_code, G_AUTO_CLOSE, G_PKG_NAME, G_SCRIPT};
 use crate::redlang::RedLang;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
 use futures_util::{SinkExt, StreamExt};
@@ -755,6 +756,144 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         // let t = http_body_util::combinators::BoxBody::new(ret);
         // let k = ret.map_err(|never| match never {});
         Ok(ret)
+    } else if url_path == "/upload_pkg" {
+        if can_write == false {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        
+        let content_len = request.headers().get("content-length").ok_or("/upload_pkg 中没有content-length")?;
+        let content_len = content_len.to_str()?.parse::<usize>()?;
+
+        // 如果 content_len > 10MB，就拒绝上传
+        if content_len > 11 * 1024 * 1024 {
+            cq_add_log_w(format!("文件太大,请上传小于10MB的文件").as_str()).unwrap();
+            let res = hyper::Response::new(full("文件太大,请上传小于10MB的文件"));
+            return Ok(res);
+        }
+
+        // 读取body
+        let mut body_reader = request.collect().await?.aggregate().reader();
+        let mut body = vec![0; content_len];
+        body_reader.read_exact(&mut body[..content_len])?;
+
+        // 将body解析为json,得到filename,file_size,file_content
+        let json: serde_json::Value = serde_json::from_slice(&body)?;
+        let filename = read_json_str(&json, "filename");
+
+        // 文件名可能是1.a.b.z.d.red.7z，我们应该取.red.7z前面的部分
+        let name = filename.strip_suffix(".red.7z")
+            // 如果 strip_suffix 返回 None，ok_or 会将其转换为 Err
+            .ok_or("文件名格式错误：必须以 .red.7z 结尾")?
+            // 将 &str 转换为拥有的 String
+            .to_owned();
+
+
+        let file_size = read_json_str(&json, "file_size");
+        let file_content = read_json_str(&json, "file_content");
+
+        // 将file_content解码
+        let file_content = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+            &base64::alphabet::STANDARD,
+            base64::engine::general_purpose::PAD), file_content)?;
+
+        // 验证file_content与file_size是否一致
+        if file_content.len() != file_size.parse::<usize>()? {
+            let res = hyper::Response::new(full("文件大小与文件内容不符"));
+            return Ok(res);
+        }
+
+        // 如果文件目录不存在，就创建
+        let tmp_dir = crate::cqapi::get_tmp_dir()?;
+        let file_dir = PathBuf::from(&tmp_dir).join("pkg");
+        
+        if !file_dir.exists() {
+            std::fs::create_dir_all(&file_dir)?;
+        }
+        // 生成一个随机文件名
+        let uid = uuid::Uuid::new_v4().to_string();
+        let tmp_file_name = format!("{}.red.7z", uid);
+        let tmp_file_path = file_dir.join(&tmp_file_name);
+
+        // 将文件写入文件
+        std::fs::write(&tmp_file_path, &file_content)?;
+       
+       // 删除临时文件
+        let _guard = scopeguard::guard(tmp_file_path.clone(), |path| {
+            let _ = std::fs::remove_file(path);
+        });
+
+        // 解压文件
+        let decompress_path = file_dir.join(&uid);
+        sevenz_rust::decompress_file(&tmp_file_path, &decompress_path)?;
+
+        // 删除临时目录
+        let _guard = scopeguard::guard(decompress_path.clone(), |path| {
+            let _ = std::fs::remove_dir_all(path);
+        });
+
+
+        // 判断其中有无 script.json 文件
+        let script_json_path = decompress_path.join("script.json");
+        if !script_json_path.exists() {
+            let res = hyper::Response::new(full("文件中不存在script.json"));
+            return Ok(res);
+        }
+
+        
+        let plus_dir_str = cq_get_app_directory1()?;
+        let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
+        let real_pkg_dir = pkg_dir.join(&name);
+
+        // 判断 real_pkg_dir目前是否存在，存在则报错
+        if real_pkg_dir.exists() {
+            let res = hyper::Response::new(full("插件已经存在，无法重复安装"));
+            return Ok(res);
+        }
+
+        // 将文件移动到 real_pkg_dir
+        sevenz_rust::decompress_file(tmp_file_path, &real_pkg_dir)?;
+        
+
+        let mut new_script = vec![];
+        // 读取已有脚本
+        {
+            let wk = G_SCRIPT.read().unwrap();
+            for it in wk.as_array().ok_or("read G_SCRIPT err")? {
+                let it_name = read_json_str(it, "pkg_name");
+                if it_name != name {
+                    new_script.push(it.to_owned());
+                }
+            }
+        }
+        // 更新新增脚本
+        let ret_scripts = real_pkg_dir.join("script.json");
+        let scripts_str = tokio::fs::read_to_string(ret_scripts).await?;
+        let mut scripts:serde_json::Value = serde_json::from_str(&scripts_str)?;
+        for it in scripts.as_array_mut().ok_or("script.json not array")? {
+            let obj_mut = it.as_object_mut().ok_or("script obj not object")?;
+            obj_mut.insert("pkg_name".to_owned(), serde_json::json!(name));
+            new_script.push(it.to_owned());
+        }
+        {
+            let mut wk = G_SCRIPT.write().unwrap();
+            (*wk) = serde_json::Value::Array(new_script);
+        }
+        // 添加新脚本名
+        G_PKG_NAME.write().unwrap().insert(name.to_owned());
+
+        // 执行初始化脚本，不用等待
+        let name_t = filename.to_owned();
+        tokio::task::spawn_blocking(move ||{
+            if let Err(err) = initevent::do_init_event(Some(&name_t)){
+                cq_add_log_w(&err.to_string()).unwrap();
+            }
+        });
+
+        cq_add_log_w(&format!("上传文件大小为{}",content_len)).unwrap();
+
+        let res = hyper::Response::new(full("ok"));
+        return Ok(res);
     }
     else{
         let res = hyper::Response::new(full("api not found"));
