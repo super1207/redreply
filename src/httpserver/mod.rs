@@ -767,15 +767,41 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
 
         // 如果 content_len > 10MB，就拒绝上传
         if content_len > 11 * 1024 * 1024 {
+            // 读取前1KB数据（避免完全预读）
+            let mut body_stream = request.into_body();
+            let mut received = 0;
+            while received < 1024 {
+                if let Some(frame_result) = body_stream.frame().await {
+                    let frame = frame_result?;
+                    if let Some(data) = frame.data_ref() {
+                        received += data.len();
+                    }
+                }
+            }
             cq_add_log_w(format!("文件太大,请上传小于10MB的文件").as_str()).unwrap();
             let res = hyper::Response::new(full("文件太大,请上传小于10MB的文件"));
             return Ok(res);
         }
 
         // 读取body
-        let mut body_reader = request.collect().await?.aggregate().reader();
-        let mut body = vec![0; content_len];
-        body_reader.read_exact(&mut body[..content_len])?;
+        let mut body_stream = request.into_body();
+        let mut body = Vec::with_capacity(content_len);
+        while let Some(frame_result) = body_stream.frame().await {
+            let frame = frame_result?;
+            if let Some(data) = frame.data_ref() {
+                body.extend_from_slice(data);
+
+                if body.len() > content_len {
+                    cq_add_log_w("Client sent more data than content-length header specified.").unwrap();
+                    let res = hyper::Response::new(full("Bad request: body size exceeds content-length"));
+                    return Ok(res);
+                }
+            }
+        }
+        if body.len() != content_len {
+            let res = hyper::Response::new(full("Bad request: body size does not match content-length"));
+            return Ok(res);
+        }
 
         // 将body解析为json,得到filename,file_size,file_content
         let json: serde_json::Value = tokio::task::spawn_blocking(move || -> std::result::Result<serde_json::Value, serde_json::Error> {
