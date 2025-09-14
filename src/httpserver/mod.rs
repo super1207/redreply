@@ -3,9 +3,9 @@ use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
-use std::{fs, thread};
+use std::thread;
 use std::time::SystemTime;
-use crate::cqapi::{cq_add_log, cq_call_api, cq_get_app_directory1, get_history_log};
+use crate::cqapi::{cq_add_log, cq_call_api, cq_get_app_directory1_async, get_history_log};
 use crate::cqevent::do_script;
 use crate::httpevent::do_http_event;
 use crate::mytool::read_json_str;
@@ -778,7 +778,9 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         body_reader.read_exact(&mut body[..content_len])?;
 
         // 将body解析为json,得到filename,file_size,file_content
-        let json: serde_json::Value = serde_json::from_slice(&body)?;
+        let json: serde_json::Value = tokio::task::spawn_blocking(move || -> std::result::Result<serde_json::Value, serde_json::Error> {
+            serde_json::from_slice(&body)
+        }).await??;
         let filename = read_json_str(&json, "filename");
 
         // 文件名可能是1.a.b.z.d.red.7z，我们应该取.red.7z前面的部分
@@ -793,9 +795,13 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         let file_content = read_json_str(&json, "file_content");
 
         // 将file_content解码
-        let file_content = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
-            &base64::alphabet::STANDARD,
-            base64::engine::general_purpose::PAD), file_content)?;
+        // 将base64解码操作移到spawn_blocking中执行
+        let file_content = tokio::task::spawn_blocking(move || -> Result<Vec<u8>> {
+            base64::Engine::decode(&base64::engine::GeneralPurpose::new(
+                &base64::alphabet::STANDARD,
+                base64::engine::general_purpose::PAD), file_content)
+                .map_err(|e| e.into())
+        }).await??;
 
         // 验证file_content与file_size是否一致
         if file_content.len() != file_size.parse::<usize>()? {
@@ -804,11 +810,11 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         }
 
         // 如果文件目录不存在，就创建
-        let tmp_dir = crate::cqapi::get_tmp_dir()?;
+        let tmp_dir = crate::cqapi::get_tmp_dir_async().await?;
         let file_dir = PathBuf::from(&tmp_dir).join("pkg");
         
         if !file_dir.exists() {
-            std::fs::create_dir_all(&file_dir)?;
+            tokio::fs::create_dir_all(&file_dir).await?;
         }
         // 生成一个随机文件名
         let uid = uuid::Uuid::new_v4().to_string();
@@ -818,14 +824,13 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
 
         // 删除临时文件
         let _guard = scopeguard::guard(tmp_file_path.clone(), |path| {
-            let _ = std::fs::remove_file(path);
+            RT_PTR.spawn(async{
+                let _ = tokio::fs::remove_file(path).await;
+            });
         });
 
         // 将文件写入文件
-        std::fs::write(&tmp_file_path, &file_content)?;
-
-
-
+        tokio::fs::write(&tmp_file_path, &file_content).await?;
 
 
         // 解压文件
@@ -833,10 +838,18 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
 
         // 删除临时目录
         let _guard = scopeguard::guard(decompress_path.clone(), |path| {
-            let _ = std::fs::remove_dir_all(path);
+            RT_PTR.spawn(async{
+                let _ = tokio::fs::remove_dir_all(path).await;
+            });
         });
 
-        sevenz_rust2::decompress_file(&tmp_file_path, &decompress_path)?;
+        // 将解压操作移到spawn_blocking中执行
+        let tmp_file_path_clone = tmp_file_path.clone();
+        let decompress_path_clone = decompress_path.clone();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            sevenz_rust2::decompress_file(&tmp_file_path_clone, &decompress_path_clone)?;
+            Ok(())
+        }).await??;
 
         // 判断其中有无 script.json 文件
         let script_json_path = decompress_path.join("script.json");
@@ -846,7 +859,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         }
 
         
-        let plus_dir_str = cq_get_app_directory1()?;
+        let plus_dir_str = cq_get_app_directory1_async().await?;
         let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
         let real_pkg_dir = pkg_dir.join(&name);
 
@@ -857,7 +870,11 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         }
 
         // 将文件移动到 real_pkg_dir
-        sevenz_rust2::decompress_file(tmp_file_path, &real_pkg_dir)?;
+        let real_pkg_dir_clone = real_pkg_dir.clone();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            sevenz_rust2::decompress_file(tmp_file_path, real_pkg_dir_clone)?;
+            Ok(())
+        }).await??;
         
 
         let mut new_script = vec![];
@@ -912,18 +929,40 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
             pkg_name = "".to_owned();
         }
         let pkg_dir;
-        let plus_dir = cq_get_app_directory1()?;
+        let plus_dir = cq_get_app_directory1_async().await?;
         if pkg_name == "" {
             pkg_dir = PathBuf::from_str(&plus_dir)?.join("default_pkg_dir");
         } else {
             pkg_dir = PathBuf::from_str(&plus_dir)?.join("pkg_dir").join(&pkg_name);
         }
 
-        let tmp_dir = crate::cqapi::get_tmp_dir()?;
+        // 递归计算pkg_dir大小
+        async fn get_size(path: &PathBuf) -> Result<usize> {
+            let mut size = 0;
+            let mut entries = tokio::fs::read_dir(path).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                let path = entry.path();
+                if path.is_dir() {
+                    size += Box::pin(get_size(&path)).await?;
+                } else {
+                    size += entry.metadata().await?.len() as usize;
+                }
+            }
+            Ok(size)
+        }
+        let size = get_size(&pkg_dir).await?;
+
+        // 大于20MB，报错
+        if size > 20 * 1024 * 1024 {
+            let res = hyper::Response::new(full("文件大小超过10MB"));
+            return Ok(res);
+        }
+
+        let tmp_dir = crate::cqapi::get_tmp_dir_async().await?;
         let file_dir = PathBuf::from(&tmp_dir).join("pkg");
         
         if !file_dir.exists() {
-            std::fs::create_dir_all(&file_dir)?;
+            tokio::fs::create_dir_all(&file_dir).await?;
         }
 
         let uid = uuid::Uuid::new_v4().to_string();
@@ -931,12 +970,19 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         let tmp_file_path = file_dir.join(&tmp_file_name);
 
         let _guard = scopeguard::guard(tmp_file_path.clone(), |path| {
-            let _ = std::fs::remove_file(path);
+            RT_PTR.spawn(async move {
+                let _ = tokio::fs::remove_file(path).await;
+            });
         });
 
-        sevenz_rust2::compress_to_path(pkg_dir, &tmp_file_path)?;
+        let tmp_file_path_clone = tmp_file_path.clone();
+        tokio::task::spawn_blocking(move || -> Result<()> {
+            sevenz_rust2::compress_to_path(&pkg_dir, tmp_file_path_clone)?;
+            Ok(())
+        }).await??;
+        
 
-        let file_bin = fs::read(std::path::Path::new(&tmp_file_path))?;
+        let file_bin = tokio::fs::read(tmp_file_path).await?;
 
         let mut res = hyper::Response::new(full(file_bin));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/octet-stream"));
@@ -956,7 +1002,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
 
 async fn deal_file(request: hyper::Request<hyper::body::Incoming>) -> Result<hyper::Response<BoxBody>> {
     let url_path = request.uri().path();
-    let app_dir = cq_get_app_directory1().unwrap();
+    let app_dir = cq_get_app_directory1_async().await?;
     let path = PathBuf::from(&app_dir);
     let path = path.join("webui");
     let url_path_t = url_path.replace("/", &std::path::MAIN_SEPARATOR.to_string());
@@ -1195,8 +1241,12 @@ async fn serve_onebot_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut
 }
 
 
-fn http_auth(request: &hyper::Request<Incoming>) -> Result<i32> {
-    let web_pass_raw = crate::read_web_password()?;
+async fn http_auth(request: &hyper::Request<Incoming>) -> Result<i32> {
+    
+    let web_pass_raw = tokio::task::spawn_blocking(move || -> Result<String> {
+            Ok(crate::read_web_password()?)
+    }).await??;
+    
     if web_pass_raw == "" {
         return Ok(2)
     }
@@ -1208,7 +1258,9 @@ fn http_auth(request: &hyper::Request<Incoming>) -> Result<i32> {
             return Ok(2)
         }
     }
-    let read_only_web_pass_raw = crate::read_readonly_web_password()?;
+    let read_only_web_pass_raw = tokio::task::spawn_blocking(move || -> Result<String> {
+            Ok(crate::read_readonly_web_password()?)
+    }).await??;
     if read_only_web_pass_raw == "" {
         return Ok(1)
     }
@@ -1339,7 +1391,7 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
     let can_read;
     if !is_local {
     // if !addr.ip().is_loopback() {
-        let http_auth_rst = http_auth(&request);
+        let http_auth_rst = http_auth(&request).await;
         if http_auth_rst.is_err() {
             can_read = false;
             can_write = false;
@@ -1363,8 +1415,6 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
             return Ok(rout_to_login());
         }
     }
-
-
     // 升级ws协议
     if hyper_tungstenite::is_upgrade_request(&request) {
         if url_path == "/watch_log" {
@@ -1457,7 +1507,7 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
             if !can_read {
                 return Ok(rout_to_login());
             }
-            let app_dir = cq_get_app_directory1().unwrap();
+            let app_dir = cq_get_app_directory1_async().await?;
             let path = PathBuf::from(&app_dir);
             let path = path.join("webui");
             let url_path_t = "favicon.ico".to_owned();

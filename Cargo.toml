@@ -81,7 +81,6 @@ tungstenite = "0.27.0"
 markdown = "1.0.0-alpha.21"
 rumqttc = {git = "https://github.com/super1207/rumqtt",default-features = false}
 regex = "1.11.2"
-walkdir = "2.5.0"
 
 [build-dependencies]
 embed-resource = "3.0.5"

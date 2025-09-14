@@ -28,6 +28,10 @@ pub fn get_tmp_dir() -> Result<String, Box<dyn std::error::Error + Send + Sync>>
     Ok(path_str)
 }
 
+pub async fn get_tmp_dir_async() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    Ok(tokio::task::spawn_blocking(||get_tmp_dir()).await??)
+}
+
 
 // 获取插件的目录，绝对路径，末尾有'\',utf8编码
 pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -37,6 +41,10 @@ pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error + Sen
     std::fs::create_dir_all(&path)?;
     let path_str = format!("{}{}",path.to_str().unwrap(),std::path::MAIN_SEPARATOR.to_string());
     return Ok(crate::mytool::deal_path_str(&path_str).to_string());
+}
+
+pub async fn cq_get_app_directory1_async() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    Ok(tokio::task::spawn_blocking(||cq_get_app_directory1()).await??)
 }
 
 // 获取应用目录，绝对路径，末尾有'\',utf8编码

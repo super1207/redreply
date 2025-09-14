@@ -5103,7 +5103,6 @@ dependencies = [
  "url",
  "usvg",
  "uuid",
- "walkdir",
  "webp",
  "winapi",
  "winconsole",
