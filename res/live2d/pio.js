@@ -168,7 +168,7 @@ var Paul_Pio = function (prop) {
                 location.href = current.root;
             };
             elements.home.onmouseover = () => {
-                modules.message(prop.content.home || "点击这里回到首页！");
+                modules.message(prop.content.home || "点击这里回到首页（当然，你本来就在首页");
             };
             current.menu.appendChild(elements.home);
 
@@ -207,10 +207,13 @@ var Paul_Pio = function (prop) {
 
             // 关闭看板娘
             elements.close.onclick = () => {
-                modules.destroy();
+                // modules.destroy();
+            };
+            elements.skin.onmouseover = () => {
+                modules.message(prop.content.skin || "您可以帮我换衣服吗？");
             };
             elements.close.onmouseover = () => {
-                modules.message(prop.content.close || "QWQ 下次再见吧~");
+                modules.message(prop.content.close || "QWQ~ 随便你点，我是不会消失的！");
             };
             current.menu.appendChild(elements.close);
         },
