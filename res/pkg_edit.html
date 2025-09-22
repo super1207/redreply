@@ -35,7 +35,7 @@
 
 <body>
    
-   <div id="app" style="border: 1px solid;display: flex;flex-direction: column;flex: 0 1 100%;overflow-x: auto;margin: 0.4em;"> 
+   <div id="app" style="border: 1px solid;display: flex;flex-direction: column;flex: 0 1 100%;overflow-x: auto;margin: 0.4em;position: relative;"> 
         <h1 style="text-align: center;color: red;">编辑:{{pkg_name}}</h1>
         
         <div style="display: flex;overflow-x: auto;border: 0.1em;border-style:outset;border-spacing: 1px;background-color:#b8e7e4;">
@@ -95,6 +95,9 @@
                 <button ref="child2" disabled true style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="save_code()">保存脚本</button>
                 <button ref="child3" disabled true style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="del_code()">删除脚本</button>
             </div>
+            <div v-if="showToast" style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 5px; z-index: 1000;">
+                {{ toastMessage }}
+            </div>
         </div>
         </body>
    </div>
@@ -123,7 +126,9 @@
                 script_cffs:"",
                 script_ppfs:"",
                 script_keyword:"",
-                pkg_name:""
+                pkg_name:"",
+                showToast: false,
+                toastMessage: ""
             }
         },
         mounted () {
@@ -599,15 +604,21 @@
                 })
                 .then((res) => {
                     if(res.data['retcode'] == 0){
-                        alert("保存成功")
+                        this.toastMessage = "保存成功";
+                        this.showToast = true;
+                        setTimeout(() => { this.showToast = false; }, 3000);
                     }else {
-                        alert("保存失败")
+                        this.toastMessage = "保存失败";
+                        this.showToast = true;
+                        setTimeout(() => { this.showToast = false; }, 3000);
                     }
                 })
-                .catch(function (error) {
-                    console.log(error);
-                    alert("保存失败")
-                });
+.catch((error) => {
+    console.log(error);
+    this.toastMessage = "保存失败";
+    this.showToast = true;
+    setTimeout(() => { this.showToast = false; }, 3000);
+});
             },
             highlight()
             {
