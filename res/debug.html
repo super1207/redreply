@@ -474,98 +474,107 @@
                     return '#' + str.substring(str.length-6,str.length);
                 }
 
-                const quill = this.$refs.child.getQuill();
+                quill = this.$refs.child.getQuill();
                 
-                let select = quill.getSelection()
-                let curr_index = 0
-                if(select){
-                    curr_index = select.index
-                }
+                let range = quill.getSelection();
+                let curr_index = range ? range.index : 0;
 
                 let code = quill.getText();
-                let content = []
-                for(let i = 0; i < code.length; i++){
-                    let char = code[i];
-                    if(char == "【"){
-                        next_color()
-                        content.push({
-                            "insert":char,attributes:{color:colorList[current_color]}
-                        })
-                    }
-                    else if(char == "】"){
-                        content.push({
-                            "insert":char,attributes:{color:colorList[current_color]}
-                        })
-                        pre_color()
-                    }
-                    else if(char == "\\"){
-                        content.push({
-                            "insert":char,attributes:{color:colorList[current_color]}
-                        })
-                        i += 1
-                        if(i < code.length) {
-                             content.push({
-                                "insert":code[i],attributes:{color:colorList[current_color]}
-                            })
+                
+                quill.disable();
+                
+                // Clear all existing color and background formats
+                quill.formatText(0, code.length, {
+                    color: false,
+                    background: false
+                }, 'silent');
+
+                // Apply new formats segment by segment
+                let start = 0;
+                current_color = 0;
+                for (let i = 0; i < code.length; i++) {
+                    let length_to_apply = i - start;
+                    if (code[i] === '【') {
+                        if (length_to_apply > 0) {
+                            quill.formatText(start, length_to_apply, {color: colorList[current_color]}, 'silent');
+                        }
+                        next_color();
+                        quill.formatText(i, 1, {color: colorList[current_color]}, 'silent');
+                        start = i + 1;
+                    } else if (code[i] === '】') {
+                        if (length_to_apply > 0) {
+                            quill.formatText(start, length_to_apply, {color: colorList[current_color]}, 'silent');
+                        }
+                        quill.formatText(i, 1, {color: colorList[current_color]}, 'silent');
+                        pre_color();
+                        start = i + 1;
+                    } else if (code[i] === '\\') {
+                        if (length_to_apply > 0) {
+                            quill.formatText(start, length_to_apply, {color: colorList[current_color]}, 'silent');
+                        }
+                        i++; // assume next char exists
+                        if (i < code.length) {
+                            quill.formatText(i - 1, 2, {color: colorList[current_color]}, 'silent');
+                            start = i + 1;
+                        } else {
+                            quill.formatText(i - 1, 1, {color: colorList[current_color]}, 'silent');
+                            start = i;
                         }
                     }
-                    else{
-                        content.push({
-                            "insert":char === '\xa0' ? " " : char, // handle non-breaking space
-                            attributes:{color:colorList[current_color]}
-                        })
-                    }
+                    // normal char, continue accumulating
                 }
-                
-                // Simplified bracket matching logic
-                if (select) {
-                    let openBracket = -1, closeBracket = -1;
-                    let cursor = select.index;
+                // Apply last segment
+                if (start < code.length) {
+                    quill.formatText(start, code.length - start, {color: colorList[current_color]}, 'silent');
+                }
 
-                    const text = code.substring(0, code.length - 1); // Exclude final newline from quill
-                    
-                    if (cursor > 0 && (text[cursor] === '】' || text[cursor - 1] === '【')) {
-                        if (text[cursor - 1] === '【') {
-                            let balance = 1;
-                            openBracket = cursor - 1;
-                            for (let i = cursor; i < text.length; i++) {
-                                if (text[i] === '【') balance++;
-                                else if (text[i] === '】') balance--;
-                                if (balance === 0) {
-                                    closeBracket = i;
+                // Handle cursor highlight
+                if (curr_index >= 0 && curr_index < code.length) {
+                    let pos = curr_index;
+                    if (code[pos] !== '【' && code[pos] !== '】') {
+                        if (pos > 0) pos--;
+                    }
+                    if (code[pos] === '【' || code[pos] === '】') {
+                        // Find matching
+                        let direction = code[pos] === '【' ? 1 : -1;
+                        let bracket = code[pos] === '【' ? '【' : '】';
+                        let matchBracket = bracket === '【' ? '】' : '【';
+                        let count = 1;
+                        let matchPos = pos + direction;
+                        while (matchPos >= 0 && matchPos < code.length) {
+                            if (code[matchPos] === '\\') {
+                                matchPos += direction;
+                            } else if (code[matchPos] === bracket) {
+                                count++;
+                            } else if (code[matchPos] === matchBracket) {
+                                count--;
+                                if (count === 0) {
                                     break;
                                 }
                             }
-                        } else if (text[cursor] === '】') {
-                            let balance = 1;
-                            closeBracket = cursor;
-                            for (let i = cursor - 1; i >= 0; i--) {
-                                if (text[i] === '】') balance++;
-                                else if (text[i] === '【') balance--;
-                                if (balance === 0) {
-                                    openBracket = i;
-                                    break;
-                                }
-                            }
+                            matchPos += direction;
                         }
-
-                        if (openBracket !== -1 && closeBracket !== -1) {
-                            if (content[openBracket]) {
-                                content[openBracket].attributes.background = ColorReverse(content[openBracket].attributes.color);
-                            }
-                            if (content[closeBracket]) {
-                                content[closeBracket].attributes.background = ColorReverse(content[closeBracket].attributes.color);
-                            }
+                        if (count === 0 && matchPos >= 0 && matchPos < code.length) {
+                            // Apply background to pos and matchPos
+                            let colorAtPos = quill.getFormat(pos, 1).color || '#000000';
+                            let bg = ColorReverse(colorAtPos);
+                            quill.formatText(pos, 1, {background: bg}, 'silent');
+                            quill.formatText(matchPos, 1, {background: bg}, 'silent');
                         }
                     }
                 }
                 
-                quill.setContents(content)
-                quill.setSelection(select)
+                quill.enable();
+                quill.setSelection(range);
             },
         }
     })
     const globalOptions = {
+        history: {
+            delay: 2000,
+            maxStack: 100,
+            userOnly: true
+        },
         modules: {
             toolbar: "",
              keyboard: {
