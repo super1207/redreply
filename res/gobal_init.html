@@ -113,7 +113,7 @@
             })
 
 
-                        // 处理Tab键缩进和反缩进 - 使用事件捕获确保优先处理
+            // 处理Tab键缩进和反缩进 - 使用事件捕获确保优先处理
             document.addEventListener('keydown', (e) => {
                 // 检查焦点是否在Quill编辑器内
                 if (!quill.root.contains(document.activeElement) && document.activeElement !== quill.root) {
@@ -457,7 +457,7 @@
     const globalOptions = {
         modules: {
             history: {
-                delay: 2000,
+                delay: 500,
                 maxStack: 100,
                 userOnly: true
             },

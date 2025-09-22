@@ -401,6 +401,12 @@
             .catch(function (error) {
                 console.log(error);
             });
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 's') {
+                    e.preventDefault();
+                    this.save_code();
+                }
+            });
         },
         watch:{
             script_name:function(newval,oldval){
@@ -717,7 +723,7 @@
             const globalOptions = {
                 modules: {
                     history: {
-                        delay: 2000,
+                        delay: 500,
                         maxStack: 100,
                         userOnly: true
                     },

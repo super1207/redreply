@@ -130,7 +130,7 @@
             }
 
             setInterval(() => {
-                const quill = this.$refs.child.getQuill();
+                quill = this.$refs.child.getQuill();
                 let sec = quill.getSelection()
                 let curr_index = 0
                 if(sec){
@@ -138,17 +138,19 @@
                 }
                 
                 let code = quill.getText();
-                const tm = (new Date()).valueOf()
+                tm = (new Date()).valueOf()
                 if ((code!= this.last_code || curr_index != this.last_index) && !this.composing && tm - this.last_change_time > 300) {
                     this.highlight()
                     this.last_code = code
                     this.last_index = curr_index
                 }
             }, 500)
-			
-			const quill = this.$refs.child.getQuill();
 
-			// 解决粘贴时缩进变少的问题
+
+
+            quill = this.$refs.child.getQuill()
+
+            // 解决粘贴时缩进变少的问题
             quill.root.addEventListener('paste', (evt) => {
                 evt.preventDefault();
                 const text = (evt.clipboardData || window.clipboardData).getData('text/plain');
@@ -162,16 +164,15 @@
                 }
             }, true); 
 
-
             // 对复制进行hook，解决复制时多余的换行
-            const ele = document.getElementById("script_content")
+            ele = document.getElementById("script_content")
             ele.oncopy = (e) => {
-                const quill = this.$refs.child.getQuill()
-                const range = quill.getSelection()
+                quill = this.$refs.child.getQuill()
+                range = quill.getSelection()
                 e.clipboardData.setData('text/plain', quill.getText(range.index, range.length));
                 e.preventDefault();
             }
-			
+            
 			// 对剪切进行hook，解决剪切时多余的换行
 			ele.oncut = (e) => {
                 const quill = this.$refs.child.getQuill();
@@ -357,6 +358,7 @@
                     }
                 }
             }, true); // 使用事件捕获
+
 
             quill.on('text-change', (delta, oldDelta, source) => {
                 if (source == 'user') {
@@ -570,12 +572,12 @@
         }
     })
     const globalOptions = {
-        history: {
-            delay: 2000,
-            maxStack: 100,
-            userOnly: true
-        },
         modules: {
+            history: {
+                delay: 500,
+                maxStack: 100,
+                userOnly: true
+            },
             toolbar: "",
              keyboard: {
                 bindings: {
