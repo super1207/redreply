@@ -112,6 +112,170 @@
                 this.last_change_time = (new Date()).valueOf()
             })
 
+                        // 处理Tab键缩进和反缩进 - 使用事件捕获确保优先处理
+            document.addEventListener('keydown', (e) => {
+                // 检查焦点是否在Quill编辑器内
+                if (!quill.root.contains(document.activeElement) && document.activeElement !== quill.root) {
+                    return;
+                }
+                
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    e.stopImmediatePropagation();
+                    
+                    console.log('Tab key detected:', e.shiftKey ? 'Shift+Tab' : 'Tab');
+                    
+                    const range = quill.getSelection();
+                    
+                    if (!range) {
+                        console.log('No selection range');
+                        return;
+                    }
+                    
+                    console.log('Selection range:', range);
+                    
+                    if (e.shiftKey) {
+                        // Shift+Tab：反缩进
+                        console.log('Performing outdent');
+                        if (range.length === 0) {
+                            // 没有选中文本时，删除光标前的缩进（最多4个空格）
+                            const text = quill.getText();
+                            let deleteCount = 0;
+                            for (let i = 1; i <= 4 && range.index - i >= 0; i++) {
+                                if (text[range.index - i] === ' ') {
+                                    deleteCount++;
+                                } else {
+                                    break;
+                                }
+                            }
+                            if (deleteCount > 0) {
+                                quill.deleteText(range.index - deleteCount, deleteCount, 'user');
+                                quill.setSelection(range.index - deleteCount, 0, 'user');
+                            }
+                        } else {
+                            // 有选中文本时，对每行移除缩进
+                            const text = quill.getText();
+                            
+                            // 找到选中区域开始的行首位置
+                            let startLineIndex = range.index;
+                            while (startLineIndex > 0 && text[startLineIndex - 1] !== '\n') {
+                                startLineIndex--;
+                            }
+                            
+                            // 找到选中区域结束的行尾位置
+                            let endLineIndex = range.index + range.length;
+                            if (endLineIndex < text.length && text[endLineIndex - 1] !== '\n') {
+                                while (endLineIndex < text.length && text[endLineIndex] !== '\n') {
+                                    endLineIndex++;
+                                }
+                            }
+                            
+                            // 获取需要反缩进的完整文本
+                            const fullSelectedText = text.substring(startLineIndex, endLineIndex);
+                            const lines = fullSelectedText.split('\n');
+                            
+                            // 对每行移除缩进（最多4个空格）并记录每行移除的空格数
+                            const spacesRemovedPerLine = [];
+                            const outdentedLines = lines.map((line, index) => {
+                                let spacesToRemove = 0;
+                                for (let i = 0; i < Math.min(4, line.length); i++) {
+                                    if (line[i] === ' ') {
+                                        spacesToRemove++;
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                spacesRemovedPerLine[index] = spacesToRemove;
+                                return line.substring(spacesToRemove);
+                            });
+                            
+                            const outdentedText = outdentedLines.join('\n');
+                            
+                            // 替换文本
+                            quill.deleteText(startLineIndex, endLineIndex - startLineIndex, 'user');
+                            quill.insertText(startLineIndex, outdentedText, 'user');
+                            
+                            // 重新计算选中范围：保持用户原始选择的相对位置
+                            const originalSelectionStartOffset = range.index - startLineIndex;
+                            const originalSelectionEndOffset = (range.index + range.length) - startLineIndex;
+                            
+                            // 计算第一行移除的空格数，用于调整选择开始位置
+                            const firstLineRemovedSpaces = spacesRemovedPerLine[0] || 0;
+                            
+                            // 计算总共移除的空格数
+                            const totalRemovedSpaces = spacesRemovedPerLine.reduce((sum, spaces) => sum + spaces, 0);
+                            
+                            // 计算反缩进后用户选择应该开始和结束的位置
+                            let newSelectionStart = startLineIndex + originalSelectionStartOffset - firstLineRemovedSpaces;
+                            let newSelectionEnd = startLineIndex + originalSelectionEndOffset - totalRemovedSpaces;
+                            
+                            // 确保选中范围在有效范围内
+                            newSelectionStart = Math.max(startLineIndex, newSelectionStart);
+                            const maxIndex = startLineIndex + outdentedText.length;
+                            newSelectionEnd = Math.min(newSelectionEnd, maxIndex);
+                            
+                            const newSelectionLength = Math.max(0, newSelectionEnd - newSelectionStart);
+                            quill.setSelection(newSelectionStart, newSelectionLength, 'user');
+                        }
+                    } else {
+                        // Tab：缩进
+                        console.log('Performing indent');
+                        if (range.length === 0) {
+                            // 没有选中文本时，插入4个空格作为缩进
+                            quill.insertText(range.index, '    ', 'user');
+                            quill.setSelection(range.index + 4, 0, 'user');
+                        } else {
+                            // 有选中文本时，对每行添加缩进
+                            const text = quill.getText();
+                            
+                            // 找到选中区域开始的行首位置
+                            let startLineIndex = range.index;
+                            while (startLineIndex > 0 && text[startLineIndex - 1] !== '\n') {
+                                startLineIndex--;
+                            }
+                            
+                            // 找到选中区域结束的行尾位置
+                            let endLineIndex = range.index + range.length;
+                            if (endLineIndex < text.length && text[endLineIndex - 1] !== '\n') {
+                                while (endLineIndex < text.length && text[endLineIndex] !== '\n') {
+                                    endLineIndex++;
+                                }
+                            }
+                            
+                            // 获取需要缩进的完整文本
+                            const fullSelectedText = text.substring(startLineIndex, endLineIndex);
+                            const lines = fullSelectedText.split('\n');
+                            
+                            // 对每行添加4个空格的缩进
+                            const indentedText = lines.map(line => {
+                                return '    ' + line;
+                            }).join('\n');
+                            
+                            // 替换文本
+                            quill.deleteText(startLineIndex, endLineIndex - startLineIndex, 'user');
+                            quill.insertText(startLineIndex, indentedText, 'user');
+                            
+                            // 重新计算选中范围：保持用户原始选择的相对位置
+                            const originalSelectionStartOffset = range.index - startLineIndex;
+                            const originalSelectionEndOffset = (range.index + range.length) - startLineIndex;
+                            
+                            // 计算缩进后用户选择应该开始和结束的位置
+                            let newSelectionStart = startLineIndex + originalSelectionStartOffset + 4; // 第一行增加了4个空格
+                            let newSelectionEnd = startLineIndex + originalSelectionEndOffset + (lines.length * 4); // 每行都增加了4个空格
+                            
+                            // 确保选中范围在有效范围内
+                            const maxIndex = startLineIndex + indentedText.length;
+                            newSelectionStart = Math.min(newSelectionStart, maxIndex);
+                            newSelectionEnd = Math.min(newSelectionEnd, maxIndex);
+                            
+                            const newSelectionLength = newSelectionEnd - newSelectionStart;
+                            quill.setSelection(newSelectionStart, newSelectionLength, 'user');
+                        }
+                    }
+                }
+            }, true); // 使用事件捕获
+
 
             quill.on('text-change', (delta, oldDelta, source) => {
                 if (source == 'user') {
