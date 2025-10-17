@@ -1322,6 +1322,70 @@ pub fn init_ex_fun_map() {
         return Ok(Some(ret));
     });
 
+    add_fun(vec!["图片反色","图像反色"],|self_t,params|{
+        let text1 = self_t.get_param(params, 0)?;
+        let (_,mut img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
+        let width = img.width();
+        let height = img.height();
+        for x in 0..width {
+            for y in 0..height {
+                let pix = img.get_pixel_mut_checked(x, y).ok_or("image out of bound")?;
+                pix.0[0] = 255 - pix.0[0];
+                pix.0[1] = 255 - pix.0[1];
+                pix.0[2] = 255 - pix.0[2];
+            }
+        }
+        let ret = self_t.build_img_bin((ImageFormat::Png, img));
+        return Ok(Some(ret));
+    });
+
+    add_fun(vec!["图片线稿","图像线稿"],|self_t,params|{
+        let text1 = self_t.get_param(params, 0)?;
+        let sigma = self_t.get_param(params, 1)?.parse::<f32>()?;
+
+        if sigma <= 0. {
+            return Err(RedLang::make_err("图片线稿参数sigma必须大于0"));
+        }
+
+        let (_,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
+        let (width, height) = img.dimensions();
+
+        // 转为灰度图和反向灰度图
+        let mut gray_image: ImageBuffer<image::Luma<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+        let mut inverted_gray_image: ImageBuffer<image::Luma<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+        for x in 0..width {
+            for y in 0..height {
+                let pix = img.get_pixel_checked(x, y).ok_or("image out of bound")?;
+                let color = cala_gray_val(pix.0[0], pix.0[1], pix.0[2]);
+                gray_image.put_pixel(x, y, image::Luma([color]));
+                inverted_gray_image.put_pixel(x, y, image::Luma([255 - color]));
+            }
+        }
+
+        // 高斯模糊
+        let blurred_img = imageproc::filter::gaussian_blur_f32(&inverted_gray_image,sigma);
+
+        // 颜色减淡
+        let mut pencil_sketch: ImageBuffer<image::Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+        for x in 0..width {
+            for y in 0..height {
+                let image_pix = gray_image.get_pixel_checked(x, y).ok_or("image out of bound")?;
+                let mask_pix = blurred_img.get_pixel_checked(x, y).ok_or("image out of bound")?;
+                if mask_pix.0[0] == 255 { // 防止除以0
+                    pencil_sketch.put_pixel(x, y, image::Rgba([255, 255, 255, 255]));
+                } else {
+                    let val = image_pix.0[0] as f32 / (255 - mask_pix.0[0]) as f32 * 256.0;
+                    let u8_val = if val > 255.0 { 255 } else { val as u8 };
+                    pencil_sketch.put_pixel(x, y, image::Rgba([u8_val, u8_val, u8_val, 255]));
+                }
+            }
+        }
+
+        let ret = self_t.build_img_bin((ImageFormat::Png, pencil_sketch));
+        return Ok(Some(ret));
+    });
+
+
     add_fun(vec!["图片蒙版","图像蒙版"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let text2 = self_t.get_param(params, 1)?;
