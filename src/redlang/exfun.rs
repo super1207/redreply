@@ -1297,6 +1297,13 @@ pub fn init_ex_fun_map() {
         return Ok(Some(ret));
     });
 
+    fn cala_gray_val(red: u8, green: u8, blue: u8) -> u8 {
+        let red_t = red as f32  * 0.3;
+        let green_t = green as f32  * 0.589;
+        let blue_t = blue as f32  * 0.11;
+        return (red_t + green_t + blue_t) as u8;
+    }
+
     add_fun(vec!["图片变灰","图像变灰"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let (_,mut img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
@@ -1305,10 +1312,7 @@ pub fn init_ex_fun_map() {
         for x in 0..width {
             for y in 0..height {
                 let pix = img.get_pixel_mut_checked(x, y).ok_or("image out of bound")?;
-                let red = pix.0[0] as f32  * 0.3;
-                let green = pix.0[1] as f32  * 0.589;
-                let blue = pix.0[2] as f32  * 0.11;
-                let color = (red + green + blue) as u8;
+                let color = cala_gray_val(pix.0[0], pix.0[1], pix.0[2]);
                 pix.0[0] = color;
                 pix.0[1] = color;
                 pix.0[2] = color;
@@ -1317,6 +1321,33 @@ pub fn init_ex_fun_map() {
         let ret = self_t.build_img_bin((ImageFormat::Png, img));
         return Ok(Some(ret));
     });
+
+    add_fun(vec!["图片蒙版","图像蒙版"],|self_t,params|{
+        let text1 = self_t.get_param(params, 0)?;
+        let text2 = self_t.get_param(params, 1)?;
+        let text3 = self_t.get_param(params, 2)?;
+        let text4 = self_t.get_param(params, 3)?;
+        let (_img_fmt,mut img_big) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
+        let (_img_fmt,img_sub) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text2)?;
+        let x = text3.parse::<i64>()?;
+        let y = text4.parse::<i64>()?;
+        for i in 0..img_sub.width() {
+            for j in 0..img_sub.height() {
+                let ii = x + i as i64;
+                let jj = y + j as i64;
+                if ii >= 0 && (ii as u32) < img_big.width() && jj >= 0 && (jj as u32) < img_big.height() {
+                    let pix = img_big.get_pixel_mut_checked(ii as u32, jj as u32).ok_or("image out of bound")?;
+                    let pix_sub = img_sub.get_pixel_checked(i, j).ok_or("image out of bound")?;
+                    // 先将蒙版变成灰度图
+                    let color = cala_gray_val(pix_sub.0[0], pix_sub.0[1], pix_sub.0[2]);
+                    pix.0[3] = color;
+                }
+            }
+        }
+        let ret = self_t.build_img_bin((ImageFormat::Png, img_big));
+        return Ok(Some(ret));
+    });
+
     fn get_char_size(font:&rusttype::Font,scale:Scale,ch:char) -> (i32, i32) {
         let v_metrics = font.v_metrics(scale);
         let text = ch.to_string();
