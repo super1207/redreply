@@ -87,8 +87,8 @@ lazy_static! {
     pub static ref G_SINGAL_ARR:RwLock<Vec<(String, String,String,Option<String>)>> = RwLock::new(vec![]);
     // 用于记录临时常量:包名-常量名-常量值-过期时间(x)
     pub static ref G_TEMP_CONST_MAP:RwLock<HashMap<String,HashMap<String, (String, u128)>>> = RwLock::new(HashMap::new());
-    // 用于撤回消息
-    pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,VecDeque<String>>> = RwLock::new(HashMap::new());
+    // 用于撤回消息 key:self_id+group_id  value:user_id + message_id
+    pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,VecDeque<(String,String)>> > = RwLock::new(HashMap::new());
     // 用于记录自定义的命令(x)
     pub static ref G_CMD_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
     // 用于记录命令(x)

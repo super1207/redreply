@@ -298,18 +298,42 @@ pub fn init_cq_ex_fun_map() {
             let mp = crate::G_MSG_ID_MAP.read()?;
             let group_id = self_t.get_exmap("群ID");
             let self_id = self_t.get_exmap("机器人ID");
-            let flag = self_id.to_string() + &qq + &group_id;
+            let flag = self_id.to_string() + &group_id;
             ret = match mp.get(&flag) {  
                 Some(v) => {
                     let mut vv:Vec<&str> = vec![];
                     for it in v {
-                        vv.push(it);
+                        if it.0 == qq {
+                            vv.push(&it.1);
+                        }
                     }
                     self_t.build_arr(vv)
                 },
                 None => self_t.build_arr(vec![])
             };
         }
+        return Ok(Some(ret));
+    });
+    add_fun(vec!["群历史消息"],|self_t,params|{
+        let num_str = self_t.get_param(params, 0)?;
+        let num = num_str.parse::<usize>()?;
+        let mut to_ret:Vec<String> = vec![];
+        let group_id = self_t.get_exmap("群ID");
+        let self_id = self_t.get_exmap("机器人ID");
+        let flag = self_id.to_string() + &group_id;
+        let mp = crate::G_MSG_ID_MAP.read()?;
+        match mp.get(&flag) {  
+            Some(v) => {
+                for it in v {
+                    to_ret.push(it.1.to_owned());
+                    if to_ret.len() >= num {
+                        break;
+                    }
+                }
+            },
+            None => {}
+        };
+        let ret = self_t.build_arr(to_ret.iter().map(|s| s.as_str()).collect());
         return Ok(Some(ret));
     });
     add_fun(vec!["设置图片参数"],|self_t,params|{

@@ -5,12 +5,12 @@ use crate::{cqapi::*, mytool::{json_to_cq_str, read_json_str}, read_code_cache, 
 use super::{is_key_match, get_script_info, set_normal_message_info};
 
 pub fn msg_id_map_insert(self_id:String,user_id:String,group_id:String,message_id:String) ->Result<(), Box<dyn std::error::Error>> {
-    let flag = self_id + &user_id + &group_id;
+    let flag = self_id + &group_id;
     let mut mp = crate::G_MSG_ID_MAP.write()?;
     if mp.contains_key(&flag) {
         let v = mp.get_mut(&flag).unwrap();
-        v.push_front(message_id.to_string());
-        if v.len() > 20 {
+        v.push_front((user_id.to_string(), message_id.to_string()));
+        if v.len() > 100 {
             v.pop_back();
         }
     }else{
