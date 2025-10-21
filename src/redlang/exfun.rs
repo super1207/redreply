@@ -1342,9 +1342,14 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["图片线稿","图像线稿"],|self_t,params|{
         let text1 = self_t.get_param(params, 0)?;
         let sigma = self_t.get_param(params, 1)?.parse::<f32>()?;
+        let contrast = self_t.get_param(params, 2)?.parse::<f32>().unwrap_or(1.0);
 
         if sigma <= 0. {
             return Err(RedLang::make_err("图片线稿参数sigma必须大于0"));
+        }
+
+        if contrast < 0.0 {
+            return Err(RedLang::make_err("对比度参数必须大于等于0"));
         }
 
         let (_,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
@@ -1381,9 +1386,108 @@ pub fn init_ex_fun_map() {
             }
         }
 
+        // 对比度增强（针对黑底白线）
+        if contrast != 1.0 {
+            for x in 0..width {
+                for y in 0..height {
+                    let pix = pencil_sketch.get_pixel(x, y);
+                    let val = pix.0[0] as f32 / 255.0; // 归一化到 [0, 1]
+                    
+                    // 使用幂函数调整对比度
+                    // contrast > 1: 压暗暗部，提亮亮部（增强对比）
+                    // contrast < 1: 提亮暗部，压暗亮部（降低对比）
+                    let new_val = val.powf(1.0 / contrast);
+                    let clamped_val = (new_val * 255.0).max(0.0).min(255.0) as u8;
+                    
+                    pencil_sketch.put_pixel(x, y, image::Rgba([clamped_val, clamped_val, clamped_val, 255]));
+                }
+            }
+        }
         let ret = self_t.build_img_bin((ImageFormat::Png, pencil_sketch));
         return Ok(Some(ret));
     });
+
+    add_fun(vec!["图片线稿2","图像线稿2"],|self_t,params|{
+        let text1 = self_t.get_param(params, 0)?;
+        let kernel_size = self_t.get_param(params, 1)?.parse::<u32>()?;
+        let contrast = self_t.get_param(params, 2)?.parse::<f32>()?;
+        if kernel_size == 0 || kernel_size % 2 == 0 {
+            return Err(RedLang::make_err("图片线稿参数kernel_size必须是大于0的奇数"));
+        }
+        if contrast < 0.0 {
+            return Err(RedLang::make_err("对比度参数必须大于等于0"));
+        }
+        let (_,img) = RedLang::parse_img_bin(&mut self_t.bin_pool,&text1)?;
+        let (width, height) = img.dimensions();
+        // 转为灰度图和反向灰度图
+        let mut gray_image: ImageBuffer<image::Luma<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+        let mut inverted_gray_image: ImageBuffer<image::Luma<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+        for x in 0..width {
+            for y in 0..height {
+                let pix = img.get_pixel_checked(x, y).ok_or("image out of bound")?;
+                let color = cala_gray_val(pix.0[0], pix.0[1], pix.0[2]);
+                gray_image.put_pixel(x, y, image::Luma([color]));
+                inverted_gray_image.put_pixel(x, y, image::Luma([255 - color]));
+            }
+        }
+        // 最小值滤镜
+        let mut min_filtered_img: ImageBuffer<image::Luma<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+        let radius = (kernel_size / 2) as i32;
+        
+        for x in 0..width {
+            for y in 0..height {
+                let mut min_val = 255u8;
+                
+                // 遍历kernel范围内的像素
+                for kx in -(radius as i32)..=(radius as i32) {
+                    for ky in -(radius as i32)..=(radius as i32) {
+                        let nx = (x as i32 + kx).max(0).min((width - 1) as i32) as u32;
+                        let ny = (y as i32 + ky).max(0).min((height - 1) as i32) as u32;
+                        
+                        let pix = inverted_gray_image.get_pixel(nx, ny);
+                        min_val = min_val.min(pix.0[0]);
+                    }
+                }
+                
+                min_filtered_img.put_pixel(x, y, image::Luma([min_val]));
+            }
+        }
+        // 颜色减淡
+        let mut pencil_sketch: ImageBuffer<image::Rgba<u8>, Vec<u8>> = ImageBuffer::new(width, height);
+        for x in 0..width {
+            for y in 0..height {
+                let image_pix = gray_image.get_pixel_checked(x, y).ok_or("image out of bound")?;
+                let mask_pix = min_filtered_img.get_pixel_checked(x, y).ok_or("image out of bound")?;
+                if mask_pix.0[0] == 255 { // 防止除以0
+                    pencil_sketch.put_pixel(x, y, image::Rgba([255, 255, 255, 255]));
+                } else {
+                    let val = image_pix.0[0] as f32 / (255 - mask_pix.0[0]) as f32 * 256.0;
+                    let u8_val = if val > 255.0 { 255 } else { val as u8 };
+                    pencil_sketch.put_pixel(x, y, image::Rgba([u8_val, u8_val, u8_val, 255]));
+                }
+            }
+        }
+        // 对比度增强（针对黑底白线）
+        if contrast != 1.0 {
+            for x in 0..width {
+                for y in 0..height {
+                    let pix = pencil_sketch.get_pixel(x, y);
+                    let val = pix.0[0] as f32 / 255.0; // 归一化到 [0, 1]
+                    
+                    // 使用幂函数调整对比度
+                    // contrast > 1: 压暗暗部，提亮亮部（增强对比）
+                    // contrast < 1: 提亮暗部，压暗亮部（降低对比）
+                    let new_val = val.powf(1.0 / contrast);
+                    let clamped_val = (new_val * 255.0).max(0.0).min(255.0) as u8;
+                    
+                    pencil_sketch.put_pixel(x, y, image::Rgba([clamped_val, clamped_val, clamped_val, 255]));
+                }
+            }
+        }
+        let ret = self_t.build_img_bin((ImageFormat::Png, pencil_sketch));
+        return Ok(Some(ret));
+    });
+
 
 
     add_fun(vec!["图片蒙版","图像蒙版"],|self_t,params|{
