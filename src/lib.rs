@@ -44,6 +44,7 @@ mod pluscenter;
 mod onebot11s;
 mod status;
 mod mqttclient;
+mod pgsql;
 
 #[macro_use]
 extern crate lazy_static; 
@@ -602,6 +603,11 @@ pub fn initialize() -> i32 {
 
     // 初始化MQTT客户端
     if let Err(err) = mqttclient::init_mqttclient(){
+        cq_add_log_w(&err.to_string()).unwrap();
+    }
+
+    // 初始化postgresql数据库
+    if let Err(err) = pgsql::init_postgresql_db(){
         cq_add_log_w(&err.to_string()).unwrap();
     }
 

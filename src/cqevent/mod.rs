@@ -40,6 +40,12 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
         }
     }
 
+    // 存储数据库
+    if let Err(err) = crate::pgsql::do_insert(&root) {
+        cq_add_log_w(&format!("插入消息记录失败：{}", err)).unwrap();
+    }
+
+
     // 全局过滤器
     {
         let code:String = get_gobal_filter_code()?;

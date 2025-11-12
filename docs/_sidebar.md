@@ -6,5 +6,6 @@
 * [协议说明](/adaptar/)
 * [onebot网络接口](/onebot/)
 * [MQTT推送接口](/mqtt/)
+* [数据持久化](/pgsql/)
 * [语法详细参考](/detailref/)
 * [设计理念](/idea/)
