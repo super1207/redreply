@@ -927,6 +927,9 @@ pub fn init_config() {
         });
         fs::write(script_path.clone(), config_json.to_string()).unwrap();
     }
+    // 将json格式化之后重新写入文件，保持美观
+    let cfg_json = serde_json::from_str::<serde_json::Value>(&fs::read_to_string(script_path.clone()).unwrap()).unwrap();
+    fs::write(script_path, serde_json::to_string_pretty(&cfg_json).unwrap()).unwrap();
 }
 
 pub fn read_web_password() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
