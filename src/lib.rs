@@ -828,7 +828,7 @@ def on_open(_):
 def conn_fun():
     global WS_APP
     WS_APP = websocket.WebSocketApp(
-        "ws://127.0.0.1:"+os.environ.get('port', '1207')+"/pyserver",
+        "ws://localhost:"+os.environ.get('port', '1207')+"/pyserver",
         on_message=on_message,
         on_open= on_open,
         cookie="password={}".format(os.environ.get('password', ''))
