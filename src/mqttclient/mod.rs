@@ -54,7 +54,7 @@ pub fn call_mqtt_remote(platform:&str,self_id:&str,passive_id:&str,mut playload:
         playload["message_id"] = serde_json::json!(passive_id);
         let payload = playload.to_string();
         cq_add_log(&format!("mqtt client send: {}", payload)).unwrap();
-        client.publish_with_properties(topic, QoS::ExactlyOnce, false, payload,resp_props)?;
+        client.try_publish_with_properties(topic, QoS::ExactlyOnce, false, payload,resp_props)?;
         let rst;
         match rx_ay.recv_timeout(std::time::Duration::from_secs(30)) {
             Ok(v) => {
@@ -85,7 +85,7 @@ pub fn publish_mqtt_event(evt:&serde_json::Value) -> Result<(), Box<dyn std::err
         let client_id = get_mqtt_client_id();
         let mut resp_props = rumqttc::v5::mqttbytes::v5::PublishProperties::default();
         resp_props.content_type = Some("application/json".to_string());
-        client.publish_with_properties(format!("bot/{client_id}/{platform}/{self_id}/event"), QoS::ExactlyOnce, false, payload,resp_props)?;
+        client.try_publish_with_properties(format!("bot/{client_id}/{platform}/{self_id}/event"), QoS::ExactlyOnce, false, payload,resp_props)?;
     }
     Ok(())
 }
@@ -294,11 +294,11 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
                     let code: rumqttc::v5::mqttbytes::v5::ConnectReturnCode = p.code;
                     if code == rumqttc::v5::mqttbytes::v5::ConnectReturnCode::Success {
                         let mqtt_client_id = get_mqtt_client_id();
-                        let resp = client.subscribe(format!("bot/{mqtt_client_id}/+/+/api"), QoS::ExactlyOnce);
+                        let resp = client.try_subscribe(format!("bot/{mqtt_client_id}/+/+/api"), QoS::ExactlyOnce);
                         if let Err(err) = resp {
                             cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
                         }
-                        let resp = client.subscribe(format!("plus/{mqtt_client_id}/response"), QoS::ExactlyOnce);
+                        let resp = client.try_subscribe(format!("plus/{mqtt_client_id}/response"), QoS::ExactlyOnce);
                         if let Err(err) = resp {
                             cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
                         }
@@ -313,7 +313,7 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
                             let mut filter = Filter::new(topic, qos);
                             filter.nolocal = true;
                             let subscribe = Subscribe::new(filter, None);
-                            let resp = client.client.request_tx.send(subscribe.into());
+                            let resp = client.client.request_tx.try_send(subscribe.into());
                             if let Err(err) = resp {
                                 cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
                             }
