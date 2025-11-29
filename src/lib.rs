@@ -23,7 +23,7 @@ use redlang::RedLang;
 use serde_json;
 use rust_embed::RustEmbed;
 
-use cqapi::cq_add_log_w;
+pub use cqapi::cq_add_log_w;
 use cqapi::cq_get_app_directory1;
 
 use crate::initevent::do_gobal_init_event;

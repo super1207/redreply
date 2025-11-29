@@ -3,7 +3,7 @@
 use time::UtcOffset;
 
 #[cfg(windows)]
-fn create_windows() {
+fn create_windows() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
     let app = fltk::app::App::default().with_scheme(fltk::app::Scheme::Gtk);
 
     // 初始化图标（只有windows）才支持托盘图标
@@ -31,13 +31,12 @@ fn create_windows() {
             &debug_web,
             &tray_icon::menu::PredefinedMenuItem::separator(),
             &quit
-        ]).unwrap();
+        ])?;
         tray_icon::TrayIconBuilder::new()
             .with_tooltip("欢迎使用红色问答")
             .with_icon(icon)
             .with_menu(Box::new(tray_menu))
-            .build()
-            .unwrap()
+            .build()?
     };
 
 
@@ -127,6 +126,7 @@ fn create_windows() {
         let time_struct = core::time::Duration::from_millis(50);
         std::thread::sleep(time_struct);
     }
+    Ok(())
 }
 
 
@@ -156,7 +156,10 @@ fn main() {
 
     
     #[cfg(windows)]
-    create_windows();
+    if let Err(e) = create_windows() {
+        redlang::cq_add_log_w(&format!("load tray err:{:?}", e)).unwrap();
+    }
+    
    
 
     loop {
