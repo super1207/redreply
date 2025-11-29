@@ -2628,31 +2628,45 @@ impl RedLang {
         Ok(())
     }
 
-    fn remove_comment(chs:&Vec<char>) -> Result<Vec<char>, Box<dyn std::error::Error>> {
+    fn remove_comment(chs: &Vec<char>) -> Result<Vec<char>, Box<dyn std::error::Error>> {
         let mut ret: Vec<char> = vec![];
         let mut i = 0usize;
         let mut mode = 0; // 0:normal 1:comment
+        
         loop {
             if i >= chs.len() {
                 break;
             }
+            
             if mode == 0 { // 正常模式
-                if chs[i] == '#' && i + 1 < chs.len() && chs[i+1] == '#' {
-                    // 出现连续两个#，进入注释模式
+                // 1. 优先处理 \\ (双反斜杠)
+                // 语义：这代表一个字面意义的 '\' (或者两个，取决于你的需求，这里保留原样)
+                // 关键：处理完后跳过这两个字符，避免第二个 \ 去干扰后面的判断
+                if chs[i] == '\\' && i + 1 < chs.len() && chs[i+1] == '\\' {
+                    ret.push('\\');
+                    ret.push('\\');
+                    i += 1; // 配合循环底部的 i+=1，总共跳过2个字符
+                } 
+                // 2. 处理 \## (转义的注释标记)
+                // 语义：用户想写 "##" 这个字符串，而不是开始注释
+                else if chs[i] == '\\' && i + 2 < chs.len() && chs[i+1] == '#' && chs[i+2] == '#' {
+                    // 表示转义成功,原样输出
+                    ret.push('\\');
+                    ret.push('#');
+                    ret.push('#');
+                    i += 2; // 跳过 \ 和 ## (共3个字符: i+=2, loop+=1)
+                } 
+                // 3. 处理 ## (真正的注释开始)
+                else if chs[i] == '#' && i + 1 < chs.len() && chs[i+1] == '#' {
                     mode = 1;
-                    i += 1;
-                } else if chs[i] == '\\' && i + 2 < chs.len() && chs[i+1] == '#' && chs[i+2] == '#'{
-                    // 出现一个\和连续两个#，把两个#当做普通字符输出
-                    ret.push('#');
-                    ret.push('#');
-                    i += 2;
-                } else {
-                    // 正常模式下，直接输出
+                    i += 1; // 跳过 ## (共2个字符)
+                } 
+                // 4. 普通字符
+                else {
                     ret.push(chs[i]);
                 }
-            } else {
-                // 注释模式下，遇到换行符或者回车符，退出注释模式
-                if  chs[i] == '\n' || chs[i] == '\r' {
+            } else { // 注释模式
+                if chs[i] == '\n' || chs[i] == '\r' {
                     mode = 0;
                     ret.push(chs[i]);
                 }
