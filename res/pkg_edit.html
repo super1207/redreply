@@ -6,40 +6,116 @@
    <meta name="viewport" content="width=device-width, initial-scale=1.0">
    <title>红色问答脚本编辑</title>
    <style>
+    /* 全局设置盒子模型 */
+    * { box-sizing: border-box; }
+
+    /* 全局布局样式 */
     html,body{
         width: 100%;
         height: 100%;
         display: flex;
         margin: 0;
         padding: 0;
+        overflow: hidden; 
+        background-color: #e1ebe7;
     }
     button,textarea,body,select,input{
         background-color: #e1ebe7;
-        font-family: fusion-pixel-12px-monospaced-zh_hant, serif;
+        font-family: fusion-pixel-12px-monospaced-zh_hant, "Consolas", "Courier New", monospace;
     }
     button:hover {
         background-color: aqua;
         color: red;
         cursor: pointer;
     }
-    .name_active { /* 点中名字，变色属性 */
+    .name_active {
         color: red;
         font-weight: bold;
+    }
+
+    /* --- 自定义编辑器核心样式 --- */
+    .custom-editor-wrapper {
+        position: relative;
+        width: 100%;
+        height: 100%;
+        border: 1px solid #999;
+        background-color: #E1EBE7; 
+        overflow: hidden;
+        font-family: Consolas, "Courier New", monospace; 
+    }
+
+    .editor-layer {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        border: 0;
+        padding: 10px;
+        font-family: Consolas, "Courier New", monospace;
+        font-size: 14px;
+        line-height: 1.5;
+        letter-spacing: 0;
+        font-weight: normal;
+        white-space: pre-wrap;
+        word-wrap: break-word;
+        overflow-y: scroll; 
+        overflow-x: hidden;
+        outline: none;
+        resize: none;
+        tab-size: 4;
+    }
+
+    .highlight-layer {
+        z-index: 1;
+        background-color: transparent;
+        color: #000;
+        pointer-events: none; 
+    }
+
+    .input-layer {
+        z-index: 2;
+        color: transparent;
+        background-color: transparent;
+        caret-color: #000;
+    }
+    .input-layer::selection {
+        background: rgba(0, 120, 215, 0.3);
+        color: transparent;
+    }
+
+    .lvl-1 { color: #000000; }
+    .lvl-2 { color: #FF0000; }
+    .lvl-3 { color: #0000FF; }
+    .lvl-4 { color: #008000; }
+
+    .error-bracket {
+        color: #ff0000;
+        text-decoration: wavy underline;
+    }
+
+    .active-pair {
+        background-color: rgba(0, 0, 0, 0.1);
+        border-radius: 3px;
+        box-shadow: 0 0 0 1px rgba(0,0,0,0.05);
+    }
+
+    .comment-text {
+        color: #008000 !important;
+        font-style: italic;
     }
    </style>
     <script src="axios.js"></script>
     <script src="vue.js"></script>
-    <script src="vue-quill.js"></script>
-    <script src="quill-setup.js"></script>
-    <link rel="stylesheet" href="vue-quill.snow.prod.css">
 </head>
 
 <body>
    
-   <div id="app" style="border: 1px solid;display: flex;flex-direction: column;flex: 0 1 100%;overflow-x: auto;margin: 0.4em;position: relative;"> 
+   <div id="app" style="border: 1px solid; display: flex; flex-direction: column; flex: 1; overflow: hidden; margin: 0.4em; position: relative;"> 
         <h1 style="text-align: center;color: red;">编辑:{{pkg_name}}</h1>
         
-        <div style="display: flex;overflow-x: auto;border: 0.1em;border-style:outset;border-spacing: 1px;background-color:#b8e7e4;">
+        <div style="display: flex;overflow-x: auto;border: 0.1em;border-style:outset;border-spacing: 1px;background-color:#b8e7e4; flex-shrink: 0;">
             <button v-for="(code,index) in pkg_codes" style="padding: 0.3em; margin: 0.2em;white-space:nowrap;cursor: pointer;" @click="select_name_change(index)" :class="{name_active:index==select_index}" v-bind:key="index"
                 draggable="true"    
                 @dragstart="dragStart($event, index)"
@@ -51,15 +127,15 @@
             <div v-if="select_index == -1" style="padding: 0.3em; margin: 0.2em;white-space:nowrap;">无脚本，请点击[新增脚本]吧，亲~</div>
             <div v-if="pkg_codes.length > 1" style="padding: 0.3em; margin: 0.2em;white-space:nowrap;">可以拖拽调整显示顺序哦，亲~</div>
         </div>
-        <div style="display: flex;margin: 0.2em;">
+        <div style="display: flex;margin: 0.2em; flex-shrink: 0;">
             <span>脚本名：</span>
-            <input v-model = "script_name" style="flex: 1 0 auto;"></input>
+            <input v-model = "script_name" style="flex: 1 0 auto; min-width: 0;"></input>
         </div>
-        <div class="input_div" style="display: flex;">
+        <div class="input_div" style="display: flex; flex-shrink: 0;">
             <span>介绍：&emsp;</span>
-            <input id="script_description" v-model="script_description" style="flex: 1 0 auto;"></input>
+            <input id="script_description" v-model="script_description" style="flex: 1 0 auto; min-width: 0;"></input>
         </div>
-        <select id="script_cffs" v-model="script_cffs" style="margin: 0.2em;height: 1.5em;cursor: pointer;">
+        <select id="script_cffs" v-model="script_cffs" style="margin: 0.2em;height: 1.5em;cursor: pointer; flex-shrink: 0;">
             <option disabled value="触发方式">触发方式</option>
             <option value ="群聊触发">群聊触发</option>
             <option value ="私聊触发">私聊触发</option>
@@ -73,36 +149,381 @@
             <option value="内容过滤">内容过滤</option>
             <option value="延迟触发">延迟触发</option>
         </select>
-        <div style="display: flex; align-items: center;" v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div"> <!-- Added align-items: center for vertical alignment -->
+        <div style="display: flex; align-items: center; flex-shrink: 0;" v-if="(script_cffs != '框架初始化') && (script_cffs != '脚本错误') && (script_cffs != '群成员增加') && (script_cffs != '内容过滤')" class="input_div">
             <span>关键词：</span>
-            <input id="script_keyword" v-model="script_keyword" :style="script_cffs == '网络触发' && script_ppfs == '完全匹配' ? { flex: '1' } : { flex: '1 0 auto' }"></input>
+            <input id="script_keyword" v-model="script_keyword" :style="script_cffs == '网络触发' && script_ppfs == '完全匹配' ? { flex: '1', minWidth: '0' } : { flex: '1 0 auto', minWidth: '0' }"></input>
             <button v-if="script_cffs == '网络触发' && script_ppfs == '完全匹配'" @click="openWebTriggerUrl()" :style="{ flex: '1', marginLeft: '0.5em' }"><b>打开网页</b></button>
         </div>
-        <select id="script_ppfs" v-model="script_ppfs" v-if="(script_cffs == '群聊触发') || (script_cffs == '私聊触发') || (script_cffs == '群、私聊触发') || (script_cffs == '网络触发') || (script_cffs == '延迟触发')" style="margin-top: 0.2em;height: 1.5em;cursor: pointer;">
+        <select id="script_ppfs" v-model="script_ppfs" v-if="(script_cffs == '群聊触发') || (script_cffs == '私聊触发') || (script_cffs == '群、私聊触发') || (script_cffs == '网络触发') || (script_cffs == '延迟触发')" style="margin-top: 0.2em;height: 1.5em;cursor: pointer; flex-shrink: 0;">
             <option disabled value="匹配方式">匹配方式</option>
             <option value ="完全匹配">完全匹配</option>
             <option value ="正则匹配">正则匹配</option>
             <option value="模糊匹配">模糊匹配</option>
             <option value="前缀匹配">前缀匹配</option>
         </select>
-        <button v-if="script_cffs == 'CRON定时器'" @click="cron()">
+        <button v-if="script_cffs == 'CRON定时器'" @click="cron()" style="flex-shrink: 0;">
             红色问答CRON校验工具
         </button>
-            <div style="flex: 1 0 auto;height: 0;width: 100%;">
-                <quill-editor id = "script_content"  ref="child" theme="snow" spellcheck = false style="flex: 1 0 auto;"></quill-editor>
-            </div>
-            <div style="display: flex;flex: 0 0 auto;">
-                <button ref="child1" disabled true style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="add_code()">新增脚本</button>
-                <button ref="child2" disabled true style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="save_code()">保存脚本</button>
-                <button ref="child3" disabled true style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="del_code()">删除脚本</button>
-            </div>
-            <div v-if="showToast" style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 5px; z-index: 1000;">
-                {{ toastMessage }}
-            </div>
+            
+        <div style="flex: 1 1 auto; height: 0; width: 100%; display: flex; flex-direction: column; margin-top: 5px; margin-bottom: 5px;">
+            <custom-editor ref="child" style="flex: 1;"></custom-editor>
         </div>
-        </body>
+
+        <div style="display: flex;flex: 0 0 auto;">
+            <button ref="child1" disabled true style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="add_code()">新增脚本</button>
+            <button ref="child2" disabled true style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="save_code()">保存脚本</button>
+            <button ref="child3" disabled true style="height: 40px;font-size: medium;font-weight: bold;flex: 1 0 auto;" @click="del_code()">删除脚本</button>
+        </div>
+        <div v-if="showToast" style="position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background-color: rgba(0,0,0,0.7); color: white; padding: 10px 20px; border-radius: 5px; z-index: 1000;">
+            {{ toastMessage }}
+        </div>
    </div>
+
    <script>
+    // ----------------------------------------------------------------
+    // 自定义编辑器组件 (CustomEditor)
+    // ----------------------------------------------------------------
+    const CustomEditor = {
+        template: `
+            <div class="custom-editor-wrapper">
+                <pre ref="highlightLayer" class="editor-layer highlight-layer" aria-hidden="true"></pre>
+                <textarea 
+                    ref="inputLayer" 
+                    class="editor-layer input-layer" 
+                    spellcheck="false" 
+                    placeholder="请输入脚本内容..."
+                    @input="handleInput"
+                    @scroll="syncScroll"
+                    @keydown="handleKeyDown"
+                    @click="render"
+                    @keyup="render"
+                    @focus="render"
+                ></textarea>
+            </div>
+        `,
+        data() {
+            return {
+                MAX_COLORS: 4
+            };
+        },
+        mounted() {
+            window.addEventListener('resize', this.syncScroll);
+        },
+        beforeUnmount() {
+            window.removeEventListener('resize', this.syncScroll);
+        },
+        methods: {
+            getText() {
+                return this.$refs.inputLayer.value;
+            },
+            setText(val) {
+                this.$refs.inputLayer.value = val || '';
+                this.$nextTick(() => {
+                    this.render(); 
+                    this.syncScroll(); 
+                });
+            },
+            escapeHtml(str) {
+                return str.replace(/&/g, "&amp;")
+                          .replace(/</g, "&lt;")
+                          .replace(/>/g, "&gt;")
+                          .replace(/"/g, "&quot;")
+                          .replace(/'/g, "&#039;");
+            },
+
+            /**
+             * 预处理文本：
+             * 将所有不应该参与括号匹配的内容（注释、被转义的字符）全部替换为空格
+             * 必须严格按照从左到右的顺序解析，优先处理转义符
+             */
+            maskComments(text) {
+                let arr = text.split('');
+                for (let i = 0; i < arr.length; i++) {
+                    // 1. 优先处理双反斜杠 \\ (转义符本身被转义)
+                    //    例如 \\## -> 第一个\转义了第二个\，所以##有效
+                    //    我们把两个 \ 都涂白，跳过它们
+                    if (arr[i] === '\\' && arr[i+1] === '\\') {
+                        arr[i] = ' '; arr[i+1] = ' ';
+                        i++; 
+                        continue;
+                    }
+
+                    // 2. 处理被转义的特殊字符：\【, \】, \##
+                    //    注意：因为上面已经处理了 \\，所以这里遇到的 \ 一定是单独的转义符
+                    if (arr[i] === '\\') {
+                        // 检查后面是不是需要转义的字符
+                        const next = arr[i+1];
+                        if (next === '【' || next === '】') {
+                            arr[i] = ' '; arr[i+1] = ' ';
+                            i++; continue;
+                        }
+                        // 如果是 \##，也要把它们涂白，防止被当成注释
+                        if (next === '#' && arr[i+2] === '#') {
+                            arr[i] = ' '; arr[i+1] = ' '; arr[i+2] = ' ';
+                            i += 2; continue;
+                        }
+                    }
+
+                    // 3. 处理真正的注释 ##
+                    if (arr[i] === '#' && arr[i+1] === '#') {
+                        // 将这一行剩下的内容全部涂白
+                        while(i < arr.length && arr[i] !== '\n') {
+                            arr[i] = ' ';
+                            i++;
+                        }
+                    }
+                }
+                return arr.join('');
+            },
+
+            findMatchIndices(text, cursorIndex) {
+                // text 是经过 maskComments 处理过的 "干净" 文本
+                const matches = new Set();
+                let targetIndex = -1;
+                let char = '';
+
+                if (cursorIndex < text.length) {
+                    const c = text[cursorIndex];
+                    if (c === '【' || c === '】') {
+                        targetIndex = cursorIndex;
+                        char = c;
+                    }
+                }
+                if (targetIndex === -1 && cursorIndex > 0) {
+                    const c = text[cursorIndex - 1];
+                    if (c === '【' || c === '】') {
+                        targetIndex = cursorIndex - 1;
+                        char = c;
+                    }
+                }
+
+                if (targetIndex === -1) return matches;
+                matches.add(targetIndex);
+                
+                if (char === '【') {
+                    let depth = 0;
+                    for (let i = targetIndex + 1; i < text.length; i++) {
+                        if (text[i] === '【') depth++;
+                        else if (text[i] === '】') {
+                            if (depth === 0) { matches.add(i); break; }
+                            depth--;
+                        }
+                    }
+                } else {
+                    let depth = 0;
+                    for (let i = targetIndex - 1; i >= 0; i--) {
+                        if (text[i] === '】') depth++;
+                        else if (text[i] === '【') {
+                            if (depth === 0) { matches.add(i); break; }
+                            depth--;
+                        }
+                    }
+                }
+                return matches;
+            },
+
+            render() {
+                const inputEl = this.$refs.inputLayer;
+                const highlightEl = this.$refs.highlightLayer;
+                if (!inputEl || !highlightEl) return;
+
+                const text = inputEl.value;
+                const cursorIndex = inputEl.selectionStart;
+                const cleanText = this.maskComments(text);
+                const activeIndices = this.findMatchIndices(cleanText, cursorIndex);
+
+                let html = '';
+                let depth = 1;
+
+                const getColorClass = (d) => {
+                    if (d <= 0) return 'lvl-1'; 
+                    const colorIdx = (d - 1) % this.MAX_COLORS + 1;
+                    return `lvl-${colorIdx}`;
+                };
+
+                const openSpan = (d) => `<span class="${getColorClass(d)}">`;
+                const closeSpan = (d) => `</span>`;
+
+                html += openSpan(1); 
+
+                for (let i = 0; i < text.length; i++) {
+                    
+                    // 1. 优先处理双反斜杠 \\ (转义符本身的转义)
+                    //    如果不先处理这个，后面的逻辑会把 \\## 误判为 \## (被转义的注释)
+                    if (text[i] === '\\' && text[i+1] === '\\') {
+                        html += this.escapeHtml('\\\\'); // 输出两个反斜杠
+                        i++; // 跳过下一个反斜杠
+                        continue;
+                    }
+
+                    // 2. 处理被转义的注释符号 \## (不应显示为绿色)
+                    if (text[i] === '\\' && text[i+1] === '#' && text[i+2] === '#') {
+                        html += this.escapeHtml('\\##'); 
+                        i += 2; // 跳过 ##
+                        continue;
+                    }
+
+                    // 3. 处理被转义的括号 \【 或 \】
+                    if (text[i] === '\\' && (text[i+1] === '【' || text[i+1] === '】')) {
+                        html += this.escapeHtml(text[i] + text[i+1]);
+                        i++; 
+                        continue;
+                    }
+
+                    // 4. 处理真正的注释 ##
+                    if (text[i] === '#' && text[i+1] === '#') {
+                        let lineEnd = text.indexOf('\n', i);
+                        if (lineEnd === -1) lineEnd = text.length;
+                        const commentContent = text.substring(i, lineEnd);
+                        html += `<span class="comment-text">${this.escapeHtml(commentContent)}</span>`;
+                        i = lineEnd - 1; 
+                        continue; 
+                    }
+
+                    // 5. 常规括号处理
+                    const char = text[i];
+                    const isActive = activeIndices.has(i);
+                    const activeClass = isActive ? ' active-pair' : '';
+
+                    if (char === '【') {
+                        html += closeSpan(depth);
+                        depth++;
+                        html += openSpan(depth);
+                        html += `<span class="${activeClass}">【</span>`; 
+                    } 
+                    else if (char === '】') {
+                        if (depth > 1) {
+                            html += `<span class="${activeClass}">】</span>`;
+                            html += closeSpan(depth);
+                            depth--;
+                            html += openSpan(depth);
+                        } else {
+                            html += `<span class="error-bracket${activeClass}">】</span>`;
+                        }
+                    } 
+                    else {
+                        html += this.escapeHtml(char);
+                    }
+                }
+                
+                html += closeSpan(depth);
+
+                if (text.endsWith('\n')) {
+                    html += '<br>&nbsp;';
+                }
+
+                highlightEl.innerHTML = html;
+            },
+
+            syncScroll() {
+                if (this.$refs.inputLayer && this.$refs.highlightLayer) {
+                    this.$refs.highlightLayer.scrollTop = this.$refs.inputLayer.scrollTop;
+                    this.$refs.highlightLayer.scrollLeft = this.$refs.inputLayer.scrollLeft;
+                }
+            },
+            
+            handleInput() {
+                this.render();
+                this.syncScroll();
+            },
+
+            handleKeyDown(e) {
+                const inputEl = this.$refs.inputLayer;
+                
+                // --- Ctrl + / 注释切换功能 ---
+                if (e.ctrlKey && e.key === '/') {
+                    e.preventDefault();
+                    
+                    const start = inputEl.selectionStart;
+                    const end = inputEl.selectionEnd;
+                    const value = inputEl.value;
+                    
+                    // 找到光标涉及的所有行
+                    let startLineIndex = value.lastIndexOf('\n', start - 1) + 1; 
+                    let endLineIndex = value.indexOf('\n', end);
+                    if (endLineIndex === -1) endLineIndex = value.length;
+                    
+                    // 修正: 如果光标刚好在行首，且选区不为空，endLineIndex可能指向了不该包含的下一行
+                    // 但这里我们简单处理：只要涉及到的行都处理
+                    if (end > start && value[end-1] === '\n') {
+                        // 如果选区正好结束在换行符，通常意味着不想包含下一行
+                        // 需要回溯找上一个换行符
+                        // 这里为简化逻辑，暂不特殊回退，通常 IDE 行为是包含
+                    }
+
+                    const blockStart = startLineIndex;
+                    const blockEnd = endLineIndex;
+                    const selectedText = value.substring(blockStart, blockEnd);
+                    const lines = selectedText.split('\n');
+
+                    // 判断是否所有行都已经注释了
+                    // 忽略空行
+                    const validLines = lines.filter(line => line.trim().length > 0);
+                    const allCommented = validLines.length > 0 && validLines.every(line => /^\s*##/.test(line));
+
+                    let newLines;
+                    if (allCommented) {
+                        // 取消注释：移除开头的 "## " 或 "##"
+                        newLines = lines.map(line => line.replace(/^(\s*)## ?/, '$1'));
+                    } else {
+                        // 添加注释：在行首添加 "## "
+                        newLines = lines.map(line => {
+                            // 空行通常不注释，或者注释了也没关系
+                            if (line.trim().length === 0) return line;
+                            return '## ' + line;
+                        });
+                    }
+
+                    const newText = newLines.join('\n');
+                    inputEl.setRangeText(newText, blockStart, blockEnd, 'select');
+                    this.handleInput();
+                    return;
+                }
+
+                // --- Tab 缩进功能 ---
+                if (e.key === 'Tab') {
+                    e.preventDefault();
+                    const start = inputEl.selectionStart;
+                    const end = inputEl.selectionEnd;
+                    const value = inputEl.value;
+                    const hasSelection = start !== end;
+                    
+                    let startLineIndex = value.lastIndexOf('\n', start - 1) + 1; 
+                    let endLineIndex = value.indexOf('\n', end);
+                    if (endLineIndex === -1) endLineIndex = value.length;
+
+                    const blockStart = startLineIndex;
+                    const blockEnd = endLineIndex;
+                    const selectedText = value.substring(blockStart, blockEnd);
+                    const lines = selectedText.split('\n');
+                    let newText = '';
+
+                    if (e.shiftKey) {
+                        const modifiedLines = lines.map(line => {
+                            let removeCount = 0;
+                            if (line.startsWith('    ')) removeCount = 4;
+                            else if (line.startsWith('   ')) removeCount = 3;
+                            else if (line.startsWith('  ')) removeCount = 2;
+                            else if (line.startsWith(' ')) removeCount = 1;
+                            return line.substring(removeCount);
+                        });
+                        newText = modifiedLines.join('\n');
+                        inputEl.setRangeText(newText, blockStart, blockEnd, 'select');
+                    } else {
+                        if (!hasSelection) {
+                            document.execCommand('insertText', false, '    ');
+                        } else {
+                            const modifiedLines = lines.map(line => '    ' + line);
+                            newText = modifiedLines.join('\n');
+                            inputEl.setRangeText(newText, blockStart, blockEnd, 'select');
+                        }
+                    }
+                    this.handleInput(); 
+                }
+            }
+        }
+    };
+
     function getQueryVariable(variable)
     {
         var query = window.location.search.substring(1);
@@ -151,7 +572,6 @@
                 }else {
                     this.select_index = -1
                 }
-                // 只有加载成功了才允许保存
                 this.$refs.child1.disabled = false;
                 this.$refs.child2.disabled = false;
                 this.$refs.child3.disabled = false;
@@ -170,51 +590,31 @@
             script_name:function(newval,oldval){
                 if(this.select_index != -1) {
                     this.pkg_codes[this.select_index]['name'] = newval
-                    // this.select_name = newval
                 }
             }
         },
         methods: {
-            //拖曳相關--str---↓↓--
-            allowDrop(e) {//取消默認行為
-                console.log("allowDrop" + e )
-                e.preventDefault();
-            },
-            dragStart(e, index) {//拖曳開始
-                console.log("dragStart：" + e + "," + index)
+            allowDrop(e) { e.preventDefault(); },
+            dragStart(e, index) {
                 e.dataTransfer.setData('Text', index);
                 let client = event.target.getBoundingClientRect()
                 let source_x = (client.left + client.right) / 2
                 let mouse_x = event.clientX
                 e.dataTransfer.setData('Offset', source_x - mouse_x);
             },
-            drop(e, index) {//放置
+            drop(e, index) {
                 let offset = e.dataTransfer.getData('Offset');
                 let client = event.target.getBoundingClientRect()
                 let target_pos = (client.left + client.right) / 2
                 let source_pos = (event.clientX + Number(offset))
-                let tp = 0
-                if(target_pos > source_pos) {
-                    tp = -1
-                    console.log("左")
-                }else {
-                    tp = 1
-                    console.log("右")
-                }
+                let tp = target_pos > source_pos ? -1 : 1;
                 
-                // this.allowDrop(e);
                 dragIndex = Number(e.dataTransfer.getData('Text'));
                 if(dragIndex != index) {
                     let mode_list = []
-                    for(i = 0;i < this.pkg_codes.length;i++) {
-                        mode_list.push(i)
-                    }
+                    for(i = 0;i < this.pkg_codes.length;i++) mode_list.push(i)
+                    if(index + tp == dragIndex) return;
 
-                    if(index + tp == dragIndex) { // 不动
-                        return;
-                    }
-
-                    // 插入元素
                     if(tp == -1) {
                         mode_list.splice(index,0,dragIndex)
                         this.pkg_codes.splice(index,0,this.pkg_codes[dragIndex])
@@ -223,11 +623,10 @@
                         this.pkg_codes.splice(index + 1,0,this.pkg_codes[dragIndex])
                     }
 
-                    // 删除原来位置的元素
-                    if(index < dragIndex) { // 往右边移动
+                    if(index < dragIndex) { 
                         this.pkg_codes.splice(dragIndex + 1,1)
                         mode_list.splice(dragIndex + 1,1)
-                    }else if(index > dragIndex) { // 往左边移动
+                    }else if(index > dragIndex) { 
                         this.pkg_codes.splice(dragIndex,1)
                         mode_list.splice(dragIndex,1)
                     }
@@ -240,27 +639,16 @@
                     }
                 }
             },
-            dragEnd() {//放置結束
-                console.log("dragEnd");
-            },
-            //拖曳相關--end---↑↑--
-            cron(){
-                window.open("/crontool.html", "_blank");
-            },
+            dragEnd() { },
+            cron(){ window.open("/crontool.html", "_blank"); },
             openWebTriggerUrl() {
-                const protocol = window.location.protocol; // Gets "http:" or "https:"
-                const host = window.location.host; // Gets "hostname:port"
-                const keyword = this.script_keyword || ""; // Use empty string if keyword is empty
+                const protocol = window.location.protocol; 
+                const host = window.location.host; 
+                const keyword = this.script_keyword || ""; 
                 let urlPath;
-
-                if (this.pkg_name === "默认包") {
-                    urlPath = `/user/${keyword}`;
-                } else {
-                    urlPath = `/user/${encodeURIComponent(this.pkg_name)}${keyword}`;
-                }
-
-                const fullUrl = `${protocol}//${host}${urlPath}`; // Use the detected protocol
-                window.open(fullUrl, '_blank');
+                if (this.pkg_name === "默认包") urlPath = `/user/${keyword}`;
+                else urlPath = `/user/${encodeURIComponent(this.pkg_name)}${keyword}`;
+                window.open(`${protocol}//${host}${urlPath}`, '_blank');
             },
             save(index){
                 this.pkg_codes[this.select_index]["content"]["code"] = this.$refs.child.getText()
@@ -282,29 +670,20 @@
                 if(this.select_index == -1) {
                     this.select_index = index;
                     this.load(index)
-                }else if(index == this.select_index){
-                    // do nothing
-                }
-                else{
+                }else if(index != this.select_index){
                     this.save(this.select_index)
                     this.select_index = index
                     this.load(this.select_index)
                 }
-                //console.log(this.$refs.child.getText())
-                
             },
             randomString(e) {    
                 e = e || 32;
-                var t = "123456789",
-                a = t.length,
-                n = "";
+                var t = "123456789", a = t.length, n = "";
                 for (i = 0; i < e; i++) n += t.charAt(Math.floor(Math.random() * a));
                 return n
             },
             add_code() {
-                if(this.select_index != -1) {
-                    this.save(this.select_index)
-                }
+                if(this.select_index != -1) this.save(this.select_index)
                 let obj = {
                     name:"script_"+this.randomString(4),
                     description:"code_description",
@@ -324,47 +703,28 @@
                     this.save(this.select_index)
                     this.pkg_codes.splice(this.select_index,1);
                     this.select_index -= 1;
-                    if(this.select_index != -1) {
-                        this.load(this.select_index)
-                    } else {
+                    if(this.select_index != -1) this.load(this.select_index)
+                    else {
                         if(this.pkg_codes.length > 0) {
                             this.select_index = 0;
                             this.load(this.select_index)
                         }else {
-                            this.script_name = ""
-                            this.script_ppfs = ""
-                            this.script_cffs = ""
-                            this.script_keyword = ""
-                            this.$refs.child.setText("")
-                            this.script_description = ""
+                            this.script_name = ""; this.script_ppfs = ""; this.script_cffs = "";
+                            this.script_keyword = ""; this.$refs.child.setText(""); this.script_description = "";
                         }
                     }
                 }
             },
             save_code(){
-                if(this.select_index != -1) {
-                    this.save(this.select_index)
-                }
+                if(this.select_index != -1) this.save(this.select_index)
                 let pkg_name = getQueryVariable("pkg_name")
                 pkg_name = decodeURIComponent(pkg_name)
-                if(pkg_name == "默认包") {
-                    pkg_name = ""
-                }
-                axios
-                .post("/save_one_pkg",{
-                    "pkg_name": pkg_name,
-                    data:this.pkg_codes
-                })
+                if(pkg_name == "默认包") pkg_name = ""
+                axios.post("/save_one_pkg",{ "pkg_name": pkg_name, data:this.pkg_codes })
                 .then((res) => {
-                    if(res.data['retcode'] == 0){
-                        this.toastMessage = "保存成功";
-                        this.showToast = true;
-                        setTimeout(() => { this.showToast = false; }, 3000);
-                    }else {
-                        this.toastMessage = "保存失败";
-                        this.showToast = true;
-                        setTimeout(() => { this.showToast = false; }, 3000);
-                    }
+                    this.toastMessage = res.data['retcode'] == 0 ? "保存成功" : "保存失败";
+                    this.showToast = true;
+                    setTimeout(() => { this.showToast = false; }, 3000);
                 })
                 .catch((error) => {
                     console.log(error);
@@ -373,10 +733,10 @@
                     setTimeout(() => { this.showToast = false; }, 3000);
                 });
             }
-        },
-        mixins: [QuillMixin]
+        }
     })
-    app.component('QuillEditor', VueQuill.QuillEditor);
+    
+    app.component('CustomEditor', CustomEditor);
     app.mount('#app')
    </script>
    
