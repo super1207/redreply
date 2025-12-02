@@ -6,7 +6,7 @@
 
 官方稳定版本
 
-### [github actions](https://github.com/super1207/redreply/actions)
+### [github actions](https://github.com/xiaoyu19960507/redreply/actions)
 
 新特性马上尝试，但是需要登录github
 

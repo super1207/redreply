@@ -5,7 +5,7 @@
 
 作者qq：1875159423
 
-qq群号：556515826 556515826
+qq群号：556515826
 
 开源地址：[https://github.com/super1207/redreply](https://github.com/super1207/redreply)
 
@@ -2958,7 +2958,7 @@ onebot事件json对应的RedLang对象。
 你可以在这里定义一些全局的命令、常量。
 
 
-## 包管理说明(未完全完成)
+## 包管理说明
 
 注意：创建或删除包后，需要重启才能生效。
 

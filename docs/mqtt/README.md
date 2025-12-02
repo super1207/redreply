@@ -22,7 +22,7 @@
 
 `broker_username`: mqtt broker的用户名，如果没有可以不填或者填 `null`。
 
-`broker_password`: mqtt broker的密码，如果没有可以不填 `null`。
+`broker_password`: mqtt broker的密码，如果没有可以不填或者填 `null`。
 
 `remote_clients`: 其它红色问答的 `client_id`，配置了之后，可以接收并处理其它红色问答推送的事件。如果想要处理所有远程红色问答的推送，可以写为:`"remote_clients":["+"]`。
 
