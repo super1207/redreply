@@ -6,6 +6,7 @@
    <meta name="viewport" content="width=device-width, initial-scale=1.0">
    <title>红色问答调试</title>
    <style>
+    * { box-sizing: border-box; }
     html,body{
         width: 100%;
         height: 100%;
@@ -23,11 +24,10 @@
         cursor: pointer;
     }
    </style>
+   <link rel="stylesheet" href="./custom_editor.css">
    <script src="axios.js"></script>
    <script src="vue.js"></script>
-   <script src="vue-quill.js"></script>
-   <script src="quill-setup.js"></script>
-   <link rel="stylesheet" href="vue-quill.snow.prod.css">
+   <script src="vue3-sfc-loader.min.js"></script>
 </head>
 
 <body>
@@ -57,7 +57,9 @@
 </div>
         <!-- END OF MODIFIED BLOCK -->
         <div style="flex: 1 0 auto;height: 0;width: 100%; display: flex; flex-direction: column;">
-            <quill-editor id="script_content" ref="child" theme="snow" spellcheck="false" style="height: 50%;"></quill-editor>
+
+            <custom-editor ref="child"></custom-editor>
+
             <div style="display: flex;flex: 1 0 auto;height: 50%;flex-direction: row;overflow: auto; border-top: 1px solid;">
                 <textarea style="flex-grow: 1;min-width: 50%; border: none; outline: none;" disabled>{{result}}</textarea>
                 <div v-if="has_img" style="overflow: auto;width: 0;flex-grow: 1; padding: 5px; border-left: 1px solid #ccc;">
@@ -148,7 +150,7 @@
                 window.localStorage.setItem('debug_pkg_name',this.pkg_name)
             },
             run_script(){
-                let content = this.$refs.child.getQuill().getText();
+                let content = this.$refs.child.getText();
                 let script = {
                     "platform":this.platform,
                     "bot_id":this.bot_id,
@@ -172,7 +174,7 @@
                 });
             },
             run_script2(){
-                let content = this.$refs.child.getQuill().getText();
+                let content = this.$refs.child.getText();
                 let script = {
                     "platform":this.platform,
                     "bot_id":this.bot_id,
@@ -214,10 +216,25 @@
                 });
             },
         },
-        mixins: [QuillMixin]
     })
-    app.component('QuillEditor', VueQuill.QuillEditor);
-    app.mount('#app')
+            // 动态注册 CustomEditor 组件
+        const options = {
+            moduleCache: {
+                vue: Vue
+            },
+            getFile(url) {
+                return fetch(url).then(res => res.ok ? res.text() : Promise.reject(res));
+            },
+            addStyle(textContent) {
+                const style = document.createElement('style');
+                style.textContent = textContent;
+                document.head.appendChild(style);
+            },
+        };
+        window['vue3-sfc-loader'].loadModule('./custom_editor.vue', options).then(CustomEditor => {
+            app.component('CustomEditor', CustomEditor.default || CustomEditor);
+            app.mount('#app');
+        });
    </script>
    
 </body>

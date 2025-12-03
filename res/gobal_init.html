@@ -18,11 +18,10 @@
         font-family: fusion-pixel-12px-monospaced-zh_hant, serif;
     }
    </style>
-   <script src="axios.js"></script>
-   <script src="vue.js"></script>
-   <script src="vue-quill.js"></script>
-   <script src="quill-setup.js"></script>
-   <link rel="stylesheet" href="vue-quill.snow.prod.css">
+    <link rel="stylesheet" href="./custom_editor.css">
+    <script src="axios.js"></script>
+    <script src="vue.js"></script>
+    <script src="vue3-sfc-loader.min.js"></script>
 </head>
 
 <body>
@@ -30,7 +29,7 @@
    <div id="app" style="padding:0.5em; border: 1px solid;margin: 0.2em;display: flex;flex-direction: column;flex-grow: 1;">
         <h1 style="text-align: center;color: red;">红色问答全局初始化</h1>
         <div style="height: 0; flex-grow: 1;display: flex;flex-direction: column;flex-grow: 1;">
-            <quill-editor id = "script_content"  ref="child" theme="snow" spellcheck = false style="flex-grow: 1; height: 0;"></quill-editor>
+            <custom-editor ref="child"></custom-editor>
             <button style="height: 40px;font-size: medium;font-weight: bold;" @click="save_code()">保存</button>
         </div>
         </body>
@@ -57,7 +56,7 @@
         },
         methods: {
             save_code(){
-                let content = this.$refs.child.getQuill().getText();
+                let content = this.$refs.child.getText();
                 let script = {
                     "data":content
                 }
@@ -76,11 +75,26 @@
                     alert("保存失败")
                 });
             },
-        },
-        mixins: [QuillMixin]
+        }
     })
-    app.component('QuillEditor', VueQuill.QuillEditor);
-    app.mount('#app')
+            // 动态注册 CustomEditor 组件
+        const options = {
+            moduleCache: {
+                vue: Vue
+            },
+            getFile(url) {
+                return fetch(url).then(res => res.ok ? res.text() : Promise.reject(res));
+            },
+            addStyle(textContent) {
+                const style = document.createElement('style');
+                style.textContent = textContent;
+                document.head.appendChild(style);
+            },
+        };
+        window['vue3-sfc-loader'].loadModule('./custom_editor.vue', options).then(CustomEditor => {
+            app.component('CustomEditor', CustomEditor.default || CustomEditor);
+            app.mount('#app');
+        });
    </script>
    
 </body>

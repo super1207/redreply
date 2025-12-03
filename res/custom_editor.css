@@ -1,0 +1,73 @@
+/* 自定义编辑器样式 */
+.custom-editor-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    border: 1px solid #999;
+    background-color: #E1EBE7; 
+    overflow: hidden;
+    font-family: Consolas, "Courier New", monospace; 
+}
+
+.editor-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: 0;
+    padding: 10px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 14px;
+    line-height: 1.5;
+    letter-spacing: 0;
+    font-weight: normal;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    overflow-y: scroll; 
+    overflow-x: hidden;
+    outline: none;
+    resize: none;
+    tab-size: 4;
+}
+
+.highlight-layer {
+    z-index: 1;
+    background-color: transparent;
+    color: #000;
+    pointer-events: none; 
+}
+
+.input-layer {
+    z-index: 2;
+    color: transparent;
+    background-color: transparent;
+    caret-color: #000;
+}
+
+.input-layer::selection {
+    background: rgba(0, 120, 215, 0.3);
+    color: transparent;
+}
+
+.lvl-1 { color: #000000; }
+.lvl-2 { color: #FF0000; }
+.lvl-3 { color: #0000FF; }
+.lvl-4 { color: #008000; }
+
+.error-bracket {
+    color: #ff0000;
+    text-decoration: wavy underline;
+}
+
+.active-pair {
+    background-color: rgba(0, 0, 0, 0.1);
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.05);
+}
+
+.comment-text {
+    color: #008000 !important;
+    font-style: italic;
+}

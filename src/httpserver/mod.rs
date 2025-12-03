@@ -1067,6 +1067,9 @@ async fn deal_file(request: hyper::Request<hyper::body::Incoming>) -> Result<hyp
     }else if url_path.ends_with(".mtn") {
         res.headers_mut().insert("Cache-Control", HeaderValue::from_static("max-age=300"));
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/octet-stream"));
+    }else if url_path.ends_with(".vue") {
+        res.headers_mut().insert("Cache-Control", HeaderValue::from_static("max-age=300"));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("text/plain; charset=utf-8"));
     }
     else {
         *res.status_mut() = hyper::StatusCode::NOT_FOUND;
