@@ -2684,6 +2684,43 @@ pub fn init_ex_fun_map() {
         image.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)?;
         return Ok(Some(self_t.build_bin(bytes)));
     });
+
+    add_fun(vec!["__重启"],|_self_t,_params|{
+
+        std::thread::spawn(|| {
+            use std::env;
+            use std::process::Command;
+            use crate::wait_for_quit;
+            use std::os::windows::process::CommandExt;
+
+            let exe_path = env::current_exe().unwrap();
+            let args: Vec<String> = env::args().skip(1).collect();
+            
+
+            let lock_name = uuid::Uuid::new_v4().to_string();
+
+            #[cfg(target_os = "windows")]
+            {
+                const DETACHED_PROCESS: u32 = 0x00000008;
+                let _ = Command::new(&exe_path)
+                    .args(&args)
+                    .env("REDREPLY_LOCK_NAME", lock_name) 
+                    .creation_flags(DETACHED_PROCESS) 
+                    .spawn();
+                wait_for_quit();
+            }
+
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = Command::new(&exe_path)
+                    .args(&args)
+                    .env("REDREPLY_LOCK_NAME", lock_name) 
+                    .spawn();
+                wait_for_quit();
+            }
+        });
+        return Ok(Some("".to_string()));
+    });
     
     add_fun(vec!["文件信息"],|self_t,params|{
         let file_path = self_t.get_param(params, 0)?;

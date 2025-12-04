@@ -1559,6 +1559,25 @@ async fn connect_handle(request: hyper::Request<hyper::body::Incoming>,is_local:
     
 }
 
+
+#[cfg(target_os = "windows")]
+fn bind_port_with_retry(addr: &str) {
+    let mut retries = 0;
+    loop {
+        match std::net::TcpListener::bind(addr) {
+            Ok(_listener) => return , // 成功绑定
+            Err(e) => {
+                if retries > 20 {
+                    panic!("端口一直被占用，放弃启动: {}", e);
+                }
+                cq_add_log_w(&format!("端口被占用，等待旧进程退出... (尝试 {}/20)", retries + 1)).unwrap();
+                thread::sleep(std::time::Duration::from_millis(500)); // 等待 0.5 秒
+                retries += 1;
+            }
+        }
+    }
+}
+
 pub fn init_http_server() -> Result<()> {
     let config = read_config()?;
     let mut host = config.get("web_host").ok_or("无法获取web_host")?.as_str().ok_or("无法获取web_host")?;
@@ -1570,6 +1589,16 @@ pub fn init_http_server() -> Result<()> {
     cq_add_log(&format!("webui访问地址：http://{web_uri}")).unwrap();
     let addr1 = web_uri.parse::<std::net::SocketAddr>().unwrap();
 
+    // 这里等待端口释放
+    #[cfg(target_os = "windows")]
+    {
+        let lock_name = std::env::var("REDREPLY_LOCK_NAME").unwrap_or_else(|_| "".to_string());
+        if lock_name != "" {
+            cq_add_log(&format!("重启中....", )).unwrap();
+            bind_port_with_retry(&web_uri);
+        }
+    }
+    
     RT_PTR.spawn(async move {
 
         let socket;
