@@ -131,6 +131,13 @@ fn create_windows() -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
 
 
 fn main() {
+
+    // 记录程序开始时间
+    {
+        let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis().to_string();
+        let mut lk = redlang::G_START_TIME.lock().unwrap();
+        *lk = d;
+    }
     
     // 初始化日志
     let format = "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]";

@@ -131,6 +131,9 @@ lazy_static! {
     // 跳过多长时间的消息
     pub static ref G_SKIP_MSG_TIME:RwLock<i64> = RwLock::new(600);
 
+    // 红色问答开始运行的时间
+    pub static ref G_START_TIME:Mutex<String> = Mutex::new(0.to_string());
+
     // py解析red变量
     pub static ref G_RED_PY_DECODE:String =  r#"
 def __red_py_decode(input:str):

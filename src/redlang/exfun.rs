@@ -799,6 +799,10 @@ pub fn init_ex_fun_map() {
         let tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?;
         return Ok(Some(tm.as_millis().to_string()));
     });
+    add_fun(vec!["开始时间"],|_self_t,_params|{
+        use crate::G_START_TIME;
+        return Ok(Some(G_START_TIME.lock().unwrap().to_string()));    
+    });
     add_fun(vec!["时间戳转文本"],|self_t,params|{
         let numstr = self_t.get_param(params, 0)?;
         if numstr.len() > 10 {
@@ -2691,16 +2695,16 @@ pub fn init_ex_fun_map() {
             use std::env;
             use std::process::Command;
             use crate::wait_for_quit;
-            use std::os::windows::process::CommandExt;
+            
 
             let exe_path = env::current_exe().unwrap();
             let args: Vec<String> = env::args().skip(1).collect();
             
-
             let lock_name = uuid::Uuid::new_v4().to_string();
 
             #[cfg(target_os = "windows")]
             {
+                use std::os::windows::process::CommandExt;
                 const DETACHED_PROCESS: u32 = 0x00000008;
                 let _ = Command::new(&exe_path)
                     .args(&args)
