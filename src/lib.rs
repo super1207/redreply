@@ -476,6 +476,25 @@ pub fn del_pkg_memory(pkg_name:&str) {
 }
 
 
+fn kill_all_sub_process() {
+    let current_pid = std::process::id();
+    let mut system = sysinfo::System::new();
+    let current_exe_path = std::env::current_exe().unwrap();
+    system.refresh_processes_specifics(sysinfo::ProcessesToUpdate::All,true,sysinfo::ProcessRefreshKind::everything());
+    for (_pid, process) in system.processes() {
+        if let Some(parent_pid) = process.parent() {
+            if let Some(child_exe_path) = process.exe() {
+                if child_exe_path == current_exe_path.as_path() {
+                    continue;
+                }
+            }
+            if parent_pid.as_u32() == current_pid {
+                process.kill();
+            }
+        }
+    }
+}
+
 pub fn wait_for_quit() -> ! {
     (*G_QUIT_FLAG.write().unwrap()) = true;
     let _foo = std::thread::spawn(||{
@@ -483,6 +502,9 @@ pub fn wait_for_quit() -> ! {
         cq_add_log_w("退出软件超时(5s)，强制退出!").unwrap();
         let running_scripts = get_running_script_info();
         cq_add_log_w(&format!("未退出脚本:{:?}",running_scripts)).unwrap();
+
+        kill_all_sub_process();
+
         std::process::exit(-1);
     });
     loop {
@@ -493,6 +515,7 @@ pub fn wait_for_quit() -> ! {
         }
         std::thread::sleep(core::time::Duration::from_millis(1));
     }
+
     status::flush_cache_to_db().unwrap() ;
     std::process::exit(0);
 }
