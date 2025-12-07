@@ -24,6 +24,7 @@ use serde_json;
 use rust_embed::RustEmbed;
 
 pub use cqapi::cq_add_log_w;
+pub use cqapi::get_tmp_dir;
 use cqapi::cq_get_app_directory1;
 
 use crate::initevent::do_gobal_init_event;
