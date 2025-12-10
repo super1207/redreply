@@ -95,6 +95,8 @@ tray-icon = "0.21.2"
 tao = "0.34.5"
 wry = "0.53.5"
 winapi = { version = "0.3.9", features = ["winuser"] }
+dirs = "5.0"
+rfd = "0.15"
  
 [profile.release]
 panic = "abort" # Strip expensive panic clean-up logic

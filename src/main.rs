@@ -98,6 +98,8 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let window_id = window.id();
         let proxy_for_title = proxy.clone();
+        let proxy_for_download_start = proxy.clone();
+        let proxy_for_download_complete = proxy.clone();
 
         builder
             .with_url(url)
@@ -107,6 +109,45 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             })
             .with_document_title_changed_handler(move |title| {
                 let _ = proxy_for_title.send_event(UserEvent::TitleChanged(window_id, title));
+            })
+            .with_download_started_handler(move |url, suggested_path| {
+                // 从建议路径或URL中提取文件名
+                let filename = suggested_path
+                    .file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or_else(|| {
+                        // 从URL中提取文件名
+                        url.split('/').last().unwrap_or("download")
+                    });
+
+                // 显示文件保存对话框
+                if let Some(save_path) = rfd::FileDialog::new()
+                    .set_file_name(filename)
+                    .set_directory(dirs::download_dir().unwrap_or_else(|| std::env::current_dir().unwrap_or_default()))
+                    .save_file()
+                {
+                    *suggested_path = save_path.clone();
+                    
+                    // 发送下载开始事件
+                    let _ = proxy_for_download_start.send_event(UserEvent::DownloadStarted(
+                        url.to_string(), 
+                        save_path
+                    ));
+                    
+                    // 返回true表示允许下载
+                    true
+                } else {
+                    // 用户取消了保存对话框，不允许下载
+                    false
+                }
+            })
+            .with_download_completed_handler(move |url, path, success| {
+                // 发送下载完成事件
+                let _ = proxy_for_download_complete.send_event(UserEvent::DownloadCompleted(
+                    url.to_string(),
+                    path.clone(),
+                    success
+                ));
             })
             .build(window)
             .map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
@@ -125,6 +166,8 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         TitleChanged(WindowId, String),
         TrayIconEvent(tray_icon::TrayIconEvent),
         MenuEvent(tray_icon::menu::MenuEvent),
+        DownloadStarted(String, std::path::PathBuf),
+        DownloadCompleted(String, Option<std::path::PathBuf>, bool),
     }
 
     let event_loop = EventLoopBuilder::<UserEvent>::with_user_event().build();
@@ -196,15 +239,14 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
             Event::UserEvent(user_event) => match user_event {
                 UserEvent::TrayIconEvent(tray_event) => {
-                    if let tray_icon::TrayIconEvent::Click {
+                    if let tray_icon::TrayIconEvent::DoubleClick {
                         button: tray_icon::MouseButton::Left,
-                        button_state: tray_icon::MouseButtonState::Up,
                         ..
                     } = tray_event
                     {
                         if let Err(e) =  create_new_window(&mut webviews, event_loop_window_target, &proxy) {
                             use redlang::cq_add_log_w;
-                            cq_add_log_w(&format!("Failed to create window on tray click: {:?}", e)).unwrap();
+                            cq_add_log_w(&format!("Failed to create window on tray double click: {:?}", e)).unwrap();
                         }
                     }
                 }
@@ -235,6 +277,30 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 UserEvent::TitleChanged(window_id, new_title) => {
                     if let Some((window, _)) = webviews.get(&window_id) {
                         window.set_title(&new_title);
+                    }
+                }
+
+                UserEvent::DownloadStarted(url, path) => {
+                    let _ = redlang::cq_add_log_w(&format!("开始下载: {} -> {:?}", url, path));
+                }
+
+                UserEvent::DownloadCompleted(url, path, success) => {
+                    if success {
+                        if let Some(path) = path {
+                            let _ = redlang::cq_add_log_w(&format!("下载完成: {} -> {:?}", url, path));
+                            
+                            // 打开文件所在目录并选中刚下载的文件
+                            #[cfg(windows)]
+                            {
+                                // 使用 explorer /select, 命令来选中文件
+                                let _ = std::process::Command::new("explorer")
+                                    .arg("/select,")
+                                    .arg(&path)
+                                    .spawn();
+                            }
+                        }
+                    } else {
+                        let _ = redlang::cq_add_log_w(&format!("下载失败: {}", url));
                     }
                 }
             },
