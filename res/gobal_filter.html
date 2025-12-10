@@ -2,22 +2,40 @@
 <html lang="zh-CN">
 
 <head>
-   <meta charset="UTF-8">
-   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-   <title>红色问答全局过滤器</title>
-   <style>
-    html,body{
-        width: 100%;
-        height: 100%;
-        display: flex;
-        margin: 0;
-        padding: 0;
-    }
-    button,textarea,body,select,input{
-        background-color: #E1EBE7;
-        font-family: fusion-pixel-12px-monospaced-zh_hant, serif;
-    }
-   </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>红色问答全局过滤器</title>
+    <style>
+        /* 全局盒模型设置，防止padding撑大元素 */
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            margin: 0;
+            padding: 0;
+            overflow: hidden; /* 防止页面整体出现滚动条 */
+        }
+
+        button,
+        textarea,
+        body,
+        select,
+        input {
+            background-color: #E1EBE7;
+            font-family: fusion-pixel-12px-monospaced-zh_hant, serif;
+        }
+
+        button:hover {
+            background-color: aqua;
+            color: red;
+            cursor: pointer;
+        }
+    </style>
     <link rel="stylesheet" href="./custom_editor.css">
     <script src="axios.js"></script>
     <script src="vue.js"></script>
@@ -25,60 +43,73 @@
 </head>
 
 <body>
-   
-   <div id="app" style="padding:0.5em; border: 1px solid;margin: 0.2em;display: flex;flex-direction: column;flex-grow: 1;">
-        <h1 style="text-align: center;color: red;">红色问答全局过滤器</h1>
-        <div style="height: 0; flex-grow: 1;display: flex;flex-direction: column;flex-grow: 1;">
-             <custom-editor ref="child"></custom-editor>
-            <button style="height: 40px;font-size: medium;font-weight: bold;" @click="save_code()">保存</button>
-        </div>
-        </body>
-   </div>
-   <script>
-    const { createApp } = Vue
-    const app = createApp({
-        data() {
-            return {
-            }
-        },
-        mounted () {
-            axios
-            .get("/get_gobal_filter_code")
-            .then(
-            res => {
-                let code = res.data["data"]
-                this.$refs.child.setText(code)
-                // console.log(this.pkg_codes)
-            })
-            .catch(function (error) {
-                console.log(error);
-            });
-        },
-        methods: {
-            save_code(){
-                let content = this.$refs.child.getText();
-                let script = {
-                    "data":content
-                }
-                axios
-                .post("/set_gobal_filter_code",script)
-                .then((res) => {
-                    if(res.data['retcode'] == 0){
-                        this.rename_pkg_process = []
-                        alert("保存成功")
-                    }else {
-                        alert("保存失败")
-                    }
-                })
-                .catch(function (error) {
-                    console.log(error);
-                    alert("保存失败")
-                });
-            },
-        }
-    })
 
-           // 动态注册 CustomEditor 组件
+    <!-- 主容器：使用 calc 计算高度，flex 布局 -->
+    <div id="app" style="border: 1px solid; display: flex; flex-direction: column; flex: 1; margin: 0.4em; height: calc(100% - 0.8em);">
+        <h1 style="text-align: center; color: red; margin: 0.5em;">红色问答全局过滤器</h1>
+
+        <!-- 
+           滚动容器核心设置：
+           flex: 1 0 auto; height: 0; 
+           这会让 div 填满剩余空间，但以此为边界处理内部滚动
+        -->
+        <div style="flex: 1 0 auto; height: 0; width: 100%; display: flex; flex-direction: column;">
+            <!-- 编辑器设置：flex: 1 撑满父容器，overflow-y: auto 允许竖向滚动 -->
+            <custom-editor ref="child" style="flex: 1; overflow-y: auto;"></custom-editor>
+        </div>
+
+        <!-- 按钮区域 -->
+        <div style="display: flex; flex: 0 0 auto; padding-top: 5px;">
+            <button style="height: 40px; font-size: medium; font-weight: bold; flex: 1;" @click="save_code()">保存</button>
+        </div>
+    </div>
+
+    <script>
+        const {
+            createApp
+        } = Vue
+        const app = createApp({
+            data() {
+                return {}
+            },
+            mounted() {
+                axios
+                    .get("/get_gobal_filter_code")
+                    .then(
+                        res => {
+                            let code = res.data["data"]
+                            this.$refs.child.setText(code)
+                            // console.log(this.pkg_codes)
+                        })
+                    .catch(function(error) {
+                        console.log(error);
+                    });
+            },
+            methods: {
+                save_code() {
+                    let content = this.$refs.child.getText();
+                    let script = {
+                        "data": content
+                    }
+                    axios
+                        .post("/set_gobal_filter_code", script)
+                        .then((res) => {
+                            if (res.data['retcode'] == 0) {
+                                this.rename_pkg_process = []
+                                alert("保存成功")
+                            } else {
+                                alert("保存失败")
+                            }
+                        })
+                        .catch(function(error) {
+                            console.log(error);
+                            alert("保存失败")
+                        });
+                },
+            }
+        })
+
+        // 动态注册 CustomEditor 组件
         const options = {
             moduleCache: {
                 vue: Vue
@@ -96,9 +127,9 @@
             app.component('CustomEditor', CustomEditor.default || CustomEditor);
             app.mount('#app');
         });
-   </script>
-   
-   
+    </script>
+
+
 </body>
 
 </html>

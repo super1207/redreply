@@ -43,77 +43,100 @@ export default {
 		},
 		escapeHtml(str) {
 			return str.replace(/&/g, "&amp;")
-								.replace(/</g, "&lt;")
-								.replace(/>/g, "&gt;")
-								.replace(/"/g, "&quot;")
-								.replace(/'/g, "&#039;");
+					  .replace(/</g, "&lt;")
+					  .replace(/>/g, "&gt;")
+					  .replace(/"/g, "&quot;")
+					  .replace(/'/g, "&#039;");
 		},
-		maskComments(text) {
-			let arr = text.split('');
-			for (let i = 0; i < arr.length; i++) {
-				if (arr[i] === '\\' && arr[i+1] === '\\') {
-					arr[i] = ' '; arr[i+1] = ' ';
-					i++; 
+		// 核心解析逻辑：计算括号匹配
+		analyzeMatches(text, cursorIndex) {
+			const matches = new Set();
+			const pairs = {}; 
+			const stack = []; 
+			let i = 0;
+			
+			while (i < text.length) {
+				// 1. 优先检测注释
+				if (text.startsWith('##', i)) {
+					const lineEnd = text.indexOf('\n', i);
+					i = lineEnd === -1 ? text.length : lineEnd;
 					continue;
 				}
-				if (arr[i] === '\\') {
-					const next = arr[i+1];
-					if (next === '【' || next === '】') {
-						arr[i] = ' '; arr[i+1] = ' ';
-						i++; continue;
+
+				// 2. 检测原始字符串 【@
+				if (text.startsWith('【@', i)) {
+					const startIndex = i;
+					stack.push({ index: i, type: 'raw' });
+					i += 2; // 跳过 【@
+					
+					let innerDepth = 0;
+					// 进入原始字符串内部循环
+					while (i < text.length) {
+						// 内部依然检测 ## 注释，如果遇到，直接跳出内部循环，交给外层处理
+						if (text.startsWith('##', i)) {
+							break; 
+						}
+
+						const char = text[i];
+						if (char === '【') {
+							innerDepth++;
+							i++;
+						} else if (char === '】') {
+							if (innerDepth > 0) {
+								innerDepth--;
+								i++;
+							} else {
+								// 找到结束符
+								const startInfo = stack.pop();
+								if (startInfo) {
+									pairs[startInfo.index] = i;
+									pairs[i] = startInfo.index;
+								}
+								i++; // 消费这个 】
+								break; // 退出内部循环
+							}
+						} else {
+							i++;
+						}
 					}
-					if (next === '#' && arr[i+2] === '#') {
-						arr[i] = ' '; arr[i+1] = ' '; arr[i+2] = ' ';
-						i += 2; continue;
-					}
+					continue;
 				}
-				if (arr[i] === '#' && arr[i+1] === '#') {
-					while(i < arr.length && arr[i] !== '\n') {
-						arr[i] = ' ';
-						i++;
-					}
+
+				// 3. 普通模式下的转义
+				if (text[i] === '\\') {
+					i += 2; 
+					continue;
 				}
+
+				// 4. 普通左括号
+				if (text[i] === '【') {
+					stack.push({ index: i, type: 'normal' });
+					i++;
+					continue;
+				}
+
+				// 5. 普通右括号
+				if (text[i] === '】') {
+					if (stack.length > 0 && stack[stack.length - 1].type === 'normal') {
+						const startInfo = stack.pop();
+						pairs[startInfo.index] = i;
+						pairs[i] = startInfo.index;
+					}
+					i++;
+					continue;
+				}
+
+				i++;
 			}
-			return arr.join('');
-		},
-		findMatchIndices(text, cursorIndex) {
-			const matches = new Set();
+
+			// 计算高亮
 			let targetIndex = -1;
-			let char = '';
-			if (cursorIndex < text.length) {
-				const c = text[cursorIndex];
-				if (c === '【' || c === '】') {
-					targetIndex = cursorIndex;
-					char = c;
-				}
-			}
-			if (targetIndex === -1 && cursorIndex > 0) {
-				const c = text[cursorIndex - 1];
-				if (c === '【' || c === '】') {
-					targetIndex = cursorIndex - 1;
-					char = c;
-				}
-			}
-			if (targetIndex === -1) return matches;
-			matches.add(targetIndex);
-			if (char === '【') {
-				let depth = 0;
-				for (let i = targetIndex + 1; i < text.length; i++) {
-					if (text[i] === '【') depth++;
-					else if (text[i] === '】') {
-						if (depth === 0) { matches.add(i); break; }
-						depth--;
-					}
-				}
-			} else {
-				let depth = 0;
-				for (let i = targetIndex - 1; i >= 0; i--) {
-					if (text[i] === '】') depth++;
-					else if (text[i] === '【') {
-						if (depth === 0) { matches.add(i); break; }
-						depth--;
-					}
-				}
+			if (pairs[cursorIndex] !== undefined) targetIndex = cursorIndex;
+			else if (cursorIndex > 0 && pairs[cursorIndex - 1] !== undefined) targetIndex = cursorIndex - 1;
+
+			if (targetIndex !== -1) {
+				matches.add(targetIndex);
+				matches.add(pairs[targetIndex]);
 			}
 			return matches;
 		},
@@ -121,65 +144,139 @@ export default {
 			const inputEl = this.$refs.inputLayer;
 			const highlightEl = this.$refs.highlightLayer;
 			if (!inputEl || !highlightEl) return;
+
 			const text = inputEl.value;
 			const cursorIndex = inputEl.selectionStart;
-			const cleanText = this.maskComments(text);
-			const activeIndices = this.findMatchIndices(cleanText, cursorIndex);
+			const activeIndices = this.analyzeMatches(text, cursorIndex);
+
 			let html = '';
-			let depth = 1;
+			let depth = 1; 
+			let i = 0;
+
 			const getColorClass = (d) => {
-				if (d <= 0) return 'lvl-1'; 
+				if (d <= 0) return 'lvl-1';
 				const colorIdx = (d - 1) % this.MAX_COLORS + 1;
 				return `lvl-${colorIdx}`;
 			};
 			const openSpan = (d) => `<span class="${getColorClass(d)}">`;
-			const closeSpan = (d) => `</span>`;
-			html += openSpan(1); 
-			for (let i = 0; i < text.length; i++) {
-				if (text[i] === '\\' && text[i+1] === '\\') {
-					html += this.escapeHtml('\\\\');
-					i++; continue;
-				}
-				if (text[i] === '\\' && text[i+1] === '#' && text[i+2] === '#') {
-					html += this.escapeHtml('\\##'); 
-					i += 2; continue;
-				}
-				if (text[i] === '\\' && (text[i+1] === '【' || text[i+1] === '】')) {
-					html += this.escapeHtml(text[i] + text[i+1]);
-					i++; continue;
-				}
-				if (text[i] === '#' && text[i+1] === '#') {
+			const closeSpan = () => `</span>`;
+
+			html += openSpan(depth);
+
+			while (i < text.length) {
+				// 1. 注释渲染 (优先级最高)
+				if (text.startsWith('##', i)) {
 					let lineEnd = text.indexOf('\n', i);
 					if (lineEnd === -1) lineEnd = text.length;
-					const commentContent = text.substring(i, lineEnd);
-					html += `<span class="comment-text">${this.escapeHtml(commentContent)}</span>`;
-					i = lineEnd - 1; 
-					continue; 
+					const comment = text.substring(i, lineEnd);
+					html += `<span class="comment-text">${this.escapeHtml(comment)}</span>`;
+					i = lineEnd;
+					continue;
 				}
-				const char = text[i];
-				const isActive = activeIndices.has(i);
-				const activeClass = isActive ? ' active-pair' : '';
-				if (char === '【') {
-					html += closeSpan(depth);
+
+				// 2. 原始字符串渲染 【@
+				if (text.startsWith('【@', i)) {
+					const isActive = activeIndices.has(i);
+					const activeClass = isActive ? ' active-pair' : '';
+
+					html += closeSpan();
 					depth++;
 					html += openSpan(depth);
-					html += `<span class="${activeClass}">【</span>`; 
-				} 
-				else if (char === '】') {
+					
+					// 渲染 【 (带高亮类)
+					html += `<span class="${activeClass}">【</span>`;
+					// 渲染 @ 
+					html += '@'; 
+					
+					i += 2; // 跳过 【@
+					
+					let innerDepth = 0;
+					while (i < text.length) {
+						if (text.startsWith('##', i)) {
+							// 遇到注释，不做任何处理，直接 break
+							// i 指向 ## 的开始，外层循环会接手处理
+							break; 
+						}
+
+						const char = text[i];
+						if (char === '【') {
+							innerDepth++;
+							html += this.escapeHtml(char);
+							i++;
+						} else if (char === '】') {
+							if (innerDepth > 0) {
+								innerDepth--;
+								html += this.escapeHtml(char);
+								i++;
+							} else {
+								// 找到结束符
+								const isEndActive = activeIndices.has(i);
+								const endActiveClass = isEndActive ? ' active-pair' : '';
+								
+								html += `<span class="${endActiveClass}">】</span>`;
+								
+								// 恢复层级
+								html += closeSpan();
+								depth--;
+								html += openSpan(depth);
+								
+								i++; // 消费这个 】
+								break; // 退出内部循环
+							}
+						} else {
+							html += this.escapeHtml(char);
+							i++;
+						}
+					}
+					continue;
+				}
+
+				// 3. 普通转义
+				if (text[i] === '\\') {
+					if (i + 1 < text.length) {
+						html += this.escapeHtml(text.substring(i, i + 2));
+						i += 2;
+					} else {
+						html += this.escapeHtml('\\');
+						i++;
+					}
+					continue;
+				}
+
+				// 4. 普通左括号
+				if (text[i] === '【') {
+					const isActive = activeIndices.has(i);
+					const activeClass = isActive ? ' active-pair' : '';
+					html += closeSpan();
+					depth++;
+					html += openSpan(depth);
+					html += `<span class="${activeClass}">【</span>`;
+					i++;
+					continue;
+				}
+
+				// 5. 普通右括号
+				if (text[i] === '】') {
+					const isActive = activeIndices.has(i);
+					const activeClass = isActive ? ' active-pair' : '';
 					if (depth > 1) {
 						html += `<span class="${activeClass}">】</span>`;
-						html += closeSpan(depth);
+						html += closeSpan();
 						depth--;
 						html += openSpan(depth);
 					} else {
 						html += `<span class="error-bracket${activeClass}">】</span>`;
 					}
-				} 
-				else {
-					html += this.escapeHtml(char);
+					i++;
+					continue;
 				}
+
+				// 6. 其他字符
+				html += this.escapeHtml(text[i]);
+				i++;
 			}
-			html += closeSpan(depth);
+
+			html += closeSpan();
 			if (text.endsWith('\n')) {
 				html += '<br>&nbsp;';
 			}
@@ -205,8 +302,6 @@ export default {
 				let startLineIndex = value.lastIndexOf('\n', start - 1) + 1; 
 				let endLineIndex = value.indexOf('\n', end);
 				if (endLineIndex === -1) endLineIndex = value.length;
-				if (end > start && value[end-1] === '\n') {
-				}
 				const blockStart = startLineIndex;
 				const blockEnd = endLineIndex;
 				const selectedText = value.substring(blockStart, blockEnd);

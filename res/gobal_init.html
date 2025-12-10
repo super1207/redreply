@@ -6,16 +6,25 @@
    <meta name="viewport" content="width=device-width, initial-scale=1.0">
    <title>红色问答全局初始化</title>
    <style>
+    /* 参照参考代码：设置全局无滚动，内容由内部滚动处理 */
+    * { box-sizing: border-box; }
     html,body{
         width: 100%;
         height: 100%;
         display: flex;
         margin: 0;
         padding: 0;
+        overflow: hidden; 
     }
     button,textarea,body,select,input{
         background-color: #E1EBE7;
         font-family: fusion-pixel-12px-monospaced-zh_hant, serif;
+    }
+    /* 参照参考代码：增加按钮悬停效果 */
+    button:hover {
+        background-color: aqua;
+        color: red;
+        cursor: pointer;
     }
    </style>
     <link rel="stylesheet" href="./custom_editor.css">
@@ -26,14 +35,26 @@
 
 <body>
    
-   <div id="app" style="padding:0.5em; border: 1px solid;margin: 0.2em;display: flex;flex-direction: column;flex-grow: 1;">
-        <h1 style="text-align: center;color: red;">红色问答全局初始化</h1>
-        <div style="height: 0; flex-grow: 1;display: flex;flex-direction: column;flex-grow: 1;">
-            <custom-editor ref="child"></custom-editor>
-            <button style="height: 40px;font-size: medium;font-weight: bold;" @click="save_code()">保存</button>
+   <!-- 参照参考代码：app 容器设为 flex 列布局，占满高度 -->
+   <div id="app" style="border: 1px solid; display: flex; flex-direction: column; flex: 1; margin: 0.4em; height: calc(100% - 0.8em);">
+        <h1 style="text-align: center; color: red; margin: 0.5em;">红色问答全局初始化</h1>
+        
+        <!-- 
+            重点参照：中间的主容器 
+            style="flex: 1 0 auto; height: 0; width: 100%; display: flex; flex-direction: column;"
+            这里的 height: 0 是 Flex 滚动布局的核心技巧
+        -->
+        <div style="flex: 1 0 auto; height: 0; width: 100%; display: flex; flex-direction: column;">
+            <!-- 给编辑器加上 flex: 1 和 overflow-y: auto 从而出现竖向滚动条 -->
+            <custom-editor ref="child" style="flex: 1; overflow-y: auto;"></custom-editor>
         </div>
-        </body>
+
+        <!-- 底部按钮区域，固定在下方 -->
+        <div style="display: flex; flex: 0 0 auto; padding-top: 5px;">
+            <button style="height: 40px; font-size: medium; font-weight: bold; flex: 1;" @click="save_code()">保存</button>
+        </div>
    </div>
+
    <script>
     const { createApp } = Vue
     const app = createApp({
