@@ -9,6 +9,11 @@
     font-family: Consolas, "Courier New", monospace; 
 }
 
+[data-theme="dark"] .custom-editor-wrapper {
+    border-color: #555;
+    background-color: #2d2d2d;
+}
+
 .editor-layer {
     position: absolute;
     top: 0;
@@ -34,16 +39,24 @@
 
 .highlight-layer {
     z-index: 1;
-    background-color: transparent;
+    background-color: transparent !important;
     color: #000;
     pointer-events: none; 
 }
 
+[data-theme="dark"] .highlight-layer {
+    color: #e0e0e0;
+}
+
 .input-layer {
     z-index: 2;
-    color: transparent;
-    background-color: transparent;
+    color: transparent !important;
+    background-color: transparent !important;
     caret-color: #000;
+}
+
+[data-theme="dark"] .input-layer {
+    caret-color: #e0e0e0;
 }
 
 .input-layer::selection {
@@ -51,14 +64,29 @@
     color: transparent;
 }
 
+[data-theme="dark"] .input-layer::selection {
+    background: rgba(100, 150, 255, 0.3);
+}
+
+/* 日间主题的代码高亮颜色 */
 .lvl-1 { color: #000000; }
 .lvl-2 { color: #FF0000; }
 .lvl-3 { color: #0000FF; }
 .lvl-4 { color: #008000; }
 
+/* 夜间主题的代码高亮颜色 */
+[data-theme="dark"] .lvl-1 { color: #e0e0e0; }
+[data-theme="dark"] .lvl-2 { color: #ff6b6b; }
+[data-theme="dark"] .lvl-3 { color: #64b5f6; }
+[data-theme="dark"] .lvl-4 { color: #81c784; }
+
 .error-bracket {
     color: #ff0000;
     text-decoration: wavy underline;
+}
+
+[data-theme="dark"] .error-bracket {
+    color: #ff5252;
 }
 
 .active-pair {
@@ -67,7 +95,16 @@
     box-shadow: 0 0 0 1px rgba(0,0,0,0.05);
 }
 
+[data-theme="dark"] .active-pair {
+    background-color: rgba(255, 255, 255, 0.1);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.05);
+}
+
 .comment-text {
     color: #008000 !important;
     font-style: italic;
+}
+
+[data-theme="dark"] .comment-text {
+    color: #7cb342 !important;
 }

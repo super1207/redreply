@@ -1,0 +1,406 @@
+/* 全局主题样式 */
+:root {
+  /* 日间主题 */
+  --bg-primary: #f5f2f0;
+  --bg-secondary: #e1ebe7;
+  --bg-tertiary: #f3f5f6;
+  --bg-card: #b6cde4;
+  --bg-card-hover: rgb(152, 152, 100);
+  --bg-dialog: #fff;
+  --bg-button: #e1ebe7;
+  --bg-button-hover: aqua;
+  --bg-input: rgba(255,255,255,0.9);
+  --bg-editor: #E1EBE7;
+  --bg-highlight: rgba(0, 0, 0, 0.1);
+  
+  --text-primary: #000;
+  --text-secondary: #e55743;
+  --text-accent: red;
+  --text-button-hover: red;
+  --text-white: white;
+  --text-comment: #008000;
+  --text-error: #ff0000;
+  
+  --border-primary: #999;
+  --border-secondary: #e55743;
+  --border-tertiary: #ffd1dc;
+  --border-input: #ffd1dc;
+  
+  --shadow-primary: rgba(0, 0, 0, 0.24);
+  --shadow-button: rgba(255,105,180,0.2);
+  --shadow-focus: rgba(255,105,180,0.3);
+  
+  --selection-bg: rgba(0, 120, 215, 0.3);
+}
+
+/* 夜间主题 */
+[data-theme="dark"] {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2d2d2d;
+  --bg-tertiary: #333333;
+  --bg-card: #404040;
+  --bg-card-hover: #555555;
+  --bg-dialog: #2d2d2d;
+  --bg-button: #2d2d2d;
+  --bg-button-hover: #0066cc;
+  --bg-input: rgba(45,45,45,0.9);
+  --bg-editor: #2d2d2d;
+  --bg-highlight: rgba(255, 255, 255, 0.1);
+  
+  --text-primary: #e0e0e0;
+  --text-secondary: #ff7b6b;
+  --text-accent: #ff6b6b;
+  --text-button-hover: #ffffff;
+  --text-white: #e0e0e0;
+  --text-comment: #7cb342;
+  --text-error: #ff5252;
+  
+  --border-primary: #555;
+  --border-secondary: #ff7b6b;
+  --border-tertiary: #666;
+  --border-input: #666;
+  
+  --shadow-primary: rgba(0, 0, 0, 0.5);
+  --shadow-button: rgba(0,102,204,0.3);
+  --shadow-focus: rgba(0,102,204,0.4);
+  
+  --selection-bg: rgba(100, 150, 255, 0.3);
+}
+
+/* 主题切换按钮样式 */
+.theme-toggle {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 9999;
+  background: var(--bg-button);
+  border: 2px solid var(--border-secondary);
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20px;
+  transition: all 0.3s ease;
+  box-shadow: 0 2px 8px var(--shadow-primary);
+}
+
+.theme-toggle:hover {
+  background: var(--bg-button-hover);
+  color: var(--text-button-hover);
+  transform: scale(1.1);
+}
+
+/* 全局样式应用 */
+html, body {
+  background-color: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+button, textarea, select, input {
+  background-color: var(--bg-button) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-primary) !important;
+  transition: all 0.3s ease;
+}
+
+/* 编辑器特殊样式，不应用全局样式 */
+.editor-layer {
+  background-color: transparent !important;
+  border: none !important;
+}
+
+.input-layer {
+  background-color: transparent !important;
+  color: transparent !important;
+  border: none !important;
+}
+
+button:hover {
+  background-color: var(--bg-button-hover) !important;
+  color: var(--text-button-hover) !important;
+}
+
+input:focus, textarea:focus, select:focus {
+  border-color: var(--border-secondary) !important;
+  box-shadow: 0 0 15px var(--shadow-focus) !important;
+}
+
+/* 卡片样式 */
+.acard {
+  background-color: var(--bg-tertiary) !important;
+  border-color: var(--border-primary) !important;
+}
+
+.acard:hover {
+  background-color: var(--bg-card-hover) !important;
+  color: var(--text-white) !important;
+  box-shadow: 0px 0px 12px var(--shadow-primary) !important;
+}
+
+/* 标题样式 */
+.atitle {
+  color: var(--text-secondary) !important;
+}
+
+.atitle:hover {
+  background: var(--bg-highlight) !important;
+}
+
+/* 对话框样式 */
+dialog {
+  background-color: var(--bg-dialog) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-secondary) !important;
+}
+
+/* 编辑器样式完全由 custom_editor.css 管理，避免冲突 */
+
+/* 特定页面样式调整 */
+#pkg_btn_vec {
+  background-color: var(--bg-primary) !important;
+}
+
+#cmd_content {
+  background-color: var(--bg-card) !important;
+}
+
+#show {
+  background-color: var(--bg-primary) !important;
+  border-color: var(--border-secondary) !important;
+}
+
+#show > div {
+  border-color: var(--border-secondary) !important;
+}
+
+#show > div:hover {
+  background: var(--bg-highlight) !important;
+}
+
+#foot {
+  background-color: var(--bg-card) !important;
+}
+
+.name_active {
+  color: var(--text-secondary) !important;
+}
+
+/* 脚本编辑页面的脚本栏样式修复 - 使用更强的选择器 */
+div[style="display: flex;overflow-x: auto;border: 0.1em;border-style:outset;border-spacing: 1px;background-color:#b8e7e4; flex-shrink: 0;"],
+div[style*="background-color:#b8e7e4"][style*="border-style:outset"],
+div[style*="background-color: #b8e7e4"][style*="border-style:outset"],
+div[style*="background-color:#B8E7E4"][style*="border-style:outset"],
+div[style*="background-color: #B8E7E4"][style*="border-style:outset"] {
+  background-color: var(--bg-card) !important;
+  border-color: var(--border-primary) !important;
+}
+
+[data-theme="dark"] div[style="display: flex;overflow-x: auto;border: 0.1em;border-style:outset;border-spacing: 1px;background-color:#b8e7e4; flex-shrink: 0;"],
+[data-theme="dark"] div[style*="background-color:#b8e7e4"][style*="border-style:outset"],
+[data-theme="dark"] div[style*="background-color: #b8e7e4"][style*="border-style:outset"],
+[data-theme="dark"] div[style*="background-color:#B8E7E4"][style*="border-style:outset"],
+[data-theme="dark"] div[style*="background-color: #B8E7E4"][style*="border-style:outset"] {
+  background-color: #2d2d2d !important;
+  color: #e0e0e0 !important;
+}
+
+/* 脚本栏中的按钮样式 */
+div[style*="background-color:#b8e7e4"] button,
+div[style*="background-color: #b8e7e4"] button,
+div[style*="background-color:#B8E7E4"] button,
+div[style*="background-color: #B8E7E4"] button {
+  background-color: var(--bg-button) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-primary) !important;
+}
+
+div[style*="background-color:#b8e7e4"] button:hover,
+div[style*="background-color: #b8e7e4"] button:hover,
+div[style*="background-color:#B8E7E4"] button:hover,
+div[style*="background-color: #B8E7E4"] button:hover {
+  background-color: var(--bg-button-hover) !important;
+  color: var(--text-button-hover) !important;
+}
+
+/* 脚本栏中的提示文字 */
+div[style*="background-color:#b8e7e4"] > div,
+div[style*="background-color: #b8e7e4"] > div,
+div[style*="background-color:#B8E7E4"] > div,
+div[style*="background-color: #B8E7E4"] > div {
+  color: var(--text-primary) !important;
+  background-color: transparent !important;
+}
+
+/* 强制覆盖脚本栏内所有div的样式 */
+[data-theme="dark"] div[style*="background-color:#b8e7e4"] div,
+[data-theme="dark"] div[style*="background-color: #b8e7e4"] div,
+[data-theme="dark"] div[style*="background-color:#B8E7E4"] div,
+[data-theme="dark"] div[style*="background-color: #B8E7E4"] div {
+  color: var(--text-primary) !important;
+  background-color: transparent !important;
+}
+
+/* 脚本栏按钮激活状态 */
+div[style*="background-color:#b8e7e4"] button.name_active,
+div[style*="background-color: #b8e7e4"] button.name_active,
+div[style*="background-color:#B8E7E4"] button.name_active,
+div[style*="background-color: #B8E7E4"] button.name_active {
+  background-color: var(--text-secondary) !important;
+  color: white !important;
+}
+
+[data-theme="dark"] div[style*="background-color:#b8e7e4"] button.name_active,
+[data-theme="dark"] div[style*="background-color: #b8e7e4"] button.name_active,
+[data-theme="dark"] div[style*="background-color:#B8E7E4"] button.name_active,
+[data-theme="dark"] div[style*="background-color: #B8E7E4"] button.name_active {
+  background-color: var(--text-secondary) !important;
+  color: white !important;
+}
+
+/* 额外的强制样式，确保脚本栏在夜间主题下正确显示 */
+[data-theme="dark"] div[style*="border-style:outset"][style*="background-color"] {
+  background-color: var(--bg-secondary) !important;
+}
+
+[data-theme="dark"] div[style*="border-style:outset"][style*="background-color"] div {
+  color: var(--text-primary) !important;
+  background: none !important;
+}
+
+/* 最强力的脚本栏修复 - 直接覆盖所有可能的样式 */
+
+[data-theme="dark"] div[style*="#b8e7e4"] {
+  background-color: #2d2d2d !important;
+}
+
+[data-theme="dark"] div[style*="#B8E7E4"] {
+  background-color: #2d2d2d !important;
+}
+
+/* 强制覆盖所有包含该颜色的元素 */
+[data-theme="dark"] *[style*="background-color:#b8e7e4"],
+[data-theme="dark"] *[style*="background-color: #b8e7e4"],
+[data-theme="dark"] *[style*="background-color:#B8E7E4"],
+[data-theme="dark"] *[style*="background-color: #B8E7E4"] {
+  background-color: #2d2d2d !important;
+  color: #e0e0e0 !important;
+}
+
+/* 强制覆盖内部所有文字 */
+[data-theme="dark"] *[style*="#b8e7e4"] *,
+[data-theme="dark"] *[style*="#B8E7E4"] * {
+  color: #e0e0e0 !important;
+}
+
+/* 终极修复方案 - 直接针对RGB值 */
+[data-theme="dark"] *[style*="184, 231, 228"] {
+  background-color: #2d2d2d !important;
+  color: #e0e0e0 !important;
+}
+
+[data-theme="dark"] *[style*="rgb(184, 231, 228)"] {
+  background-color: #2d2d2d !important;
+  color: #e0e0e0 !important;
+}
+
+/* 最后的杀手锏 - 使用属性选择器的部分匹配 */
+[data-theme="dark"] div[style*="b8e7e4"] {
+  background: #2d2d2d !important;
+  color: #e0e0e0 !important;
+}
+
+[data-theme="dark"] div[style*="B8E7E4"] {
+  background: #2d2d2d !important;
+  color: #e0e0e0 !important;
+}
+
+/* 终极解决方案 - 使用更高的CSS特异性 */
+html[data-theme="dark"] body div[style*="background-color"][style*="b8e7e4"] {
+  background-color: #2d2d2d !important;
+  color: #e0e0e0 !important;
+}
+
+html[data-theme="dark"] body div[style*="background-color"][style*="B8E7E4"] {
+  background-color: #2d2d2d !important;
+  color: #e0e0e0 !important;
+}
+
+html[data-theme="dark"] body div[style*="background-color"][style*="b8e7e4"] div {
+  color: #e0e0e0 !important;
+  background-color: transparent !important;
+}
+
+html[data-theme="dark"] body div[style*="background-color"][style*="B8E7E4"] div {
+  color: #e0e0e0 !important;
+  background-color: transparent !important;
+}
+
+/* 登录页面特殊样式 */
+.login-container {
+  background: var(--bg-dialog) !important;
+  border-color: var(--border-tertiary) !important;
+}
+
+.login-container h1 {
+  color: var(--text-secondary) !important;
+}
+
+.login-container label {
+  color: var(--text-secondary) !important;
+}
+
+.login-container input[type="password"] {
+  background: var(--bg-input) !important;
+  border-color: var(--border-input) !important;
+}
+
+.login-container input[type="submit"] {
+  background: var(--text-secondary) !important;
+  box-shadow: 0 4px 15px var(--shadow-button) !important;
+}
+
+/* 遮罩层 */
+.mask {
+  background: rgba(0, 0, 0, 0.5) !important;
+}
+
+[data-theme="dark"] .mask {
+  background: rgba(0, 0, 0, 0.7) !important;
+}
+
+/* 底部弹出框 */
+.box {
+  background: var(--bg-dialog) !important;
+}
+
+/* 主页弹出框中的包名显示 */
+div[style*="background-color: rgb(220, 238, 238)"] {
+  background-color: var(--bg-card) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] div[style*="background-color: rgb(220, 238, 238)"] {
+  background-color: var(--bg-secondary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* 其他对话框按钮样式 */
+button[style*="background-color: rgb(220, 238, 238)"] {
+  background-color: var(--bg-button) !important;
+  color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] button[style*="background-color: rgb(220, 238, 238)"] {
+  background-color: var(--bg-button) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Toast 消息 */
+[data-theme="dark"] div[style*="background-color: rgba(0,0,0,0.7)"] {
+  background-color: rgba(45,45,45,0.9) !important;
+  border: 1px solid var(--border-primary) !important;
+}
