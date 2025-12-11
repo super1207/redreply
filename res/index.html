@@ -498,83 +498,190 @@
         } (window, document);
         </script>
         <script>
-            !
-            function() {
-                function n(n, e, t) {
-                    return n.getAttribute(e) || t
+            // 粒子连线动画效果
+            (function() {
+                // 工具函数：获取元素属性值或默认值
+                function getAttributeOrDefault(element, attributeName, defaultValue) {
+                    return element.getAttribute(attributeName) || defaultValue;
                 }
-                function e(n) {
-                    return document.getElementsByTagName(n)
+                
+                // 工具函数：获取指定标签名的元素
+                function getElementsByTagName(tagName) {
+                    return document.getElementsByTagName(tagName);
                 }
-                function t() {
-                    var t = e("script"),
-                    o = t.length,
-                    i = t[o - 1];
-                    return {
-                        l: o,
-                        z: n(i, "zIndex", 0),
-                        o: n(i, "opacity", 0.5),
-                        c: n(i, "color", "0,0,0"),
-                        n: n(i, "count", 50),
+                
+                // 检测并返回适合当前主题的颜色
+                function getThemeColor() {
+                    var isDarkTheme = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                    var bodyBackgroundColor = window.getComputedStyle(document.body).backgroundColor;
+                    
+                    // 如果body有明确的背景色，根据亮度判断主题
+                    if (bodyBackgroundColor && bodyBackgroundColor !== 'rgba(0, 0, 0, 0)' && bodyBackgroundColor !== 'transparent') {
+                        var rgbValues = bodyBackgroundColor.match(/\d+/g);
+                        if (rgbValues) {
+                            var brightness = (parseInt(rgbValues[0]) * 299 + parseInt(rgbValues[1]) * 587 + parseInt(rgbValues[2]) * 114) / 1000;
+                            isDarkTheme = brightness < 128;
+                        }
                     }
+                    
+                    // 根据主题返回合适的颜色
+                    return isDarkTheme ? "200,200,200" : "80,80,80";
                 }
-                function o() {
-                    a = m.width = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth,
-                    c = m.height = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight
+                
+                // 获取动画配置参数
+                function getAnimationConfig() {
+                    var scriptElements = getElementsByTagName("script");
+                    var scriptCount = scriptElements.length;
+                    var currentScript = scriptElements[scriptCount - 1];
+                    
+                    return {
+                        scriptCount: scriptCount,
+                        zIndex: getAttributeOrDefault(currentScript, "zIndex", 0),
+                        opacity: getAttributeOrDefault(currentScript, "opacity", 0.6),
+                        color: getThemeColor(),
+                        particleCount: getAttributeOrDefault(currentScript, "count", 50)
+                    };
                 }
-                function i() {
-                    r.clearRect(0, 0, a, c);
-                    var n, e, t, o, m, l;
-                    s.forEach(function(i, x) {
-                        for (i.x += i.xa, i.y += i.ya, i.xa *= i.x > a || i.x < 0 ? -1 : 1, i.ya *= i.y > c || i.y < 0 ? -1 : 1, r.fillRect(i.x - .5, i.y - .5, 1, 1), e = x + 1; e < u.length; e++) n = u[e],
-                        null !== n.x && null !== n.y && (o = i.x - n.x, m = i.y - n.y, l = o * o + m * m, l < n.max && (n === y && l >= n.max / 2 && (i.x -= .03 * o, i.y -= .03 * m), t = (n.max - l) / n.max, r.beginPath(), r.lineWidth = t / 2, r.strokeStyle = "rgba(" + d.c + "," + (t + .2) + ")", r.moveTo(i.x, i.y), r.lineTo(n.x, n.y), r.stroke()))
-                    }),
-                    x(i)
+                
+                // 更新画布尺寸
+                function updateCanvasSize() {
+                    canvasWidth = animationCanvas.width = window.innerWidth || document.documentElement.clientWidth || document.body.clientWidth;
+                    canvasHeight = animationCanvas.height = window.innerHeight || document.documentElement.clientHeight || document.body.clientHeight;
                 }
-                var a, c, u, m = document.createElement("canvas"),d = t(),l = "c_n" + d.l,r = m.getContext("2d")
-                x = window.requestAnimationFrame || window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame || window.oRequestAnimationFrame || window.msRequestAnimationFrame ||
-                function(n) {
-                    window.setTimeout(n, 1e3 / 45)
-                },
-                w = Math.random,
-                y = {
+                
+                // 更新主题颜色
+                function updateThemeColor() {
+                    animationConfig.color = getThemeColor();
+                }
+                
+                // 动画渲染函数
+                function renderAnimation() {
+                    canvasContext.clearRect(0, 0, canvasWidth, canvasHeight);
+                    
+                    // 遍历每个粒子
+                    particles.forEach(function(particle, particleIndex) {
+                        // 更新粒子位置
+                        particle.x += particle.velocityX;
+                        particle.y += particle.velocityY;
+                        
+                        // 边界反弹
+                        particle.velocityX *= (particle.x > canvasWidth || particle.x < 0) ? -1 : 1;
+                        particle.velocityY *= (particle.y > canvasHeight || particle.y < 0) ? -1 : 1;
+                        
+                        // 绘制粒子
+                        canvasContext.fillRect(particle.x - 0.5, particle.y - 0.5, 1, 1);
+                        
+                        // 检查与其他粒子的连线
+                        for (var otherIndex = particleIndex + 1; otherIndex < allPoints.length; otherIndex++) {
+                            var otherPoint = allPoints[otherIndex];
+                            
+                            if (otherPoint.x !== null && otherPoint.y !== null) {
+                                var deltaX = particle.x - otherPoint.x;
+                                var deltaY = particle.y - otherPoint.y;
+                                var distance = deltaX * deltaX + deltaY * deltaY;
+                                
+                                if (distance < otherPoint.maxDistance) {
+                                    // 鼠标交互效果
+                                    if (otherPoint === mousePoint && distance >= otherPoint.maxDistance / 2) {
+                                        particle.x -= 0.03 * deltaX;
+                                        particle.y -= 0.03 * deltaY;
+                                    }
+                                    
+                                    // 绘制连线
+                                    var lineOpacity = (otherPoint.maxDistance - distance) / otherPoint.maxDistance;
+                                    canvasContext.beginPath();
+                                    canvasContext.lineWidth = lineOpacity;
+                                    canvasContext.strokeStyle = "rgba(" + animationConfig.color + "," + (lineOpacity + 0.4) + ")";
+                                    canvasContext.moveTo(particle.x, particle.y);
+                                    canvasContext.lineTo(otherPoint.x, otherPoint.y);
+                                    canvasContext.stroke();
+                                }
+                            }
+                        }
+                    });
+                    
+                    requestAnimationFrame(renderAnimation);
+                }
+                
+                // 变量声明
+                var canvasWidth, canvasHeight, allPoints;
+                var animationCanvas = document.createElement("canvas");
+                var animationConfig = getAnimationConfig();
+                var canvasId = "particle_canvas_" + animationConfig.scriptCount;
+                var canvasContext = animationCanvas.getContext("2d");
+                
+                // 兼容性处理
+                var requestAnimationFrame = window.requestAnimationFrame || 
+                                          window.webkitRequestAnimationFrame || 
+                                          window.mozRequestAnimationFrame || 
+                                          window.oRequestAnimationFrame || 
+                                          window.msRequestAnimationFrame ||
+                                          function(callback) {
+                                              window.setTimeout(callback, 1000 / 45);
+                                          };
+                
+                var random = Math.random;
+                
+                // 鼠标跟踪点
+                var mousePoint = {
                     x: null,
                     y: null,
-                    max: 2e4
+                    maxDistance: 20000
                 };
-                m.id = l,
-                m.style.cssText = "pointer-events:none;position:fixed;top:0;left:0;z-index:" + d.z + ";opacity:" + d.o,
-                e("body")[0].appendChild(m),
-                o(),
-                window.onresize = o,
-                window.onmousemove = function(n) {
-                    n = n || window.event,
-                    y.x = n.clientX,
-                    y.y = n.clientY
-                },
+                
+                // 设置画布属性
+                animationCanvas.id = canvasId;
+                animationCanvas.style.cssText = "pointer-events:none;position:fixed;top:0;left:0;z-index:" + 
+                                               animationConfig.zIndex + ";opacity:" + animationConfig.opacity;
+                
+                // 添加画布到页面
+                getElementsByTagName("body")[0].appendChild(animationCanvas);
+                
+                // 初始化画布尺寸
+                updateCanvasSize();
+                
+                // 事件监听
+                window.onresize = updateCanvasSize;
+                window.onmousemove = function(event) {
+                    event = event || window.event;
+                    mousePoint.x = event.clientX;
+                    mousePoint.y = event.clientY;
+                };
                 window.onmouseout = function() {
-                    y.x = null,
-                    y.y = null
+                    mousePoint.x = null;
+                    mousePoint.y = null;
                 };
-                for (var s = [], f = 0; d.n > f; f++) {
-                    var h = w() * a,
-                    g = w() * c,
-                    v = 2 * w() - 1,
-                    p = 2 * w() - 1;
-                    s.push({
-                        x: h,
-                        y: g,
-                        xa: v,
-                        ya: p,
-                        max: 6e3
-                    })
+                
+                // 监听主题变化
+                if (window.matchMedia) {
+                    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', updateThemeColor);
                 }
-                u = s.concat([y]),
+                
+                // 创建粒子数组
+                var particles = [];
+                for (var i = 0; i < animationConfig.particleCount; i++) {
+                    var randomX = random() * canvasWidth;
+                    var randomY = random() * canvasHeight;
+                    var velocityX = 2 * random() - 1;
+                    var velocityY = 2 * random() - 1;
+                    
+                    particles.push({
+                        x: randomX,
+                        y: randomY,
+                        velocityX: velocityX,
+                        velocityY: velocityY,
+                        maxDistance: 6000
+                    });
+                }
+                
+                // 合并粒子和鼠标点
+                allPoints = particles.concat([mousePoint]);
+                
+                // 启动动画
                 setTimeout(function() {
-                    i()
-                },
-                100)
-            } ();
+                    renderAnimation();
+                }, 100);
+            })();
              
              </script>
           
