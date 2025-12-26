@@ -2,7 +2,7 @@ use std::{net::TcpStream, sync::{atomic::AtomicBool, Arc}, thread, time::{Durati
 use uuid::Uuid;
 
 use super::BotConnectTrait;
-use crate::{botconn::async_trait, cqapi::cq_add_log, mytool::read_json_str, RT_PTR};
+use crate::{RT_PTR, botconn::async_trait, cqapi::cq_add_log, mytool::read_json_str};
 use crate::mytool::str_msg_to_arr;
 use lettre::{message::{MultiPart, SinglePart}, AsyncSmtpTransport, AsyncTransport};
 use lettre::Tokio1Executor;
@@ -33,12 +33,14 @@ impl EmailConnect {
 
     
     fn deal_fetcharr(&self,fetch:&imap::types::Fetches) -> Result<(), Box<dyn std::error::Error + Send + Sync>>{
+        use base64::Engine;
         if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(());
         }
         let self_id = self.self_id.read().unwrap().to_owned();
         let message = fetch.iter().next().ok_or("no message")?;
         let body = message.body().ok_or("no body")?;
+        let raw_message_b64 = base64::engine::general_purpose::STANDARD.encode(body);
         let message = mail_parser::MessageParser::default().parse(body).ok_or("mail_parser err")?;
         let sender = message.from().ok_or("sender can't get1")?.first().ok_or("sender can't get2")?;
         let user_id = sender.address().ok_or("user_id can't get1")?;
@@ -56,7 +58,7 @@ impl EmailConnect {
             "message_id":Uuid::new_v4().to_string(),
             "user_id":user_id,
             "message":message,
-            "raw_message":message,
+            "raw_message":raw_message_b64,
             "font":0,
             "sender":{
                 "user_id":user_id,
@@ -117,7 +119,9 @@ impl EmailConnect {
                 }else {
                     for uid in uids {
                         let fetcharr = imap_session.fetch(uid.to_string(), "RFC822")?;
-                        self.deal_fetcharr(&fetcharr)?;
+                        if let Err(err) = self.deal_fetcharr(&fetcharr) {
+                            cq_add_log(&format!("邮件处理错误:{:?}", err)).unwrap();
+                        }
                         imap_session.store(uid.to_string(), "+FLAGS (\\Seen)")?;
                     }
                 }
@@ -148,7 +152,9 @@ impl EmailConnect {
                 }else {
                     for uid in uids {
                         let fetcharr = imap_session.fetch(uid.to_string(), "RFC822")?;
-                        self.deal_fetcharr(&fetcharr)?;
+                        if let Err(err) = self.deal_fetcharr(&fetcharr) {
+                            cq_add_log(&format!("邮件处理错误:{:?}", err)).unwrap();
+                        }
                         imap_session.store(uid.to_string(), "+FLAGS (\\Seen)")?;
                     }
                 }
@@ -263,10 +269,19 @@ impl EmailConnect {
         let use_ssl = self.smtp_ssl.read().unwrap().to_owned();
         let mailer;
         if use_ssl {
-            mailer = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(server.to_owned()).port(port)
-                .tls(lettre::transport::smtp::client::Tls::Required(lettre::transport::smtp::client::TlsParameters::new(server)?))
-                .credentials(creds)
-                .build();
+            if port == 465 {
+                // 465 端口使用隐式 TLS (SMTPS)
+                mailer = AsyncSmtpTransport::<Tokio1Executor>::relay(&server)?
+                    .port(port)
+                    .credentials(creds)
+                    .build();
+            } else {
+                // 587 端口使用 STARTTLS (显式 TLS)
+                mailer = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&server)?
+                    .port(port)
+                    .credentials(creds)
+                    .build();
+            }
         }else {
             mailer = AsyncSmtpTransport::<Tokio1Executor>::builder_dangerous(server.to_owned()).port(port)
             .tls(lettre::transport::smtp::client::Tls::None)
