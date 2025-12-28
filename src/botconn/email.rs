@@ -2,7 +2,7 @@ use std::{net::TcpStream, sync::{atomic::AtomicBool, Arc}, thread, time::{Durati
 use uuid::Uuid;
 
 use super::BotConnectTrait;
-use crate::{RT_PTR, botconn::async_trait, cqapi::cq_add_log, mytool::read_json_str};
+use crate::{RT_PTR, botconn::async_trait, cqapi::cq_add_log,cqapi::cq_add_log_w, mytool::read_json_str};
 use crate::mytool::str_msg_to_arr;
 use lettre::{message::{MultiPart, SinglePart}, AsyncSmtpTransport, AsyncTransport};
 use lettre::Tokio1Executor;
@@ -76,6 +76,50 @@ impl EmailConnect {
         return Ok(());
     }
 
+    fn run_imap_loop<T: std::io::Read + std::io::Write + imap::extensions::idle::SetReadTimeout>(&self, imap_session: &mut imap::Session<T>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        cq_add_log(&format!("邮件协议已经连接:{}",self.url)).unwrap();
+        loop {
+            if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
+                imap_session.logout()?;
+                break;
+            }
+            let uids = imap_session.search("NEW")?;
+            if uids.is_empty() {
+                let mut handle = imap_session.idle();
+                let _ = handle
+                .timeout(Duration::from_secs(15))
+                .keepalive(false)
+                .wait_while(|_|{
+                    return false;
+                });
+                continue;
+            }else {
+                for uid in uids {
+                    let size_fetch = imap_session.fetch(uid.to_string(), "RFC822.SIZE")?;
+                    let mut is_large = false;
+                    if let Some(m) = size_fetch.iter().next() {
+                        if let Some(s) = m.size {
+                            cq_add_log(&format!("邮件大小:uid: {}, size: {}", uid, s)).unwrap();  
+                            if s > 100 * 1024 * 1024 {
+                                cq_add_log_w(&format!("邮件过大(>100MB)，跳过处理，标记为已读。uid: {}, size: {}", uid, s)).unwrap();
+                                is_large = true;
+                            }
+                        }
+                    }
+
+                    if !is_large {
+                        let fetcharr = imap_session.fetch(uid.to_string(), "RFC822")?;
+                        if let Err(err) = self.deal_fetcharr(&fetcharr) {
+                            cq_add_log_w(&format!("邮件处理错误:{:?}", err)).unwrap();
+                        }
+                    }
+                    imap_session.store(uid.to_string(), "+FLAGS (\\Seen)")?;
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn do_connect(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let config_json_str = self.url.get(8..).ok_or("email url格式错误")?;
         let config_json:serde_json::Value =  serde_json::from_str(config_json_str)?;
@@ -100,32 +144,7 @@ impl EmailConnect {
                 .map_err(|e| e.0)?;
             let _ = imap_session.run_command_and_check_ok("ID (\"name\" \"XXXX\" \"contact\" \"XXXX@163.com\" \"version\" \"1.0.0\" \"vendor\" \"myclient\")");
             imap_session.select("INBOX")?;
-            cq_add_log(&format!("邮件协议已经连接:{}",self.url)).unwrap();
-            loop {
-                if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
-                    imap_session.logout()?;
-                    break;
-                }
-                let uids = imap_session.search("NEW")?;
-                if uids.is_empty() {
-                    let mut handle = imap_session.idle();
-                    let _ = handle
-                    .timeout(Duration::from_secs(15))
-                    .keepalive(false)
-                    .wait_while(|_|{
-                        return false;
-                    });
-                    continue;
-                }else {
-                    for uid in uids {
-                        let fetcharr = imap_session.fetch(uid.to_string(), "RFC822")?;
-                        if let Err(err) = self.deal_fetcharr(&fetcharr) {
-                            cq_add_log(&format!("邮件处理错误:{:?}", err)).unwrap();
-                        }
-                        imap_session.store(uid.to_string(), "+FLAGS (\\Seen)")?;
-                    }
-                }
-            }
+            self.run_imap_loop(&mut imap_session)?;
         }else {
             let stream = TcpStream::connect(format!("{imap_server}:{imap_port}"))?;
             let client = imap::Client::new(stream);
@@ -134,31 +153,7 @@ impl EmailConnect {
                 .map_err(|e| e.0)?;
             let _ = imap_session.run_command("ID (\"name\" \"XXXX\" \"contact\" \"XXXX@163.com\" \"version\" \"1.0.0\" \"vendor\" \"myclient\")\r\n");
             imap_session.select("INBOX")?;
-            cq_add_log(&format!("邮件协议已经连接:{}",self.url)).unwrap();
-            loop {
-                if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
-                    imap_session.logout()?;
-                    break;
-                }
-                let uids = imap_session.search("NEW")?;
-                if uids.is_empty() {
-                    let mut handle = imap_session.idle();
-                    handle.timeout(Duration::from_secs(5));
-                    let _ = handle.wait_while(|_x|{
-                        return false;
-                    });
-                    // handle.wait_with_timeout(Duration::from_secs(5))?;
-                    continue;
-                }else {
-                    for uid in uids {
-                        let fetcharr = imap_session.fetch(uid.to_string(), "RFC822")?;
-                        if let Err(err) = self.deal_fetcharr(&fetcharr) {
-                            cq_add_log(&format!("邮件处理错误:{:?}", err)).unwrap();
-                        }
-                        imap_session.store(uid.to_string(), "+FLAGS (\\Seen)")?;
-                    }
-                }
-            }
+            self.run_imap_loop(&mut imap_session)?;
         }
         Ok(())
     }

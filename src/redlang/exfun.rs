@@ -753,6 +753,24 @@ pub fn init_ex_fun_map() {
         let buf = e.finish()?;
         return Ok(Some(self_t.build_bin(buf)));
     });
+    add_fun(vec!["BR解码"],|self_t,params|{
+        let br_str = self_t.get_param(params, 0)?;
+        let br_bin = RedLang::parse_bin(&mut self_t.bin_pool,&br_str)?;
+        let mut d = brotli::Decompressor::new(br_bin.as_slice(), 4096);
+        let mut buf = vec![];
+        if d.read_to_end(&mut buf).is_err() {
+            return Ok(Some(self_t.build_bin(Vec::new())));
+        }
+        return Ok(Some(self_t.build_bin(buf)));
+    });
+    add_fun(vec!["BR编码"],|self_t,params|{
+        let br_str = self_t.get_param(params, 0)?;
+        let br_bin = RedLang::parse_bin(&mut self_t.bin_pool,&br_str)?;
+        let mut c = brotli::CompressorReader::new(br_bin.as_slice(), 4096, 11, 22);
+        let mut buf = vec![];
+        c.read_to_end(&mut buf)?;
+        return Ok(Some(self_t.build_bin(buf)));
+    });
     add_fun(vec!["延时"],|self_t,params|{
         let mut mill = self_t.get_param(params, 0)?.parse::<u64>()?;
         while mill > 1000 {
