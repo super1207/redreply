@@ -15,7 +15,8 @@ pub struct EmailConnect {
     pub smtp_ssl:Arc<std::sync::RwLock<bool>>,
     pub password:Arc<std::sync::RwLock<String>>,
     pub url:String,
-    pub is_stop:Arc<AtomicBool>
+    pub is_stop:Arc<AtomicBool>,
+    pub last_uid:Arc<std::sync::RwLock<u32>>,
 }
 
 impl EmailConnect {
@@ -28,6 +29,7 @@ impl EmailConnect {
             password:Arc::new(std::sync::RwLock::new("".to_owned())),
             url:url.to_owned(),
             is_stop:Arc::new(AtomicBool::new(false)),
+            last_uid:Arc::new(std::sync::RwLock::new(0)),
         }
     }
 
@@ -78,12 +80,27 @@ impl EmailConnect {
 
     fn run_imap_loop<T: std::io::Read + std::io::Write + imap::extensions::idle::SetReadTimeout>(&self, imap_session: &mut imap::Session<T>) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         cq_add_log(&format!("邮件协议已经连接:{}",self.url)).unwrap();
+        
+        // 首次运行时，获取当前最大 UID 作为基准，不处理历史未读邮件
+        if *self.last_uid.read().unwrap() == 0 {
+            let uids = imap_session.search("NEW")?;
+            if let Some(&max_uid) = uids.iter().max() {
+                *self.last_uid.write().unwrap() = max_uid;
+                cq_add_log(&format!("首次运行，跳过历史未读邮件，设置基准 UID: {}", max_uid)).unwrap();
+            }
+        }
+        
         loop {
             if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
                 imap_session.logout()?;
                 break;
             }
-            let uids = imap_session.search("NEW")?;
+            // 使用增量拉取：只搜索 UID 大于 last_uid 的未读邮件
+            let last_uid = *self.last_uid.read().unwrap();
+            let query = format!("UID {}:* NEW", last_uid + 1);
+            let uids = imap_session.search(&query)?;
+            // 防御性过滤：某些 IMAP 服务器在指定 UID 不存在时可能返回意外结果
+            let uids: Vec<u32> = uids.into_iter().filter(|&uid| uid > last_uid).collect();
             if uids.is_empty() {
                 let mut handle = imap_session.idle();
                 let _ = handle
@@ -101,7 +118,7 @@ impl EmailConnect {
                         if let Some(s) = m.size {
                             cq_add_log(&format!("邮件大小:uid: {}, size: {}", uid, s)).unwrap();  
                             if s > 100 * 1024 * 1024 {
-                                cq_add_log_w(&format!("邮件过大(>100MB)，跳过处理，标记为已读。uid: {}, size: {}", uid, s)).unwrap();
+                                cq_add_log_w(&format!("邮件过大(>100MB)，跳过处理。uid: {}, size: {}", uid, s)).unwrap();
                                 is_large = true;
                             }
                         }
@@ -113,7 +130,13 @@ impl EmailConnect {
                             cq_add_log_w(&format!("邮件处理错误:{:?}", err)).unwrap();
                         }
                     }
-                    imap_session.store(uid.to_string(), "+FLAGS (\\Seen)")?;
+                    // 设置已读标记，现在不标记已读了
+                    // imap_session.store(uid.to_string(), "+FLAGS (\\Seen)")?;
+                    // 更新 last_uid
+                    let mut last_uid_lock = self.last_uid.write().unwrap();
+                    if uid > *last_uid_lock {
+                        *last_uid_lock = uid;
+                    }
                 }
             }
         }
