@@ -291,6 +291,7 @@ export default {
 		handleInput() {
 			this.render();
 			this.syncScroll();
+			this.$emit('input-change', this.$refs.inputLayer.value);
 		},
 		handleKeyDown(e) {
 			const inputEl = this.$refs.inputLayer;

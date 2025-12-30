@@ -59,7 +59,7 @@
         <!-- END OF MODIFIED BLOCK -->
         <div style="flex: 1 0 auto;height: 0;width: 100%; display: flex; flex-direction: column;">
 
-            <custom-editor ref="child"></custom-editor>
+            <custom-editor ref="child" @input-change="save_script"></custom-editor>
 
             <div style="display: flex;flex: 1 0 auto;height: 50%;flex-direction: row;overflow: auto; border-top: 1px solid;">
                 <textarea style="flex-grow: 1;min-width: 50%; border: none; outline: none;" disabled>{{result}}</textarea>
@@ -150,6 +150,9 @@
             change_pkg_name(){
                 window.localStorage.setItem('debug_pkg_name',this.pkg_name)
             },
+            save_script(content){
+                window.localStorage.setItem('debug_script_content',content)
+            },
             run_script(){
                 let content = this.$refs.child.getText();
                 let script = {
@@ -234,7 +237,15 @@
         };
         window['vue3-sfc-loader'].loadModule('./custom_editor.vue', options).then(CustomEditor => {
             app.component('CustomEditor', CustomEditor.default || CustomEditor);
-            app.mount('#app');
+            const vm = app.mount('#app');
+            
+            // 恢复保存的脚本内容
+            vm.$nextTick(() => {
+                const savedScript = window.localStorage.getItem('debug_script_content');
+                if (savedScript && vm.$refs.child) {
+                    vm.$refs.child.setText(savedScript);
+                }
+            });
         });
    </script>
    <script src="theme.js"></script>
