@@ -1327,4 +1327,30 @@ pub fn init_cq_ex_fun_map() {
         }
         return Ok(Some("".to_string()));
     });
+    add_fun(vec!["邮件主题"],|self_t,_params|{
+        // 非 email 平台直接返回空
+        let platform = get_platform(&self_t);
+        if platform != "email" {
+            return Ok(Some("".to_string()));
+        }
+        // 尝试从缓存获取
+        let cached = self_t.get_exmap("邮件主题");
+        if *cached != "" {
+            return Ok(Some(cached.to_string()));
+        }
+        use base64::Engine;
+        let raw_data = self_t.get_exmap("原始事件");
+        let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
+        let raw_message_b64 = raw_json.get("raw_message")
+            .and_then(|v| v.as_str())
+            .ok_or("raw_message 不存在或不是字符串")?;
+        let raw_bytes = base64::engine::general_purpose::STANDARD.decode(raw_message_b64)?;
+        let parsed = mail_parser::MessageParser::default()
+            .parse(&raw_bytes)
+            .ok_or("邮件解析失败")?;
+        let subject = parsed.subject().unwrap_or("").to_string();
+        // 缓存结果
+        self_t.set_exmap("邮件主题", &subject)?;
+        return Ok(Some(subject));
+    });
 }
