@@ -83,7 +83,7 @@ impl EmailConnect {
         
         // 首次运行时，获取当前最大 UID 作为基准，不处理历史未读邮件
         if *self.last_uid.read().unwrap() == 0 {
-            let uids = imap_session.search("NEW")?;
+            let uids = imap_session.search("UNSEEN")?;
             if let Some(&max_uid) = uids.iter().max() {
                 *self.last_uid.write().unwrap() = max_uid;
                 cq_add_log(&format!("首次运行，跳过历史未读邮件，设置基准 UID: {}", max_uid)).unwrap();
@@ -97,7 +97,7 @@ impl EmailConnect {
             }
             // 使用增量拉取：只搜索 UID 大于 last_uid 的未读邮件
             let last_uid = *self.last_uid.read().unwrap();
-            let query = format!("UID {}:* NEW", last_uid + 1);
+            let query = format!("UID {}:* UNSEEN", last_uid + 1);
             let uids = imap_session.search(&query)?;
             // 防御性过滤：某些 IMAP 服务器在指定 UID 不存在时可能返回意外结果
             let uids: Vec<u32> = uids.into_iter().filter(|&uid| uid > last_uid).collect();
@@ -165,7 +165,10 @@ impl EmailConnect {
             let mut imap_session = client
                 .login(username, password)
                 .map_err(|e| e.0)?;
-            let _ = imap_session.run_command_and_check_ok("ID (\"name\" \"XXXX\" \"contact\" \"XXXX@163.com\" \"version\" \"1.0.0\" \"vendor\" \"myclient\")");
+            let caps = imap_session.capabilities()?;
+            if caps.has_str("ID") {
+                 let _ = imap_session.run_command_and_check_ok("ID (\"name\" \"myclient\" \"version\" \"1.0.0\")");
+            }
             imap_session.select("INBOX")?;
             self.run_imap_loop(&mut imap_session)?;
         }else {
@@ -174,7 +177,10 @@ impl EmailConnect {
             let mut imap_session = client
                 .login(username, password)
                 .map_err(|e| e.0)?;
-            let _ = imap_session.run_command("ID (\"name\" \"XXXX\" \"contact\" \"XXXX@163.com\" \"version\" \"1.0.0\" \"vendor\" \"myclient\")\r\n");
+            let caps = imap_session.capabilities()?;
+            if caps.has_str("ID") {
+                let _ = imap_session.run_command_and_check_ok("ID (\"name\" \"myclient\" \"version\" \"1.0.0\")");
+            }
             imap_session.select("INBOX")?;
             self.run_imap_loop(&mut imap_session)?;
         }
