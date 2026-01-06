@@ -9,7 +9,7 @@ mod email;
 mod telegram;
 mod yunhuv1;
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::{atomic::{AtomicBool, Ordering}, Arc}, time::Duration};
 
 use async_trait::async_trait;
 
@@ -21,6 +21,46 @@ use tokio::sync::RwLock;
 use crate::{botconn::yunhuv1::Yunhuv1Connect, cqapi::cq_add_log_w, RT_PTR};
 
 use self::{onebot11::OneBot11Connect, onebot115::OneBot115Connect, qqguild_private::QQGuildPrivateConnect, qqguild_public::QQGuildPublicConnect, satoriv1::Satoriv1Connect};
+
+lazy_static! {
+    static ref CONFIG_CHANGED: AtomicBool = AtomicBool::new(false);
+    static ref CACHED_WS_URLS: std::sync::RwLock<Option<Vec<String>>> = std::sync::RwLock::new(None);
+}
+
+
+pub fn mark_config_changed() {
+    CONFIG_CHANGED.store(true, Ordering::Relaxed);
+}
+
+fn get_ws_urls() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    if CONFIG_CHANGED.swap(false, Ordering::Relaxed) {
+        let config = crate::read_config()?;
+        let urls_val = config.get("ws_urls").ok_or("无法获取ws_urls")?.as_array().ok_or("无法获取ws_urls")?.to_owned();
+        let mut urls = vec![];
+        for url in &urls_val {
+            let url_str = url.as_str().ok_or("ws_url不是字符数组")?.to_string();
+            urls.push(url_str);
+        }
+        *CACHED_WS_URLS.write().unwrap() = Some(urls.clone());
+        Ok(urls)
+    } else {
+        let cache = CACHED_WS_URLS.read().unwrap();
+        if let Some(urls) = cache.as_ref() {
+            Ok(urls.clone())
+        } else {
+            drop(cache);
+            let config = crate::read_config()?;
+            let urls_val = config.get("ws_urls").ok_or("无法获取ws_urls")?.as_array().ok_or("无法获取ws_urls")?.to_owned();
+            let mut urls = vec![];
+            for url in &urls_val {
+                let url_str = url.as_str().ok_or("ws_url不是字符数组")?.to_string();
+                urls.push(url_str);
+            }
+            *CACHED_WS_URLS.write().unwrap() = Some(urls.clone());
+            Ok(urls)
+        }
+    }
+}
 
 #[async_trait]
 trait BotConnectTrait:Send + Sync {
@@ -78,14 +118,7 @@ pub async fn call_api(platform:&str,self_id:&str,passive_id:&str,json:&mut serde
 pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
     std::thread::spawn(move ||{
         loop {
-            // 得到配置文件中的url
-            let config = crate::read_config().unwrap();
-            let urls_val = config.get("ws_urls").ok_or("无法获取ws_urls").unwrap().as_array().ok_or("无法获取web_host").unwrap().to_owned();
-            let mut config_urls = vec![];
-            for url in &urls_val {
-                let url_str = url.as_str().ok_or("ws_url不是字符数组").unwrap().to_string();
-                config_urls.push(url_str);
-            }
+            let config_urls = get_ws_urls().unwrap();
             
             RT_PTR.clone().block_on(async move {
                 // 删除所有不在列表中的url和死去的bot
@@ -107,7 +140,7 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                         earse_bot[index].write().await.disconnect().await;
                         G_BOT_MAP.write().await.remove(&earse_urls[index]);
                     }
-                    // 有bot移除，等30秒再进行连接
+                    // 有bot移除，等1秒再进行连接
                     if earse_urls.len() > 0 {
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }

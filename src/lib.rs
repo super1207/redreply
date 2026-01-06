@@ -1012,6 +1012,7 @@ pub fn set_ws_urls(ws_urls:serde_json::Value) -> Result<(), Box<dyn std::error::
     config["ws_urls"] = ws_urls;
     let script_path = cq_get_app_directory1()? + "config.json";
     fs::write(script_path,config.to_string())?;
+    botconn::mark_config_changed();
     Ok(())
 }
 

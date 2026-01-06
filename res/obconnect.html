@@ -73,7 +73,7 @@
             }
             #favDialog {
                 margin: auto;
-                width: 20em;
+                min-width: 22em;
                 border: 2px solid #e55743;
             }
             #dialog_set {
@@ -87,6 +87,12 @@
             #dialog_set > div{
                 padding: 3px;
                 display: flex;
+                align-items: center;
+            }
+            #dialog_set > div > span{
+                flex: 0 0 auto;
+                white-space: nowrap;
+                min-width: 7em;
             }
             #dialog_set > div > input{
                 flex: 1 0 auto;
