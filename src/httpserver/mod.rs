@@ -602,11 +602,11 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         let groups_id = read_json_str(&root, "groups_id");
         thread::spawn(move ||{
             let mut rl = RedLang::new();
-            rl.set_exmap("机器人ID", &bot_id).unwrap();
-            rl.set_exmap("群ID", &group_id).unwrap();
-            rl.set_exmap("群组ID", &groups_id).unwrap();
-            rl.set_exmap("发送者ID", &user_id).unwrap();
-            rl.set_exmap("机器人平台", &platform).unwrap();
+            rl.set_exmap("机器人ID", &bot_id);
+            rl.set_exmap("群ID", &group_id);
+            rl.set_exmap("群组ID", &groups_id);
+            rl.set_exmap("发送者ID", &user_id);
+            rl.set_exmap("机器人平台", &platform);
             rl.pkg_name = pkg_name;
             rl.script_name = "网页调试".to_owned();
             rl.can_wrong = true;
@@ -643,11 +643,11 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         let (tx, rx) =  tokio::sync::oneshot::channel();
         tokio::task::spawn_blocking(move ||{
             let mut rl = RedLang::new();
-            rl.set_exmap("机器人ID", &bot_id).unwrap();
-            rl.set_exmap("群ID", &group_id).unwrap();
-            rl.set_exmap("群组ID", &groups_id).unwrap();
-            rl.set_exmap("发送者ID", &user_id).unwrap();
-            rl.set_exmap("机器人平台", &platform).unwrap();
+            rl.set_exmap("机器人ID", &bot_id);
+            rl.set_exmap("群ID", &group_id);
+            rl.set_exmap("群组ID", &groups_id);
+            rl.set_exmap("发送者ID", &user_id);
+            rl.set_exmap("机器人平台", &platform);
             rl.pkg_name = pkg_name;
             rl.script_name = "网页调试".to_owned();
             rl.can_wrong = true;

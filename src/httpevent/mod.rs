@@ -139,7 +139,7 @@ pub fn do_http_event(req:hyper::Request<hyper::body::Incoming>,can_write:bool,ca
                 http_header.insert("Content-Type", "text/html; charset=utf-8");
                 res = hyper::Response::new(crate::httpserver::full(rl_ret));
             }
-            let http_header_str = rl.get_coremap("网络-返回头")?;
+            let http_header_str = rl.get_coremap("网络-返回头");
             if http_header_str != "" {
                 let http_header_t = RedLang::parse_obj(&http_header_str)?;
                 for (k,v) in &http_header_t {

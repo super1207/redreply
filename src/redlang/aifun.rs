@@ -16,7 +16,7 @@ pub fn init_ai_fun_map() {
     });
     add_fun(vec!["GPT-增加文本"],|self_t,params|{
         let uid = self_t.get_param(params, 0)?;
-        let handle = self_t.get_gobalmap(&uid)?;
+        let handle = self_t.get_gobalmap(&uid);
         let text = self_t.get_param(params, 1)?;
         let to_ret = format!("{handle}{uid}text,{text}");
         self_t.set_gobalmap(&uid, &to_ret)?;
@@ -24,7 +24,7 @@ pub fn init_ai_fun_map() {
     });
     add_fun(vec!["GPT-增加图片"],|self_t,params|{
         let uid = self_t.get_param(params, 0)?;
-        let handle = self_t.get_gobalmap(&uid)?;
+        let handle = self_t.get_gobalmap(&uid);
         let mut image = self_t.get_param(params, 1)?;
         if self_t.get_type(&image)? == "字节集" {
             let bin = RedLang::parse_bin(&mut self_t.bin_pool,&image)?;
@@ -38,7 +38,7 @@ pub fn init_ai_fun_map() {
     add_fun(vec!["GPT-发送请求"],|self_t,params|{
         let mut gpt_params: HashMap<&str, &str> = HashMap::new();
         let uid = self_t.get_param(params, 0)?;
-        let handle = self_t.get_gobalmap(&uid)?;
+        let handle = self_t.get_gobalmap(&uid);
         let binding = handle.split(&uid).collect::<Vec<&str>>();
         let gpt_params_str = binding.get(1..).ok_or("参数错误")?;
         for gpt_param in gpt_params_str {
@@ -69,13 +69,13 @@ pub fn init_ai_fun_map() {
                 }));
             }
         }
-        let proxy = self_t.get_coremap("代理")?;
-        let mut timeout_str = self_t.get_coremap("访问超时")?;
+        let proxy = self_t.get_coremap("代理");
+        let mut timeout_str = self_t.get_coremap("访问超时");
         if timeout_str == "" {
             timeout_str = "60000".to_owned();
         }
         let mut http_header = BTreeMap::new();
-        let http_header_str = self_t.get_coremap("访问头")?;
+        let http_header_str = self_t.get_coremap("访问头");
         if http_header_str != "" {
             http_header = RedLang::parse_obj(&http_header_str)?;
             if !http_header.contains_key("User-Agent"){
@@ -123,7 +123,7 @@ pub fn init_ai_fun_map() {
     });
     add_fun(vec!["GPT-获取回复"],|self_t,params|{
         let uid = self_t.get_param(params, 0)?;
-        let handle = self_t.get_gobalmap(&uid)?;
+        let handle = self_t.get_gobalmap(&uid);
         let binding = handle.split(&uid).collect::<Vec<&str>>();
         let gpt_params_str = binding.get(1..).ok_or("参数错误")?;
         for gpt_param in gpt_params_str {

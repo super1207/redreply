@@ -39,7 +39,7 @@ fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result<(), 
         let mut rl = RedLang::new();
         if cffs == "私聊触发" || cffs == "群、私聊触发"{
             set_normal_message_info(&mut rl, root)?;
-            rl.set_exmap("当前消息",&msg)?;
+            rl.set_exmap("当前消息",&msg);
             if is_key_match(&mut rl,&ppfs,keyword,&msg)? {
                 let exmap = (*rl.exmap).borrow().clone();
                 let code_t = code.to_owned();

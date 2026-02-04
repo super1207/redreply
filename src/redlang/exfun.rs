@@ -105,7 +105,7 @@ pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,p
 
 pub fn init_ex_fun_map() {
     add_fun(vec!["返回头","取返回头"],|self_t,params|{
-        let ret_headers = self_t.get_coremap("返回头")?.to_string();
+        let ret_headers = self_t.get_coremap("返回头");
         if ret_headers == "" {
             return Ok(Some("".to_string())); 
         }
@@ -122,13 +122,13 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["访问"],|self_t,params|{
         fn access(self_t:&mut RedLang,url:&str) -> Result<Option<String>, Box<dyn std::error::Error>> {
-            let proxy = self_t.get_coremap("代理")?;
-            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            let proxy = self_t.get_coremap("代理");
+            let mut timeout_str = self_t.get_coremap("访问超时");
             if timeout_str == "" {
                 timeout_str = "60000".to_owned();
             }
             let mut http_header = BTreeMap::new();
-            let http_header_str = self_t.get_coremap("访问头")?;
+            let http_header_str = self_t.get_coremap("访问头");
             if http_header_str != "" {
                 http_header = RedLang::parse_obj(&http_header_str)?;
                 if !http_header.contains_key("User-Agent"){
@@ -180,13 +180,13 @@ pub fn init_ex_fun_map() {
                 return Err(RedLang::make_err(&("不支持的访问体类型:".to_owned()+&tp)));
             }
 
-            let proxy = self_t.get_coremap("代理")?;
-            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            let proxy = self_t.get_coremap("代理");
+            let mut timeout_str = self_t.get_coremap("访问超时");
             if timeout_str == "" {
                 timeout_str = "60000".to_owned();
             }
             let mut http_header = BTreeMap::new();
-            let http_header_str = self_t.get_coremap("访问头")?;
+            let http_header_str = self_t.get_coremap("访问头");
             if http_header_str != "" {
                 http_header = RedLang::parse_obj(&http_header_str)?;
                 if !http_header.contains_key("User-Agent"){
@@ -244,7 +244,7 @@ pub fn init_ex_fun_map() {
         do_http("POST", self_t, params)
     });
     add_fun(vec!["设置访问头"],|self_t,params|{
-        let http_header = self_t.get_coremap("访问头")?.to_string();
+        let http_header = self_t.get_coremap("访问头");
         let mut http_header_map:BTreeMap<String, String> = BTreeMap::new();
         if http_header != "" {
             for (k,v) in RedLang::parse_obj(&http_header)?{
@@ -2219,24 +2219,24 @@ pub fn init_ex_fun_map() {
             }
             let sec = self_t.get_param(params, 1)?;
             let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
-            let proxy_str = self_t.get_coremap("代理")?;
+            let proxy_str = self_t.get_coremap("代理");
             let proxy:std::ffi::OsString;
             if proxy_str != "" {
                 proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
                 arg_vec.push(&proxy);
             }
 
-            let width = self_t.get_coremap("浏览器宽")?.parse::<u32>().unwrap_or(1920);
-            let height = self_t.get_coremap("浏览器高")?.parse::<u32>().unwrap_or(1080);
+            let width = self_t.get_coremap("浏览器宽").parse::<u32>().unwrap_or(1920);
+            let height = self_t.get_coremap("浏览器高").parse::<u32>().unwrap_or(1080);
 
             let headless;
-            if self_t.get_coremap("网页截图调试")? == "真" {
+            if self_t.get_coremap("网页截图调试") == "真" {
                 headless = false;
             } else{
                 headless = true;
             }
 
-            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            let mut timeout_str = self_t.get_coremap("访问超时");
             if timeout_str == "" {
                 timeout_str = "30000".to_owned();
             }
@@ -2252,7 +2252,7 @@ pub fn init_ex_fun_map() {
             let browser = headless_chrome::Browser::new(options)?;
             let tab = browser.new_tab()?;
             {
-                let http_header_str = self_t.get_coremap("访问头")?;
+                let http_header_str = self_t.get_coremap("访问头");
                 if http_header_str != "" {
                     let http_header = RedLang::parse_obj(&http_header_str)?;
                     let mut headers = HashMap::new();
@@ -2292,24 +2292,24 @@ pub fn init_ex_fun_map() {
             let path = self_t.get_param(params, 0)?;
             let sec = self_t.get_param(params, 1)?;
             let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
-            let proxy_str = self_t.get_coremap("代理")?;
+            let proxy_str = self_t.get_coremap("代理");
             let proxy:std::ffi::OsString;
             if proxy_str != "" {
                 proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
                 arg_vec.push(&proxy);
             }
 
-            let width = self_t.get_coremap("浏览器宽")?.parse::<u32>().unwrap_or(1920);
-            let height = self_t.get_coremap("浏览器高")?.parse::<u32>().unwrap_or(1080);
+            let width = self_t.get_coremap("浏览器宽").parse::<u32>().unwrap_or(1920);
+            let height = self_t.get_coremap("浏览器高").parse::<u32>().unwrap_or(1080);
 
             let headless;
-            if self_t.get_coremap("网页截图调试")? == "真" {
+            if self_t.get_coremap("网页截图调试") == "真" {
                 headless = false;
             } else{
                 headless = true;
             }
 
-            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            let mut timeout_str = self_t.get_coremap("访问超时");
             if timeout_str == "" {
                 timeout_str = "30000".to_owned();
             }
@@ -2325,7 +2325,7 @@ pub fn init_ex_fun_map() {
             let browser = headless_chrome::Browser::new(options)?;
             let tab = browser.new_tab()?;
             {
-                let http_header_str = self_t.get_coremap("访问头")?;
+                let http_header_str = self_t.get_coremap("访问头");
                 if http_header_str != "" {
                     let http_header = RedLang::parse_obj(&http_header_str)?;
                     let mut headers = HashMap::new();
@@ -2360,24 +2360,24 @@ pub fn init_ex_fun_map() {
             let path = self_t.get_param(params, 0)?;
             let sec = self_t.get_param(params, 1)?;
             let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
-            let proxy_str = self_t.get_coremap("代理")?;
+            let proxy_str = self_t.get_coremap("代理");
             let proxy:std::ffi::OsString;
             if proxy_str != "" {
                 proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
                 arg_vec.push(&proxy);
             }
 
-            let width = self_t.get_coremap("浏览器宽")?.parse::<u32>().unwrap_or(1920);
-            let height = self_t.get_coremap("浏览器高")?.parse::<u32>().unwrap_or(1080);
+            let width = self_t.get_coremap("浏览器宽").parse::<u32>().unwrap_or(1920);
+            let height = self_t.get_coremap("浏览器高").parse::<u32>().unwrap_or(1080);
 
             let headless;
-            if self_t.get_coremap("网页截图调试")? == "真" {
+            if self_t.get_coremap("网页截图调试") == "真" {
                 headless = false;
             } else{
                 headless = true;
             }
 
-            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            let mut timeout_str = self_t.get_coremap("访问超时");
             if timeout_str == "" {
                 timeout_str = "30000".to_owned();
             }
@@ -2393,7 +2393,7 @@ pub fn init_ex_fun_map() {
             let browser = headless_chrome::Browser::new(options)?;
             let tab = browser.new_tab()?;
             {
-                let http_header_str = self_t.get_coremap("访问头")?;
+                let http_header_str = self_t.get_coremap("访问头");
                 if http_header_str != "" {
                     let http_header = RedLang::parse_obj(&http_header_str)?;
                     let mut headers = HashMap::new();
@@ -2529,7 +2529,7 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["错误信息"],|self_t,_params|{
-        return Ok(Some(self_t.get_coremap("错误信息")?.to_owned()));
+        return Ok(Some(self_t.get_coremap("错误信息").to_owned()));
     });
     
     add_fun(vec!["运行SQL"],|self_t,params|{
@@ -2633,7 +2633,7 @@ pub fn init_ex_fun_map() {
         return Ok(Some(self_t.build_arr(vec.iter().map(AsRef::as_ref).collect())));
     });
     add_fun(vec!["SQL修改数"],|self_t,_params|{
-        let k = self_t.get_coremap("SQL修改数")?;
+        let k = self_t.get_coremap("SQL修改数");
         if k == "" {
             return Ok(Some("0".to_owned()));
         }
@@ -3305,13 +3305,13 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["上传文件"],|self_t,params|{
         fn access(self_t:&mut RedLang,filename:&str,url:&str,file_data:&mut Vec<u8>) -> Result<String, Box<dyn std::error::Error>> {
 
-            let proxy = self_t.get_coremap("代理")?;
-            let mut timeout_str = self_t.get_coremap("访问超时")?;
+            let proxy = self_t.get_coremap("代理");
+            let mut timeout_str = self_t.get_coremap("访问超时");
             if timeout_str == "" {
                 timeout_str = "60000".to_owned();
             }
             let mut http_header = BTreeMap::new();
-            let http_header_str = self_t.get_coremap("访问头")?;
+            let http_header_str = self_t.get_coremap("访问头");
             if http_header_str != "" {
                 http_header = RedLang::parse_obj(&http_header_str)?;
                 if !http_header.contains_key("User-Agent"){
@@ -3704,13 +3704,13 @@ def red_out(sw):
         if *ft_lk != "" {
             return Ok(Some(ft_lk.clone()));
         }
-        let proxy = self_t.get_coremap("代理")?;
-        let mut timeout_str = self_t.get_coremap("访问超时")?;
+        let proxy = self_t.get_coremap("代理");
+        let mut timeout_str = self_t.get_coremap("访问超时");
         if timeout_str == "" {
             timeout_str = "60000".to_owned();
         }
         let mut http_header = BTreeMap::new();
-        let http_header_str = self_t.get_coremap("访问头")?;
+        let http_header_str = self_t.get_coremap("访问头");
         if http_header_str != "" {
             http_header = RedLang::parse_obj(&http_header_str)?;
             if !http_header.contains_key("User-Agent"){
@@ -4048,7 +4048,7 @@ def red_out(sw):
             }
             return Err(format!("player `{player}` not found").into());
         }
-        let proxy = self_t.get_coremap("代理")?;
+        let proxy = self_t.get_coremap("代理");
         let text = self_t.get_param(params, 0)?;
         let mut player = self_t.get_param(params, 1)?;
         if player == "" {
@@ -4135,7 +4135,7 @@ def red_out(sw):
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["剩余次数"],|self_t,_params|{
-        let count = self_t.get_coremap("剩余次数")?;
+        let count = self_t.get_coremap("剩余次数");
         if count == "" {
             return Ok(Some("0".to_string()));
         }

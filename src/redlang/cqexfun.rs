@@ -202,7 +202,7 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["取发送者信息"],|self_t,_params|{
         let data = get_stranger_info(self_t,"")?;
         let nickname = read_json_str(&data, "nickname");
-        self_t.set_exmap("发送者昵称", &nickname)?;
+        self_t.set_exmap("发送者昵称", &nickname);
         let to_ret = serde_json::json!({
             "用户ID":read_json_str(&data, "user_id"),
             "用户名":nickname
@@ -238,7 +238,7 @@ pub fn init_cq_ex_fun_map() {
             if let Ok(data) = get_stranger_info(self_t,"") {
                 let name = read_json_str(&data, "nickname");
                 if name != "" {
-                    self_t.set_exmap("发送者昵称", &name)?;
+                    self_t.set_exmap("发送者昵称", &name);
                     return Ok(Some(name));
                 }
             } 
@@ -340,7 +340,7 @@ pub fn init_cq_ex_fun_map() {
         let key = self_t.get_param(params, 0)?;
         let val = self_t.get_param(params, 1)?;
         if key.to_uppercase() == "SUMMARY" {
-            self_t.set_exmap("图片SUMMARY", &val)?;
+            self_t.set_exmap("图片SUMMARY", &val);
         }
         return Ok(Some("".to_string()));
     });
@@ -560,7 +560,7 @@ pub fn init_cq_ex_fun_map() {
             let raw_data = self_t.get_exmap("原始事件");
             let raw_json = serde_json::from_str(&*raw_data)?;
             let redlang_str = do_json_parse(&raw_json,&self_t.type_uuid)?;
-            self_t.set_exmap("事件内容", &redlang_str)?;
+            self_t.set_exmap("事件内容", &redlang_str);
             return Ok(Some(redlang_str));
         }
         return Ok(Some(dat.to_string()));
@@ -800,8 +800,35 @@ pub fn init_cq_ex_fun_map() {
         let key_t = self_t.get_param(params, 0)?;
         let val = self_t.get_param(params, 1)?;
         let key = crate::mytool::str_to_jt(&key_t);
-        self_t.set_exmap(&key, &val)?;
+        self_t.set_exmap(&key, &val);
         return Ok(Some("".to_string()));
+    });
+    add_fun(vec!["发送私聊"],|self_t,params|{
+        let msg_type:&'static str = crate::cqevent::get_msg_type(&self_t);
+        if msg_type != "group" {
+            return Ok(Some("".to_string()));
+        }
+        let msg = self_t.get_param(params, 0)?;
+        let user_id = self_t.get_param(params, 1)?;
+        let old_group_id = self_t.get_exmap("群ID"); // 备份群ID
+        let old_user_id = self_t.get_exmap("发送者ID"); // 备份用户ID
+        self_t.set_exmap("群ID", "");
+        if user_id != "" {
+            self_t.set_exmap("发送者ID", &user_id);
+        }
+        match send_one_msg(&self_t,&msg) {
+            Ok(msg_id) => {
+                self_t.set_exmap("群ID", &old_group_id); // 还原群ID
+                self_t.set_exmap("发送者ID", &old_user_id); // 还原用户ID
+                return Ok(Some(msg_id))
+            },
+            Err(e) => {
+                self_t.set_exmap("群ID", &old_group_id); // 还原群ID
+                self_t.set_exmap("发送者ID", &old_user_id); // 还原用户ID
+                cq_add_log_w(&format!("输出流失败，{}",e)).unwrap();
+                return Ok(Some("".to_string()));
+            }
+        }
     });
     add_fun(vec!["清空"],|_self_t,_params|{
         return Ok(Some(CLEAR_UUID.to_string()));
@@ -1350,7 +1377,7 @@ pub fn init_cq_ex_fun_map() {
             .ok_or("邮件解析失败")?;
         let subject = parsed.subject().unwrap_or("").to_string();
         // 缓存结果
-        self_t.set_exmap("邮件主题", &subject)?;
+        self_t.set_exmap("邮件主题", &subject);
         return Ok(Some(subject));
     });
 }

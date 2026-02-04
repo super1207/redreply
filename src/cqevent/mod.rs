@@ -119,11 +119,11 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
     let msg_type:&str;
     if user_id_str == "" && group_id_str == "" { // 不能发送消息
         msg_type = "";
-    } else if user_id_str != "" && group_id_str != "" && message_type == "private"{ // 发送时消息
+    } else if user_id_str != "" && group_id_str != "" && message_type == "private"{ // 临时消息
         msg_type = "private_temp";
-    } else if group_id_str != "" { // 发送群消息
+    } else if group_id_str != "" { // 群消息
         msg_type = "group";
-    } else if user_id_str != "" { // 发送私聊消息
+    } else if user_id_str != "" { // 私聊消息
         msg_type = "private"; 
     } else {
         msg_type = ""; // 不能发送消息
@@ -221,18 +221,18 @@ pub fn do_script(rl:&mut RedLang,code:&str,script_type:&str,can_ret_raw:bool) ->
 }
 
 fn set_normal_evt_info(rl:&mut RedLang,root:&serde_json::Value) -> Result<(), Box<dyn std::error::Error>> {
-    rl.set_exmap("机器人ID", &read_json_str(root,"self_id"))?;
-    rl.set_exmap("发送者ID", &read_json_str(root,"user_id"))?;
-    rl.set_exmap("群ID", &read_json_str(root,"group_id"))?;
-    rl.set_exmap("群组ID", &read_json_str(root,"groups_id"))?;
-    rl.set_exmap("原始事件", &root.to_string())?;
-    rl.set_exmap("机器人平台", &read_json_str(root,"platform"))?;
-    rl.set_exmap("消息ID", &read_json_str(root,"message_id"))?;
-    rl.set_exmap("消息类型", &read_json_str(root,"message_type"))?;
-    rl.set_exmap("远程MQTT客户端ID", &read_json_str(root,"mqtt_client_id"))?;
+    rl.set_exmap("机器人ID", &read_json_str(root,"self_id"));
+    rl.set_exmap("发送者ID", &read_json_str(root,"user_id"));
+    rl.set_exmap("群ID", &read_json_str(root,"group_id"));
+    rl.set_exmap("群组ID", &read_json_str(root,"groups_id"));
+    rl.set_exmap("原始事件", &root.to_string());
+    rl.set_exmap("机器人平台", &read_json_str(root,"platform"));
+    rl.set_exmap("消息ID", &read_json_str(root,"message_id"));
+    rl.set_exmap("消息类型", &read_json_str(root,"message_type"));
+    rl.set_exmap("远程MQTT客户端ID", &read_json_str(root,"mqtt_client_id"));
     if let Some(sender) = root.get("sender") {
         if let Some(js_v) = sender.get("nickname") {
-            rl.set_exmap("发送者昵称", js_v.as_str().unwrap_or(""))?;
+            rl.set_exmap("发送者昵称", js_v.as_str().unwrap_or(""));
         }
     }
     Ok(())
@@ -257,7 +257,7 @@ pub fn is_key_match(rl:&mut RedLang,ppfs:&str,keyword:&str,msg:&str) -> Result<b
     }else if ppfs == "前缀匹配"{
         if msg.starts_with(keyword){
             is_match = true;
-            rl.set_exmap("子关键词", msg.get(keyword.len()..).ok_or("前缀匹配失败")?)?;
+            rl.set_exmap("子关键词", msg.get(keyword.len()..).ok_or("前缀匹配失败")?);
         }
     }else if ppfs == "正则匹配"{
         let re = fancy_regex::Regex::new(keyword)?;
@@ -282,7 +282,7 @@ pub fn is_key_match(rl:&mut RedLang,ppfs:&str,keyword:&str,msg:&str) -> Result<b
             sub_key_vec.push(',');
             sub_key_vec.push_str(&temp_vec);
         }
-        rl.set_exmap("子关键词", &sub_key_vec)?;
+        rl.set_exmap("子关键词", &sub_key_vec);
     }
     Ok(is_match)
 }

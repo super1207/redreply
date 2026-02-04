@@ -506,7 +506,7 @@ pub fn init_core_fun_map() {
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["传递"],|self_t,_params|{
-        let ret = self_t.get_coremap("隐藏")?;
+        let ret = self_t.get_coremap("隐藏");
         return Ok(Some(ret));
     });
     add_fun(vec!["入栈"],|self_t,params|{
@@ -1891,7 +1891,7 @@ impl RedLang {
     pub fn get_exmap(
         &self,
         key: &str,
-    ) -> Arc<String>{
+    ) -> Arc<String> {
         let v = (*self.exmap).borrow();
         let ret = v.get(key);
         if let Some(v) = ret{
@@ -1903,24 +1903,23 @@ impl RedLang {
         &mut self,
         key: &str,
         val: &str,
-    ) -> Result<(), Box<dyn std::error::Error>> {
-let k = &*self.exmap;
+    ) {
+        let k = &*self.exmap;
         k.borrow_mut().insert(key.to_owned(), Arc::new(val.to_string()));
-        Ok(())
     }
     pub fn get_coremap(
         &mut self,
         key: &str,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> String {
 
         let k = format!("{}46631549-6D26-68A5-E192-5EBE9A6EBA61", key);
         let var_ref = self.get_var_ref(&k);
         if let Some(v) = var_ref {
             let mut k = (*v).borrow_mut();
             let val = k.get_string();
-            return Ok((*val).clone());
+            return (*val).clone();
         }else {
-            return Ok("".to_string());
+            return "".to_string();
         }
     }
     pub fn set_coremap(
@@ -1943,16 +1942,16 @@ let k = &*self.exmap;
     pub fn get_gobalmap(
         &mut self,
         key: &str,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> String {
 
         let k = format!("{}8bb64e93-143d-4209-8fad-3e3a6a43f191", key);
         let var_ref = self.var_vec[0].get(&k);
         if let Some(v) = var_ref {
             let mut k = (*v).borrow_mut();
             let val = k.get_string();
-            return Ok((*val).clone());
+            return (*val).clone();
         }else {
-            return Ok("".to_string());
+            return "".to_string();
         }
     }
     pub fn set_gobalmap(

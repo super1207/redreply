@@ -85,15 +85,15 @@ fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result< (),
                         "admin" => "管理",
                         &_ => "群员"
                     };
-                    rl.set_exmap("发送者权限", role_str)?;
+                    rl.set_exmap("发送者权限", role_str);
                 }
                 if let Some(js_v) = sender.get("card") {
-                    rl.set_exmap("发送者名片", js_v.as_str().unwrap_or(""))?;
+                    rl.set_exmap("发送者名片", js_v.as_str().unwrap_or(""));
                 }
                 if let Some(js_v) = sender.get("title") {
-                    rl.set_exmap("发送者专属头衔", js_v.as_str().unwrap_or(""))?;
+                    rl.set_exmap("发送者专属头衔", js_v.as_str().unwrap_or(""));
                 }
-                rl.set_exmap("当前消息",&msg)?;
+                rl.set_exmap("当前消息",&msg);
             }
             if is_key_match(&mut rl,&ppfs,keyword,&msg)? {
                 let exmap = (*rl.exmap).borrow().clone();
