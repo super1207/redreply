@@ -27,7 +27,7 @@ pub fn init_ai_fun_map() {
         let handle = self_t.get_gobalmap(&uid);
         let mut image = self_t.get_param(params, 1)?;
         if self_t.get_type(&image)? == "字节集" {
-            let bin = RedLang::parse_bin(&mut self_t.bin_pool,&image)?;
+            let bin = RedLang::parse_bin_raw(&image)?;
             let b64 = BASE64_CUSTOM_ENGINE.encode(bin);
             image = format!("data:image/png;base64,{b64}");
         }

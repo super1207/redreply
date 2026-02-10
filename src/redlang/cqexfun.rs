@@ -1,6 +1,6 @@
 use std::{cell::RefCell, collections::BTreeMap, fs, path::{Path, PathBuf}, rc::Rc, str::FromStr, sync::Arc, thread, time::SystemTime, vec};
 
-use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, json_to_cq_str, read_json_str}, pkg_can_run, read_code_cache, redlang::{add_fun, exfun::get_raw_data, get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, status::{add_send_group_msg, add_send_private_msg}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID, RT_PTR};
+use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, json_to_cq_str, read_json_str}, pkg_can_run, read_code_cache, redlang::{add_fun, get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, status::{add_send_group_msg, add_send_private_msg}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID, RT_PTR};
 use serde_json;
 use super::{RedLang, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
@@ -350,7 +350,7 @@ pub fn init_cq_ex_fun_map() {
         let mut ret:String = String::new();
         let summary = self_t.get_exmap("图片SUMMARY");
         if tp == "字节集" {
-            let bin = RedLang::parse_bin(&mut self_t.bin_pool,&pic)?;
+            let bin = RedLang::parse_bin_raw(&pic)?;
             if bin.len() == 0 {
                 cq_add_log_w("图片字节集长度为0").unwrap();
                 return Ok(Some("".to_owned()));
@@ -397,7 +397,7 @@ pub fn init_cq_ex_fun_map() {
         let tp = self_t.get_type(&pic)?;
         let mut ret:String = String::new();
         if tp == "字节集" {
-            let bin = RedLang::parse_bin(&mut self_t.bin_pool,&pic)?;
+            let bin = RedLang::parse_bin_raw(&pic)?;
             let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
             ret = format!("[CQ:record,file=base64://{}]",b64_str);
         }else if tp == "文本" {
@@ -422,7 +422,7 @@ pub fn init_cq_ex_fun_map() {
         let tp = self_t.get_type(&pic)?;
         let mut ret:String = String::new();
         if tp == "字节集" {
-            let bin = RedLang::parse_bin(&mut self_t.bin_pool,&pic)?;
+            let bin = RedLang::parse_bin_raw(&pic)?;
             let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
             ret = format!("[CQ:video,file=base64://{}]",b64_str);
         }else if tp == "文本" {
@@ -618,11 +618,8 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["定义常量"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
-        let mut v = self_t.get_param(params, 1)?;
-        if v.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
-            v = get_raw_data(self_t, v)?;
-        }
-        set_const_val(&mut self_t.bin_pool,&self_t.pkg_name, &k, v)?;
+        let v = self_t.get_param(params, 1)?;
+        set_const_val(&self_t.pkg_name, &k, v)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["常量"],|self_t,params|{
@@ -638,13 +635,10 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["定义临时常量"],|self_t,params|{
         let k = self_t.get_param(params, 0)?;
-        let mut v = self_t.get_param(params, 1)?;
-        if v.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
-            v = get_raw_data(self_t, v)?;
-        }
+        let v = self_t.get_param(params, 1)?;
         let mut  tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
         tm += self_t.get_param(params, 2)?.parse::<u128>()?;
-        set_temp_const_val(&mut self_t.bin_pool,&self_t.pkg_name, &k, v,tm)?;
+        set_temp_const_val(&self_t.pkg_name, &k, v,tm)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["临时常量"],|self_t,params|{
@@ -1325,7 +1319,7 @@ pub fn init_cq_ex_fun_map() {
                 return Err("主人数组的元素必须为全为文本类型".into());
             }
         }
-        crate::redlang::set_const_val(&mut self_t.bin_pool,&self_t.pkg_name, "0b863263-484c-4447-9990-0469186b3d97", master_arr_str)?;
+        crate::redlang::set_const_val(&self_t.pkg_name, "0b863263-484c-4447-9990-0469186b3d97", master_arr_str)?;
         return Ok(Some("".to_string()));
     });
     add_fun(vec!["重定向"],|self_t,params|{

@@ -4,7 +4,7 @@ use http_body_util::BodyExt;
 use hyper::http::{HeaderValue, HeaderName};
 use tokio_util::bytes::Buf;
 use crate::cqevent::do_script;
-use crate::redlang::exfun::get_raw_data;
+
 use crate::RT_PTR;
 use crate::cqapi::cq_add_log_w;
 use crate::{redlang::RedLang, read_code_cache};
@@ -126,15 +126,12 @@ pub fn do_http_event(req:hyper::Request<hyper::body::Incoming>,can_write:bool,ca
             rl.pkg_name = pkg_name.to_owned();
             rl.script_name = name.to_owned();
             rl.can_wrong = true;
-            let mut rl_ret = do_script(&mut rl, code,"normal",true)?;
-            if rl_ret.contains("B96ad849c-8e7e-7886-7742-e4e896cc5b86") {
-                rl_ret = get_raw_data(&mut rl, rl_ret)?;
-            }
+            let rl_ret = do_script(&mut rl, code,"normal",true)?;
             let mut http_header = BTreeMap::new();
             let mut res:hyper::Response<BoxBody>;
             if rl.get_type(&rl_ret)? == "字节集" {
                 http_header.insert("Content-Type", "application/octet-stream");
-                res = hyper::Response::new(crate::httpserver::full(RedLang::parse_bin(&mut rl.bin_pool,&rl_ret)?));
+                res = hyper::Response::new(crate::httpserver::full(RedLang::parse_bin_raw(&rl_ret)?));
             } else {
                 http_header.insert("Content-Type", "text/html; charset=utf-8");
                 res = hyper::Response::new(crate::httpserver::full(rl_ret));
