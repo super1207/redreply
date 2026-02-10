@@ -1,4 +1,5 @@
 use std::{cell::RefCell, collections::{BTreeMap, HashMap}, fs, io::Read, path::{Path, PathBuf}, str::FromStr, time::{Duration, SystemTime}, vec};
+use super::astparser;
 use chrono::TimeZone;
 use encoding::Encoding;
 use flate2::{read::{GzDecoder, ZlibDecoder}, write::{GzEncoder, ZlibEncoder}, Compression};
@@ -138,7 +139,7 @@ pub fn init_ex_fun_map() {
             },
         }
     });
-    fn do_http(method:&str,self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
+    fn do_http(method:&str,self_t:&mut RedLang,params: &[astparser::Ast]) -> Result<Option<String>, Box<dyn std::error::Error>> {
         fn access(method:&str,self_t:&mut RedLang,url:&str,data_t:&str) -> Result<Option<String>, Box<dyn std::error::Error>> {
             let tp = self_t.get_type(&data_t)?;
             let data:Vec<u8>;
@@ -2180,7 +2181,7 @@ pub fn init_ex_fun_map() {
 
     
     add_fun(vec!["网页截图"],|self_t,params|{
-        fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        fn access(self_t:&mut RedLang,params: &[astparser::Ast]) -> Result<Option<String>, Box<dyn std::error::Error>> {
             let mut path = self_t.get_param(params, 0)?;
             if !cfg!(target_os = "windows") {
                 if path.starts_with("/") {
@@ -2258,7 +2259,7 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["网页获取"],|self_t,params|{
-        fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        fn access(self_t:&mut RedLang,params: &[astparser::Ast]) -> Result<Option<String>, Box<dyn std::error::Error>> {
             let path = self_t.get_param(params, 0)?;
             let sec = self_t.get_param(params, 1)?;
             let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
@@ -2326,7 +2327,7 @@ pub fn init_ex_fun_map() {
 
 
     add_fun(vec!["网页获取文本"],|self_t,params|{
-        fn access(self_t:&mut RedLang,params: &[String]) -> Result<Option<String>, Box<dyn std::error::Error>> {
+        fn access(self_t:&mut RedLang,params: &[astparser::Ast]) -> Result<Option<String>, Box<dyn std::error::Error>> {
             let path = self_t.get_param(params, 0)?;
             let sec = self_t.get_param(params, 1)?;
             let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
@@ -3222,11 +3223,11 @@ pub fn init_ex_fun_map() {
         } 
 
         if params.len() > 1 {
-            let func = params.get(1).ok_or("函数获取失败")?.to_string();
+            let func_ast = params.get(1).ok_or("函数获取失败")?.clone();
             for i in 0..arr.len() - 1 {
                 for j in i + 1 ..arr.len()
                 {
-                    let ret_str = self_t.call_fun(&[func.clone(),arr[i].to_owned(),arr[j].to_owned()],true)?;
+                    let ret_str = self_t.call_fun(&[func_ast.clone(), astparser::str_to_ast(arr[i].to_owned()), astparser::str_to_ast(arr[j].to_owned())])?;
                     if ret_str != "真" {
                         (arr[i],arr[j]) = (arr[j],arr[i]);
                     }
