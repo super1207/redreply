@@ -86,7 +86,7 @@ lazy_static! {
     // 用于记录常量:包名-常量名-常量值(x)
     pub static ref G_CONST_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
     // 用于记录信号:uuid-包名-信号名-信号值
-    pub static ref G_SINGAL_ARR:RwLock<Vec<(String, String,String,Option<String>)>> = RwLock::new(vec![]);
+    pub static ref G_SINGAL_ARR:RwLock<Vec<(String, String,String,Option<Arc<String>>)>> = RwLock::new(vec![]);
     // 用于记录临时常量:包名-常量名-常量值-过期时间(x)
     pub static ref G_TEMP_CONST_MAP:RwLock<HashMap<String,HashMap<String, (String, u128)>>> = RwLock::new(HashMap::new());
     // 用于撤回消息 key:self_id+group_id  value:user_id + message_id
@@ -94,7 +94,7 @@ lazy_static! {
     // 用于记录自定义的命令(x)
     pub static ref G_CMD_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
     // 用于记录命令(x)
-    pub static ref G_CMD_FUN_MAP:RwLock<HashMap<String, fn(&mut RedLang,&[redlang::astparser::Ast]) -> Result<Option<String>, Box<dyn std::error::Error>>>> = RwLock::new(HashMap::new());
+    pub static ref G_CMD_FUN_MAP:RwLock<HashMap<String, fn(&mut RedLang,&[redlang::astparser::Ast]) -> Result<Option<std::rc::Rc<redlang::RedValue>>, Box<dyn std::error::Error>>>> = RwLock::new(HashMap::new());
     // 异步事件循环
     pub static ref  RT_PTR:Arc<tokio::runtime::Runtime> = Arc::new(tokio::runtime::Runtime::new().unwrap());
     // 退出标记，标记整个pkg都在退出
@@ -120,7 +120,7 @@ lazy_static! {
     // 用于自动关闭进程
     pub static ref G_AUTO_CLOSE:Mutex<bool> = Mutex::new(false);
     // 默认字体
-    pub static ref G_DEFAULF_FONT:RwLock<String> = RwLock::new(String::new());
+    pub static ref G_DEFAULF_FONT:RwLock<> = RwLock::new(String::new());
     // 文件锁
     pub static ref G_FILE_MX:std::sync::Mutex<HashMap<String,i32>> = std::sync::Mutex::new(HashMap::new());
     // 历史日志

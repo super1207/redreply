@@ -10,6 +10,260 @@ pub(crate) mod webexfun;
 pub(crate) mod aifun;
 pub(crate) mod astparser;
 
+/// RedLang 运行时值类型（写时拷贝）
+///
+/// 所有值统一用 `Rc<RedValue>` 表示。
+/// 共享时 `Rc::clone()` 仅增加引用计数（O(1)）。
+/// 修改时通过 `Rc::make_mut()` 实现 CoW：若引用计数 > 1 则先 clone 出独立副本再修改。
+#[derive(Clone, Debug)]
+pub enum RedValue {
+    /// 序列化留下
+    Legacy(Rc<String>),
+    /// 纯文本
+    Text(Rc<String>),
+    /// 数组，元素为 Rc<RedValue>
+    Array(Vec<Rc<RedValue>>),
+    /// 有序对象（key 为 String，value 为 Rc<RedValue>）
+    Object(BTreeMap<String, Rc<RedValue>>),
+    /// 字节集（二进制数据）
+    Bin(Rc<Vec<u8>>),
+    /// 函数体（已解析 AST）
+    Fun(astparser::Ast),
+}
+
+
+pub fn rv_from_legacy(s: &str) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
+    Ok(Rc::new(RedValue::from_legacy_string(s)?))
+}
+
+impl RedValue {
+    /// 获取类型名称（中文）
+    pub fn get_type_name(&self) -> &'static str {
+        match self {
+            RedValue::Text(_) => "文本",
+            RedValue::Array(_) => "数组",
+            RedValue::Object(_) => "对象",
+            RedValue::Bin(_) => "字节集",
+            RedValue::Fun(_) => "函数",
+            RedValue::Legacy(text) => {
+                if !text.starts_with(crate::REDLANG_UUID.as_str()) {
+                    "文本"
+                } else {
+                    match text.get(36..37) {
+                        Some("A") => "数组",
+                        Some("O") => "对象",
+                        Some("B") => "字节集",
+                        Some("F") => "函数",
+                        _ => "未知类型",
+                    }
+                }
+            }
+        }
+    }
+
+    /// 尝试获取文本引用
+    pub fn as_text(&self) -> Option<&str> {
+        match self {
+            RedValue::Text(s) => Some(s.as_str()),
+            _ => None,
+        }
+    }
+
+    /// 获取文本，非文本类型返回空字符串
+    pub fn text_or_empty(&self) -> &str {
+        match self {
+            RedValue::Text(s) => s.as_str(),
+            _ => "",
+        }
+    }
+
+    /// 尝试获取数组引用
+    pub fn as_array(&self) -> Option<&Vec<Rc<RedValue>>> {
+        match self {
+            RedValue::Array(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// 尝试获取对象引用
+    pub fn as_object(&self) -> Option<&BTreeMap<String, Rc<RedValue>>> {
+        match self {
+            RedValue::Object(m) => Some(m),
+            _ => None,
+        }
+    }
+
+    /// 尝试获取字节集引用
+    pub fn as_bin(&self) -> Option<&Vec<u8>> {
+        match self {
+            RedValue::Bin(b) => Some(b.as_ref()),
+            _ => None,
+        }
+    }
+
+    /// 尝试获取函数体 AST 引用
+    pub fn as_fun(&self) -> Option<&astparser::Ast> {
+        match self {
+            RedValue::Fun(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// 将 RedValue 序列化为旧格式字符串（用于向后兼容：exmap、外部接口等）
+    pub fn to_legacy_string(&self) -> Rc<String> {
+        match self {
+            RedValue::Text(s) => s.clone(),
+            RedValue::Array(arr) => {
+                let mut ret = String::new();
+                ret.push_str(&crate::REDLANG_UUID);
+                ret.push('A');
+                for item in arr {
+                    let s = item.to_legacy_string();
+                    ret.push_str(&s.len().to_string());
+                    ret.push(',');
+                    ret.push_str(&s);
+                }
+                Rc::new(ret)
+            }
+            RedValue::Object(obj) => {
+                let mut ret = String::new();
+                ret.push_str(&crate::REDLANG_UUID);
+                ret.push('O');
+                for (k, v) in obj {
+                    ret.push_str(&k.len().to_string());
+                    ret.push(',');
+                    ret.push_str(k);
+                    let vs = v.to_legacy_string();
+                    ret.push_str(&vs.len().to_string());
+                    ret.push(',');
+                    ret.push_str(&vs);
+                }
+                Rc::new(ret)
+            }
+            RedValue::Bin(bin) => {
+                let mut ret = String::new();
+                ret.push_str(&crate::REDLANG_UUID);
+                ret.push('B');
+                for ch in bin.iter() {
+                    ret.push_str(&format!("{:02X}", ch));
+                }
+                Rc::new(ret)
+            }
+            RedValue::Fun(ast) => {
+                let mut ret = String::new();
+                ret.push_str(&crate::REDLANG_UUID);
+                ret.push('F');
+                ret.push_str(&astparser::ast_to_string(ast));
+                Rc::new(ret)
+            }
+            RedValue::Legacy(text) => {
+                text.clone()
+            }
+        }
+    }
+
+    /// 从旧格式字符串反序列化为 RedValue（用于向后兼容）
+    pub fn from_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::error::Error>> {
+        if !s.starts_with(&*crate::REDLANG_UUID) {
+            return Ok(RedValue::Text(Rc::new(s.to_string())));
+        }
+        let tp = s.get(36..37).ok_or("类型解析错误,无类型标识")?;
+        match tp {
+            "A" => {
+                // 解析数组
+                let mut ret_arr: Vec<Rc<RedValue>> = vec![];
+                let mut arr = s.get(37..).ok_or("不能获得数组类型")?;
+                loop {
+                    let spos_opt = arr.find(',');
+                    if spos_opt.is_none() {
+                        break;
+                    }
+                    let spos_num = spos_opt.unwrap();
+                    let num_str = arr.get(0..spos_num).ok_or("不能获得数组类型")?;
+                    let num = num_str.parse::<usize>()?;
+                    let str_val = arr.get(spos_num + 1..spos_num + 1 + num).ok_or("不能获得数组类型")?;
+                    ret_arr.push(Rc::new(RedValue::from_legacy_string(str_val)?));
+                    arr = arr.get(spos_num + 1 + num..).ok_or("不能获得数组类型")?;
+                }
+                Ok(RedValue::Array(ret_arr))
+            }
+            "O" => {
+                // 解析对象
+                let mut ret_map: BTreeMap<String, Rc<RedValue>> = BTreeMap::new();
+                let mut arr_strs: Vec<&str> = vec![];
+                let mut arr = s.get(37..).ok_or("不能获得对象类型")?;
+                loop {
+                    let spos_opt = arr.find(',');
+                    if spos_opt.is_none() {
+                        break;
+                    }
+                    let spos_num = spos_opt.unwrap();
+                    let num_str = arr.get(0..spos_num).ok_or("不能获得对象类型")?;
+                    let num = num_str.parse::<usize>()?;
+                    let str_val = arr.get(spos_num + 1..spos_num + 1 + num).ok_or("不能获得对象类型")?;
+                    arr_strs.push(str_val);
+                    arr = arr.get(spos_num + 1 + num..).ok_or("不能获得对象类型")?;
+                }
+                if arr_strs.len() % 2 != 0 {
+                    return Err(RedLang::make_err("不能获得对象类型"));
+                }
+                for i in 0..(arr_strs.len() / 2) {
+                    let k = arr_strs[i * 2].to_string();
+                    let v = RedValue::from_legacy_string(arr_strs[i * 2 + 1])?;
+                    ret_map.insert(k, Rc::new(v));
+                }
+                Ok(RedValue::Object(ret_map))
+            }
+            "B" => {
+                // 解析字节集
+                let content_text = s.get(37..).ok_or("不能获得字节集类型")?.as_bytes();
+                if content_text.len() % 2 != 0 {
+                    return Err(RedLang::make_err("不能获得字节集类型"));
+                }
+                let mut content2: Vec<u8> = vec![];
+                for pos in 0..(content_text.len() / 2) {
+                    let mut ch1 = content_text[pos * 2];
+                    let mut ch2 = content_text[pos * 2 + 1];
+                    if ch1 < 0x3A { ch1 -= 0x30; } else { ch1 -= 0x41; ch1 += 10; }
+                    if ch2 < 0x3A { ch2 -= 0x30; } else { ch2 -= 0x41; ch2 += 10; }
+                    content2.push((ch1 << 4) + ch2);
+                }
+                Ok(RedValue::Bin(Rc::new(content2)))
+            }
+            "F" => {
+                let body = s.get(37..).ok_or("不能获得函数类型")?.to_string();
+                let ast = astparser::parse_to_ast(&body).map_err(|e| RedLang::make_err(&e))?;
+                Ok(RedValue::Fun(ast))
+            }
+            _ => Err(RedLang::make_err(&format!("错误的类型标识:`{}`", tp))),
+        }
+    }
+}
+
+/// 便捷函数：将 String 包装为 Rc<RedValue::Text>
+#[inline]
+pub fn rv_text(s: String) -> Rc<RedValue> {
+    Rc::new(RedValue::Text(Rc::new(s)))
+}
+
+/// 便捷函数：将 Vec<u8> 包装为 Rc<RedValue::Bin>
+#[inline]
+pub fn rv_bin(b: Vec<u8>) -> Rc<RedValue> {
+    Rc::new(RedValue::Bin(Rc::new(b)))
+}
+
+/// 便捷函数：将 Vec<Rc<RedValue>> 包装为 Rc<RedValue::Array>
+#[inline]
+pub fn rv_array(a: Vec<Rc<RedValue>>) -> Rc<RedValue> {
+    Rc::new(RedValue::Array(a))
+}
+
+/// 便捷函数：空文本 Rc<RedValue::Text("")>
+#[inline]
+pub fn rv_empty() -> Rc<RedValue> {
+    Rc::new(RedValue::Text(Rc::new(String::new())))
+}
+
 lazy_static! {
     static ref OOP_MAP:HashMap<String,i32> = {
         let mut oop_map:HashMap<String,i32> = HashMap::new();    
@@ -113,20 +367,19 @@ fn get_temp_const_val(pkg_name:&str,val_name:&str) -> Result<String, Box<dyn std
 
 
 pub struct RedLang {
-    var_vec: Vec<HashMap<String,  Rc<RefCell<String>>>>, //变量栈
+    var_vec: Vec<HashMap<String,  Rc<RefCell<Rc<RedValue>>>>>, //变量栈（值为 Rc<RedValue>，支持 CoW）
     xh_vec: Vec<[bool; 2]>,                // 循环控制栈
-    params_vec: Vec<Vec<String>>,          // 函数参数栈
+    params_vec: Vec<Vec<Rc<RedValue>>>,    // 函数参数栈
     fun_ret_vec: Vec<(bool,usize)>,                // 记录函数是否返回,循环深度
     pub exmap:Rc<RefCell<HashMap<String, Arc<String>>>>, // 用于记录平台相关数据
     xuhao: HashMap<String, usize>,
-    pub type_uuid:String,
     pub pkg_name:String,
     pub script_name:String,
     pub lock_vec:HashSet<String>,
     pub req_tx:Option<tokio::sync::mpsc::Sender<bool>>,
     pub req_rx:Option<tokio::sync::mpsc::Receiver<Vec<u8>>>,
     pub can_wrong:bool,
-    stack:VecDeque<String>,
+    stack:VecDeque<Rc<RedValue>>,
     scriptcallstackdeep:Rc::<RefCell<usize>>, // 记录脚本调用栈的深度
 }
 
@@ -166,7 +419,7 @@ pub fn get_random() -> Result<usize, getrandom::Error> {
 }
 
 
-fn get_core_cmd(cmd:&str,pkg_name:&str) -> Option<fn(&mut RedLang, &[astparser::Ast]) -> Result<Option<String>, Box<dyn std::error::Error>>> {
+fn get_core_cmd(cmd:&str,pkg_name:&str) -> Option<fn(&mut RedLang, &[astparser::Ast]) -> Result<Option<Rc<RedValue>>, Box<dyn std::error::Error>>> {
     let mut rfun;
     let cmd_t = cmd.to_uppercase();
     let r = crate::G_CMD_FUN_MAP.read().unwrap();
@@ -190,7 +443,7 @@ fn get_core_cmd(cmd:&str,pkg_name:&str) -> Option<fn(&mut RedLang, &[astparser::
 
 
 
-pub fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[astparser::Ast]) -> Result<Option<String>, Box<dyn std::error::Error>>){
+pub fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[astparser::Ast]) -> Result<Option<Rc<RedValue>>, Box<dyn std::error::Error>>){
         let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
         for it in k_vec {
             let k = it.to_string().to_uppercase();
@@ -218,83 +471,94 @@ pub fn add_fun(k_vec:Vec<&str>,fun:fn(&mut RedLang,params: &[astparser::Ast]) ->
 
 pub fn init_core_fun_map() {
     add_fun(vec!["换行"],|_self_t,_params|{
-        return Ok(Some(String::from("\n")));
+        return Ok(Some(rv_text(String::from("\n"))));
     });
     add_fun(vec!["回车"],|_self_t,_params|{
-        return Ok(Some(String::from("\r")));
+        return Ok(Some(rv_text(String::from("\r"))));
     });
     add_fun(vec!["空格"],|_self_t,_params|{
-        return Ok(Some(String::from(" ")));
+        return Ok(Some(rv_text(String::from(" "))));
     });
     add_fun(vec!["隐藏"],|self_t,params|{
-        let out = self_t.get_param(params, 0)?;
+        let out = self_t.get_param(params, 0)?.to_legacy_string();
         self_t.set_coremap("隐藏", &out)?;
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["传递"],|self_t,_params|{
         let ret = self_t.get_coremap("隐藏");
-        return Ok(Some(ret));
+        return Ok(Some(rv_from_legacy(&ret)?));
     });
     add_fun(vec!["入栈"],|self_t,params|{
         let text = self_t.get_param(params, 0)?;
         self_t.stack.push_back(text);
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["出栈"],|self_t,_params|{
-        let ele = self_t.stack.pop_back().unwrap_or_default();
-        return Ok(Some(ele));
+        let ele_opt = self_t.stack.pop_back();
+        if let Some(ele) = ele_opt {
+            return Ok(Some(ele));
+        } else {
+            return Ok(Some(rv_empty()));
+        }
     });
     add_fun(vec!["栈长度"],|self_t,_params|{
         let len = self_t.stack.len().to_string();
-        return Ok(Some(len));
+        return Ok(Some(rv_text(len)));
     });
     add_fun(vec!["栈顶"],|self_t,params|{
-        let index = self_t.get_param(params, 0)?;
-        if index == "" {
-            let ele = self_t.stack.back().unwrap_or(&"".to_string()).clone();
-            return Ok(Some(ele));
+        let index = self_t.get_param_text_rc(params, 0)?;
+        if &*index == "" {
+            let ele_opt = self_t.stack.back();
+            if let Some(ele) = ele_opt {
+                return Ok(Some(ele.clone()));
+            } else {
+                return Ok(Some(rv_empty()));
+            }
         }
         let index_num = index.parse::<usize>()?;
         let stack = &self_t.stack;
         let len = stack.len();
         if len >= 1 + index_num {
-            let ele = stack.get(len - 1 - index_num).unwrap_or(&"".to_string()).clone();
-            return Ok(Some(ele));
-        } else {
-            return Ok(Some("".to_string()));
+            let ele_opt = stack.get(len - 1 - index_num);
+            if let Some(ele) = ele_opt {
+                return Ok(Some(ele.clone()));
+            } else {
+                return Ok(Some(rv_empty()));
+            }
         }
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["定义变量"],|self_t,params|{
-        let k = self_t.get_param(params, 0)?;
+        let k = self_t.get_param_text_rc(params, 0)?;
         let v = self_t.get_param(params, 1)?;
         let var_vec_len = self_t.var_vec.len();
         let mp = &mut self_t.var_vec[var_vec_len - 1];
-        mp.insert(k, Rc::new(RefCell::new(v)));
-        return Ok(Some("".to_string()));
+        mp.insert(k.to_string(), Rc::new(RefCell::new(v)));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["变量"],|self_t,params|{
-        let k = self_t.get_param(params, 0)?;
+        let k = self_t.get_param_text_rc(params, 0)?;
         let var_ref = self_t.get_var_ref(&k);
         if let Some(v) = var_ref {
             return Ok(Some((*v).borrow().clone()));
         }else {
-            return Ok(Some("".to_string()));
+            return Ok(Some(rv_empty()));
         }
     });
     add_fun(vec!["屏蔽"],|self_t,params|{
         let _k = self_t.get_param(params, 0)?;
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["赋值变量"],|self_t,params|{
-        let k = self_t.get_param(params, 0)?;
+        let k = self_t.get_param_text_rc(params, 0)?;
         let var_vec_len = self_t.var_vec.len();
         let mut is_set = false;
-        let vvv = self_t.get_param(params, 1)?;
+        let rv = self_t.get_param(params, 1)?;
         for i in 0..var_vec_len {
             let mp = &mut self_t.var_vec[var_vec_len - i - 1];
-            let v_opt = mp.get_mut(&k);
+            let v_opt = mp.get_mut(&k.to_string());
             if let Some(val) = v_opt {
-                *(**val).borrow_mut() = vvv.clone();
+                *(**val).borrow_mut() = rv.clone();
                 is_set = true;
                 break;
             }
@@ -302,121 +566,141 @@ pub fn init_core_fun_map() {
         if is_set == false {
             let var_vec_len = self_t.var_vec.len();
             let mp = &mut self_t.var_vec[var_vec_len - 1];
-            mp.insert(k, Rc::new(RefCell::new(vvv)));
+            mp.insert(k.to_string(), Rc::new(RefCell::new(rv)));
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["判断","判等"],|self_t,params|{
-        let ret_str;
-        let k1 = self_t.get_param(params, 0)?;
-        let k2 = self_t.get_param(params, 1)?;
+        let k1 = self_t.get_param(params, 0)?.to_legacy_string();
+        let k2 = self_t.get_param(params, 1)?.to_legacy_string();
         if k1 != k2 {
-            ret_str = self_t.get_param(params, 2)?;
+            return Ok(Some(self_t.get_param(params, 2)?));
         } else {
-            ret_str = self_t.get_param(params, 3)?;
+            return Ok(Some(self_t.get_param(params, 3)?));
         }
-        return Ok(Some(ret_str));
     });
     add_fun(vec!["判真"],|self_t,params|{
-        let ret_str;
-        let k1 = self_t.get_param(params, 0)?;
-        if k1 != "真"{
-            ret_str = self_t.get_param(params, 1)?;
+        let k1 = self_t.get_param(params, 0)?.to_legacy_string();
+        if &*k1 != "真"{
+            return Ok(Some(self_t.get_param(params, 1)?));
         }else {
-            ret_str = self_t.get_param(params, 2)?;
+            return Ok(Some(self_t.get_param(params, 2)?));
         }
-        return Ok(Some(ret_str));
     });
     add_fun(vec!["判空"],|self_t,params|{
-        let ret_str;
         let data = self_t.get_param(params, 0)?;
-        let len = self_t.get_len(&data)?;
+        let data_str = data.to_legacy_string();
+        let len = self_t.get_len(&data_str)?;
         if len == 0 {
-            ret_str = self_t.get_param(params, 1)?
+            return Ok(Some(self_t.get_param(params, 1)?));
         }else{
-            ret_str = data;
+            return Ok(Some(data));
         }
-        return Ok(Some(ret_str));
     });
     add_fun(vec!["循环"],|self_t,params|{
-        let k1 = self_t.get_param(params, 0)?;
-        let k1_tp = self_t.get_type(&k1)?;
-        let mut ret_str = String::new();
-        if k1_tp == "文本"{
-            let tms = k1.parse::<usize>()?;
-            self_t.xh_vec.push([false, false]);
-            let mut last_type = 0u8;
-            let xh_len = self_t.xh_vec.len();
-            for _i in 0..tms {
-                self_t.xh_vec[xh_len - 1][0] = false;
-                let v = self_t.get_param(params, 1)?;
-                RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
-                if self_t.xh_vec[xh_len - 1][1] == true {
-                    break;
+        let k1_rv = self_t.get_param(params, 0)?;
+        let mut ret_rv: Rc<RedValue> = rv_empty();
+        match &*k1_rv {
+            RedValue::Text(s) => {
+                let tms = s.parse::<usize>()?;
+                self_t.xh_vec.push([false, false]);
+                let xh_len = self_t.xh_vec.len();
+                for _i in 0..tms {
+                    self_t.xh_vec[xh_len - 1][0] = false;
+                    let v = self_t.get_param(params, 1)?;
+                    RedLang::conect_rv(&mut ret_rv, &v)?;
+                    if self_t.xh_vec[xh_len - 1][1] == true {
+                        break;
+                    }
                 }
+                self_t.xh_vec.pop();
             }
-            self_t.xh_vec.pop();
+            RedValue::Array(arr) => {
+                let fun_ast = params.get(1).ok_or("数组循环中参数函数获取失败")?.clone();
+                let arr_clone = arr.clone(); // clone Vec<Rc<RedValue>> (仅引用计数)
+                let tms = arr_clone.len();
+                self_t.xh_vec.push([false, false]);
+                let loop_val_var = format!("__RED_LOOP_VAL_{}", get_random().unwrap_or(0));
+                let mut fun_params = vec![
+                    fun_ast,
+                    astparser::str_to_ast(String::new()),
+                    astparser::parse_to_ast(&format!("【变量@{}】", loop_val_var)).map_err(|e| RedLang::make_err(&e))?,
+                ];
+                let xh_len = self_t.xh_vec.len();
+                for i in 0..tms {
+                    self_t.xh_vec[xh_len - 1][0] = false;
+                    fun_params[1] = astparser::str_to_ast(i.to_string());
+                    {
+                        let var_vec_len = self_t.var_vec.len();
+                        let mp = &mut self_t.var_vec[var_vec_len - 1];
+                        mp.insert(loop_val_var.clone(), Rc::new(RefCell::new(arr_clone[i].clone())));
+                    }
+                    let v = self_t.call_fun(&fun_params)?;
+                    RedLang::conect_rv(&mut ret_rv, &v)?;
+                    if self_t.xh_vec[xh_len - 1][1] == true {
+                        break;
+                    }
+                }
+                {
+                    let var_vec_len = self_t.var_vec.len();
+                    let mp = &mut self_t.var_vec[var_vec_len - 1];
+                    mp.remove(&loop_val_var);
+                }
+                self_t.xh_vec.pop();
+            }
+            RedValue::Object(obj) => {
+                let fun_ast = params.get(1).ok_or("对象循环中参数函数获取失败")?.clone();
+                let obj_clone = obj.clone(); // clone BTreeMap（仅引用计数）
+                self_t.xh_vec.push([false, false]);
+                let loop_val_var = format!("__RED_LOOP_VAL_{}", get_random().unwrap_or(0));
+                let mut fun_params = vec![
+                    fun_ast,
+                    astparser::str_to_ast(String::new()),
+                    astparser::parse_to_ast(&format!("【变量@{}】", loop_val_var)).map_err(|e| RedLang::make_err(&e))?,
+                ];
+                let xh_len = self_t.xh_vec.len();
+                for (k,v) in &obj_clone {
+                    self_t.xh_vec[xh_len - 1][0] = false;
+                    fun_params[1] = astparser::str_to_ast(k.clone());
+                    {
+                        let var_vec_len = self_t.var_vec.len();
+                        let mp = &mut self_t.var_vec[var_vec_len - 1];
+                        mp.insert(loop_val_var.clone(), Rc::new(RefCell::new(v.clone())));
+                    }
+                    let v = self_t.call_fun(&fun_params)?;
+                    RedLang::conect_rv(&mut ret_rv, &v)?;
+                    if self_t.xh_vec[xh_len - 1][1] == true {
+                        break;
+                    }
+                }
+                {
+                    let var_vec_len = self_t.var_vec.len();
+                    let mp = &mut self_t.var_vec[var_vec_len - 1];
+                    mp.remove(&loop_val_var);
+                }
+                self_t.xh_vec.pop();
+            }
+            _ => {}
         }
-        else if k1_tp == "数组" {
-            let arr_str = k1;
-            let fun_ast = params.get(1).ok_or("数组循环中参数函数获取失败")?.clone();
-            let arr = RedLang::parse_arr(&arr_str)?;
-            let tms = arr.len();
-            self_t.xh_vec.push([false, false]);
-            let mut fun_params = vec![fun_ast, astparser::str_to_ast(String::new()), astparser::str_to_ast(String::new())];
-            let mut last_type = 0;
-            let xh_len = self_t.xh_vec.len();
-            for i in 0..tms {
-                self_t.xh_vec[xh_len - 1][0] = false;
-                fun_params[1] = astparser::str_to_ast(i.to_string());
-                fun_params[2] = astparser::str_to_ast(arr[i].to_owned());
-                let v = self_t.call_fun(&fun_params)?;
-                RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
-                if self_t.xh_vec[xh_len - 1][1] == true {
-                    break;
-                }
-            }
-            self_t.xh_vec.pop();
-        }else if k1_tp == "对象" {
-            let obj_str = k1;
-            let fun_ast = params.get(1).ok_or("对象循环中参数函数获取失败")?.clone();
-            let obj = RedLang::parse_obj(&obj_str)?;
-            self_t.xh_vec.push([false, false]);
-            let mut fun_params = vec![fun_ast, astparser::str_to_ast(String::new()), astparser::str_to_ast(String::new())];
-            let mut last_type = 0;
-            let xh_len = self_t.xh_vec.len();
-            for (k,v) in obj {
-                self_t.xh_vec[xh_len - 1][0] = false;
-                fun_params[1] = astparser::str_to_ast(k);
-                fun_params[2] = astparser::str_to_ast(v);
-                let v = self_t.call_fun(&fun_params)?;
-                RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
-                if self_t.xh_vec[xh_len - 1][1] == true {
-                    break;
-                }
-            }
-            self_t.xh_vec.pop();
-        }
-        return Ok(Some(ret_str));
+        return Ok(Some(ret_rv));
     });
     add_fun(vec!["判循"],|self_t,params|{
-        let mut ret_str = String::new();
+        let mut ret_rv: Rc<RedValue> = rv_empty();
         self_t.xh_vec.push([false, false]);
-        let mut last_type = 0;
         let xh_len = self_t.xh_vec.len();
         loop {
             self_t.xh_vec[xh_len - 1][0] = false;
-            if self_t.get_param(params, 0)? != "真" {
+            if &*self_t.get_param(params, 0)?.to_legacy_string() != "真" {
                 break;
             }
             let v = self_t.get_param(params, 1)?;
-            RedLang::conect_arr(&mut last_type,&mut ret_str,&v)?;
+            RedLang::conect_rv(&mut ret_rv, &v)?;
             if self_t.xh_vec[xh_len - 1][1] == true {
                 break;
             }
         }
         self_t.xh_vec.pop();
-        return Ok(Some(ret_str));
+        return Ok(Some(ret_rv));
     });
     add_fun(vec!["跳出"],|self_t,_params|{
         let xh_vec_len = self_t.xh_vec.len();
@@ -425,7 +709,7 @@ pub fn init_core_fun_map() {
         } else {
             return Err(RedLang::make_err("不在循环中，无法使用`跳出`命令"));
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["继续"],|self_t,_params|{
         let xh_vec_len = self_t.xh_vec.len();
@@ -434,80 +718,93 @@ pub fn init_core_fun_map() {
         } else {
             self_t.xh_vec[xh_vec_len - 1][0] = true;
         }
-
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["函数定义"],|self_t,params|{
         let func = params.get(0).ok_or("函数定义:读取参数失败")?;
         let fun = self_t.parse_fun_ast(func,false)?;
-        let func_t = format!("{}F{}",self_t.type_uuid,fun);
-        let ret_str = func_t;
-        return Ok(Some(ret_str));
+        let ast = astparser::parse_to_ast(&fun).map_err(|e| RedLang::make_err(&e))?;
+        return Ok(Some(Rc::new(RedValue::Fun(ast))));
     });
     add_fun(vec!["定义命令"],|self_t,params|{
-        let func_name = self_t.get_param(params, 0)?;
+        let func_name = self_t.get_param_text_rc(params, 0)?;
         let func = params.get(1).ok_or("定义命令:读取参数失败")?;
         let fun = self_t.parse_fun_ast(func,false)?;
         let mut w = crate::G_CMD_MAP.write()?;
         match w.get_mut(&self_t.pkg_name){
             Some(r) => {
-                r.insert(func_name, fun);
+                r.insert(func_name.to_string(), fun);
             },
             None => {
                 let mut r = HashMap::new();
-                r.insert(func_name, fun);
+                r.insert(func_name.to_string(), fun);
                 w.insert(self_t.pkg_name.clone(), r);
             },
         };
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["定义二类命令"],|self_t,params|{
-        let func_name = self_t.get_param(params, 0)?;
+        let func_name = self_t.get_param_text_rc(params, 0)?;
         let func = params.get(1).ok_or("定义命令:读取参数失败")?;
         let fun = format!("1FC0F025-BFE7-63A4-CA66-FC3FD8A55B7B{}",self_t.parse_fun_ast(func,false)?);
         let mut w = crate::G_CMD_MAP.write()?;
         match w.get_mut(&self_t.pkg_name){
             Some(r) => {
-                r.insert(func_name, fun);
+                r.insert(func_name.to_string(), fun);
             },
             None => {
                 let mut r = HashMap::new();
-                r.insert(func_name, fun);
+                r.insert(func_name.to_string(), fun);
                 w.insert(self_t.pkg_name.clone(), r);
             },
         };
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["函数调用","调用函数"],|self_t,params|{
-        let ret_str = self_t.call_fun(params)?;
-        return Ok(Some(ret_str));
+        let ret = self_t.call_fun(params)?;
+        return Ok(Some(ret));
     });
     add_fun(vec!["参数"],|self_t,params|{
-        let k1 = self_t.get_param(params, 0)?;
-        let tms = k1.parse::<usize>()? - 1;
+        let k1 = self_t.get_param_text_rc(params, 0)?;
+        let tms_t = k1.parse::<usize>()?;
+        if tms_t == 0 {
+            return Ok(Some(rv_empty()));
+        }
+        let tms = tms_t - 1;
         let params_vec_len = self_t.params_vec.len();
-        let ret_str = self_t.params_vec[params_vec_len - 1].get(tms).unwrap_or(&"".to_string()).to_string();
-        return Ok(Some(ret_str));
+        let ret_val = self_t.params_vec[params_vec_len - 1]
+            .get(tms)
+            .cloned()
+            .unwrap_or_else(rv_empty);
+        return Ok(Some(ret_val));
     });
     add_fun(vec!["二类参数"],|self_t,params|{
-        let k1 = self_t.get_param(params, 0)?;
+        let k1 = self_t.get_param_text_rc(params, 0)?;
         let tms = k1.parse::<usize>()? - 1;
         let params_vec_len = self_t.params_vec.len();
-        let ret_str = self_t.params_vec[params_vec_len - 1].get(tms).unwrap_or(&"".to_string()).to_string();
+        let ret_val = self_t.params_vec[params_vec_len - 1]
+            .get(tms)
+            .cloned()
+            .unwrap_or_else(rv_empty);
+        let ret_str = match &*ret_val {
+            RedValue::Text(s) => s.to_string(),
+            RedValue::Legacy(s) => s.to_string(),
+            _ => ret_val.to_legacy_string().to_string(),
+        };
         return Ok(Some(self_t.parse(&ret_str)?));
     });
     add_fun(vec!["参数个数"],|self_t,_params|{
         let params_vec_len = self_t.params_vec.len();
         let ret_str = self_t.params_vec[params_vec_len - 1].len().to_string();
-        return Ok(Some(ret_str));
+        return Ok(Some(rv_text(ret_str)));
     });
     add_fun(vec!["返回"],|self_t,_params|{
         let fun_ret_vec_len = self_t.fun_ret_vec.len();
         self_t.fun_ret_vec[fun_ret_vec_len - 1].0 = true;
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["计算"],|self_t,params|{
-        let k1 = self_t.get_param(params, 0)?;
+        let k1 = self_t.get_param_text_rc(params, 0)?;
         let k1 = k1.replace("小恶魔", "0").replace("恶魔妹妹", "0").replace("恶魔", "0");
         fn cala(expre:&str) -> Result<String, Box<dyn std::error::Error>> {
             let expres_t = expre.chars().collect::<Vec<char>>();
@@ -844,58 +1141,62 @@ pub fn init_core_fun_map() {
             return Ok(out_vec2.get(0).ok_or("计算失败")?.to_string());
         }
         let ret_str = cala(&k1)?;
-        return Ok(Some(ret_str));
+        return Ok(Some(rv_text(ret_str)));
     });
     add_fun(vec!["数组"],|self_t,params|{
         let arr_len = params.len();
-        let mut temp_ret:Vec<String> = vec![];
+        let mut temp_ret:Vec<Rc<RedValue>> = vec![];
         for i in 0..arr_len {
             let s = self_t.get_param(params, i)?;
             temp_ret.push(s);
         }
-        let ret_str = self_t.build_arr(temp_ret.iter().map(AsRef::as_ref).collect());
-        return Ok(Some(ret_str));
+        return Ok(Some(Rc::new(RedValue::Array(temp_ret))));
     });
     add_fun(vec!["对象"],|self_t,params|{
         let params_len = params.len();
         if params_len % 2 != 0 {
             return Err(RedLang::make_err("请保证对象参数为偶数个"));
         }
-        let mut temp_ret:BTreeMap<String,String> = BTreeMap::new();
+        let mut temp_ret:BTreeMap<String,Rc<RedValue>> = BTreeMap::new();
         for i in 0..(params_len/2) {
-            let k = self_t.get_param(params, i*2)?;
+            let k = self_t.get_param_text_rc(params, i*2)?;
             let v = self_t.get_param(params, i*2 + 1)?;
-            temp_ret.insert(k, v);
+            temp_ret.insert(k.to_string(), v);
         }
-        let ret_str = self_t.build_obj(temp_ret);
-        return Ok(Some(ret_str));
+        return Ok(Some(Rc::new(RedValue::Object(temp_ret))));
     });
     add_fun(vec!["取长度"],|self_t,params|{
         let data = self_t.get_param(params, 0)?;
-        let ret_str = self_t.get_len(&data)?.to_string(); 
-        return Ok(Some(ret_str));
+        let len = match &*data {
+            RedValue::Array(arr) => arr.len(),
+            RedValue::Object(obj) => obj.len(),
+            RedValue::Text(s) => s.chars().count(),
+            RedValue::Bin(b) => b.len(),
+            _ => return Err(RedLang::make_err(&("对应类型不能获取长度:".to_owned()+data.get_type_name()))),
+        };
+        return Ok(Some(rv_text(len.to_string())));
     });
     add_fun(vec!["闭包"],|self_t,params|{
         let data = self_t.get_param(params, 0)?;
         return Ok(Some(data));
     });
     add_fun(vec!["转文本"],|self_t,params|{ 
-        let data = self_t.get_param(params, 0)?;
-        let tp = self_t.get_type(&data)?;
+        let data = self_t.get_param(params, 0)?.to_legacy_string();
+        let tp = RedLang::get_legacy_type(&data)?;
         fn obj_to_text(self_t:&mut RedLang,data:& str,params:&[astparser::Ast]) -> Result<String, Box<dyn std::error::Error>>{
             let mut ret_str = String::new();
             ret_str.push('{');
             let mut vec_t:Vec<String>  = vec![];
             let obj = RedLang::parse_obj(&data)?;
             for (k,v) in obj{
-                let tp_k = self_t.get_type(&k)?;
+                let tp_k = RedLang::get_legacy_type(&k)?;
                 if tp_k != "文本" {
                     return Err(RedLang::make_err(&("对象的键不支持的类型:".to_owned()+&tp_k)));
                 }
                 let mut temp_str = String::new();
                 temp_str.push_str(&str_to_text(&k)?);
                 temp_str.push(':');
-                let tp_v = self_t.get_type(&v)?;
+                let tp_v = RedLang::get_legacy_type(&v)?;
                 if tp_v == "文本" {
                     temp_str.push_str(&str_to_text(&v)?);
                 }
@@ -927,7 +1228,7 @@ pub fn init_core_fun_map() {
             let mut vec_t:Vec<String>  = vec![];
             let arr = RedLang::parse_arr(&data)?;
             for v in arr {
-                let tp_v = self_t.get_type(&v)?;
+                let tp_v = RedLang::get_legacy_type(&v)?;
                 if tp_v == "文本" {
                     vec_t.push(str_to_text(&v)?);
                 }
@@ -949,7 +1250,7 @@ pub fn init_core_fun_map() {
 
         fn bin_to_text(self_t:&mut RedLang,data:& str,params:&[astparser::Ast]) -> Result<String, Box<dyn std::error::Error>>{
             let ret_str:String;
-            let code_t = self_t.get_param(params, 1)?;
+            let code_t = self_t.get_param_text_rc(params, 1)?;
             let code = code_t.to_lowercase();
             let u8_vec = RedLang::parse_bin_raw(data)?;
             if code == "" || code == "utf8" || code == "utf-8" {
@@ -974,309 +1275,332 @@ pub fn init_core_fun_map() {
         else{
             return Err(RedLang::make_err(&("对应类型不能转文本:".to_owned()+&tp)));
         }
-        return Ok(Some(ret_str));
+        return Ok(Some(rv_text(ret_str)));
     });
     add_fun(vec!["增加元素"],|self_t,params|{
         // 获得变量
-        let var_name = self_t.get_param(params, 0)?;
-        let data:Rc<RefCell<String>>;
+        let var_name = self_t.get_param_text_rc(params, 0)?;
+        let data:Rc<RefCell<Rc<RedValue>>>;
         if let Some(v) = self_t.get_var_ref(&var_name) {
             data = v;
         }else {
             return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
         }
         // 获得变量类型
-        let cur_str = (*data).borrow().clone();
-        let tp = self_t.get_type(&cur_str)?;
+        let tp = (*data).borrow().get_type_name().to_string();
         let el_len;
         if tp == "对象" {
             el_len = (params.len() -1) / 2;
         }else {
             el_len = params.len() -1;
         }
-        //  增加元素
+        //  增加元素 - 直接操作 RedValue，无需序列化/反序列化
         for i in 0..el_len {
             if tp == "数组" {
-                let el = self_t.get_param(params, i + 1)?;
-                let cur = (*data).borrow().clone();
-                let mut arr:Vec<String> = RedLang::parse_arr(&cur)?.iter().map(|x|x.to_string()).collect();
-                arr.push(el);
-                let arr_ref:Vec<&str> = arr.iter().map(|x|x.as_str()).collect();
-                *(*data).borrow_mut() = self_t.build_arr(arr_ref);
+                let el_rv = self_t.get_param(params, i + 1)?;
+                let old_rc = (*data).borrow().clone();
+                let mut new_val = (*old_rc).clone();
+                if let RedValue::Array(ref mut arr) = new_val {
+                    arr.push(el_rv);
+                }
+                *(*data).borrow_mut() = Rc::new(new_val);
             }else if tp == "对象" {
-                let elk = self_t.get_param(params, i * 2 + 1)?;
+                let elk = self_t.get_param_text_rc(params, i * 2 + 1)?;
                 let elv = self_t.get_param(params, i * 2 + 2)?;
-                let cur = (*data).borrow().clone();
-                let mut obj = RedLang::parse_obj(&cur)?;
-                obj.insert(elk, elv);
-                *(*data).borrow_mut() = self_t.build_obj(obj);
+                let old_rc = (*data).borrow().clone();
+                let mut new_val = (*old_rc).clone();
+                if let RedValue::Object(ref mut obj) = new_val {
+                    obj.insert(elk.to_string(), elv);
+                }
+                *(*data).borrow_mut() = Rc::new(new_val);
             }else if tp == "文本" { 
-                let el = self_t.get_param(params, i + 1)?;
-                let cur = (*data).borrow().clone();
+                let el = self_t.get_param_text_rc(params, i + 1)?;
+                let old_rc = (*data).borrow().clone();
+                let cur = old_rc.text_or_empty().to_string();
                 let new_str = cur + &el;
-                *(*data).borrow_mut() = new_str;
+                *(*data).borrow_mut() = Rc::new(RedValue::Text(Rc::new(new_str)));
             }else if tp == "字节集" {
-                let el_t = self_t.get_param(params, i + 1)?;
-                let mut el = RedLang::parse_bin_raw(&el_t)?;
-                let cur = (*data).borrow().clone();
-                let mut bin = RedLang::parse_bin_raw(&cur)?;
-                bin.append(&mut el);
-                *(*data).borrow_mut() = self_t.build_bin(bin);
+                let el_rv = self_t.get_param(params, i + 1)?;
+                let mut el_bin = match &*el_rv {
+                    RedValue::Bin(b) => b.as_ref().clone(),
+                    _ => return Err(RedLang::make_err("增加字节集元素时，值不是字节集类型")),
+                };
+                let old_rc = (*data).borrow().clone();
+                let mut new_val = (*old_rc).clone();
+                if let RedValue::Bin(ref mut bin) = new_val {
+                    Rc::make_mut(bin).append(&mut el_bin);
+                }
+                *(*data).borrow_mut() = Rc::new(new_val);
             }else{
                 return Err(RedLang::make_err(&("对应类型不能增加元素:".to_owned()+&tp)));
             }
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["替换元素"],|self_t,params|{
         // 获得变量
-        let var_name = self_t.get_param(params, 0)?;
-        let k_name = self_t.get_param(params, 1)?;
-        let v_name = self_t.get_param(params, 2)?;
-        let data:Rc<RefCell<String>>;
+        let var_name = self_t.get_param_text_rc(params, 0)?;
+        let k_name = self_t.get_param_text_rc(params, 1)?;
+        let v_rv = self_t.get_param(params, 2)?;
+        let data:Rc<RefCell<Rc<RedValue>>>;
         if let Some(v) = self_t.get_var_ref(&var_name) {
             data = v;
         }else {
             return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
         }
         // 获得变量类型
-        let cur_str = (*data).borrow().clone();
-        let tp = self_t.get_type(&cur_str)?;
+        let tp = (*data).borrow().get_type_name().to_string();
         if tp == "数组" {
             let index = k_name.parse::<usize>()?;
-            let mut arr:Vec<String> = RedLang::parse_arr(&cur_str)?.iter().map(|x|x.to_string()).collect();
-            let el = arr.get_mut(index).ok_or("替换数组元素时越界")?;
-            *el = v_name;
-            let arr_ref:Vec<&str> = arr.iter().map(|x|x.as_str()).collect();
-            *(*data).borrow_mut() = self_t.build_arr(arr_ref);
+            let old_rc = (*data).borrow().clone();
+            let mut new_val = (*old_rc).clone();
+            if let RedValue::Array(ref mut arr) = new_val {
+                let el = arr.get_mut(index).ok_or("替换数组元素时越界")?;
+                *el = v_rv.clone();
+            }
+            *(*data).borrow_mut() = Rc::new(new_val);
         }else if tp == "对象" {
-            let mut obj = RedLang::parse_obj(&cur_str)?;
-            obj.insert(k_name, v_name);
-            *(*data).borrow_mut() = self_t.build_obj(obj);
+            let old_rc = (*data).borrow().clone();
+            let mut new_val = (*old_rc).clone();
+            if let RedValue::Object(ref mut obj) = new_val {
+                obj.insert(k_name.to_string(), v_rv.clone());
+            }
+            *(*data).borrow_mut() = Rc::new(new_val);
         }else if tp == "文本" { 
             let index = k_name.parse::<usize>()?;
+            let old_rc = (*data).borrow().clone();
+            let cur_str = old_rc.text_or_empty().to_string();
             let mut chs = cur_str.chars().collect::<Vec<char>>();
-            let v_chs = v_name.chars().collect::<Vec<char>>();
+            let v_str = match &*v_rv {
+                RedValue::Text(s) => s.to_string(),
+                _ => return Err(RedLang::make_err("替换文本元素时值不是文本类型")),
+            };
+            let v_chs = v_str.chars().collect::<Vec<char>>();
             if v_chs.len() != 1 {
                 return Err(RedLang::make_err("替换文本元素时值的长度不为1"));
             }
             let el = chs.get_mut(index).ok_or("替换文本元素时越界")?;
             *el = v_chs[0];
-            *(*data).borrow_mut() = chs.iter().collect::<String>();
+            *(*data).borrow_mut() = Rc::new(RedValue::Text(Rc::new(chs.iter().collect::<String>())));
         }else if tp == "字节集" {
             let index = k_name.parse::<usize>()?;
-            let mut bin = RedLang::parse_bin_raw(&cur_str)?;
-            let bt = RedLang::parse_bin_raw(&v_name)?;
+            let bt = match &*v_rv {
+                RedValue::Bin(b) => b.as_ref().clone(),
+                _ => return Err(RedLang::make_err("替换字节集元素时值不是字节集类型")),
+            };
             if bt.len() != 1 {
                 return Err(RedLang::make_err("替换字节集元素时值的长度不为1"));
             }
-            let el = bin.get_mut(index).ok_or("替换字节集元素时越界")?;
-            *el = bt[0];
-            *(*data).borrow_mut() = self_t.build_bin(bin);
+            let old_rc = (*data).borrow().clone();
+            let mut new_val = (*old_rc).clone();
+            if let RedValue::Bin(ref mut bin) = new_val {
+                let el = Rc::make_mut(bin).get_mut(index).ok_or("替换字节集元素时越界")?;
+                *el = bt[0];
+            }
+            *(*data).borrow_mut() = Rc::new(new_val);
         }else{
             return Err(RedLang::make_err(&("对应类型不能替换元素:".to_owned()+&tp)));
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["删除元素"],|self_t,params|{
         // 获得变量
-        let var_name = self_t.get_param(params, 0)?;
-        let k_name = self_t.get_param(params, 1)?;
-        let data:Rc<RefCell<String>>;
+        let var_name = self_t.get_param_text_rc(params, 0)?;
+        let k_name = self_t.get_param_text_rc(params, 1)?;
+        let data:Rc<RefCell<Rc<RedValue>>>;
         if let Some(v) = self_t.get_var_ref(&var_name) {
             data = v;
         }else {
             return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
         }
         // 获得变量类型
-        let cur_str = (*data).borrow().clone();
-        let tp = self_t.get_type(&cur_str)?;
+        let tp = (*data).borrow().get_type_name().to_string();
         if tp == "数组" {
-            if k_name.starts_with("-"){return Ok(Some("".to_string()));}
+            if k_name.starts_with("-"){return Ok(Some(rv_empty()));}
             let index = k_name.parse::<usize>()?;
-            let mut arr:Vec<String> = RedLang::parse_arr(&cur_str)?.iter().map(|x|x.to_string()).collect();
-            if index < arr.len() {
-                arr.remove(index);
+            let old_rc = (*data).borrow().clone();
+            let mut new_val = (*old_rc).clone();
+            if let RedValue::Array(ref mut arr) = new_val {
+                if index < arr.len() {
+                    arr.remove(index);
+                }
             }
-            let arr_ref:Vec<&str> = arr.iter().map(|x|x.as_str()).collect();
-            *(*data).borrow_mut() = self_t.build_arr(arr_ref);
+            *(*data).borrow_mut() = Rc::new(new_val);
         }else if tp == "对象" {
-            let mut obj = RedLang::parse_obj(&cur_str)?;
-            obj.remove(&k_name);
-            *(*data).borrow_mut() = self_t.build_obj(obj);
+            let old_rc = (*data).borrow().clone();
+            let mut new_val = (*old_rc).clone();
+            if let RedValue::Object(ref mut obj) = new_val {
+                obj.remove(&*k_name);
+            }
+            *(*data).borrow_mut() = Rc::new(new_val);
         }else if tp == "文本" { 
-            if k_name.starts_with("-"){return Ok(Some("".to_string()));}
+            if k_name.starts_with("-"){return Ok(Some(rv_empty()));}
             let index = k_name.parse::<usize>()?;
+            let old_rc = (*data).borrow().clone();
+            let cur_str = old_rc.text_or_empty().to_string();
             let mut chs = cur_str.chars().collect::<Vec<char>>();
             if index < chs.len() {
                 chs.remove(index);
             }
-            *(*data).borrow_mut() = chs.iter().collect::<String>();
+            *(*data).borrow_mut() = Rc::new(RedValue::Text(Rc::new(chs.iter().collect::<String>())));
         }else if tp == "字节集" {
-            if k_name.starts_with("-"){return Ok(Some("".to_string()));}
+            if k_name.starts_with("-"){return Ok(Some(rv_empty()));}
             let index = k_name.parse::<usize>()?;
-            let mut bin = RedLang::parse_bin_raw(&cur_str)?;
-            if index < bin.len() {
-                bin.remove(index);
+            let old_rc = (*data).borrow().clone();
+            let mut new_val = (*old_rc).clone();
+            if let RedValue::Bin(ref mut bin) = new_val {
+                if index < bin.len() {
+                    Rc::make_mut(bin).remove(index);
+                }
             }
-            *(*data).borrow_mut() = self_t.build_bin(bin);
+            *(*data).borrow_mut() = Rc::new(new_val);
         }else{
             return Err(RedLang::make_err(&("对应类型不能删除元素:".to_owned()+&tp)));
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["取元素"],|self_t,params|{
         let nums = params.len();
-        let df = String::new();
-        let mut param_data = self_t.get_param(params, 0)?;
+        let mut cur_rv = self_t.get_param(params, 0)?;
         for i in 1..nums {
-            let tp = self_t.get_type(&param_data)?;
-            if tp == "数组" {
-                let index_rst = self_t.get_param(params, i)?.parse::<usize>();
-                if index_rst.is_err() {
-                    param_data = df;
-                    break;
+            let index_str = self_t.get_param_text_rc(params, i)?;
+            match &*cur_rv {
+                RedValue::Array(arr) => {
+                    let index_rst = index_str.parse::<usize>();
+                    if index_rst.is_err() {
+                        cur_rv = rv_empty();
+                        break;
+                    }
+                    let index = index_rst.unwrap();
+                    if let Some(v) = arr.get(index) {
+                        cur_rv = v.clone();
+                    } else {
+                        cur_rv = rv_empty();
+                        break;
+                    }
                 }
-                let index = index_rst.unwrap();
-                let mp = RedLang::parse_arr(&param_data)?;
-                let v_opt = mp.get(index);
-                if let Some(v) = v_opt {
-                    param_data = v.to_string();
-                }else{
-                    param_data = df;
-                    break;
+                RedValue::Object(obj) => {
+                    if let Some(v) = obj.get(&*index_str) {
+                        cur_rv = v.clone();
+                    } else {
+                        cur_rv = rv_empty();
+                        break;
+                    }
                 }
-            }else if tp == "对象" { 
-                let index = self_t.get_param(params, i)?;
-                let mp = RedLang::parse_obj(&param_data)?;
-                let v_opt = mp.get(&index);
-                if let Some(v) = v_opt {
-                    param_data = v.to_string();
-                }else{
-                    param_data = df;
-                    break;
+                RedValue::Text(s) => {
+                    let index_rst = index_str.parse::<usize>();
+                    if index_rst.is_err() {
+                        cur_rv = rv_empty();
+                        break;
+                    }
+                    let index = index_rst.unwrap();
+                    let v_chs = s.chars().collect::<Vec<char>>();
+                    if let Some(v) = v_chs.get(index) {
+                        cur_rv = rv_text(v.to_string());
+                    } else {
+                        cur_rv = rv_empty();
+                        break;
+                    }
                 }
-            }else if tp == "文本" {
-                let index_rst = self_t.get_param(params, i)?.parse::<usize>();
-                if index_rst.is_err() {
-                    param_data = df;
-                    break;
+                _ => {
+                    return Err(RedLang::make_err(&("对应类型不能取元素:".to_owned()+cur_rv.get_type_name())));
                 }
-                let index = index_rst.unwrap();
-                let v_chs =param_data.chars().collect::<Vec<char>>();
-                let v_opt = v_chs.get(index);
-                if let Some(v) = v_opt {
-                    param_data = v.to_string();
-                }else{
-                    param_data = df;
-                    break;
-                }
-            }else{
-                return Err(RedLang::make_err(&("对应类型不能取元素:".to_owned()+&tp)));
             }
         }
-        let ret_str = param_data;
-        return Ok(Some(ret_str));
+        return Ok(Some(cur_rv));
     });
     add_fun(vec!["取变量元素"],|self_t,params|{
         // 获得变量
-        let var_name = self_t.get_param(params, 0)?;
-        let k_name = self_t.get_param(params, 1)?;
+        let var_name = self_t.get_param_text_rc(params, 0)?;
+        let k_name = self_t.get_param_text_rc(params, 1)?;
         
-        let data:Rc<RefCell<String>>;
+        let data:Rc<RefCell<Rc<RedValue>>>;
         if let Some(v) = self_t.get_var_ref(&var_name) {
             data = v;
         }else {
             return Err(RedLang::make_err(&format!("变量`{}`不存在",var_name)));
         }
-        let ret_str;
-        // 获得变量类型
-        let cur_str = (*data).borrow().clone();
-        let tp = self_t.get_type(&cur_str)?;
-        if tp == "数组" {
-            let index_rst = k_name.parse::<usize>();
-            if index_rst.is_err() {
-                ret_str = "".to_owned();
-            }else{
-                let index = index_rst.unwrap();
-                let arr = RedLang::parse_arr(&cur_str)?;
-                ret_str = match arr.get(index) {
-                    Some(s) => s.to_string(),
-                    None => "".to_string(),
+        // 获得变量类型 - 直接从 RedValue 取元素，无需序列化/反序列化
+        let cur_rv = (*data).borrow().clone();
+        let ret_rv: Rc<RedValue>;
+        match &*cur_rv {
+            RedValue::Array(arr) => {
+                let index_rst = k_name.parse::<usize>();
+                if index_rst.is_err() {
+                    ret_rv = rv_empty();
+                }else{
+                    let index = index_rst.unwrap();
+                    ret_rv = match arr.get(index) {
+                        Some(s) => s.clone(),
+                        None => rv_empty(),
+                    };
+                }
+            }
+            RedValue::Object(obj) => {
+                ret_rv = match obj.get(&*k_name) {
+                    Some(s) => s.clone(),
+                    None => rv_empty(),
                 };
             }
-            
-        }else if tp == "对象" {
-            let obj = RedLang::parse_obj(&cur_str)?;
-            ret_str = match obj.get(&k_name) {
-                Some(s) => s.to_owned(),
-                None => "".to_string(),
-            };
-        }else if tp == "文本" { 
-            let index_rst = k_name.parse::<usize>();
-            if index_rst.is_err() {
-                ret_str = "".to_owned();
-            }else {
-                let index = index_rst.unwrap();
-                let chs = cur_str.chars().collect::<Vec<char>>();
-                ret_str = match chs.get(index) {
-                    Some(s) => s.to_string(),
-                    None => "".to_string(),
-                };
+            RedValue::Text(cur_str) => {
+                let index_rst = k_name.parse::<usize>();
+                if index_rst.is_err() {
+                    ret_rv = rv_empty();
+                }else {
+                    let index = index_rst.unwrap();
+                    let chs = cur_str.chars().collect::<Vec<char>>();
+                    ret_rv = match chs.get(index) {
+                        Some(s) => rv_text(s.to_string()),
+                        None => rv_empty(),
+                    };
+                }
             }
-        }else if tp == "字节集" {
-            let index_rst = k_name.parse::<usize>();
-            if index_rst.is_err() {
-                ret_str = self_t.build_bin(vec![]);
-            }else {
-                let index = index_rst.unwrap();
-                let bin = RedLang::parse_bin_raw(&cur_str)?;
-                ret_str = match bin.get(index) {
-                    Some(s) => RedLang::build_bin_with_uid(&crate::REDLANG_UUID, vec![*s]),
-                    None => RedLang::build_bin_with_uid(&crate::REDLANG_UUID, vec![]),
-                };
+            RedValue::Bin(bin) => {
+                let index_rst = k_name.parse::<usize>();
+                if index_rst.is_err() {
+                    ret_rv = Rc::new(RedValue::Bin(Rc::new(vec![])));
+                }else {
+                    let index = index_rst.unwrap();
+                    ret_rv = match bin.get(index) {
+                        Some(s) => Rc::new(RedValue::Bin(Rc::new(vec![*s]))),
+                        None => Rc::new(RedValue::Bin(Rc::new(vec![]))),
+                    };
+                }
             }
-        }else{
-            return Err(RedLang::make_err(&("对应类型不能替换元素:".to_owned()+&tp)));
+            _ => {
+                return Err(RedLang::make_err(&("对应类型不能取元素:".to_owned()+cur_rv.get_type_name())));
+            }
         }
-        return Ok(Some(ret_str));
+        return Ok(Some(ret_rv));
     });
     add_fun(vec!["取对象KEY"],|self_t,params|{
         let param_data = self_t.get_param(params, 0)?;
-        let tp = self_t.get_type(&param_data)?;
-        if tp != "对象" {
-            return Err(RedLang::make_err(&("对应类型不能取对象key:".to_owned()+&tp)));
+        match &*param_data {
+            RedValue::Object(obj) => {
+                let arr: Vec<Rc<RedValue>> = obj.keys().map(|k| rv_text(k.clone())).collect();
+                return Ok(Some(Rc::new(RedValue::Array(arr))));
+            }
+            _ => {
+                return Err(RedLang::make_err(&("对应类型不能取对象key:".to_owned()+param_data.get_type_name())));
+            }
         }
-        let parse_ret = RedLang::parse_obj(&param_data)?;
-        let mut arr:Vec<&str> = vec![];
-        for key in parse_ret.keys() {
-            arr.push(key);
-        }
-        let ret_str = self_t.build_arr(arr);
-        return Ok(Some(ret_str));
     });
     add_fun(vec!["取类型"],|self_t,params|{
         let param_data = self_t.get_param(params, 0)?;
-        let tp = self_t.get_type(&param_data)?;
-        let ret_str;
-        if tp == "文本" {
-            ret_str = "T".to_string();
-        }else if tp == "数组" {
-            ret_str = "A".to_string();
-        }else if tp == "对象" {
-            ret_str = "O".to_string();
-        }else if tp == "字节集" {
-            ret_str = "B".to_string();
-        }else if tp == "函数" {
-            ret_str = "F".to_string();
-        }else {
-            return Err(RedLang::make_err("取类型失败"));
-        }
-        return Ok(Some(ret_str));
+        let tp = param_data.get_type_name();
+        let ret_str = match tp {
+            "文本" => "T",
+            "数组" => "A",
+            "对象" => "O",
+            "字节集" => "B",
+            "函数" => "F",
+            _ => "T"
+        };
+        return Ok(Some(rv_text(ret_str.to_string())));
     });
     add_fun(vec!["取随机数"],|self_t,params|{
-        let num1 = self_t.get_param(params, 0)?.parse::<usize>()?;
-        let num2 = self_t.get_param(params, 1)?.parse::<usize>()?;
+        let num1 = self_t.get_param_text_rc(params, 0)?.parse::<usize>()?;
+        let num2 = self_t.get_param_text_rc(params, 1)?.parse::<usize>()?;
         if num1 > num2 {
             return Err(RedLang::make_err("生成随机数失败,请保证第一个数不大于第二个数，且都为非负数"));
         }
@@ -1284,181 +1608,170 @@ pub fn init_core_fun_map() {
         let num = num2 + 1 - num1;
         let ret_num = (rand_num %  num) + num1;
         let ret_str = ret_num.to_string();
-        return Ok(Some(ret_str));
+        return Ok(Some(rv_text(ret_str)));
     });
     add_fun(vec!["文本替换"],|self_t,params|{
-        let text = self_t.get_param(params, 0)?;
-        let from = self_t.get_param(params, 1)?;
-        let to = self_t.get_param(params, 2)?;
-        let ret_str = text.replace(&from, &to);
-        return Ok(Some(ret_str));
+        let text = self_t.get_param_text_rc(params, 0)?;
+        let from = self_t.get_param_text_rc(params, 1)?;
+        let to = self_t.get_param_text_rc(params, 2)?;
+        let ret_str = text.replace(&*from, &to);
+        return Ok(Some(rv_text(ret_str)));
     });
     add_fun(vec!["运行脚本"],|self_t,params|{
         let mut rl = RedLang::new();
-        rl.exmap = self_t.exmap.clone(); // 获得一些拓展相关的变量
+        rl.exmap = self_t.exmap.clone();
         rl.pkg_name = self_t.pkg_name.clone();
         rl.script_name = self_t.script_name.clone();
         rl.can_wrong = self_t.can_wrong;
-        let code = self_t.get_param(params, 0)?;
-        // 将参数传入新脚本
+        let code = self_t.get_param_text_rc(params, 0)?.to_string();
         let params_len = params.len();
         for i in 1..params_len {
             rl.params_vec[0].push(self_t.get_param(params, i)?);
         }
-        let ret_str = rl.parse(&code)?;
-        return Ok(Some(ret_str));
+        let ret = rl.parse(&code)?;
+        return Ok(Some(ret));
     });
     add_fun(vec!["反射执行"],|self_t,params|{
-        let code = self_t.get_param(params, 0)?;
-        let ret_str = self_t.parse(&code)?;
-        return Ok(Some(ret_str));
+        let code = self_t.get_param_text_rc(params, 0)?;
+        let ret = self_t.parse(&code)?;
+        return Ok(Some(ret));
     });
     add_fun(vec!["崩溃吧"],|self_t,params|{
-        None::<i32>.expect(&self_t.get_param(params, 0)?);
-        return Ok(Some("".to_string()));
+        None::<i32>.expect(&self_t.get_param_text_rc(params, 0)?);
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["后台运行脚本"],|self_t,params|{
         let exmap = (*self_t.exmap).borrow().clone();
-        let code = self_t.get_param(params, 0)?;
+        let code = self_t.get_param_text_rc(params, 0)?.to_string();
         let pkg_name = self_t.pkg_name.clone();
         let script_name = self_t.script_name.clone();
         let can_wrong = self_t.can_wrong;
-        // 获取参数
         let params_len = params.len();
+        // 跨线程边界不能携带 Rc<RedValue>，这里暂存为 legacy 字符串后在线程内还原。
         let mut params_vec: Vec<String> = vec![];
         for i in 1..params_len {
-            params_vec.push(self_t.get_param(params, i)?);
+            params_vec.push(self_t.get_param(params, i)?.to_legacy_string().to_string());
         }
         thread::spawn(move ||{
             let mut rl = RedLang::new();
-            rl.exmap = Rc::new(RefCell::new(exmap)); // 获得一些拓展相关的变量
+            rl.exmap = Rc::new(RefCell::new(exmap));
             rl.pkg_name = pkg_name;
             rl.script_name = script_name;
             rl.can_wrong = can_wrong;
-            // 将参数传入新脚本
-            for i in 0..params_vec.len() {
-                rl.params_vec[0].push(params_vec[i].clone());
+            for item in params_vec {
+                let rv = match RedValue::from_legacy_string(&item) {
+                    Ok(v) => Rc::new(v),
+                    Err(_) => rv_text(item),
+                };
+                rl.params_vec[0].push(rv);
             }
             if let Err(err) = do_script(&mut rl, &code,"normal",false) {
                 cq_add_log_w(&format!("{}",err)).unwrap();
             }
         });
-        return Ok(Some("".to_string()));
-    });
-    add_fun(vec!["反转义"],|self_t,params|{
-        let mut rl = RedLang::new();
-        rl.exmap = self_t.exmap.clone(); // 获得一些拓展相关的变量
-        rl.pkg_name = self_t.pkg_name.clone();
-        rl.script_name = self_t.script_name.clone();
-        let code = self_t.get_param(params, 0)?;
-        let ret_str = self_t.parse(&code)?;
-        return Ok(Some(ret_str));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["选择"],|self_t,params|{
-        let select_num_str = self_t.get_param(params, 0)?;
+        let select_num_str = self_t.get_param_text_rc(params, 0)?;
         let params_len = params.len();
         if params_len == 0 {
-            return Ok(Some("".to_string()));
+            return Ok(Some(rv_empty()));
+        }
+        if params_len == 1 {
+            return Ok(Some(rv_empty()));
         }
         let select_num;
-        if select_num_str == "" { // 空
+        if &*select_num_str == "" {
             let rand_num = get_random()?;
-            select_num = rand_num % (params_len - 1) + 1; // 随机取
+            select_num = rand_num % (params_len - 1) + 1;
         }
-        else if select_num_str.starts_with("-") { // 可能是负数
+        else if select_num_str.starts_with("-") {
             let _foo = select_num_str.parse::<i64>()?;
-            select_num = 0; // 越界
+            select_num = 0;
         } 
         else {
-            select_num = select_num_str.parse::<usize>()? + 1; //解析正整数
+            select_num = select_num_str.parse::<usize>()? + 1;
         }
-        let ret_str;
         if select_num == 0 || select_num > params_len {
-            ret_str = "".to_string();
+            return Ok(Some(rv_empty()));
         }else {
-            ret_str = self_t.get_param(params, select_num)?;
+            return Ok(Some(self_t.get_param(params, select_num)?));
         }
-        return Ok(Some(ret_str));
     });
     add_fun(vec!["当前版本"],|_self_t,_params|{
-        return Ok(Some(crate::get_version()));
+        return Ok(Some(rv_text(crate::get_version())));
     });
     add_fun(vec!["加锁"],|self_t,params|{
-        let lock_name = self_t.get_param(params, 0)?;
+        let lock_name = self_t.get_param_text_rc(params, 0)?;
         loop {
-            // 当前脚本已经创建了这个锁，则不做任何事
-            if self_t.lock_vec.contains(&lock_name) {
+            if self_t.lock_vec.contains(&*lock_name) {
                 break;
             }
-            // 全局已经存在锁，则等待锁消失，再创建锁
             {
                 let mut k = crate::G_LOCK.lock()?;
                 if !k.contains_key(&self_t.pkg_name) {
                     k.insert(self_t.pkg_name.clone(), HashMap::new());
                 }
-                if !k[&self_t.pkg_name].contains_key(&lock_name) {
-                    k.get_mut(&self_t.pkg_name).unwrap().insert(lock_name.clone(), 0);
-                    self_t.lock_vec.insert(lock_name);
+                if !k[&self_t.pkg_name].contains_key(&lock_name.to_string()) {
+                    k.get_mut(&self_t.pkg_name).unwrap().insert(lock_name.to_string(), 0);
+                    self_t.lock_vec.insert(lock_name.to_string());
                     break;
                 }
             }
             let time_struct = core::time::Duration::from_millis(10);
             std::thread::sleep(time_struct);
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["尝试加锁"],|self_t,params|{
-        let lock_name = self_t.get_param(params, 0)?;
-        // 当前脚本已经创建了这个锁，则不做任何事
-        if self_t.lock_vec.contains(&lock_name) {
-            return Ok(Some("".to_string()));
+        let lock_name = self_t.get_param_text_rc(params, 0)?;
+        if self_t.lock_vec.contains(&*lock_name) {
+            return Ok(Some(rv_empty()));
         }
         {
             let mut k = crate::G_LOCK.lock()?;
             if !k.contains_key(&self_t.pkg_name) {
                 k.insert(self_t.pkg_name.clone(), HashMap::new());
             }
-            if !k[&self_t.pkg_name].contains_key(&lock_name) {
-                k.get_mut(&self_t.pkg_name).unwrap().insert(lock_name.clone(), 0);
-                self_t.lock_vec.insert(lock_name);
-                return Ok(Some("".to_string()));
+            if !k[&self_t.pkg_name].contains_key(&*lock_name) {
+                k.get_mut(&self_t.pkg_name).unwrap().insert(lock_name.to_string(), 0);
+                self_t.lock_vec.insert(lock_name.to_string());
+                return Ok(Some(rv_empty()));
             }
         }
         let ret = self_t.get_param(params, 1)?;
         return Ok(Some(ret));
     });
     add_fun(vec!["解锁"],|self_t,params|{
-        let lock_name = self_t.get_param(params, 0)?;
-        if self_t.lock_vec.contains(&lock_name) {
-            // 当前脚本没有创建这个锁，则不做任何事
-            return Ok(Some("".to_string()));
+        let lock_name = self_t.get_param_text_rc(params, 0)?;
+        if !self_t.lock_vec.contains(&*lock_name) {
+            return Ok(Some(rv_empty()));
         } else {
-            // 否则删除锁
             let mut k = crate::G_LOCK.lock()?;
-            k.get_mut(&self_t.pkg_name).unwrap().remove(&lock_name);
-            self_t.lock_vec.remove(&lock_name);
-            return Ok(Some("".to_string()));
+            k.get_mut(&self_t.pkg_name).unwrap().remove(&lock_name.to_string());
+            self_t.lock_vec.remove(&lock_name.to_string());
+            return Ok(Some(rv_empty()));
         }
     });
     add_fun(vec!["发送信号"],|self_t,params|{
-        let sigal_name = self_t.get_param(params, 0)?; //信号名称
-        let to_send = self_t.get_param(params, 1)?; //信号内容
+        let sigal_name = self_t.get_param_text_rc(params, 0)?;
+        let to_send = Arc::new((*self_t.get_param(params, 1)?.to_legacy_string()).clone());
         let mut lk = G_SINGAL_ARR.write().unwrap();
-        for (_,pkg_name,singal_name_t,data) in  &mut *lk { // 遍历所有信号
-            if *pkg_name == self_t.pkg_name && *singal_name_t == sigal_name {
-                *data = Some(to_send.to_owned());
+        for (_,pkg_name,singal_name_t,data) in  &mut *lk {
+            if *pkg_name == self_t.pkg_name && *singal_name_t == *sigal_name {
+                *data = Some(to_send.clone());
             }
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["等待信号"],|self_t,params|{
-        let sigal_name = self_t.get_param(params, 0)?; //信号名称
-        let tm = self_t.get_param(params, 1)?; 
-        let tm = tm.parse::<u64>().unwrap_or(15000); // 超时
-        let uid = uuid::Uuid::new_v4().to_string(); // 生成唯一id
+        let sigal_name = self_t.get_param_text_rc(params, 0)?;
+        let tm = self_t.get_param_text_rc(params, 1)?; 
+        let tm = tm.parse::<u64>().unwrap_or(15000);
+        let uid = uuid::Uuid::new_v4().to_string();
         {
             let mut lk_vec = G_SINGAL_ARR.write().unwrap();
-            lk_vec.push((uid.to_owned(),self_t.pkg_name.to_owned(),sigal_name,None));
+            lk_vec.push((uid.to_owned(),self_t.pkg_name.to_owned(),sigal_name.to_string(),None));
         }
         let _guard = scopeguard::guard(uid.to_owned(), |uid| {
             let mut lk_vec = G_SINGAL_ARR.write().unwrap();
@@ -1469,7 +1782,9 @@ pub fn init_core_fun_map() {
                 }
                 index += 1;
             }
-            lk_vec.remove(index);
+            if index < lk_vec.len() {
+                lk_vec.remove(index);
+            }
         });
         let mut tm = tm;
         loop {
@@ -1478,7 +1793,7 @@ pub fn init_core_fun_map() {
                 for (uid_t,_,_,data) in  &*lk {
                     if uid == *uid_t && data.is_some() {
                         let dat = data.clone().unwrap();
-                        return Ok(Some(dat));
+                        return Ok(Some(Rc::new(RedValue::from_legacy_string(&*dat)?)));
                     }
                 }
             }
@@ -1492,25 +1807,36 @@ pub fn init_core_fun_map() {
             let time_struct = core::time::Duration::from_millis(10);
             std::thread::sleep(time_struct);
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["逻辑选择"],|self_t,params|{
-        let loge_arr_str = self_t.get_param(params, 0)?;
-        let loge_arr = RedLang::parse_arr(&loge_arr_str)?;
-        let mut index = 0;
-        for it in loge_arr {
-            if it == "真" {
-                return Ok(Some(self_t.get_param(params, index + 1)?));
+        let loge_arr_rv = self_t.get_param(params, 0)?;
+        match &*loge_arr_rv {
+            RedValue::Array(arr) => {
+                for (index, it) in arr.iter().enumerate() {
+                    if &*it.to_legacy_string() == "真" {
+                        return Ok(Some(self_t.get_param(params, index + 1)?));
+                    }
+                }
             }
-            index += 1;
+            _ => {
+                // 兼容旧字符串格式
+                let loge_arr_str = loge_arr_rv.to_legacy_string();
+                let loge_arr = RedLang::parse_arr(&loge_arr_str)?;
+                for (index, it) in loge_arr.iter().enumerate() {
+                    if *it == "真" {
+                        return Ok(Some(self_t.get_param(params, index + 1)?));
+                    }
+                }
+            }
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["自增"],|self_t,params|{
-        let var_name = self_t.get_param(params, 0)?;
-        let number_str = self_t.get_param(params, 1)?;
+        let var_name = self_t.get_param_text_rc(params, 0)?;
+        let number_str = self_t.get_param_text_rc(params, 1)?;
         let number;
-        if number_str == "" {
+        if &*number_str == "" {
             number = 1;
         } else {
             number = number_str.parse::<i64>()?;
@@ -1518,27 +1844,27 @@ pub fn init_core_fun_map() {
         let var_vec_len = self_t.var_vec.len();
         for i in 0..var_vec_len {
             let mp = &mut self_t.var_vec[var_vec_len - i - 1];
-            let v_opt = mp.get_mut(&var_name);
+            let v_opt = mp.get_mut(&*var_name);
             if let Some(val) = v_opt {
-                let v_str = (**val).borrow().clone();
+                let v_str = (**val).borrow().text_or_empty().to_string();
                 let mut v_num = v_str.parse::<i64>()?;
                 v_num += number;
-                *(**val).borrow_mut() = v_num.to_string();
+                *(**val).borrow_mut() = Rc::new(RedValue::Text(Rc::new(v_num.to_string())));
                 break;
             }
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["复制命令"],|self_t,params|{
-        let old_cmd = self_t.get_param(params, 0)?;
-        let new_cmd = self_t.get_param(params, 1)?;
+        let old_cmd = self_t.get_param_text_rc(params, 0)?;
+        let new_cmd = self_t.get_param_text_rc(params, 1)?;
 
         let pkg_name = &self_t.pkg_name;
         
         // 如果旧命令不存在，则什么也不做
         let exret = get_core_cmd(&old_cmd, pkg_name);
         if exret.is_none() {
-            return Ok(Some("".to_string()));
+            return Ok(Some(rv_empty()));
         }
         // 构造新命令
         let fun = exret.unwrap();
@@ -1549,12 +1875,12 @@ pub fn init_core_fun_map() {
         let mut w = crate::G_CMD_FUN_MAP.write().unwrap();
         w.insert(format!("{pkg_name}eb4d8f3e-1c82-653b-5b26-3be3abb007bc{k}"), fun);
         w.insert(format!("{pkg_name}eb4d8f3e-1c82-653b-5b26-3be3abb007bc{k_t}"), fun);
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["进制转化","进制转换"],|self_t,params|{
-        let num_text = self_t.get_param(params, 0)?.to_uppercase();
-        let from = self_t.get_param(params, 1)?.parse::<u32>()?;
-        let to = self_t.get_param(params, 2)?.parse::<u32>()?;
+        let num_text = self_t.get_param_text_rc(params, 0)?.to_uppercase();
+        let from = self_t.get_param_text_rc(params, 1)?.parse::<u32>()?;
+        let to = self_t.get_param_text_rc(params, 2)?.parse::<u32>()?;
         // 你好，这是Bing。我可以尝试用Rust语言写一个函数，实现任意进制的转化。请看下面的代码：
         // 定义一个函数，接受一个十进制数和一个目标进制，返回一个字符串表示转换后的结果
         fn convert_base(num: u32, base: u32) -> String {
@@ -1625,10 +1951,10 @@ pub fn init_core_fun_map() {
         if ret == "Invalid base" {
             return Err(RedLang::make_err(&ret));
         }
-        return Ok(Some(ret));
+        return Ok(Some(rv_text(ret)));
     });
     add_fun(vec!["当前脚本"],|self_t,_params|{
-        Ok(Some(self_t.script_name.to_owned()))
+        Ok(Some(rv_text(self_t.script_name.to_owned())))
     });
 }
 
@@ -1660,7 +1986,7 @@ impl RedLang {
         let k = format!("{}46631549-6D26-68A5-E192-5EBE9A6EBA61", key);
         let var_ref = self.get_var_ref(&k);
         if let Some(v) = var_ref {
-            return (*v).borrow().clone();
+            return (*v).borrow().to_legacy_string().to_string();
         }else {
             return "".to_string();
         }
@@ -1676,7 +2002,8 @@ impl RedLang {
         if val == "" {
             mp.remove(&format!("{}46631549-6D26-68A5-E192-5EBE9A6EBA61", key));
         } else {
-            mp.insert(format!("{}46631549-6D26-68A5-E192-5EBE9A6EBA61", key), Rc::new(RefCell::new(val.to_owned())));
+            // coremap 的值总是通过文本传入，直接存为 Text 避免 from_legacy_string 开销
+            mp.insert(format!("{}46631549-6D26-68A5-E192-5EBE9A6EBA61", key), Rc::new(RefCell::new(rv_text(val.to_string()))));
         }
         Ok(())
     }
@@ -1688,7 +2015,7 @@ impl RedLang {
         let k = format!("{}8bb64e93-143d-4209-8fad-3e3a6a43f191", key);
         let var_ref = self.var_vec[0].get(&k);
         if let Some(v) = var_ref {
-            return (*v).borrow().clone();
+            return (*v).borrow().to_legacy_string().to_string();
         }else {
             return "".to_string();
         }
@@ -1703,56 +2030,69 @@ impl RedLang {
         if val == "" {
             mp.remove(&format!("{}8bb64e93-143d-4209-8fad-3e3a6a43f191", key));
         } else {
-            mp.insert(format!("{}8bb64e93-143d-4209-8fad-3e3a6a43f191", key), Rc::new(RefCell::new(val.to_owned())));
+            mp.insert(format!("{}8bb64e93-143d-4209-8fad-3e3a6a43f191", key), Rc::new(RefCell::new(rv_text(val.to_string()))));
         }
         Ok(())
     }
     fn get_len(&self,data:&str) -> Result<usize, Box<dyn std::error::Error>> {
-        let tp = self.get_type(&data)?;
-        let ret;
-        if tp == "数组" {
-            let arr_parse_out = RedLang::parse_arr(&data)?;
-            ret = arr_parse_out.len();
-        } else if tp == "对象" {
-            let map_parse_out = RedLang::parse_obj(&data)?;
-            ret = map_parse_out.len();
-        }else if tp == "文本" {
-            let v_chs =data.chars().collect::<Vec<char>>();
-            ret = v_chs.len();
-        }else if tp == "字节集" {
-            let l = (data.len() - 37) / 2;
-            ret = l;
-        }else{
-            return Err(RedLang::make_err(&("对应类型不能获取长度:".to_owned()+&tp)));
-        }
+        // 尝试先用 RedValue 解析来直接获取长度
+        let rv = RedValue::from_legacy_string(data)?;
+        let ret = match &rv {
+            RedValue::Array(arr) => arr.len(),
+            RedValue::Object(obj) => obj.len(),
+            RedValue::Text(s) => s.chars().count(),
+            RedValue::Bin(b) => b.len(),
+            _ => return Err(RedLang::make_err(&("对应类型不能获取长度:".to_owned()+rv.get_type_name()))),
+        };
         return Ok(ret);
     }
-    fn call_fun(&mut self,params: &[astparser::Ast]) -> Result<String, Box<dyn std::error::Error>> {
+    fn call_fun(&mut self,params: &[astparser::Ast]) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
         // 获得函数
-        let func_t= self.get_param(params, 0)?;
-
-        let tp = self.get_type(&func_t)?;
-        let func:String;
-
-        // 尝试通过文本来在常量中获得函数
-        if tp == "文本" {
+        let func_rv = self.get_param(params, 0)?;
+        let parse_fun_body = |raw: &str| -> Result<astparser::Ast, Box<dyn std::error::Error>> {
+            let rv = RedValue::from_legacy_string(raw)?;
+            match rv {
+                RedValue::Fun(ast) => Ok(ast),
+                _ => Err(RedLang::make_err(&format!(
+                    "函数调用命令不能对{}类型进行操作",
+                    rv.get_type_name()
+                ))),
+            }
+        };
+        let load_fun_from_const = |name: &str| -> Result<astparser::Ast, Box<dyn std::error::Error>> {
             let err = "无法在常量中找到对应函数";
-            func = get_const_val(&self.pkg_name, &func_t)?;
-            if func == "" {
+            let raw = get_const_val(&self.pkg_name, name)?;
+            if raw == "" {
                 return Err(RedLang::make_err(err));
             }
-        }else {
-            func = func_t;
-        }
-        let tp = self.get_type(&func)?;
-        if tp != "函数"{
-            return Err(RedLang::make_err(&format!("函数调用命令不能对{}类型进行操作",tp)));
-        }
-        let func = func.get(37..).ok_or("在函数调用命令中获取函数失败")?;
+            parse_fun_body(&raw)
+        };
+        let func_ast = match &*func_rv {
+            RedValue::Fun(ast) => ast.clone(),
+            RedValue::Text(name) => load_fun_from_const(name)?,
+            RedValue::Legacy(raw) => {
+                match RedValue::from_legacy_string(raw)? {
+                    RedValue::Text(name) => load_fun_from_const(&name)?,
+                    RedValue::Fun(ast) => ast,
+                    other => {
+                        return Err(RedLang::make_err(&format!(
+                            "函数调用命令不能对{}类型进行操作",
+                            other.get_type_name()
+                        )));
+                    }
+                }
+            }
+            _ => {
+                return Err(RedLang::make_err(&format!(
+                    "函数调用命令不能对{}类型进行操作",
+                    func_rv.get_type_name()
+                )));
+            }
+        };
 
         // 获得函数参数（Ast 直接 eval，无论是否来自循环都走 eval_ast）
         let fun_params = &params[1..];
-        let mut fun_params_t: Vec<String> = vec![];
+        let mut fun_params_t: Vec<Rc<RedValue>> = vec![];
         for param_ast in fun_params {
             let p = self.eval_ast(param_ast)?;
             fun_params_t.push(p);
@@ -1764,9 +2104,9 @@ impl RedLang {
             // 如果参数中已经返回，就收集返回值，然后结束函数调用
             let mut to_ret = String::new();
             for i in fun_params_t {
-                to_ret += &i;
+                to_ret += &i.to_legacy_string();
             }
-            return Ok(to_ret);
+            return Ok(rv_text(to_ret));
         }
 
         // 修改参数栈
@@ -1778,7 +2118,7 @@ impl RedLang {
         self.fun_ret_vec.push((false,self.xh_vec.len()));
 
         // 调用函数
-        let ret_str = self.parse(&func)?;
+        let ret_str = self.eval_ast_with_stack_guard(&func_ast)?;
 
         // 变量栈和参数栈退栈
         self.var_vec.pop();
@@ -1791,9 +2131,8 @@ impl RedLang {
         &mut self,
         cmd: &str,
         params: &[astparser::Ast],
-    ) -> Result<String, Box<dyn std::error::Error>> {
-        let mut ret_str: String = String::new();
-        let mut is_cmd_ret = false;
+    ) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
+        let mut ret_rv: Option<Rc<RedValue>> = None;
 
         // 执行自定义命令
         {
@@ -1819,11 +2158,11 @@ impl RedLang {
                     let is_cmd2 = func.starts_with("1FC0F025-BFE7-63A4-CA66-FC3FD8A55B7B");
 
                     // 获得命令参数
-                    let mut fun_params_t: Vec<String> = vec![];
+                    let mut fun_params_t: Vec<Rc<RedValue>> = vec![];
                     for param_ast in params {
                         if is_cmd2 {
                             let kk = self.parse_fun_ast(param_ast,true)?;
-                            fun_params_t.push(kk); // 二类命令不进行参数解析
+                            fun_params_t.push(rv_text(kk)); // 二类命令不进行参数解析
                         } else {
                             let p = self.eval_ast(param_ast)?;
                             fun_params_t.push(p);
@@ -1834,32 +2173,29 @@ impl RedLang {
                     self.params_vec.push(fun_params_t);
 
                     // 调用命令
+                    let r;
                     if is_cmd2 {
-                        ret_str = self.parse(&func[36..])?;
+                        r = self.parse(&func[36..])?;
                     }else {
-                        ret_str = self.parse(&func)?;
+                        r = self.parse(&func)?;
                     }
                    
                     // 参数栈退栈
                     self.params_vec.pop();
 
-                    // 指明命令已经执行
-                    is_cmd_ret = true;
+                    ret_rv = Some(r);
                 }
-                _ => {
-
-                }
+                _ => {}
             }
         }
-        if is_cmd_ret {
-            return Ok(ret_str);
+        if let Some(rv) = ret_rv {
+            return Ok(rv);
         }
 
         // 执行核心命令与拓展命令
-        let exret;
         let rfun = get_core_cmd(cmd,&self.pkg_name);
         
-        exret = match rfun {
+        let exret = match rfun {
             Some(fun) => fun(self,params)?,
             None => None,
         };
@@ -1868,17 +2204,12 @@ impl RedLang {
             return Ok(v);
         }
 
-        if let Some(v) = exret{
-            ret_str = v;
-        } else {
-            return Err(RedLang::make_err(&format!("未知的命令:{}", cmd)));
-        }
-        Ok(ret_str)
+        return Err(RedLang::make_err(&format!("未知的命令:{}", cmd)));
     }
 
-    pub fn get_type(&self, param_data:&str) -> Result<String, Box<dyn std::error::Error>> {
+    pub fn get_legacy_type(param_data:&str) -> Result<String, Box<dyn std::error::Error>> {
         let ret_str:String;
-        if !param_data.starts_with(&self.type_uuid) {
+        if !param_data.starts_with(&crate::REDLANG_UUID.to_string()) {
             ret_str = "文本".to_string();
         }else{
             let tp = param_data.get(36..37).ok_or("类型解析错误,无类型标识")?;
@@ -2018,10 +2349,10 @@ impl RedLang {
     pub fn new() -> RedLang {
 
         // 第一个元素用于保持全局变量
-        let v: Vec<HashMap<String, Rc<RefCell<String>>>> = vec![HashMap::new()];
+        let v: Vec<HashMap<String, Rc<RefCell<Rc<RedValue>>>>> = vec![HashMap::new()];
 
         // 第一个元素用于全局参数
-        let v2: Vec<Vec<String>> = vec![vec![]];
+        let v2: Vec<Vec<Rc<RedValue>>> = vec![vec![]];
 
         let v3 = vec![(false,0)];
 
@@ -2033,7 +2364,6 @@ impl RedLang {
             fun_ret_vec: v3,
             exmap: Rc::new(RefCell::new(HashMap::new())),
             xuhao:HashMap::new(),
-            type_uuid:crate::REDLANG_UUID.to_string(),
             pkg_name:String::new(),
             script_name:String::new(),
             lock_vec:HashSet::new(),
@@ -2061,7 +2391,7 @@ impl RedLang {
         &mut self,
         params: &[astparser::Ast],
         i: usize,
-    ) -> Result<String, Box<dyn std::error::Error>> {
+    ) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
         let empty_ast = astparser::str_to_ast(String::new());
         let p = params.get(i).unwrap_or(&empty_ast);
         let ret = self.eval_ast(p);
@@ -2074,15 +2404,125 @@ impl RedLang {
         }
     }
 
-    pub fn build_bin(&self,bin:Vec<u8>) ->String {
-        return Self::build_bin_with_uid(&self.type_uuid,bin);
+    /// 严格文本取参：
+    /// - Text 直接返回
+    /// - Legacy 仅接受“文本”类型（兼容旧逻辑）
+    fn get_param_text_rc(
+        &mut self,
+        params: &[astparser::Ast],
+        i: usize,
+    ) -> Result<Rc<String>, Box<dyn std::error::Error>> {
+        let rv = self.get_param(params, i)?;
+        match &*rv.clone() {
+            RedValue::Text(s) => Ok(s.clone()),
+            RedValue::Legacy(s) => {
+                if RedLang::get_legacy_type(&s)? != "文本" {
+                    return Err(RedLang::make_err(&format!(
+                        "参数{}不是文本类型，当前类型:{}",
+                        i,
+                        RedValue::Legacy(s.clone()).get_type_name()
+                    )));
+                }
+                Ok(s.clone())
+            }
+            other => Err(RedLang::make_err(&format!(
+                "参数{}不是文本类型，当前类型:{}",
+                i,
+                other.get_type_name()
+            )))
+        }
     }
 
-    pub fn build_bin_from_img(&self, img: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> Result<String, Box<dyn std::error::Error>> {
+    /// 兼容旧签名：返回拥有所有权的文本
+    fn get_param_text(
+        &mut self,
+        params: &[astparser::Ast],
+        i: usize,
+    ) -> Result<String, Box<dyn std::error::Error>> {
+        Ok(self.get_param_text_rc(params, i)?.as_ref().clone())
+    }
+
+    /// 获取参数并转为数组：
+    /// - Array 直接返回
+    /// - Legacy 按旧格式数组字符串解析（兼容旧逻辑）
+    fn get_param_array(
+        &mut self,
+        params: &[astparser::Ast],
+        i: usize,
+    ) -> Result<Vec<Rc<RedValue>>, Box<dyn std::error::Error>> {
+        let rv = self.get_param(params, i)?;
+        match &*rv {
+            RedValue::Array(arr) => Ok(arr.clone()),
+            RedValue::Legacy(s) => {
+                if RedLang::get_legacy_type(s)? != "数组" {
+                    return Err(RedLang::make_err(&format!(
+                        "参数{}不是数组类型，当前类型:{}",
+                        i,
+                        rv.get_type_name()
+                    )));
+                }
+                let mut out = Vec::new();
+                for it in RedLang::parse_arr(s)? {
+                    out.push(Rc::new(RedValue::from_legacy_string(it)?));
+                }
+                Ok(out)
+            }
+            _ => Err(RedLang::make_err(&format!(
+                "参数{}不是数组类型，当前类型:{}",
+                i,
+                rv.get_type_name()
+            ))),
+        }
+    }
+
+    /// 获取参数并转为字节集：
+    /// - Bin 直接返回
+    /// - Text/Legacy 按旧格式字节集字符串解析（兼容旧逻辑）
+    fn get_param_bin_rc(
+        &mut self,
+        params: &[astparser::Ast],
+        i: usize,
+    ) -> Result<Rc<Vec<u8>>, Box<dyn std::error::Error>> {
+        let rv = self.get_param(params, i)?;
+        match &*rv {
+            RedValue::Bin(b) => Ok(b.clone()),
+            RedValue::Legacy(s) => {
+                if RedLang::get_legacy_type(&s)? != "字节集" {
+                    return Err(RedLang::make_err(&format!(
+                        "参数{}不是字节集类型，当前类型:{}",
+                        i,
+                        RedValue::Legacy(s.clone()).get_type_name()
+                    )));
+                }
+                Ok(Rc::new(RedLang::parse_bin_raw(&s)?))
+            }
+            other => Err(RedLang::make_err(&format!(
+                "参数{}不是字节集类型，当前类型:{}",
+                i,
+                other.get_type_name()
+            )))
+        }
+    }
+
+    /// 兼容旧签名：返回拥有所有权的字节集
+    fn get_param_bin(
+        &mut self,
+        params: &[astparser::Ast],
+        i: usize,
+    ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        Ok(self.get_param_bin_rc(params, i)?.as_ref().clone())
+    }
+
+    pub fn build_bin(&self,bin:Vec<u8>) ->String {
+        return Self::build_bin_with_uid(&crate::REDLANG_UUID.to_string(),bin);
+    }
+
+    pub fn build_bin_raw_from_img(&self, img: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
         let mut bytes: Vec<u8> = Vec::new();
         img.write_to(&mut std::io::Cursor::new(&mut bytes), image::ImageFormat::Png)?;
-        Ok(self.build_bin(bytes))
+        Ok(bytes)
     }
+
 
     pub fn build_bin_with_uid(uid:&str,bin:Vec<u8>) -> String {
         let mut ret_str = String::new();
@@ -2096,7 +2536,7 @@ impl RedLang {
         return ret_str;
     }
     fn build_arr(&self,arr:Vec<&str>) -> String {
-        return Self::build_arr_with_uid(&self.type_uuid,arr);
+        return Self::build_arr_with_uid(&crate::REDLANG_UUID.to_string(),arr);
     }
     pub fn build_arr_with_uid(uid:&str,arr:Vec<&str>) -> String {
         let mut ret_str = String::new();
@@ -2124,73 +2564,77 @@ impl RedLang {
         return ret_str;
     }
     pub fn build_obj(&self,obj:BTreeMap<String,String>) -> String {
-        return Self::build_obj_with_uid(&self.type_uuid,obj);
+        return Self::build_obj_with_uid(&crate::REDLANG_UUID.to_string(),obj);
     }
 
-    fn conect_arr(status:&mut u8,chs_out:&mut String,new_str:&str) -> Result<(), Box<dyn std::error::Error>>{
-        if new_str.starts_with(&(crate::REDLANG_UUID.to_string() + "A")) {
-            if *status == 2 {
-                // 这里要进行数组合并，因为之前是数组
-                let arr = new_str.get(37..).ok_or("在合并数组时获取新数组失败")?;
-                chs_out.push_str(arr);
-            } else if *status == 0 { // 之前没有
-                chs_out.push_str(&new_str);
-            } else { // 之前是其它类型
-                return Err(RedLang::make_err(&format!("数组不能与其它类型`{}`直接连接",chs_out)));
-            }
-            *status = 2;
-        } else if new_str.starts_with(&(crate::REDLANG_UUID.to_string() + "O")) {
-            if *status == 3 {
-                // 这里要进行对象合并，因为之前是对象
-                let mut new_obj = RedLang::parse_obj(new_str)?;
-                let mut old_obj = RedLang::parse_obj(chs_out)?;
-                old_obj.append(&mut new_obj);
-                let new_obj_str = RedLang::build_obj_with_uid(&crate::REDLANG_UUID, old_obj);
-                chs_out.clear();
-                chs_out.push_str(&new_obj_str);
-            } else if *status == 0 { // 之前没有
-                chs_out.push_str(&new_str);
-            } else { // 之前是其它类型
-                return Err(RedLang::make_err(&format!("对象不能与其它类型`{}`直接连接",chs_out)));
-            }
-            *status = 3;
-        }else if new_str.starts_with(&(crate::REDLANG_UUID.to_string() + "B")) {
-            if *status == 4 {
-                // 这里要进行字节集合并，因为之前是字节集
-                let arr = new_str.get(37..).ok_or("在合并字节集时获取新字节集失败")?;
-                chs_out.push_str(arr);
-            } else if *status == 0 { // 之前没有
-                chs_out.push_str(&new_str);
-            } else { // 之前是其它类型
-                return Err(RedLang::make_err(&format!("字节集不能与其它类型`{}`直接连接",chs_out)));
-            }
-            *status = 4;
+    fn conect_rv(cur: &mut Rc<RedValue>, new_val_t: &Rc<RedValue>) -> Result<(), Box<dyn std::error::Error>> {
+        
+        if let RedValue::Legacy(s) = &**cur {
+            *cur = Rc::new(RedValue::from_legacy_string(s)?);
         }
-        else if new_str.starts_with(&*crate::CLEAR_UUID) {
-            // 处理清空
-            chs_out.clear();
-            *status = 0;
-        } else {
-            // 普通文本且长度不为0
-            if new_str.len() != 0 {
-                if *status == 2 {
-                    return Err(RedLang::make_err(&format!("`{}`不能与数组类型直接连接",new_str)));
+        
+        let mut new_val = new_val_t.clone();
+        if let RedValue::Legacy(s) = &*new_val {
+            new_val = Rc::new(RedValue::from_legacy_string(&*s)?);
+        }
+
+        // 如果当前为空文本，直接替换
+        if let RedValue::Text(s) = &**cur {
+            if s.is_empty() {
+                *cur = new_val.clone();
+                return Ok(());
+            }
+        }
+
+        // 检查 CLEAR_UUID
+        if let RedValue::Text(s) = &*new_val {
+            if s.starts_with(&*crate::CLEAR_UUID) {
+                *cur = rv_empty();
+                return Ok(());
+            }
+        }
+        match (&**cur, &*new_val) {
+            (RedValue::Text(old), RedValue::Text(new_s)) => {
+                if !new_s.is_empty() {
+                    *cur = Rc::new(RedValue::Text(Rc::new(old.to_string() + new_s.as_str())));
                 }
-                if *status == 3 {
-                    return Err(RedLang::make_err(&format!("`{}`不能与对象类型直接连接",new_str)));
+            }
+            (RedValue::Array(old_arr), RedValue::Array(new_arr)) => {
+                let mut merged = old_arr.clone();
+                merged.extend(new_arr.iter().cloned());
+                *cur = Rc::new(RedValue::Array(merged));
+            }
+            (RedValue::Object(old_obj), RedValue::Object(new_obj)) => {
+                let mut merged = old_obj.clone();
+                for (k, v) in new_obj {
+                    merged.insert(k.clone(), v.clone());
                 }
-                if *status == 4 {
-                    return Err(RedLang::make_err(&format!("`{}`不能与字节集类型直接连接",new_str)));
-                }
-                chs_out.push_str(&new_str);
-                *status = 1;
+                *cur = Rc::new(RedValue::Object(merged));
+            }
+            (RedValue::Bin(old_bin), RedValue::Bin(new_bin)) => {
+                let mut merged = old_bin.as_ref().clone();
+                merged.extend(new_bin.iter().copied());
+                *cur = Rc::new(RedValue::Bin(Rc::new(merged)));
+            }
+            (_, RedValue::Text(s)) if s.is_empty() => {
+                // 新值为空文本，不做任何事
+            }
+            _ => {
+                let old_type = cur.get_type_name();
+                let new_type = new_val.get_type_name();
+                return Err(RedLang::make_err(&format!("`{}`类型不能与`{}`类型直接连接", new_type, old_type)));
             }
         }
         Ok(())
     }
+    
+    pub fn parse(&mut self, input: &str) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
+        // 解析为AST（内部会移除注释）
+        let ast = astparser::parse_to_ast(input).map_err(|e| RedLang::make_err(&e))?;
+        self.eval_ast_with_stack_guard(&ast)
+    }
 
-    pub fn parse(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
-
+    fn eval_ast_with_stack_guard(&mut self, ast: &astparser::Ast) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
         let cc = &(*self.scriptcallstackdeep);
 
         if *cc.borrow() > 500 {
@@ -2204,18 +2648,19 @@ impl RedLang {
             *cc.borrow_mut() -= 1;
         });
 
-        // 解析为AST（内部会移除注释）
-        let ast = astparser::parse_to_ast(input).map_err(|e| RedLang::make_err(&e))?;
-
         // 执行AST
-        self.eval_ast(&ast)
+        self.eval_ast(ast)
     }
 
-    fn eval_ast(&mut self, ast: &astparser::Ast) -> Result<String, Box<dyn std::error::Error>> {
-        // 输出
-        let mut chs_out: String = String::new();
+    /// 兼容方法：parse 并返回 legacy String
+    pub fn parse_to_string(&mut self, input: &str) -> Result<String, Box<dyn std::error::Error>> {
+        let rv = self.parse(input)?;
+        Ok(rv.to_legacy_string().to_string())
+    }
 
-        let mut cur_type_status = 0u8; //0:None 1:text 2:arr 3:object 4:bin
+    fn eval_ast(&mut self, ast: &astparser::Ast) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
+        // 输出
+        let mut chs_out: Rc<RedValue> = rv_empty();
 
         for node in ast {
             // 检查函数返回
@@ -2245,20 +2690,13 @@ impl RedLang {
 
             match node {
                 astparser::AstNode::Text(text) => {
-                    RedLang::conect_arr(&mut cur_type_status, &mut chs_out, text)?;
+                    let text_rv = Rc::new(RedValue::Text(text.clone()));
+                    RedLang::conect_rv(&mut chs_out, &text_rv)?;
                 }
                 astparser::AstNode::Command(cmd) => {
-                    // 求值命令名
-                    let cmd_name = if cmd.name.contains('【') {
-                        // 命令名中嵌套了其它命令，需要递归解析
-                        self.parse(&cmd.name)?
-                    } else {
-                        cmd.name.as_ref().clone()
-                    };
-
                     // 直接传递参数的 AST，避免重复解析
-                    let ret = self.do_cmd_fun(&cmd_name, &cmd.args)?;
-                    RedLang::conect_arr(&mut cur_type_status, &mut chs_out, &ret)?;
+                    let ret = self.do_cmd_fun(&cmd.name, &cmd.args)?;
+                    RedLang::conect_rv(&mut chs_out, &ret)?;
                 }
             }
         }
@@ -2275,7 +2713,7 @@ impl RedLang {
         }
         Ok(ret)
     }
-    fn get_var_ref(&mut self,var_name:&str) -> Option<Rc<RefCell<String>>> {
+    fn get_var_ref(&mut self,var_name:&str) -> Option<Rc<RefCell<Rc<RedValue>>>> {
         let var_vec_len = self.var_vec.len();
         for i in 0..var_vec_len {
             let mp = &self.var_vec[var_vec_len - i - 1];
@@ -2300,7 +2738,7 @@ impl RedLang {
                 astparser::AstNode::Text(text) => {
                     // 文本节点：需要转义特殊字符以保持字面量
                     for ch in text.chars() {
-                        if ch == '\\' || ch == '【' || ch == '】' {
+                        if ch == '\\' || ch == '@' || ch == '【' || ch == '】' {
                             out.push('\\');
                         }
                         out.push(ch);
@@ -2308,13 +2746,13 @@ impl RedLang {
                 }
                 astparser::AstNode::Command(cmd) => {
                     // 求值命令名
-                    let cmd_name = self.parse(&cmd.name)?;
+                    let cmd_name = self.parse_to_string(&cmd.name)?;
                     let cmd_jt = crate::mytool::str_to_jt(&cmd_name);
 
                     if cmd_jt == "闭包" && !is_2_params {
                         // 闭包：求值第一个参数并转义后内联
                         let cqout = if !cmd.args.is_empty() {
-                            self.eval_ast(&cmd.args[0])?
+                            self.eval_ast(&cmd.args[0])?.to_legacy_string().to_string()
                         } else {
                             String::new()
                         };
@@ -2324,20 +2762,20 @@ impl RedLang {
                     } else if is_2_params {
                         if cmd_jt == "二类参数" {
                             let k1 = if !cmd.args.is_empty() {
-                                self.eval_ast(&cmd.args[0])?.parse::<usize>()?
+                                self.eval_ast(&cmd.args[0])?.to_legacy_string().parse::<usize>()?
                             } else {
                                 0
                             };
-                            let ret_str = self.parse(&format!("【二类参数@{k1}】"))?;
+                            let ret_str = self.parse_to_string(&format!("【二类参数@{k1}】"))?;
                             let cqout_r = self.parse_r_with_black(&ret_str)?;
                             out.push_str(&cqout_r);
                         } else if cmd_jt == "参数" {
                             let k1 = if !cmd.args.is_empty() {
-                                self.eval_ast(&cmd.args[0])?.parse::<usize>()?
+                                self.eval_ast(&cmd.args[0])?.to_legacy_string().parse::<usize>()?
                             } else {
                                 0
                             };
-                            let ret_str = self.parse(&format!("【参数@{k1}】"))?;
+                            let ret_str = self.parse_to_string(&format!("【参数@{k1}】"))?;
                             let cqout_r = self.parse_r_with_black(&ret_str)?;
                             out.push_str(&cqout_r);
                         } else {

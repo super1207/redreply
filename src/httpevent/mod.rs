@@ -129,7 +129,7 @@ pub fn do_http_event(req:hyper::Request<hyper::body::Incoming>,can_write:bool,ca
             let rl_ret = do_script(&mut rl, code,"normal",true)?;
             let mut http_header = BTreeMap::new();
             let mut res:hyper::Response<BoxBody>;
-            if rl.get_type(&rl_ret)? == "字节集" {
+            if RedLang::get_legacy_type(&rl_ret)? == "字节集" {
                 http_header.insert("Content-Type", "application/octet-stream");
                 res = hyper::Response::new(crate::httpserver::full(RedLang::parse_bin_raw(&rl_ret)?));
             } else {
@@ -142,6 +142,10 @@ pub fn do_http_event(req:hyper::Request<hyper::body::Incoming>,can_write:bool,ca
                 for (k,v) in &http_header_t {
                     http_header.insert(k, v);
                 }
+                for (key,val) in &http_header {
+                    res.headers_mut().append(HeaderName::from_str(key)?, HeaderValue::from_str(val)?);
+                }
+            } else {
                 for (key,val) in &http_header {
                     res.headers_mut().append(HeaderName::from_str(key)?, HeaderValue::from_str(val)?);
                 }

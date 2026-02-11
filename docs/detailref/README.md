@@ -1177,7 +1177,7 @@ bbb=2
 
 如果解码出错，返回空字节集。
 
-注意，只有GZIP编码的字节集才能进行ZLIB解码。
+注意，只有ZLIB编码的字节集才能进行ZLIB解码。
 
 
 ### BR编码
@@ -1532,7 +1532,7 @@ bbb=2
 ### 图片线稿
 
 
-【图片线稿@<font color="red">图片字节集</font>@<font color="red">sigma</font>】
+【图片线稿@<font color="red">图片字节集</font>@<font color="red">sigma</font>@<font color="red">contrast</font>】
 
 将图片变成线稿图片（白底黑线），<font color="red">sigma</font>为`【图片模糊】`命令中的sigma参数，必须大于0（否则抛出异常），可以是小数。<font color="red">contrast</font>为对比度调整参数，必须大于等于0，可以是小数，可以省略，默认1.0。
 

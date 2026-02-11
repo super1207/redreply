@@ -2,9 +2,13 @@ use std::{cell::RefCell, collections::BTreeMap, fs, path::{Path, PathBuf}, rc::R
 
 use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2}, del_file_lock, mytool::{cq_params_encode, cq_text_encode, json_to_cq_str, read_json_str}, pkg_can_run, read_code_cache, redlang::{add_fun, get_const_val, get_temp_const_val, set_const_val, set_temp_const_val}, status::{add_send_group_msg, add_send_private_msg}, ScriptRelatMsg, CLEAR_UUID, G_INPUTSTREAM_VEC, G_SCRIPT_RELATE_MSG, PAGING_UUID, RT_PTR};
 use serde_json;
-use super::{RedLang, exfun::do_json_parse};
+use super::{RedLang, RedValue, rv_array, rv_bin, rv_text, rv_empty, exfun::do_json_parse};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
+
+fn rv_from_legacy(s: &str) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
+    Ok(Rc::new(RedValue::from_legacy_string(s)?))
+}
 pub fn get_app_dir(pkg_name:&str) -> Result<String, Box<dyn std::error::Error>> {
     let app_dir;
         if pkg_name == "" {
@@ -170,8 +174,8 @@ pub fn init_cq_ex_fun_map() {
                 "群名":read_json_str(group, "group_name"),
             }));
         }
-        let ret = do_json_parse(&serde_json::json!(to_ret), &self_t.type_uuid)?;
-        return Ok(Some(ret));
+        let ret = do_json_parse(&serde_json::json!(to_ret), &crate::REDLANG_UUID.to_string())?;
+        return Ok(Some(rv_from_legacy(&ret)?));
     });
 
     fn get_stranger_info(self_t:&mut RedLang,user_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
@@ -207,26 +211,26 @@ pub fn init_cq_ex_fun_map() {
             "用户ID":read_json_str(&data, "user_id"),
             "用户名":nickname
         });
-        let ret = do_json_parse(&to_ret, &self_t.type_uuid)?;
-        return Ok(Some(ret));
+        let ret = do_json_parse(&to_ret, &crate::REDLANG_UUID.to_string())?;
+        return Ok(Some(rv_from_legacy(&ret)?));
     });
     add_fun(vec!["取头像"],|self_t,params|{
-        let user_id = self_t.get_param(params, 0)?;
+        let user_id = self_t.get_param_text(params, 0)?;
         let data = get_stranger_info(self_t,&user_id).unwrap_or_default();
         let avatar = read_json_str(&data, "avatar");
-        return Ok(Some(avatar));
+        return Ok(Some(rv_text(avatar)));
     });
     add_fun(vec!["发送者ID","发送者QQ"],|self_t,_params|{
         let qq = self_t.get_exmap("发送者ID");
-        return Ok(Some(qq.to_string()));
+        return Ok(Some(rv_text(qq.to_string())));
     });
     add_fun(vec!["当前群号","群号","群ID"],|self_t,_params|{
         let group = self_t.get_exmap("群ID");
-        return Ok(Some(group.to_string()));
+        return Ok(Some(rv_text(group.to_string())));
     });
     add_fun(vec!["当前群组","群组号","群组ID"],|self_t,_params|{
         let groups = self_t.get_exmap("群组ID");
-        return Ok(Some(groups.to_string()));
+        return Ok(Some(rv_text(groups.to_string())));
     });
     add_fun(vec!["发送者昵称"],|self_t,_params|{
         let mut nickname = &*self_t.get_exmap("发送者昵称");
@@ -239,20 +243,20 @@ pub fn init_cq_ex_fun_map() {
                 let name = read_json_str(&data, "nickname");
                 if name != "" {
                     self_t.set_exmap("发送者昵称", &name);
-                    return Ok(Some(name));
+                    return Ok(Some(rv_text(name)));
                 }
             } 
         }
-        return Ok(Some(nickname.to_string()));
+        return Ok(Some(rv_text(nickname.to_string())));
     });
     add_fun(vec!["机器人QQ"],|self_t,_params|{
         let qq = self_t.get_exmap("机器人ID");
-        return Ok(Some(qq.to_string()));
+        return Ok(Some(rv_text(qq.to_string())));
     });
     add_fun(vec!["机器人ID"],|self_t,_params|{
         let qq:String;
         qq = self_t.get_exmap("机器人ID").to_string();
-        return Ok(Some(qq));
+        return Ok(Some(rv_text(qq)));
     });
     add_fun(vec!["机器人名字"],|self_t,_params|{
         let send_json = serde_json::json!({
@@ -269,16 +273,16 @@ pub fn init_cq_ex_fun_map() {
         if bot_name.is_string() {
             let name = bot_name.as_str().unwrap().to_owned();
             if name == "" {
-                return Ok(Some("露娜sama".to_owned()));
+                return Ok(Some(rv_text("露娜sama".to_owned())));
             }
-            return Ok(Some(name));
+            return Ok(Some(rv_text(name)));
         }else{
-            return Ok(Some("露娜sama".to_owned()));
+            return Ok(Some(rv_text("露娜sama".to_owned())));
         }
     });
     add_fun(vec!["权限","发送者权限"],|self_t,_params|{
         let role = self_t.get_exmap("发送者权限");
-        return Ok(Some(role.to_string()));
+        return Ok(Some(rv_text(role.to_string())));
     });
     // add_fun(vec!["发送者名片"],|self_t,_params|{
     //     let card = self_t.get_exmap("发送者名片");
@@ -289,33 +293,32 @@ pub fn init_cq_ex_fun_map() {
     //     return Ok(Some(title.to_string()));
     // });
     add_fun(vec!["消息ID"],|self_t,params|{
-        let qq = self_t.get_param(params, 0)?;
-        let ret:String;
+        let qq = self_t.get_param_text(params, 0)?;
         if qq == "" {
             let msg_id = self_t.get_exmap("消息ID");
-            ret = msg_id.to_string();
+            return Ok(Some(rv_text(msg_id.to_string())));
         }else {
             let mp = crate::G_MSG_ID_MAP.read()?;
             let group_id = self_t.get_exmap("群ID");
             let self_id = self_t.get_exmap("机器人ID");
             let flag = self_id.to_string() + &group_id;
-            ret = match mp.get(&flag) {  
+            let ret_arr = match mp.get(&flag) {  
                 Some(v) => {
-                    let mut vv:Vec<&str> = vec![];
+                    let mut vv:Vec<Rc<RedValue>> = vec![];
                     for it in v {
                         if it.0 == qq {
-                            vv.push(&it.1);
+                            vv.push(rv_text(it.1.to_string()));
                         }
                     }
-                    self_t.build_arr(vv)
+                    vv
                 },
-                None => self_t.build_arr(vec![])
+                None => vec![]
             };
+            return Ok(Some(rv_array(ret_arr)));
         }
-        return Ok(Some(ret));
     });
     add_fun(vec!["群历史消息"],|self_t,params|{
-        let num_str = self_t.get_param(params, 0)?;
+        let num_str = self_t.get_param_text(params, 0)?;
         let num = num_str.parse::<usize>()?;
         let mut to_ret:Vec<String> = vec![];
         let group_id = self_t.get_exmap("群ID");
@@ -333,121 +336,121 @@ pub fn init_cq_ex_fun_map() {
             },
             None => {}
         };
-        let ret = self_t.build_arr(to_ret.iter().map(|s| s.as_str()).collect());
-        return Ok(Some(ret));
+        let ret = to_ret.into_iter().map(rv_text).collect::<Vec<Rc<RedValue>>>();
+        return Ok(Some(rv_array(ret)));
     });
     add_fun(vec!["设置图片参数"],|self_t,params|{
-        let key = self_t.get_param(params, 0)?;
-        let val = self_t.get_param(params, 1)?;
+        let key = self_t.get_param_text(params, 0)?;
+        let val = self_t.get_param_text(params, 1)?;
         if key.to_uppercase() == "SUMMARY" {
-            self_t.set_exmap("图片SUMMARY", &val);
+            self_t.set_exmap("图片SUMMARY", val.as_str());
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["图片"],|self_t,params|{
-        let pic = self_t.get_param(params, 0)?;
-        let tp = self_t.get_type(&pic)?;
+        let pic = self_t.get_param(params, 0)?.to_legacy_string();
+        let tp = RedLang::get_legacy_type(&pic)?;
         let mut ret:String = String::new();
         let summary = self_t.get_exmap("图片SUMMARY");
         if tp == "字节集" {
-            let bin = RedLang::parse_bin_raw(&pic)?;
+            let bin = self_t.get_param_bin_rc(params, 0)?;
             if bin.len() == 0 {
                 cq_add_log_w("图片字节集长度为0").unwrap();
-                return Ok(Some("".to_owned()));
+                return Ok(Some(rv_empty()));
             }
-            let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
+            let b64_str = BASE64_CUSTOM_ENGINE.encode(bin.as_slice());
             if *summary != "" {
                 ret = format!("[CQ:image,file=base64://{},summary={}]",b64_str,cq_params_encode(&*summary));
             } else {
-                ret = format!("[CQ:image,file=base64://{},summary={}]",b64_str,cq_params_encode(&*summary));
+                ret = format!("[CQ:image,file=base64://{}]",b64_str);
             }
             
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
-                let not_use_cache = self_t.get_param(params, 1)?;
-                if  not_use_cache == "假" {
+                let not_use_cache = self_t.get_param_text(params, 1)?;
+                if  not_use_cache.as_str() == "假" {
                     if *summary != "" {
                         ret = format!("[CQ:image,file={},cache=0,summary={}]",cq_params_encode(&pic),cq_params_encode(&*summary));
                     } else {
-                        ret = format!("[CQ:image,file={},cache=0,summary={}]",cq_params_encode(&pic),cq_params_encode(&*summary));
+                        ret = format!("[CQ:image,file={},cache=0]",cq_params_encode(&pic));
                     }
                 }else {
                     if *summary != "" {
                         ret = format!("[CQ:image,file={},summary={}]",cq_params_encode(&pic),cq_params_encode(&*summary));
                     } else {
-                        ret = format!("[CQ:image,file={},summary={}]",cq_params_encode(&pic),cq_params_encode(&*summary));
+                        ret = format!("[CQ:image,file={}]",cq_params_encode(&pic));
                     }
                     
                 }
             }else{
-                let path = Path::new(&pic);
+                let path = Path::new(&*pic);
                 let bin = std::fs::read(path)?;
                 let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
                 if *summary != "" {
                     ret = format!("[CQ:image,file=base64://{},summary={}]",b64_str,cq_params_encode(&*summary));
                 } else {
-                    ret = format!("[CQ:image,file=base64://{},summary={}]",b64_str,cq_params_encode(&*summary));
+                    ret = format!("[CQ:image,file=base64://{}]",b64_str);
                 }
             }
         }
-        return Ok(Some(ret));
+        return Ok(Some(rv_text(ret)));
     });
     add_fun(vec!["语音"],|self_t,params|{
-        let pic = self_t.get_param(params, 0)?;
-        let tp = self_t.get_type(&pic)?;
+        let pic = self_t.get_param(params, 0)?.to_legacy_string();
+        let tp = RedLang::get_legacy_type(&pic)?;
         let mut ret:String = String::new();
         if tp == "字节集" {
-            let bin = RedLang::parse_bin_raw(&pic)?;
-            let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
+            let bin = self_t.get_param_bin_rc(params, 0)?;
+            let b64_str = BASE64_CUSTOM_ENGINE.encode(bin.as_slice());
             ret = format!("[CQ:record,file=base64://{}]",b64_str);
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
-                let not_use_cache = self_t.get_param(params, 1)?;
-                if  not_use_cache == "假" {
+                let not_use_cache = self_t.get_param_text(params, 1)?;
+                if  not_use_cache.as_str() == "假" {
                     ret = format!("[CQ:record,file={},cache=0]",cq_params_encode(&pic));
                 }else {
                     ret = format!("[CQ:record,file={}]",cq_params_encode(&pic));
                 }
             }else{
-                let path = Path::new(&pic);
+                let path = Path::new(&*pic);
                 let bin = std::fs::read(path)?;
                 let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
                 ret = format!("[CQ:record,file=base64://{}]",b64_str);
             }
         }
-        return Ok(Some(ret));
+        return Ok(Some(rv_text(ret)));
     });
     add_fun(vec!["视频"],|self_t,params|{
-        let pic = self_t.get_param(params, 0)?;
-        let tp = self_t.get_type(&pic)?;
+        let pic = self_t.get_param(params, 0)?.to_legacy_string();
+        let tp = RedLang::get_legacy_type(&pic)?;
         let mut ret:String = String::new();
         if tp == "字节集" {
-            let bin = RedLang::parse_bin_raw(&pic)?;
-            let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
+            let bin = self_t.get_param_bin_rc(params, 0)?;
+            let b64_str = BASE64_CUSTOM_ENGINE.encode(bin.as_slice());
             ret = format!("[CQ:video,file=base64://{}]",b64_str);
         }else if tp == "文本" {
             if pic.starts_with("http://") || pic.starts_with("https://"){
-                let not_use_cache = self_t.get_param(params, 1)?;
-                if  not_use_cache == "假" {
+                let not_use_cache = self_t.get_param_text(params, 1)?;
+                if  not_use_cache.as_str() == "假" {
                     ret = format!("[CQ:video,file={},cache=0]",cq_params_encode(&pic));
                 }else {
                     ret = format!("[CQ:video,file={}]",cq_params_encode(&pic));
                 }
             }else{
-                let path = Path::new(&pic);
+                let path = Path::new(&*pic);
                 let bin = std::fs::read(path)?;
                 let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
                 ret = format!("[CQ:video,file=base64://{}]",b64_str);
             }
         }
-        return Ok(Some(ret));
+        return Ok(Some(rv_text(ret)));
     });
     add_fun(vec!["撤回"],|self_t,params|{
-        let mut msg_id_str = self_t.get_param(params, 0)?;
-        if msg_id_str == "" {
-            msg_id_str = self_t.get_exmap("消息ID").to_string();
+        let mut msg_id_str = self_t.get_param(params, 0)?.to_legacy_string();
+        if &*msg_id_str == "" {
+            msg_id_str = Rc::new(self_t.get_exmap("消息ID").to_string());
         }
-        let tp = self_t.get_type(&msg_id_str)?;
+        let tp = RedLang::get_legacy_type(&msg_id_str)?;
         let msg_id_vec:Vec<&str> = match tp.as_str() {
             "文本" => vec![&msg_id_str],
             "数组" => RedLang::parse_arr(&msg_id_str)?,
@@ -466,10 +469,10 @@ pub fn init_cq_ex_fun_map() {
             let remote_id = self_t.get_exmap("远程MQTT客户端ID");
             let _cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str(),&remote_id);
         }  
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["禁言"],|self_t,params|{
-        let ban_time = self_t.get_param(params, 0)?;
+        let ban_time = self_t.get_param_text(params, 0)?;
         let user_id_str = self_t.get_exmap("发送者ID").to_string();
         let group_id_str = self_t.get_exmap("群ID").to_string();
         let send_json = serde_json::json!({
@@ -485,11 +488,11 @@ pub fn init_cq_ex_fun_map() {
         let passive_id = self_t.get_exmap("消息ID");
         let remote_id = self_t.get_exmap("远程MQTT客户端ID");
         let _cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str(),&remote_id);
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["表情回应"],|self_t,params|{
-        let emoji_id = self_t.get_param(params, 0)?;
-        let mut message_id = self_t.get_param(params, 1)?;
+        let emoji_id = self_t.get_param_text(params, 0)?;
+        let mut message_id = self_t.get_param_text(params, 1)?;
         if message_id == "" {
             message_id = self_t.get_exmap("消息ID").to_string();
         }
@@ -500,7 +503,7 @@ pub fn init_cq_ex_fun_map() {
             let emojis = emoji_id.chars().collect::<Vec<char>>();
             if emojis.len() != 1 {
                 cq_add_log_w(&format!("表情回应失败，表情ID错误1")).unwrap();
-                return Ok(Some("".to_string())); 
+                return Ok(Some(rv_empty())); 
             }
             let emoji: char = emojis[0];
             emoji_num = emoji as i32;
@@ -519,65 +522,65 @@ pub fn init_cq_ex_fun_map() {
         let passive_id = self_t.get_exmap("消息ID");
         let remote_id = self_t.get_exmap("远程MQTT客户端ID");
         let _cq_ret = cq_call_api(&platform,&*self_id,&*passive_id,send_json.to_string().as_str(),&remote_id);
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["输出流"],|self_t,params|{
-        let msg = self_t.get_param(params, 0)?;
+        let msg = self_t.get_param_text(params, 0)?;
         match send_one_msg(&self_t,&msg) {
-            Ok(msg_id) => return Ok(Some(msg_id)),
+            Ok(msg_id) => return Ok(Some(rv_text(msg_id))),
             Err(e) => {
                    cq_add_log_w(&format!("输出流失败，{}",e)).unwrap();
-                   return Ok(Some("".to_string()));
+                   return Ok(Some(rv_empty()));
             }
         }
     });
     add_fun(vec!["艾特"],|self_t,params|{
-        let mut user_id = self_t.get_param(params, 0)?;
+        let mut user_id = self_t.get_param_text(params, 0)?;
         if user_id == ""{
             user_id = self_t.get_exmap("发送者ID").to_string();
         }
         if user_id == "" {
-            return Ok(Some("".to_string()));
+            return Ok(Some(rv_empty()));
         }else{
-            return Ok(Some(format!("[CQ:at,qq={}]",cq_params_encode(&user_id))));
+            return Ok(Some(rv_text(format!("[CQ:at,qq={}]",cq_params_encode(&user_id)))));
         }
     });
     add_fun(vec!["CQ码转义"],|self_t,params|{
-        let cq_code = self_t.get_param(params, 0)?;
-        return Ok(Some(cq_params_encode(&cq_code)));
+        let cq_code = self_t.get_param_text(params, 0)?;
+        return Ok(Some(rv_text(cq_params_encode(&cq_code))));
     });
     add_fun(vec!["CQ转义"],|self_t,params|{
-        let cq_code = self_t.get_param(params, 0)?;
-        return Ok(Some(cq_text_encode(&cq_code)));
+        let cq_code = self_t.get_param_text(params, 0)?;
+        return Ok(Some(rv_text(cq_text_encode(&cq_code))));
     });
     add_fun(vec!["子关键词"],|self_t,_params|{
         let key = self_t.get_exmap("子关键词").to_string();
-        return Ok(Some(key));
+        return Ok(Some(Rc::new(RedValue::from_legacy_string(&key)?)));
     });
     add_fun(vec!["事件内容"],|self_t,_params|{
         let dat = self_t.get_exmap("事件内容");
         if *dat == "" {
             let raw_data = self_t.get_exmap("原始事件");
             let raw_json = serde_json::from_str(&*raw_data)?;
-            let redlang_str = do_json_parse(&raw_json,&self_t.type_uuid)?;
+            let redlang_str = do_json_parse(&raw_json,&crate::REDLANG_UUID.to_string())?;
             self_t.set_exmap("事件内容", &redlang_str);
-            return Ok(Some(redlang_str));
+            return Ok(Some(rv_from_legacy(&redlang_str)?));
         }
-        return Ok(Some(dat.to_string()));
+        return Ok(Some(rv_from_legacy(&dat)?));
     });
     add_fun(vec!["OB调用"],|self_t,params|{
-        let content = self_t.get_param(params, 0)?;
+        let content = self_t.get_param_text(params, 0)?;
         let self_id = self_t.get_exmap("机器人ID");
         let platform = get_platform(&self_t);
         let passive_id = self_t.get_exmap("消息ID");
         let remote_id = self_t.get_exmap("远程MQTT客户端ID");
         let call_ret = cq_call_api(&platform,&*self_id,&*passive_id,&content,&remote_id);
         let js_v = serde_json::from_str(&call_ret)?;
-        let ret = do_json_parse(&js_v, &self_t.type_uuid)?;
-        return Ok(Some(ret));
+        let ret = do_json_parse(&js_v, &crate::REDLANG_UUID.to_string())?;
+        return Ok(Some(rv_from_legacy(&ret)?));
     });
     add_fun(vec!["CQ码解析"],|self_t,params|{
-        let data_str = self_t.get_param(params, 0)?;
+        let data_str = self_t.get_param_text(params, 0)?;
         let pos1 = data_str.find(",").ok_or("CQ码解析失败")?;
         let tp = data_str.get(4..pos1).ok_or("CQ码解析失败")?;
         let mut sub_key_obj:BTreeMap<String,String> = BTreeMap::new();
@@ -601,55 +604,58 @@ pub fn init_cq_ex_fun_map() {
                 sub_key_obj.insert(key, val);
             }
         }
-        return Ok(Some(self_t.build_obj(sub_key_obj)));
+        return Ok(Some(rv_from_legacy(&self_t.build_obj(sub_key_obj))?));
     });
     add_fun(vec!["CQ解析"],|self_t,params|{
-        let data_str = self_t.get_param(params, 0)?;
+        let data_str = self_t.get_param_text(params, 0)?;
         let json_arr = crate::mytool::str_msg_to_arr(&serde_json::json!(data_str))?;
-        let ret = do_json_parse(&json_arr, &self_t.type_uuid)?;
-        return Ok(Some(ret));
+        let ret = do_json_parse(&json_arr, &crate::REDLANG_UUID.to_string())?;
+        return Ok(Some(rv_from_legacy(&ret)?));
     });
     add_fun(vec!["CQ反转义"],|self_t,params|{
-        let content = self_t.get_param(params, 0)?;
+        let content = self_t.get_param_text(params, 0)?;
         let content = content.replace("&#91;", "[");
         let content = content.replace("&#93;", "]");
         let content = content.replace("&amp;", "&");
-        return Ok(Some(content));
+        return Ok(Some(rv_text(content)));
     });
     add_fun(vec!["定义常量"],|self_t,params|{
-        let k = self_t.get_param(params, 0)?;
+        let k = self_t.get_param_text(params, 0)?;
         let v = self_t.get_param(params, 1)?;
-        set_const_val(&self_t.pkg_name, &k, v)?;
-        return Ok(Some("".to_string()));
+        set_const_val(&self_t.pkg_name, &k, v.to_legacy_string().to_string())?;
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["常量"],|self_t,params|{
         let params_len = params.len();
         if params_len == 1 { // 取当前包的常量
-            let k = self_t.get_param(params, 0)?;
-            return Ok(Some(get_const_val(&self_t.pkg_name, &k)?.to_owned()));
+            let k = self_t.get_param_text(params, 0)?;
+            let v = get_const_val(&self_t.pkg_name, &k)?.to_owned();
+            return Ok(Some(Rc::new(RedValue::from_legacy_string(&v)?)));
         }else{ // 取其它包的常量
-            let pkg_name = self_t.get_param(params, 0)?;
-            let k = self_t.get_param(params, 1)?;
-            return Ok(Some(get_const_val(&pkg_name, &k)?.to_owned()));
+            let pkg_name = self_t.get_param_text(params, 0)?;
+            let k = self_t.get_param_text(params, 1)?;
+            let v = get_const_val(&pkg_name, &k)?.to_owned();
+            return Ok(Some(Rc::new(RedValue::from_legacy_string(&v)?)));
         }
     });
     add_fun(vec!["定义临时常量"],|self_t,params|{
-        let k = self_t.get_param(params, 0)?;
+        let k = self_t.get_param_text(params, 0)?;
         let v = self_t.get_param(params, 1)?;
         let mut  tm = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_millis();
-        tm += self_t.get_param(params, 2)?.parse::<u128>()?;
-        set_temp_const_val(&self_t.pkg_name, &k, v,tm)?;
-        return Ok(Some("".to_string()));
+        tm += self_t.get_param_text(params, 2)?.parse::<u128>()?;
+        set_temp_const_val(&self_t.pkg_name, &k, v.to_legacy_string().to_string(),tm)?;
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["临时常量"],|self_t,params|{
-        let k = self_t.get_param(params, 0)?;
-        return Ok(Some(get_temp_const_val(&self_t.pkg_name, &k)?.to_owned()));
+        let k = self_t.get_param_text(params, 0)?;
+        let v = get_temp_const_val(&self_t.pkg_name, &k)?.to_owned();
+        return Ok(Some(Rc::new(RedValue::from_legacy_string(&v)?)));
     });
     add_fun(vec!["进程ID"],|_self_t,_params|{
-        return Ok(Some(std::process::id().to_string()));
+        return Ok(Some(rv_text(std::process::id().to_string())));
     });
     add_fun(vec!["读词库文件"],|self_t,params|{
-        let path = self_t.get_param(params, 0)?;
+        let path = self_t.get_param_text(params, 0)?;
         let path_t = path.clone();
         let file_dat = fs::read_to_string(path)?;
         let file_dat_without_r = file_dat.replace('\r', "");
@@ -667,18 +673,18 @@ pub fn init_cq_ex_fun_map() {
             let arr_str = self_t.build_arr(arr_val);
             dict_obj.insert(key.to_owned(), arr_str);
         }
-        return Ok(Some(self_t.build_obj(dict_obj)));
+        return Ok(Some(rv_from_legacy(&self_t.build_obj(dict_obj))?));
     });
     add_fun(vec!["应用目录"],|self_t,_params|{
         let app_dir;
         app_dir = get_app_dir(&self_t.pkg_name)?;
-        return Ok(Some(app_dir));
+        return Ok(Some(rv_text(app_dir)));
     });
     add_fun(vec!["取艾特"],|self_t,params|{
         let message;
         let err = "获取message失败";
         if params.len() != 0 {
-            let data_str = self_t.get_param(params, 0)?;
+            let data_str = self_t.get_param_text(params, 0)?;
             message = crate::mytool::str_msg_to_arr(&serde_json::json!(data_str))?.as_array().ok_or(err)?.clone();
         }else {
             let raw_data = self_t.get_exmap("原始事件");
@@ -693,14 +699,14 @@ pub fn init_cq_ex_fun_map() {
                 ret_vec.push(qq);
             }
         }
-        let ret = self_t.build_arr(ret_vec);
-        return Ok(Some(ret));
+        let ret = ret_vec.into_iter().map(|x| rv_text(x.to_string())).collect::<Vec<Rc<RedValue>>>();
+        return Ok(Some(rv_array(ret)));
     });
     add_fun(vec!["取回复ID"],|self_t,params|{
         let message;
         let err = "获取message失败";
         if params.len() != 0 {
-            let data_str = self_t.get_param(params, 0)?;
+            let data_str = self_t.get_param_text(params, 0)?;
             message = crate::mytool::str_msg_to_arr(&serde_json::json!(data_str))?.as_array().ok_or(err)?.clone();
         }else {
             let raw_data = self_t.get_exmap("原始事件");
@@ -711,17 +717,17 @@ pub fn init_cq_ex_fun_map() {
             let tp = it.get("type").ok_or(err)?.as_str().ok_or(err)?;
             if tp == "reply" {
                 let id = it.get("data").ok_or(err)?.get("id").ok_or(err)?.as_str().ok_or(err)?;
-                return Ok(Some(id.to_owned()));
+                return Ok(Some(rv_text(id.to_owned())));
             }
         }
-        return Ok(Some("".to_owned()));
+        return Ok(Some(rv_empty()));
     });
 
     add_fun(vec!["取图片"],|self_t,params|{
         let message;
         let err = "获取message失败";
         if params.len() != 0 {
-            let data_str = self_t.get_param(params, 0)?;
+            let data_str = self_t.get_param_text(params, 0)?;
             message = crate::mytool::str_msg_to_arr(&serde_json::json!(data_str))?.as_array().ok_or(err)?.clone();
         }else {
             let raw_data = self_t.get_exmap("原始事件");
@@ -752,14 +758,14 @@ pub fn init_cq_ex_fun_map() {
                 }
             }
         }
-        let ret = self_t.build_arr(ret_vec.iter().map(|x| x.as_str()).collect());
-        return Ok(Some(ret));
+        let ret = ret_vec.into_iter().map(rv_text).collect::<Vec<Rc<RedValue>>>();
+        return Ok(Some(rv_array(ret)));
     });
     add_fun(vec!["取文本"],|self_t,params|{
         let message;
         let err = "获取message失败";
         if params.len() != 0 {
-            let data_str = self_t.get_param(params, 0)?;
+            let data_str = self_t.get_param_text(params, 0)?;
             message = crate::mytool::str_msg_to_arr(&serde_json::json!(data_str))?.as_array().ok_or(err)?.clone();
         }else {
             let raw_data = self_t.get_exmap("原始事件");
@@ -784,26 +790,26 @@ pub fn init_cq_ex_fun_map() {
                 should_new = 1;
             }
         }
-        let ret = self_t.build_arr(ret_vec.iter().map(|x| x.as_str()).collect());
-        return Ok(Some(ret));
+        let ret = ret_vec.into_iter().map(rv_text).collect::<Vec<Rc<RedValue>>>();
+        return Ok(Some(rv_array(ret)));
     });
     add_fun(vec!["分页"],|_self_t,_params|{
-        return Ok(Some(PAGING_UUID.to_string()));
+        return Ok(Some(rv_text(PAGING_UUID.to_string())));
     });
     add_fun(vec!["设置来源"],|self_t,params|{
-        let key_t = self_t.get_param(params, 0)?;
-        let val = self_t.get_param(params, 1)?;
+        let key_t = self_t.get_param_text(params, 0)?;
+        let val = self_t.get_param_text(params, 1)?;
         let key = crate::mytool::str_to_jt(&key_t);
         self_t.set_exmap(&key, &val);
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["发送私聊"],|self_t,params|{
         let msg_type:&'static str = crate::cqevent::get_msg_type(&self_t);
         if msg_type != "group" {
-            return Ok(Some("".to_string()));
+            return Ok(Some(rv_empty()));
         }
-        let msg = self_t.get_param(params, 0)?;
-        let user_id = self_t.get_param(params, 1)?;
+        let msg = self_t.get_param_text(params, 0)?;
+        let user_id = self_t.get_param_text(params, 1)?;
         let old_group_id = self_t.get_exmap("群ID"); // 备份群ID
         let old_user_id = self_t.get_exmap("发送者ID"); // 备份用户ID
         self_t.set_exmap("群ID", "");
@@ -814,21 +820,21 @@ pub fn init_cq_ex_fun_map() {
             Ok(msg_id) => {
                 self_t.set_exmap("群ID", &old_group_id); // 还原群ID
                 self_t.set_exmap("发送者ID", &old_user_id); // 还原用户ID
-                return Ok(Some(msg_id))
+                return Ok(Some(rv_text(msg_id)))
             },
             Err(e) => {
                 self_t.set_exmap("群ID", &old_group_id); // 还原群ID
                 self_t.set_exmap("发送者ID", &old_user_id); // 还原用户ID
                 cq_add_log_w(&format!("输出流失败，{}",e)).unwrap();
-                return Ok(Some("".to_string()));
+                return Ok(Some(rv_empty()));
             }
         }
     });
     add_fun(vec!["清空"],|_self_t,_params|{
-        return Ok(Some(CLEAR_UUID.to_string()));
+        return Ok(Some(rv_text(CLEAR_UUID.to_string())));
     });
     add_fun(vec!["获取消息"],|self_t,params|{
-        let msg_id = self_t.get_param(params, 0)?;
+        let msg_id = self_t.get_param_text(params, 0)?;
         let send_json = serde_json::json!({
             "action":"get_msg",
             "params":{
@@ -843,7 +849,7 @@ pub fn init_cq_ex_fun_map() {
         let ret_json:serde_json::Value = serde_json::from_str(&cq_ret)?;
         let err = format!("获取消息失败:{ret_json}");
         let raw_message = crate::mytool::json_to_cq_str(ret_json.get("data").ok_or(err)?)?;
-        return Ok(Some(raw_message));
+        return Ok(Some(rv_text(raw_message)));
     });
     add_fun(vec!["当前消息"],|self_t,_params|{
         let msg = self_t.get_exmap("当前消息");
@@ -851,13 +857,13 @@ pub fn init_cq_ex_fun_map() {
             let raw_data = self_t.get_exmap("原始事件");
             let raw_json:serde_json::Value = serde_json::from_str(&*raw_data)?;
             if let Ok(message) = json_to_cq_str(&raw_json) {
-                return Ok(Some(message));
+                return Ok(Some(rv_text(message)));
             }
         }
-        return Ok(Some(msg.to_string()));
+        return Ok(Some(rv_text(msg.to_string())));
     });
     add_fun(vec!["输入流"],|self_t,params|{
-        let tm = self_t.get_param(params, 0)?;
+        let tm = self_t.get_param_text(params, 0)?;
         let tm = tm.parse::<u64>().unwrap_or(15000);
         let self_id = self_t.get_exmap("机器人ID");
         let group_id = self_t.get_exmap("群ID");
@@ -898,7 +904,7 @@ pub fn init_cq_ex_fun_map() {
             }
             let rv = rx.recv_timeout(std::time::Duration::from_secs(1));
             if let Ok(msg) = rv {
-                return Ok(Some(msg));
+                return Ok(Some(rv_text(msg)));
             }
             tm -= 1000;
         }
@@ -907,16 +913,13 @@ pub fn init_cq_ex_fun_map() {
         }
         let rv = rx.recv_timeout(std::time::Duration::from_millis(tm));
         if let Ok(msg) = rv {
-            return Ok(Some(msg));
+            return Ok(Some(rv_text(msg)));
         }
-        let mut ret_str = String::new();
-        if let Ok(msg) = rv {
-            ret_str = msg;
-        }
-        return Ok(Some(ret_str));
+        let ret_str = String::new();
+        return Ok(Some(rv_text(ret_str)));
     });
     add_fun(vec!["群输入流"],|self_t,params|{
-        let tm = self_t.get_param(params, 0)?;
+        let tm = self_t.get_param_text(params, 0)?;
         let tm = tm.parse::<u64>().unwrap_or(15000);
         let self_id = self_t.get_exmap("机器人ID");
         let group_id = self_t.get_exmap("群ID");
@@ -958,14 +961,14 @@ pub fn init_cq_ex_fun_map() {
             }
             let rv = rx.recv_timeout(std::time::Duration::from_secs(1));
             if let Ok(msg) = rv {
-                let js:serde_json::Value = serde_json::from_str(&msg).unwrap();
-                let js_obj = js.as_object().unwrap();
+                let js:serde_json::Value = serde_json::from_str(&msg)?;
+                let js_obj = js.as_object().ok_or("解析JSON失败")?;
                 let mut mp:BTreeMap::<String,String> = BTreeMap::new();
-                mp.insert("发送者ID".to_string(), js_obj["发送者ID"].as_str().unwrap().to_owned());
-                mp.insert("消息".to_string(), js_obj["消息"].as_str().unwrap().to_owned());
-                mp.insert("消息ID".to_string(), js_obj["消息ID"].as_str().unwrap().to_owned());
+                mp.insert("发送者ID".to_string(), js_obj["发送者ID"].as_str().ok_or("解析JSON失败")?.to_owned());
+                mp.insert("消息".to_string(), js_obj["消息"].as_str().ok_or("解析JSON失败")?.to_owned());
+                mp.insert("消息ID".to_string(), js_obj["消息ID"].as_str().ok_or("解析JSON失败")?.to_owned());
                 ret_str = self_t.build_obj(mp);
-                return Ok(Some(ret_str));
+                return Ok(Some(rv_from_legacy(&ret_str)?));
             }
             tm -= 1000;
         }
@@ -974,14 +977,15 @@ pub fn init_cq_ex_fun_map() {
         }
         let rv = rx.recv_timeout(std::time::Duration::from_millis(tm));
         if let Ok(msg) = rv {
-            let js:serde_json::Value = serde_json::from_str(&msg).unwrap();
-            let js_obj = js.as_object().unwrap();
-            let mut mp:BTreeMap::<String,String> = BTreeMap::new();
-            mp.insert("发送者ID".to_string(), js_obj["发送者ID"].as_str().unwrap().to_owned());
-            mp.insert("消息".to_string(), js_obj["消息"].as_str().unwrap().to_owned());
+            let js:serde_json::Value = serde_json::from_str(&msg)?;
+                let js_obj = js.as_object().ok_or("解析JSON失败")?;
+                let mut mp:BTreeMap::<String,String> = BTreeMap::new();
+                mp.insert("发送者ID".to_string(), js_obj["发送者ID"].as_str().ok_or("解析JSON失败")?.to_owned());
+                mp.insert("消息".to_string(), js_obj["消息"].as_str().ok_or("解析JSON失败")?.to_owned());
+                mp.insert("消息ID".to_string(), js_obj["消息ID"].as_str().ok_or("解析JSON失败")?.to_owned());
             ret_str = self_t.build_obj(mp);
         }
-        return Ok(Some(ret_str));
+        return Ok(Some(rv_from_legacy(&ret_str)?));
     });
     add_fun(vec!["BOT权限"],|self_t,_params|{
         let group_id = self_t.get_exmap("群ID");
@@ -1012,16 +1016,16 @@ pub fn init_cq_ex_fun_map() {
         }else {
             return Err(RedLang::make_err("获取BOT权限失败:返回的json中无role字段"));
         }
-        return Ok(Some(role_ret.to_string()));
+        return Ok(Some(rv_text(role_ret.to_string())));
     });
     add_fun(vec!["伪造OB事件"],|self_t,params|{
-        let ob_event = self_t.get_param(params, 0)?;
+        let ob_event = self_t.get_param_text(params, 0)?;
         thread::spawn(move ||{
             if let Err(e) = crate::cqevent::do_1207_event(&ob_event) {
                 crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
             }
         });
-        return Ok(Some("".to_owned()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["同意"],|self_t,params|{
         let raw_data = self_t.get_exmap("原始事件");
@@ -1029,7 +1033,7 @@ pub fn init_cq_ex_fun_map() {
         let request_type = read_json_str(&raw_json, "request_type");
         let sub_type = read_json_str(&raw_json, "sub_type");
         let flag = read_json_str(&raw_json, "flag");
-        let remark = self_t.get_param(params, 0)?;
+        let remark = self_t.get_param_text(params, 0)?;
         let self_id = self_t.get_exmap("机器人ID");
         if request_type == "group" && (sub_type == "add"  || sub_type == "invite") {
             let send_json = serde_json::json!({
@@ -1060,7 +1064,7 @@ pub fn init_cq_ex_fun_map() {
             let remote_id = self_t.get_exmap("远程MQTT客户端ID");
             let _cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string(),&remote_id);
         }
-        return Ok(Some("".to_owned()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["拒绝"],|self_t,params|{
         let raw_data = self_t.get_exmap("原始事件");
@@ -1068,7 +1072,7 @@ pub fn init_cq_ex_fun_map() {
         let request_type = read_json_str(&raw_json, "request_type");
         let sub_type = read_json_str(&raw_json, "sub_type");
         let flag = read_json_str(&raw_json, "flag");
-        let reason = self_t.get_param(params, 0)?;
+        let reason = self_t.get_param_text(params, 0)?;
         let self_id = self_t.get_exmap("机器人ID");
         if request_type == "group" && (sub_type == "add"  || sub_type == "invite") {
             let send_json = serde_json::json!({
@@ -1098,27 +1102,27 @@ pub fn init_cq_ex_fun_map() {
             let remote_id = self_t.get_exmap("远程MQTT客户端ID");
             let _cq_ret = cq_call_api(&platform,&self_id,&*passive_id,&send_json.to_string(),&remote_id);
         }
-        return Ok(Some("".to_owned()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["脚本输出"],|self_t,params|{
-        let src_msg_id = self_t.get_param(params, 0)?;
+        let src_msg_id = self_t.get_param_text(params, 0)?;
         let self_id = self_t.get_exmap("机器人ID");
         let key = format!("{}|{}|{}",self_t.pkg_name,self_id,src_msg_id);
         let lk = G_SCRIPT_RELATE_MSG.read()?;
         let val_opt = lk.get(&key);
         if val_opt.is_none() {
-            return Ok(Some(self_t.build_arr(vec![])));
+            return Ok(Some(rv_array(vec![])));
         }else{
             let val = val_opt.unwrap();
             let msg_id_vec = &val.msg_id_vec;
-            let ret_vec = msg_id_vec.iter().map(AsRef::as_ref).collect();
-            return Ok(Some(self_t.build_arr(ret_vec)));
+            let ret_vec = msg_id_vec.iter().map(|x| rv_text(x.to_string())).collect::<Vec<Rc<RedValue>>>();
+            return Ok(Some(rv_array(ret_vec)));
         }
     });
 
     add_fun(vec!["脚本输出-增加ID"],|self_t,params|{
-        let src_msg_id = self_t.get_exmap("消息ID"); // self_t.get_param(params, 0)?;
-        let to_add_msg_id = self_t.get_param(params, 0)?;
+        let src_msg_id = self_t.get_exmap("消息ID"); // 来源消息ID
+        let to_add_msg_id = self_t.get_param_text(params, 0)?;
         let self_id = self_t.get_exmap("机器人ID");
         let key = format!("{}|{}|{}",self_t.pkg_name,self_id,src_msg_id);
         let mut lk = G_SCRIPT_RELATE_MSG.write()?;
@@ -1130,11 +1134,11 @@ pub fn init_cq_ex_fun_map() {
                 msg_id_vec:[to_add_msg_id].to_vec(),
                 create_time:tm
             });
-            return Ok(Some("".to_owned()));
+            return Ok(Some(rv_empty()));
         }else{
             let val = val_opt.unwrap();
             val.msg_id_vec.push(to_add_msg_id);
-            return Ok(Some("".to_owned()));
+            return Ok(Some(rv_empty()));
         }
     });
 
@@ -1143,7 +1147,7 @@ pub fn init_cq_ex_fun_map() {
         let key1 = self_t.get_exmap("群ID");
         let group_id = format!("{}",key1);
         let user_id = self_t.get_exmap("发送者ID").to_string();
-        let add_score = self_t.get_param(params, 0)?.parse::<i64>()?;
+        let add_score = self_t.get_param_text(params, 0)?.parse::<i64>()?;
 
         // 创建表
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
@@ -1176,14 +1180,14 @@ pub fn init_cq_ex_fun_map() {
         // 积分设置
         conn.execute("REPLACE INTO SCORE_TABLE (GROUP_ID,USER_ID,VALUE) VALUES (?,?,?)", [group_id,user_id,ret_num.to_string()])?;
         
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
 
     add_fun(vec!["积分-设置"],|self_t,params|{
         let key1 = self_t.get_exmap("群ID");
         let group_id = format!("{}",key1);
         let user_id = self_t.get_exmap("发送者ID").to_string();
-        let set_score = self_t.get_param(params, 0)?.parse::<u32>()?;
+        let set_score = self_t.get_param_text(params, 0)?.parse::<u32>()?;
 
         // 创建表
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
@@ -1201,7 +1205,7 @@ pub fn init_cq_ex_fun_map() {
         // 积分设置
         conn.execute("REPLACE INTO SCORE_TABLE (GROUP_ID,USER_ID,VALUE) VALUES (?,?,?)", [group_id,user_id,set_score.to_string()])?;
         
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
 
 
@@ -1229,14 +1233,14 @@ pub fn init_cq_ex_fun_map() {
             ret_num = 0;
         }
 
-        return Ok(Some(ret_num.to_string()));
+        return Ok(Some(rv_text(ret_num.to_string())));
     });
 
     add_fun(vec!["积分-排行"],|self_t,params|{
         let key1 = self_t.get_exmap("群ID");
         let group_id = format!("{}",key1);
 
-        let limit = self_t.get_param(params, 0)?;
+        let limit = self_t.get_param_text(params, 0)?;
         let limit_num;
         if limit == "" {
             limit_num = 10;
@@ -1257,27 +1261,27 @@ pub fn init_cq_ex_fun_map() {
         let conn = rusqlite::Connection::open(sql_file)?;
         let mut stmt = conn.prepare("SELECT USER_ID,VALUE FROM SCORE_TABLE WHERE GROUP_ID = ? ORDER BY VALUE DESC LIMIT ?")?;
         let mut rows = stmt.query(rusqlite::params_from_iter([group_id,limit_num.to_string()]))?;
-        let mut vec:Vec<String> = vec![];
+        let mut vec:Vec<Rc<RedValue>> = vec![];
         while let Some(row) = rows.next()? {
-            let mut v:Vec<String> = vec![];
+            let mut v:Vec<Rc<RedValue>> = vec![];
             for i in 0..2 {
                 let k = row.get_ref_unwrap(i);
                 let dat = match k.data_type(){
-                    rusqlite::types::Type::Null => "".to_string(),
-                    rusqlite::types::Type::Integer => k.as_i64().unwrap().to_string(),
-                    rusqlite::types::Type::Real => k.as_f64().unwrap().to_string(),
-                    rusqlite::types::Type::Text => k.as_str().unwrap().to_owned(),
-                    rusqlite::types::Type::Blob => self_t.build_bin(k.as_blob().unwrap().to_vec())
+                    rusqlite::types::Type::Null => rv_empty(),
+                    rusqlite::types::Type::Integer => rv_text(k.as_i64().unwrap().to_string()),
+                    rusqlite::types::Type::Real => rv_text(k.as_f64().unwrap().to_string()),
+                    rusqlite::types::Type::Text => rv_text(k.as_str().unwrap().to_owned()),
+                    rusqlite::types::Type::Blob => rv_bin(k.as_blob().unwrap().to_vec())
                 };
                 v.push(dat);
             }
-            vec.push(self_t.build_arr(v.iter().map(AsRef::as_ref).collect()));
+            vec.push(Rc::new(RedValue::Array(v)));
         }
-        return Ok(Some(self_t.build_arr(vec.iter().map(AsRef::as_ref).collect())));
+        return Ok(Some(Rc::new(RedValue::Array(vec))));
     });
     add_fun(vec!["机器人平台"],|self_t,_params|{
         let platform = get_platform(&self_t);
-        return Ok(Some(platform));
+        return Ok(Some(rv_text(platform)));
     });
     add_fun(vec!["主人"],|self_t,params|{
         let master;
@@ -1285,7 +1289,7 @@ pub fn init_cq_ex_fun_map() {
         if params_len == 0 {
             master = self_t.get_exmap("发送者ID").as_str().to_owned();
         }else {
-            master = self_t.get_param(params, 0)?;
+            master = self_t.get_param_text(params, 0)?;
         }
         let master_arr_str = get_const_val(&self_t.pkg_name, "0b863263-484c-4447-9990-0469186b3d97")?;
         if master_arr_str == "" {
@@ -1300,30 +1304,36 @@ pub fn init_cq_ex_fun_map() {
                 self_t.fun_ret_vec[fun_ret_vec_len - 1].0 = true;
             }
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["主人数组"],|self_t,_params|{
         let master_arr_str = get_const_val(&self_t.pkg_name, "0b863263-484c-4447-9990-0469186b3d97")?;
         if master_arr_str == "" {
-            return Ok(Some(self_t.build_arr(vec![])));
+            return Ok(Some(rv_array(vec![])));
         }  else {
-            return Ok(Some(master_arr_str));
+            if RedLang::get_legacy_type(&master_arr_str)? == "数组" {
+                let rv = RedValue::from_legacy_string(&master_arr_str)?;
+                if let RedValue::Array(arr) = rv {
+                    return Ok(Some(rv_array(arr)));
+                }
+            }
+            return Ok(Some(rv_text(master_arr_str)));
         }
     });
     add_fun(vec!["设置主人"],|self_t,params|{
-        let master_arr_str = self_t.get_param(params, 0)?;
-        let master_arr = RedLang::parse_arr(&master_arr_str)?;
+        let master_arr = self_t.get_param_array(params, 0)?;
         // 这里仅仅为了验证是否规范
-        for it in master_arr {
-            if self_t.get_type(it)? != "文本" {
+        for it in &master_arr {
+            if it.get_type_name() != "文本" {
                 return Err("主人数组的元素必须为全为文本类型".into());
             }
         }
+        let master_arr_str = RedValue::Array(master_arr).to_legacy_string().to_string();
         crate::redlang::set_const_val(&self_t.pkg_name, "0b863263-484c-4447-9990-0469186b3d97", master_arr_str)?;
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["重定向"],|self_t,params|{
-        let plus_name = self_t.get_param(params, 0)?;
+        let plus_name = self_t.get_param_text(params, 0)?;
         let script_json = read_code_cache()?;
         for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
             // 默认包可能没有包名，这个时候要认为是`""`
@@ -1346,18 +1356,18 @@ pub fn init_cq_ex_fun_map() {
                 }
             });
         }
-        return Ok(Some("".to_string()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["邮件主题"],|self_t,_params|{
         // 非 email 平台直接返回空
         let platform = get_platform(&self_t);
         if platform != "email" {
-            return Ok(Some("".to_string()));
+            return Ok(Some(rv_empty()));
         }
         // 尝试从缓存获取
         let cached = self_t.get_exmap("邮件主题");
         if *cached != "" {
-            return Ok(Some(cached.to_string()));
+            return Ok(Some(rv_text(cached.to_string())));
         }
         use base64::Engine;
         let raw_data = self_t.get_exmap("原始事件");
@@ -1372,6 +1382,6 @@ pub fn init_cq_ex_fun_map() {
         let subject = parsed.subject().unwrap_or("").to_string();
         // 缓存结果
         self_t.set_exmap("邮件主题", &subject);
-        return Ok(Some(subject));
+        return Ok(Some(rv_text(subject)));
     });
 }

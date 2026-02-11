@@ -54,7 +54,7 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
             set_normal_evt_info(&mut rl, &root)?;
             rl.pkg_name = "".to_owned();
             rl.script_name = "全局过滤器".to_owned();
-            let ret = rl.parse(&code)?;
+            let ret = rl.parse_to_string(&code)?;
             if ret == "真" {
                 return Ok(0);
             }
@@ -82,7 +82,7 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
             set_normal_evt_info(&mut rl, &root)?;
             rl.pkg_name = pkg_name.to_owned();
             rl.script_name = name.to_owned();
-            let ret = rl.parse(code)?;
+            let ret = rl.parse_to_string(code)?;
             if ret == "真" {
                 ban_pkgs.insert(pkg_name.to_owned());
             }
@@ -133,7 +133,7 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
 
 
 fn do_run_code_and_ret_check(rl:&mut RedLang,code:&str,can_ret_raw:bool)-> Result<String, Box<dyn std::error::Error>> {
-    let ret = rl.parse(code)?;
+    let ret = rl.parse_to_string(code)?;
 
     // 检查是否包含类型标记
     if !can_ret_raw && ret.contains(&*REDLANG_UUID) {
@@ -262,14 +262,14 @@ pub fn is_key_match(rl:&mut RedLang,ppfs:&str,keyword:&str,msg:&str) -> Result<b
     }else if ppfs == "正则匹配"{
         let re = fancy_regex::Regex::new(keyword)?;
         let mut sub_key_vec = String::new();
-        sub_key_vec.push_str(&rl.type_uuid);
+        sub_key_vec.push_str(&crate::REDLANG_UUID.to_string());
         sub_key_vec.push('A');
         for cap_iter in re.captures_iter(&msg) {
             let cap = cap_iter?;
             is_match = true;
             let len = cap.len();
             let mut temp_vec = String::new();
-            temp_vec.push_str(&rl.type_uuid);
+            temp_vec.push_str(&crate::REDLANG_UUID.to_string());
             temp_vec.push('A');
             for i in 0..len {
                 if let Some(s) = cap.get(i) {

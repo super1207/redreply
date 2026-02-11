@@ -1,6 +1,6 @@
 use std::rc::Rc;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum AstNode {
     Text(Rc<String>),
     Command(AstCommand),
@@ -8,7 +8,7 @@ pub enum AstNode {
 
 pub type Ast = Vec<AstNode>;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AstCommand {
     pub name: Rc<String>,
     /// 每个参数的 AST 表示

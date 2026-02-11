@@ -651,7 +651,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
             rl.pkg_name = pkg_name;
             rl.script_name = "网页调试".to_owned();
             rl.can_wrong = true;
-            let ret_rst = rl.parse(&code);
+            let ret_rst = rl.parse_to_string(&code);
             let res;
             let ret;
             if let Ok(ret_str) = ret_rst {
@@ -931,7 +931,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         G_PKG_NAME.write().unwrap().insert(name.to_owned());
 
         // 执行初始化脚本，不用等待
-        let name_t = filename.to_owned();
+        let name_t = name.to_owned();
         tokio::task::spawn_blocking(move ||{
             if let Err(err) = initevent::do_init_event(Some(&name_t)){
                 cq_add_log_w(&err.to_string()).unwrap();

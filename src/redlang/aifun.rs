@@ -1,45 +1,55 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::{cqapi::cq_add_log_w, redlang::{add_fun, exfun::http_post, RedLang}, RT_PTR};
+use crate::{cqapi::cq_add_log_w, redlang::{add_fun, rv_empty, rv_text, exfun::http_post, RedLang}, RT_PTR};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
 pub fn init_ai_fun_map() {
     add_fun(vec!["GPT-创建单轮对话"],|self_t,params|{
         let uid = uuid::Uuid::new_v4().to_string();
-        let base_url = self_t.get_param(params, 0)?;
-        let key = self_t.get_param(params, 1)?;
-        let model = self_t.get_param(params, 2)?;
+        let base_url = self_t.get_param_text_rc(params, 0)?;
+        let key = self_t.get_param_text_rc(params, 1)?;
+        let model = self_t.get_param_text_rc(params, 2)?;
         let to_ret = format!("{uid}base_url,{base_url}{uid}key,{key}{uid}model,{model}");
         self_t.set_gobalmap(&uid, &to_ret)?;
-        return Ok(Some(uid));
+        return Ok(Some(rv_text(uid)));
     });
     add_fun(vec!["GPT-增加文本"],|self_t,params|{
-        let uid = self_t.get_param(params, 0)?;
+        let uid = self_t.get_param_text_rc(params, 0)?;
         let handle = self_t.get_gobalmap(&uid);
-        let text = self_t.get_param(params, 1)?;
+        let text = self_t.get_param_text_rc(params, 1)?;
         let to_ret = format!("{handle}{uid}text,{text}");
         self_t.set_gobalmap(&uid, &to_ret)?;
-        return Ok(Some("".to_owned()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["GPT-增加图片"],|self_t,params|{
-        let uid = self_t.get_param(params, 0)?;
+        let uid = self_t.get_param_text_rc(params, 0)?;
         let handle = self_t.get_gobalmap(&uid);
-        let mut image = self_t.get_param(params, 1)?;
-        if self_t.get_type(&image)? == "字节集" {
-            let bin = RedLang::parse_bin_raw(&image)?;
-            let b64 = BASE64_CUSTOM_ENGINE.encode(bin);
-            image = format!("data:image/png;base64,{b64}");
-        }
+        let image_rv = self_t.get_param(params, 1)?;
+        let image = match &*image_rv {
+            crate::redlang::RedValue::Bin(bin) => {
+                let b64 = BASE64_CUSTOM_ENGINE.encode(bin.as_ref());
+                format!("data:image/png;base64,{b64}")
+            }
+            crate::redlang::RedValue::Legacy(s) => {
+                if RedLang::get_legacy_type(s)? == "字节集" {
+                    let b64 = BASE64_CUSTOM_ENGINE.encode(RedLang::parse_bin_raw(s)?);
+                    format!("data:image/png;base64,{b64}")
+                } else {
+                    s.to_string()
+                }
+            }
+            _ => return Err("GPT-增加图片参数2必须是文本或字节集".into()),
+        };
         let to_ret = format!("{handle}{uid}image,{image}");
         self_t.set_gobalmap(&uid, &to_ret)?;
-        return Ok(Some("".to_owned()));
+        return Ok(Some(rv_empty()));
     });
     add_fun(vec!["GPT-发送请求"],|self_t,params|{
         let mut gpt_params: HashMap<&str, &str> = HashMap::new();
-        let uid = self_t.get_param(params, 0)?;
+        let uid = self_t.get_param_text_rc(params, 0)?;
         let handle = self_t.get_gobalmap(&uid);
-        let binding = handle.split(&uid).collect::<Vec<&str>>();
+        let binding = handle.split(uid.as_str()).collect::<Vec<&str>>();
         let gpt_params_str = binding.get(1..).ok_or("参数错误")?;
         for gpt_param in gpt_params_str {
             let pos = gpt_param.find(",").ok_or("参数错误")?;
@@ -54,7 +64,6 @@ pub fn init_ai_fun_map() {
             let pos = it.find(",").ok_or("参数错误")?;
             let key = it.get(0..pos).ok_or("key err")?;
             let val = it.get(pos+1..).ok_or("val err")?;
-            // cq_add_log_w(&format!("GPT-参数:{}={}",key,val)).unwrap();
             if key == "text" {
                 content_arr.push(serde_json::json!({
                     "type":"text",
@@ -116,31 +125,31 @@ pub fn init_ai_fun_map() {
         let json:serde_json::Value = serde_json::from_slice(&content.0)?;
         if let Some(ret_content) = json["choices"][0]["message"]["content"].as_str() {
             self_t.set_gobalmap(&uid, &format!("{uid}ret_content,{ret_content}"))?;
-            return Ok(Some("".to_owned()));
+            return Ok(Some(rv_empty()));
         } else {
              return Err(format!("GPT返回出错:{}",json.to_string()).into());
         }
     });
     add_fun(vec!["GPT-获取回复"],|self_t,params|{
-        let uid = self_t.get_param(params, 0)?;
+        let uid = self_t.get_param_text_rc(params, 0)?;
         let handle = self_t.get_gobalmap(&uid);
-        let binding = handle.split(&uid).collect::<Vec<&str>>();
+        let binding = handle.split(uid.as_str()).collect::<Vec<&str>>();
         let gpt_params_str = binding.get(1..).ok_or("参数错误")?;
         for gpt_param in gpt_params_str {
             let pos = gpt_param.find(",").ok_or("参数错误")?;
             let key = gpt_param.get(0..pos).ok_or("key err")?;
             let val = gpt_param.get(pos+1..).ok_or("val err")?;
             if key == "ret_content" {
-                return Ok(Some(val.to_owned()));
+                return Ok(Some(rv_text(val.to_owned())));
             }
         }
         return Err("GPT获取回复出错，你可能还没有发送请求".into());
     });
 
     add_fun(vec!["GPT-删除指针"],|self_t,params|{
-        let uid = self_t.get_param(params, 0)?;
+        let uid = self_t.get_param_text_rc(params, 0)?;
         self_t.set_gobalmap(&uid, "")?;
-        return Ok(Some("".to_owned()));
+        return Ok(Some(rv_empty()));
     });
 
 }
