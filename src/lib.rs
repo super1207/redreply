@@ -120,7 +120,7 @@ lazy_static! {
     // 用于自动关闭进程
     pub static ref G_AUTO_CLOSE:Mutex<bool> = Mutex::new(false);
     // 默认字体
-    pub static ref G_DEFAULF_FONT:RwLock<> = RwLock::new(String::new());
+    pub static ref G_DEFAULF_FONT:RwLock<String> = RwLock::new(String::new());
     // 文件锁
     pub static ref G_FILE_MX:std::sync::Mutex<HashMap<String,i32>> = std::sync::Mutex::new(HashMap::new());
     // 历史日志
