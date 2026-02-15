@@ -2738,7 +2738,7 @@ impl RedLang {
                 astparser::AstNode::Text(text) => {
                     // 文本节点：需要转义特殊字符以保持字面量
                     for ch in text.chars() {
-                        if ch == '\\' || ch == '@' || ch == '【' || ch == '】' {
+                        if ch == '\\' || ch == '@' || ch == '【' || ch == '】' || ch.is_whitespace() {
                             out.push('\\');
                         }
                         out.push(ch);

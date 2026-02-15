@@ -27,7 +27,7 @@ pub fn ast_to_string(ast: &Ast) -> String {
         match node {
             AstNode::Text(text) => {
                 for ch in text.chars() {
-                    if ch == '\\' || ch == '@' || ch == '【' || ch == '】' {
+                    if ch == '\\' || ch == '@' || ch == '【' || ch == '】' || ch.is_whitespace() {
                         out.push('\\');
                     }
                     out.push(ch);
