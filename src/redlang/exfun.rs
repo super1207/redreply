@@ -2137,6 +2137,7 @@ pub fn init_ex_fun_map() {
         let data_rv = self_t.get_param(params, 1)?;
         let bin_data = match &*data_rv {
             RedValue::Bin(b) => b.to_vec(),
+            RedValue::Text(s) => text_to_bin_data(s),
             RedValue::Legacy(s) => {
                 if RedLang::get_legacy_type(s)? == "字节集" {
                     RedLang::parse_bin_raw(s)?
@@ -2162,6 +2163,7 @@ pub fn init_ex_fun_map() {
         let data_rv = self_t.get_param(params, 1)?;
         let bin_data = match &*data_rv {
             RedValue::Bin(b) => b.to_vec(),
+            RedValue::Text(s) => text_to_bin_data(s),
             RedValue::Legacy(s) => {
                 if RedLang::get_legacy_type(s)? == "字节集" {
                     RedLang::parse_bin_raw(s)?
