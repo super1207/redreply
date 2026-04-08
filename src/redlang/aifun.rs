@@ -30,7 +30,10 @@ pub fn init_ai_fun_map() {
             crate::redlang::RedValue::Bin(bin) => {
                 let b64 = BASE64_CUSTOM_ENGINE.encode(bin.as_ref());
                 format!("data:image/png;base64,{b64}")
-            }
+            },
+            crate::redlang::RedValue::Text(text) => {
+                text.to_string()
+            },
             crate::redlang::RedValue::Legacy(s) => {
                 if RedLang::get_legacy_type(s)? == "字节集" {
                     let b64 = BASE64_CUSTOM_ENGINE.encode(RedLang::parse_bin_raw(s)?);
