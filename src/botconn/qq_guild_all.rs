@@ -1287,9 +1287,14 @@ pub async fn delete_msg(self_t:&SelfData,json:&serde_json::Value) -> Result<serd
     }else if tp == "send_private_msg" {
         let d = read_json_obj_or_null(&event, "d");
         let guild_id = read_json_str(&d, "guild_id");
+        let user_openid = read_json_str(&d, "user_openid");
         let message_id = read_json_str(&d, "id");
         if !message_id.contains("|") {
-            let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/dms/{guild_id}/messages/{message_id}?hidetip=false"))?;
+            let uri = if user_openid != "" {
+                reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/users/{user_openid}/messages/{message_id}"))?
+            }else{
+                reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/dms/{guild_id}/messages/{message_id}?hidetip=false"))?
+            };
             let client = reqwest::Client::builder().no_proxy().build()?;
             let mut req = client.delete(uri).build()?;
             req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
@@ -1305,7 +1310,11 @@ pub async fn delete_msg(self_t:&SelfData,json:&serde_json::Value) -> Result<serd
         }else{
             let ids = message_id.split("|").collect::<Vec<&str>>();
             for message_id in ids {
-                let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/dms/{guild_id}/messages/{message_id}?hidetip=false"))?;
+                let uri = if user_openid != "" {
+                    reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/users/{user_openid}/messages/{message_id}"))?
+                }else{
+                    reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/dms/{guild_id}/messages/{message_id}?hidetip=false"))?
+                };
                 let client = reqwest::Client::builder().no_proxy().build()?;
                 let mut req = client.delete(uri).build()?;
                 req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);

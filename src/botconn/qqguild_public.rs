@@ -714,7 +714,7 @@ pub async fn send_qqpri_msg(self_t:&SelfData,message:&serde_json::Value,passive_
             id += api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?;
             set_msg_seq(self_t,passive_id,msg_seq)?;
         }
-        let event_id = set_event_id(self_t,&serde_json::json!({"t":"send_private_msg","d":{"id":id,"channel_id":user_id}}),5 * 60)?;
+        let event_id = set_event_id(self_t,&serde_json::json!({"t":"send_private_msg","d":{"id":id,"user_openid":user_id}}),5 * 60)?;
         return Ok(serde_json::json!({
             "retcode":0,
             "status":"ok",
