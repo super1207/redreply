@@ -21,7 +21,6 @@ pub struct QQGuildPublicConnect {
     pub stop_tx:Option<tokio::sync::mpsc::Sender<bool>>,
     pub sn:Arc<std::sync::RwLock<Option<u64>>>,
     pub id_event_map:Arc<std::sync::RwLock<std::collections::HashMap<String,(u64,serde_json::Value)>>>,
-    pub qq_group_all_msg:Arc<std::sync::RwLock<bool>>,
     pub bot_id:Arc<std::sync::RwLock<String>>
 }
 
@@ -38,92 +37,19 @@ impl QQGuildPublicConnect {
             access_token: Arc::new(RwLock::new("".to_owned())),
             sn:Arc::new(RwLock::new(None)),
             id_event_map:Arc::new(RwLock::new(std::collections::HashMap::new())),
-            qq_group_all_msg:Arc::new(RwLock::new(false)),
             bot_id:Arc::new(RwLock::new("".to_owned())),
         }
     }
 }
 
-async fn conv_event(self_t:&SelfData,root:serde_json::Value,qq_group_all_msg:bool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn conv_group_c2c_event(self_t:&SelfData,root:&serde_json::Value) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let tp = read_json_str(&root, "t");
-    let event_id = set_event_id(self_t, &root, 60 * 5)?;
     let self_id = (*self_t.appid.upgrade().ok_or("No appid")?.read().unwrap()).to_owned();
-    if tp == "READY" {
-        let d = root.get("d").ok_or("No d")?;
-        let user = read_json_obj_or_null(&d, "user");
-        let bot_id_t = read_json_str(&user,"id");
-        (*self_t.bot_id.upgrade().ok_or("No bot_id")?.write().unwrap()) = bot_id_t;
-    }
-    else if tp == "MESSAGE_AUDIT_PASS" || tp == "MESSAGE_AUDIT_REJECT" {
-        deal_qqgroup_audit_event(root).await?;
-    }
-    else if tp == "AT_MESSAGE_CREATE" {
-        let d = root.get("d").ok_or("No d")?;
-        let tm_str = read_json_str(&d, "timestamp");
-        let tm = chrono::DateTime::parse_from_rfc3339(&tm_str)?.timestamp();
-        let content = read_json_str(&d, "content");
-        let user = read_json_obj_or_null(&d, "author");
-        let user_id = read_json_str(&user, "id");
-        let avatar = read_json_str(&user, "avatar");
-        let nickname =  read_json_str(&user, "username");
-        let cq_msg_t = qq_content_to_cqstr(&self_t.bot_id,&self_id,&content)?;
-        let cq_msg = cq_msg_t + &deal_attachments(&d)?;
-        let mut cq_msg = deal_message_reference(d,&self_t.id_event_map)? + &cq_msg;
-        let pre1 = format!("[CQ:at,qq={self_id}] /");
-        let pre2 = format!("[CQ:at,qq={self_id}] ");
-        if cq_msg.starts_with(&pre1){
-            cq_msg = cq_msg[pre1.len()..].to_owned();
-        }else if cq_msg.starts_with(&pre2){
-            cq_msg = cq_msg[pre2.len()..].to_owned();
-        }
-        let channel_id =read_json_str(&d, "channel_id");
-        let guild_id = read_json_str(&d, "guild_id");
-        let member = read_json_obj_or_null(&d, "member");
-        let card =  read_json_str(&member, "nick");
-        let join_time = chrono::DateTime::parse_from_rfc3339(&read_json_str(&member, "joined_at"))?.timestamp();
-        let roles_arr = member.get("roles").ok_or("No roles")?.as_array().ok_or("roles not arr")?;
-        let roles_arr_t = roles_arr.iter().map(|x|x.as_str().unwrap_or_default()).collect::<Vec<&str>>();
-        let mut roles = "member";
-        if roles_arr_t.contains(&"4"){
-            roles = "owner";
-        }else if roles_arr_t.contains(&"2") || roles_arr_t.contains(&"5") {
-            roles = "admin";
-        }
-        let event_json = serde_json::json!({
-            "time":tm,
-            "self_id":self_id,
-            "platform":"qqguild_public",
-            "post_type":"message",
-            "message_type":"group",
-            "sub_type":"normal",
-            "message_id":event_id,
-            "group_id":channel_id,
-            "groups_id":guild_id,
-            "user_id":user_id,
-            "message":cq_msg,
-            "raw_message":content,
-            "font":0,
-            "sender":{
-                "user_id":user_id,
-                "nickname":nickname,
-                "join_time":join_time,
-                "card":card,
-                "sex":"unknown",
-                "age":0,
-                "area":"",
-                "level":"0",
-                "role":roles,
-                "title":"",
-                "avatar":avatar
-            }
-        });
-        tokio::task::spawn_blocking(move ||{
-            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
-            }
-        });
-    }
-    else if tp == "GROUP_AT_MESSAGE_CREATE" {
+    if tp == "MESSAGE_AUDIT_PASS" || tp == "MESSAGE_AUDIT_REJECT" {
+        deal_qqgroup_audit_event(root.clone()).await?;
+        return Ok(true);
+    }else if tp == "GROUP_AT_MESSAGE_CREATE" {
+        let event_id = set_event_id(self_t, root, 60 * 5)?;
         let d = root.get("d").ok_or("No d")?;
         let tm_str = read_json_str(&d, "timestamp");
         let tm = chrono::DateTime::parse_from_rfc3339(&tm_str)?.timestamp();
@@ -170,8 +96,10 @@ async fn conv_event(self_t:&SelfData,root:serde_json::Value,qq_group_all_msg:boo
                 crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
             }
         });
+        return Ok(true);
     }
-    else if tp == "GROUP_MESSAGE_CREATE" && qq_group_all_msg {
+    else if tp == "GROUP_MESSAGE_CREATE" {
+        let event_id = set_event_id(self_t, root, 60 * 5)?;
         let d = root.get("d").ok_or("No d")?;
         let tm_str = read_json_str(&d, "timestamp");
         let tm = chrono::DateTime::parse_from_rfc3339(&tm_str)?.timestamp();
@@ -211,8 +139,64 @@ async fn conv_event(self_t:&SelfData,root:serde_json::Value,qq_group_all_msg:boo
                 crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
             }
         });
+        return Ok(true);
+    }else if tp == "GUILD_MEMBER_ADD" {
+        return Ok(false);
+    }else if tp == "GUILD_MEMBER_REMOVE" {
+        return Ok(false);
+    } else if tp == "C2C_MESSAGE_CREATE" {
+        let event_id = set_event_id(self_t, root, 60 * 5)?;
+        let d = root.get("d").ok_or("No d")?;
+        let tm_str = read_json_str(&d, "timestamp");
+        let tm = chrono::DateTime::parse_from_rfc3339(&tm_str)?.timestamp();
+        let content = read_json_str(&d, "content");
+        let user = read_json_obj_or_null(&d, "author");
+        let user_id = read_json_str(&user, "id");
+        let avatar = read_json_str(&user, "avatar");
+        let nickname =  read_json_str(&user, "username");
+        let cq_msg_t = qq_content_to_cqstr(&self_t.bot_id,&self_id,&content)?;
+        let cq_msg = cq_msg_t + &deal_attachments(&d)?;
+        let cq_msg = deal_message_reference(&d,&self_t.id_event_map)? + &cq_msg;
+        let  event_json = serde_json::json!({
+            "time":tm,
+            "self_id":self_id,
+            "platform":"qqgroup_public",
+            "post_type":"message",
+            "message_type":"private",
+            "sub_type":"friend",
+            "message_id":event_id,
+            "user_id":user_id,
+            "message":cq_msg,
+            "raw_message":content,
+            "font":0,
+            "sender":{
+                "user_id":user_id,
+                "nickname":nickname,
+                "remark":nickname,
+                "avatar":avatar
+            }
+        });
+        tokio::task::spawn_blocking(move ||{
+            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
+                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+            }
+        });
+        return Ok(true);
     }
-    else if tp == "DIRECT_MESSAGE_CREATE" {
+    Ok(false)
+}
+
+async fn conv_event(self_t:&SelfData,root:serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let tp = read_json_str(&root, "t");
+    let self_id = (*self_t.appid.upgrade().ok_or("No appid")?.read().unwrap()).to_owned();
+    if tp == "READY" {
+        let d = root.get("d").ok_or("No d")?;
+        let user = read_json_obj_or_null(&d, "user");
+        let bot_id_t = read_json_str(&user,"id");
+        (*self_t.bot_id.upgrade().ok_or("No bot_id")?.write().unwrap()) = bot_id_t;
+    } else if conv_group_c2c_event(self_t, &root).await? {
+    }else if tp == "DIRECT_MESSAGE_CREATE" {
+        let event_id = set_event_id(self_t, &root, 60 * 5)?;
         let d = root.get("d").ok_or("No d")?;
         let tm_str = read_json_str(&d, "timestamp");
         let tm = chrono::DateTime::parse_from_rfc3339(&tm_str)?.timestamp();
@@ -249,6 +233,7 @@ async fn conv_event(self_t:&SelfData,root:serde_json::Value,qq_group_all_msg:boo
             }
         });
     }else if tp == "GUILD_MEMBER_ADD" {
+        let event_id = set_event_id(self_t, &root, 60 * 5)?;
         let d = root.get("d").ok_or("No d")?;
         let user = read_json_obj_or_null(&d, "user");
         let user_id = read_json_str(&user, "id");
@@ -278,6 +263,7 @@ async fn conv_event(self_t:&SelfData,root:serde_json::Value,qq_group_all_msg:boo
             }
         });
     }else if tp == "GUILD_MEMBER_REMOVE" {
+        let event_id = set_event_id(self_t, &root, 60 * 5)?;
         let d = root.get("d").ok_or("No d")?;
         let user = read_json_obj_or_null(&d, "user");
         let user_id = read_json_str(&user, "id");
@@ -300,42 +286,6 @@ async fn conv_event(self_t:&SelfData,root:serde_json::Value,qq_group_all_msg:boo
             "groups_id":guild_id,
             "operator_id":operator_id,
             "user_id":user_id,
-        });
-        tokio::task::spawn_blocking(move ||{
-            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
-            }
-        });
-    } else if tp == "C2C_MESSAGE_CREATE" {
-        let d = root.get("d").ok_or("No d")?;
-        let tm_str = read_json_str(&d, "timestamp");
-        let tm = chrono::DateTime::parse_from_rfc3339(&tm_str)?.timestamp();
-        let content = read_json_str(&d, "content");
-        let user = read_json_obj_or_null(&d, "author");
-        let user_id = read_json_str(&user, "id");
-        let avatar = read_json_str(&user, "avatar");
-        let nickname =  read_json_str(&user, "username");
-        let cq_msg_t = qq_content_to_cqstr(&self_t.bot_id,&self_id,&content)?;
-        let cq_msg = cq_msg_t + &deal_attachments(&d)?;
-        let cq_msg = deal_message_reference(&d,&self_t.id_event_map)? + &cq_msg;
-        let  event_json = serde_json::json!({
-            "time":tm,
-            "self_id":self_id,
-            "platform":"qqgroup_public",
-            "post_type":"message",
-            "message_type":"private",
-            "sub_type":"friend",
-            "message_id":event_id,
-            "user_id":user_id,
-            "message":cq_msg,
-            "raw_message":content,
-            "font":0,
-            "sender":{
-                "user_id":user_id,
-                "nickname":nickname,
-                "remark":nickname,
-                "avatar":avatar
-            }
         });
         tokio::task::spawn_blocking(move ||{
             if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
@@ -563,7 +513,6 @@ async fn send_qqgroup_msg(self_t:&SelfData,group_id:&str,to_reply_id:&str,passiv
         for img_info in &qq_msg_node.img_infos {
             msg_seq += 1;
             let mut json_data = serde_json::json!({
-                "content":" ", // 文档要求发送一个空格
                 "msg_type":7, // 富文本
                 "msg_seq":msg_seq,
                 "msg_id":to_reply_id,
@@ -632,7 +581,6 @@ async fn send_qqgroup_msg(self_t:&SelfData,group_id:&str,to_reply_id:&str,passiv
         }
         for img_info in &qq_msg_node.img_infos {
             let mut json_data = serde_json::json!({
-                "content":" ", // 文档要求发送一个空格
                 "msg_type":7, // 富文本
                 "media":{
                     "file_info":img_info
@@ -669,7 +617,7 @@ async fn send_qqpri_msg_chunk(self_t:&SelfData,user_id:&str,to_reply_id:&str,pas
     if msg_seq >= 5 {
         return None.ok_or("回复消息已经超过5条，无法继续回复")?;
     }
-    let qq_msg_node = cq_msg_to_qq(self_t,&serde_json::Value::Array(chunk.clone()),MsgSrcType::QQPri,user_id,true).await?;
+    let qq_msg_node = cq_msg_to_qq(self_t,&serde_json::Value::Array(chunk.clone()),MsgSrcType::QQPri,user_id,false).await?;
     if !qq_msg_node_has_output(&qq_msg_node) {
         return Ok(());
     }
@@ -710,7 +658,6 @@ async fn send_qqpri_msg_chunk(self_t:&SelfData,user_id:&str,to_reply_id:&str,pas
         for img_info in &qq_msg_node.img_infos {
             msg_seq += 1;
             let json_data = serde_json::json!({
-                "content":" ", // 文档要求发送一个空格
                 "msg_type":7, // 富文本
                 "msg_seq":msg_seq,
                 "msg_id":to_reply_id,
@@ -776,7 +723,7 @@ pub async fn send_qqpri_msg(self_t:&SelfData,message:&serde_json::Value,passive_
 
 
 
-async fn send_group_msg(self_t:&SelfData,json:&serde_json::Value,passive_id:&str,platform:&str,qq_group_all_msg:bool) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn send_group_msg(self_t:&SelfData,json:&serde_json::Value,passive_id:&str,platform:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
 
     // 获得参数
     let params = read_json_or_default(json, "params",&serde_json::Value::Null);
@@ -786,7 +733,7 @@ async fn send_group_msg(self_t:&SelfData,json:&serde_json::Value,passive_id:&str
 
     // 判断消息类型
     let msg_target_type: MsgTargetType;
-    if passive_id == "" && qq_group_all_msg && platform == "qqgroup_public" && group_id != "" {
+    if passive_id == "" && platform == "qqgroup_public" && group_id != "" {
         msg_target_type = MsgTargetType::QQGroup;
     }else{
         msg_target_type = get_msg_type(&self_t, &params, passive_id)?;
@@ -800,7 +747,7 @@ async fn send_group_msg(self_t:&SelfData,json:&serde_json::Value,passive_id:&str
 
     if msg_target_type == MsgTargetType::QQGroup { // 群
         let passive_event_type = get_passive_event_type(self_t, passive_id)?;
-        if qq_group_all_msg && passive_event_type != "GROUP_AT_MESSAGE_CREATE" {
+        if passive_id == "" || passive_event_type != "GROUP_AT_MESSAGE_CREATE" {
             if let Some(reply_event_id) = get_cq_reply_event_id(&message)? {
                 let reply_id = get_reply_id(&self_t, &reply_event_id)?;
                 if reply_id.raw_ids.len() > 0 && !reply_id.is_event {
@@ -863,13 +810,6 @@ impl BotConnectTrait for QQGuildPublicConnect {
         let appid = (*self.appid.read().unwrap()).to_owned();
         self.appsecret = config_json.get("AppSecret").ok_or("qqguild_public AppSecret格式错误:没有AppSecret")?.as_str().ok_or("qqguild_public AppSecret格式错误:AppSecret不是字符串")?.to_owned();
         self.token = config_json.get("Token").ok_or("qqguild_public Token格式错误:没有Token")?.as_str().ok_or("qqguild_public Token格式错误:Token不是字符串")?.to_owned();
-        let withgroup = config_json.get("qq_withgroup").ok_or("qqguild_public url格式错误:没有 qq_withgroup")?.as_bool().ok_or("qqguild_public url格式错误:qq_withgroup不是bool")?;
-        let group_all_msg = match config_json.get("qq_group_all_msg") {
-            Some(val) => val.as_bool().ok_or("qqguild_public url格式错误:qq_group_all_msg不是bool")?,
-            None => false,
-        };
-        let group_all_msg = withgroup && group_all_msg;
-        (*self.qq_group_all_msg.write().unwrap()) = group_all_msg;
         let access_token_struct = token_refresh(&appid,&self.appsecret).await?;
         (*self.access_token.write().unwrap()) = access_token_struct.access_token.to_owned();
 
@@ -931,7 +871,6 @@ impl BotConnectTrait for QQGuildPublicConnect {
         let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
         let tx_ay_t2 = tx_ay_t.clone();
         let sn = Arc::<std::sync::RwLock<Option<u64>>>::downgrade(&self.sn);
-        let group_all_msg = *self.qq_group_all_msg.read().unwrap();
 
 
         let self_data = SelfData {
@@ -962,26 +901,14 @@ impl BotConnectTrait for QQGuildPublicConnect {
                         }
                         let op = read_json_str(&json_dat, "op");
                         if op == "10" {
-                            let to_send;
-                            if withgroup {
-                                to_send = serde_json::json!({
-                                    "op":2,
-                                    "d":{
-                                        "token":format!("QQBot {}",access_token_struct.access_token),
-                                        "intents":0 | (1 << 0) | (1 << 1) | (1 << 10) | (1 << 12) | (1 << 26) | (1 << 27) | (1 << 30) | (1 << 25),
-                                        "shard":[0, 1],
-                                    }
-                                });
-                            }else{
-                                to_send = serde_json::json!({
-                                    "op":2,
-                                    "d":{
-                                        "token":format!("QQBot {}",access_token_struct.access_token),
-                                        "intents":0 | (1 << 0) | (1 << 1) | (1 << 10) | (1 << 12) | (1 << 26) | (1 << 27) | (1 << 30),
-                                        "shard":[0, 1],
-                                    }
-                                });
-                            }
+                            let to_send = serde_json::json!({
+                                "op":2,
+                                "d":{
+                                    "token":format!("QQBot {}",access_token_struct.access_token),
+                                    "intents":0 | (1 << 0) | (1 << 1) | (1 << 10) | (1 << 12) | (1 << 25) | (1 << 26) | (1 << 27) | (1 << 30),
+                                    "shard":[0, 1],
+                                }
+                            });
                             
                             let rst = tx_ay_t2.send(to_send).await;
                             if rst.is_err() {
@@ -1004,7 +931,7 @@ impl BotConnectTrait for QQGuildPublicConnect {
                             // 处理事件
                             let self_data = self_data.clone();
                             tokio::spawn(async move {
-                                if let Err(e) = conv_event(&self_data,json_dat,group_all_msg).await {
+                                if let Err(e) = conv_event(&self_data,json_dat).await {
                                     crate::cqapi::cq_add_log_w(format!("err:{:?}", e).as_str()).unwrap();
                                 }
                             });
@@ -1095,8 +1022,7 @@ impl BotConnectTrait for QQGuildPublicConnect {
             bot_id:Arc::<std::sync::RwLock<std::string::String>>::downgrade(&self.bot_id),
         };
         if action == "send_group_msg" {
-            let qq_group_all_msg = *self.qq_group_all_msg.read().unwrap();
-            return send_group_msg(&self_data,json,passive_id,platform,qq_group_all_msg).await;
+            return send_group_msg(&self_data,json,passive_id,platform).await;
         }
         else if action == "send_private_msg" {
             return send_private_msg(&self_data,json,passive_id).await;

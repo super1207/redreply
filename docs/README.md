@@ -18,8 +18,7 @@
 
 | 平台 | 协议 |
 |---|---|
-| 官方QQ频道私域 | 内置(推荐)、基于Gensokyo/onebot(其次推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐)、基于satoricq/satori(不推荐) |
-| 官方QQ频道公域/群 | 内置(推荐)、基于Gensokyo/onebot(同样推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐)、基于satoricq/satori(不推荐) |
+| 官方QQ | 内置(推荐)、基于Gensokyo/onebot(同样推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐)、基于satoricq/satori(不推荐) |
 | 开黑啦kook | 内置(推荐)、基于kookonebot(不推荐)、基于satoricq/satori(同样推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐) |
 | 三方QQ | 基于openshamrock(推荐)、基于llonebot(同样推荐)、基于Lagrange.Core/onebot(同样推荐)、基于opqonebot(不推荐)、基于go-cqhttp(不推荐)、基于chronocat(无测试) |
 | 米哈游大别野(已经没了) | 基于satoricq/satori(推荐)、基于OlivOS(不推荐)、基于koishi/satori(不推荐) |

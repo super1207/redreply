@@ -32,18 +32,15 @@
 // 无群ID但有user_id   ->  send_private_msg
 // 否则  ->  不处理
 
-// 消息目标判定（QQ频道）（暂未完全实现）：
-//     send_group_msg:根据群ID反查群组ID:
-//         能查到：
-//             频道消息
-//         查不到：
-//             QQ群消息
+// 消息目标判定（官方QQ）：
+//     send_group_msg:
+//         Q群消息，主动发送仅在全量消息开启时可用
 //     send_private_msg:
 //         反查guild_id:
 //             能查到:
-//                 频道私聊
+//                 频道私聊，仅支持被动回复
 //             不能查到：
-//                 群私聊
+//                 Q单聊，仅支持被动回复
 
 use std::{collections::HashMap, str::FromStr, sync::Weak, time::SystemTime};
 
@@ -246,11 +243,7 @@ pub fn get_msg_type(self_t:&SelfData,params:&serde_json::Value,passive_id:&str) 
     }
 
     if is_group {
-        if has_guild_id {
-            return Ok(MsgTargetType::Guild);
-        } else {
-            return Ok(MsgTargetType::QQGroup);
-        }
+        return Ok(MsgTargetType::QQGroup);
     } else {
         if has_guild_id {
             return Ok(MsgTargetType::GuildPri);
@@ -1124,6 +1117,14 @@ pub async fn send_guildpri_msg(self_t:&SelfData,message:&serde_json::Value,passi
 }
 
 pub async fn send_private_msg(self_t:&SelfData,json:&serde_json::Value,passive_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    if passive_id == "" {
+        return Ok(serde_json::json!({
+            "retcode":1404,
+            "status":"failed",
+            "message":"official qq private messages only support passive replies",
+            "data":{}
+        }));
+    }
 
     // 获得参数
     let params = read_json_or_default(json, "params",&serde_json::Value::Null);

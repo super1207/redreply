@@ -7,7 +7,7 @@
 注：
 
 红色问答目前直接支持的平台为：
-onebot11、olivos、satori、qq频道私区域(qqguild_private)、qq频道(qqguild_public)/群(qqgroup_public)公域、邮件、kook、telegram。
+onebot11、olivos、satori、官方QQ(qqguild_public/qqgroup_public)、邮件、kook、telegram。
 
 间接支持**几乎所有聊天平台**
 
