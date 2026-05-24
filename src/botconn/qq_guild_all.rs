@@ -111,8 +111,8 @@ fn make_qq_text(text:&str) -> String {
     ret
 }
 
-fn qq_media_srv_send_msg(msg_type:&MsgSrcType) -> bool {
-    *msg_type == MsgSrcType::QQGroup || *msg_type == MsgSrcType::QQPri
+fn qq_media_srv_send_msg(msg_type:&MsgSrcType,srv_send_msg:bool) -> bool {
+    srv_send_msg && (*msg_type == MsgSrcType::QQGroup || *msg_type == MsgSrcType::QQPri)
 }
 
 fn make_qq_attr(text:&str) -> String {
@@ -260,7 +260,7 @@ pub fn get_msg_type(self_t:&SelfData,params:&serde_json::Value,passive_id:&str) 
     }
 }
 
-pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:MsgSrcType,target_id:&str) -> Result<QQMsgNode,Box<dyn std::error::Error + Send + Sync>> {
+pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:MsgSrcType,target_id:&str,srv_send_msg:bool) -> Result<QQMsgNode,Box<dyn std::error::Error + Send + Sync>> {
     let mut msg_node = QQMsgNode{
         content: "".to_string(),
         imgs: vec![],
@@ -317,13 +317,13 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                     json_data = serde_json::json!({
                         "file_type":1, // 图片
                         "url":file,
-                        "srv_send_msg":qq_media_srv_send_msg(&msg_type)
+                        "srv_send_msg":qq_media_srv_send_msg(&msg_type,srv_send_msg)
                     });
                 } else { // base64://
                     json_data = serde_json::json!({
                         "file_type":1, // 图片
                         "file_data":file.get(9..).ok_or("img not base64")?,
-                        "srv_send_msg":qq_media_srv_send_msg(&msg_type),
+                        "srv_send_msg":qq_media_srv_send_msg(&msg_type,srv_send_msg),
                     });
                 }
                 let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
@@ -338,7 +338,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                     json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
                 }
                 crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-                if qq_media_srv_send_msg(&msg_type) {
+                if qq_media_srv_send_msg(&msg_type,srv_send_msg) {
                     let id = read_json_str(&json_val, "id");
                     if id != "" {
                         msg_node.sent_img_ids.push(id);
@@ -398,7 +398,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":3, // 语音
                     "file_data":b64_str,
-                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type,srv_send_msg),
                 });
             } else { // base64://
                 let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
@@ -411,7 +411,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":3, // 语音
                     "file_data":b64_str,
-                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type,srv_send_msg),
                 });
             }
             let client = reqwest::Client::builder().no_proxy().build()?;
@@ -427,7 +427,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-            if qq_media_srv_send_msg(&msg_type) {
+            if qq_media_srv_send_msg(&msg_type,srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if id != "" {
                     msg_node.sent_img_ids.push(id);
@@ -454,7 +454,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":2, // 视频
                     "file_data":b64_str,
-                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type,srv_send_msg),
                 });
             } else { // base64://
                 let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
@@ -464,7 +464,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":2, // 视频
                     "file_data":b64_str,
-                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type,srv_send_msg),
                 });
             }
             let client = reqwest::Client::builder().no_proxy().build()?;
@@ -480,7 +480,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-            if qq_media_srv_send_msg(&msg_type) {
+            if qq_media_srv_send_msg(&msg_type,srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if id != "" {
                     msg_node.sent_img_ids.push(id);
@@ -507,7 +507,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":4, // 文件
                     "file_data":b64_str,
-                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type,srv_send_msg),
                 });
             } else { // base64://
                 let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
@@ -517,7 +517,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":4, // 文件
                     "file_data":b64_str,
-                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type,srv_send_msg),
                 });
             }
             let client = reqwest::Client::builder().no_proxy().build()?;
@@ -533,7 +533,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-            if qq_media_srv_send_msg(&msg_type) {
+            if qq_media_srv_send_msg(&msg_type,srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if id != "" {
                     msg_node.sent_img_ids.push(id);
@@ -918,75 +918,192 @@ pub fn str_msg_to_arr_safe(js:&serde_json::Value) -> Result<serde_json::Value, B
     }
 }
 
+fn append_msg_id(id:&mut String,msg_id:&str) {
+    if msg_id == "" {
+        return;
+    }
+    if id != "" {
+        *id += "|";
+    }
+    *id += msg_id;
+}
+
+fn append_api_msg_id(id:&mut String,api_ret:&serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let msg_id = api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?;
+    append_msg_id(id, msg_id);
+    Ok(())
+}
+
+fn get_cq_message_reference(self_t:&SelfData,message:&serde_json::Value) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let arr = message.as_array().ok_or("message not an array")?;
+    for it in arr {
+        let tp = read_json_str(it, "type");
+        if tp != "reply" {
+            continue;
+        }
+        let reply_id = read_json_or_default(it, "data",&serde_json::Value::Null)
+            .get("id").ok_or("reply_id not found")?
+            .as_str().ok_or("reply_id not a string")?;
+        let lk_arc = self_t.id_event_map.upgrade().ok_or("id_event_map not upgrade")?;
+        let lk = lk_arc.read().unwrap();
+        if let Some((_,event)) = lk.get(reply_id) {
+            let d = read_json_obj_or_null(event, "d");
+            let message_id = read_json_str(&d, "id");
+            if message_id == "" {
+                continue;
+            }
+            if !message_id.contains("|") {
+                return Ok(Some(message_id));
+            }
+            let ids = message_id.split("|").collect::<Vec<&str>>();
+            return Ok(Some(ids[ids.len() - 1].to_owned()));
+        } else {
+            cq_add_log_w(&format!("消息ID`{reply_id}`失效")).unwrap();
+        }
+    }
+    Ok(None)
+}
+
+fn set_guild_message_reference(qq_msg_node:&mut QQMsgNode,message_reference:&Option<String>) {
+    if qq_msg_node.message_reference == None {
+        if let Some(message_reference) = message_reference {
+            qq_msg_node.message_reference = Some(message_reference.to_owned());
+        }
+    }
+}
+
+fn guild_msg_node_has_output(qq_msg_node:&QQMsgNode) -> bool {
+    qq_msg_node.content != "" || qq_msg_node.imgs.len() > 0
+}
+
+async fn send_guild_msg_node(self_t:&SelfData,path:&str,log_name:&str,target_id:&str,to_reply_id:&str,is_event:bool,mut qq_msg_node:QQMsgNode,id:&mut String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if !guild_msg_node_has_output(&qq_msg_node) {
+        return Ok(());
+    }
+    if qq_msg_node.imgs.len() == 0 {
+        let mut json_data = serde_json::json!({
+            "content":qq_msg_node.content,
+        });
+        qq_msg_node.content = "".to_owned();
+        if to_reply_id != "" {
+            if is_event {
+                json_data.as_object_mut().unwrap().insert("event_id".to_owned(), serde_json::json!(to_reply_id));
+            }else{
+                json_data.as_object_mut().unwrap().insert("msg_id".to_owned(), serde_json::json!(to_reply_id));
+            }
+        }
+
+        if let Some(message_reference) = &qq_msg_node.message_reference {
+            json_data.as_object_mut().unwrap().insert("message_reference".to_owned(), serde_json::json!({
+                "message_id":message_reference,
+            }));
+        }
+        crate::cqapi::cq_add_log(format!("发送{} API数据(`{}`):{}",log_name,target_id,json_data.to_string()).as_str()).unwrap();
+        let api_ret = do_qq_json_post(self_t,path,json_data).await?;
+        crate::cqapi::cq_add_log(format!("接收{} API数据:{}",log_name,api_ret.to_string()).as_str()).unwrap();
+        append_api_msg_id(id, &api_ret)?;
+    } else {
+        for img in &qq_msg_node.imgs {
+            let mut form = reqwest::multipart::Form::new().part(
+                "file_image",
+                reqwest::multipart::Part::bytes(img.clone()).file_name("pic.png"),
+            );
+            if to_reply_id != "" {
+                if is_event {
+                    form = form.text("event_id", to_reply_id.to_owned());
+                }else{
+                    form = form.text("msg_id", to_reply_id.to_owned());
+                }
+            }
+
+            if qq_msg_node.message_reference != None {
+                // form 不支持回复
+            }
+
+            if qq_msg_node.content != "" {
+                form = form.text("content",qq_msg_node.content);
+                qq_msg_node.content = "".to_owned();
+            }
+
+            crate::cqapi::cq_add_log(format!("发送{} API数据(`{}`):{:?}",log_name,target_id,form).as_str()).unwrap();
+            let api_ret = do_qq_form_post(self_t,path,form).await?;
+            crate::cqapi::cq_add_log(format!("接收{} API数据:{}",log_name,api_ret.to_string()).as_str()).unwrap();
+            append_api_msg_id(id, &api_ret)?;
+        }
+    }
+    Ok(())
+}
+
+async fn send_guildpri_msg_chunk(self_t:&SelfData,guild_id:&str,to_reply_id:&str,is_event:bool,message_reference:&Option<String>,chunk:&Vec<serde_json::Value>,id:&mut String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if chunk.len() == 0 {
+        return Ok(());
+    }
+    let mut qq_msg_node = cq_msg_to_qq(self_t,&serde_json::Value::Array(chunk.clone()),MsgSrcType::GuildPri,"",false).await?;
+    set_guild_message_reference(&mut qq_msg_node, message_reference);
+    let path = format!("/dms/{guild_id}/messages");
+    send_guild_msg_node(self_t,&path,"qq guild_pri",guild_id,to_reply_id,is_event,qq_msg_node,id).await
+}
+
+async fn send_guildpri_msg_ordered(self_t:&SelfData,guild_id:&str,to_reply_id:&str,is_event:bool,message:&serde_json::Value,id:&mut String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let arr = message.as_array().ok_or("message not an array")?;
+    let message_reference = get_cq_message_reference(self_t, message)?;
+    let mut chunk:Vec<serde_json::Value> = vec![];
+    for it in arr {
+        let tp = read_json_str(it, "type");
+        if tp == "reply" {
+            continue;
+        }
+        if tp == "image" {
+            send_guildpri_msg_chunk(self_t,guild_id,to_reply_id,is_event,&message_reference,&chunk,id).await?;
+            chunk.clear();
+            send_guildpri_msg_chunk(self_t,guild_id,to_reply_id,is_event,&message_reference,&vec![it.clone()],id).await?;
+        }else{
+            chunk.push(it.clone());
+        }
+    }
+    send_guildpri_msg_chunk(self_t,guild_id,to_reply_id,is_event,&message_reference,&chunk,id).await?;
+    Ok(())
+}
+
+async fn send_qqguild_msg_chunk(self_t:&SelfData,channel_id:&str,to_reply_id:&str,is_event:bool,message_reference:&Option<String>,chunk:&Vec<serde_json::Value>,id:&mut String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if chunk.len() == 0 {
+        return Ok(());
+    }
+    let mut qq_msg_node = cq_msg_to_qq(self_t,&serde_json::Value::Array(chunk.clone()),MsgSrcType::Guild,channel_id,false).await?;
+    set_guild_message_reference(&mut qq_msg_node, message_reference);
+    let path = format!("/channels/{channel_id}/messages");
+    send_guild_msg_node(self_t,&path,"qq guild",channel_id,to_reply_id,is_event,qq_msg_node,id).await
+}
+
+async fn send_qqguild_msg_ordered(self_t:&SelfData,channel_id:&str,to_reply_id:&str,is_event:bool,message:&serde_json::Value,id:&mut String) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let arr = message.as_array().ok_or("message not an array")?;
+    let message_reference = get_cq_message_reference(self_t, message)?;
+    let mut chunk:Vec<serde_json::Value> = vec![];
+    for it in arr {
+        let tp = read_json_str(it, "type");
+        if tp == "reply" {
+            continue;
+        }
+        if tp == "image" {
+            send_qqguild_msg_chunk(self_t,channel_id,to_reply_id,is_event,&message_reference,&chunk,id).await?;
+            chunk.clear();
+            send_qqguild_msg_chunk(self_t,channel_id,to_reply_id,is_event,&message_reference,&vec![it.clone()],id).await?;
+        }else{
+            chunk.push(it.clone());
+        }
+    }
+    send_qqguild_msg_chunk(self_t,channel_id,to_reply_id,is_event,&message_reference,&chunk,id).await?;
+    Ok(())
+}
+
 
 pub async fn send_guildpri_msg(self_t:&SelfData,message:&serde_json::Value,passive_id:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let reply_id = get_reply_id(self_t,passive_id)?;
     if reply_id.raw_ids.len() > 0 {
         let to_reply_id = &reply_id.raw_ids[0];
-        let mut qq_msg_node = cq_msg_to_qq(&self_t,&message,MsgSrcType::GuildPri,"").await?;
-
         let guild_id = reply_id.guild_id;
         let mut id = "".to_owned();
-        if qq_msg_node.imgs.len() == 0 { // 没图
-            let mut json_data = serde_json::json!({
-                "content":qq_msg_node.content,
-            });
-            qq_msg_node.content = "".to_owned();
-
-            if reply_id.is_event {
-                json_data.as_object_mut().unwrap().insert("event_id".to_owned(), serde_json::json!(to_reply_id));
-            }else{
-                json_data.as_object_mut().unwrap().insert("msg_id".to_owned(), serde_json::json!(to_reply_id));
-            }
-            
-            if qq_msg_node.message_reference != None {
-                json_data.as_object_mut().unwrap().insert("message_reference".to_owned(), serde_json::json!({
-                    "message_id":qq_msg_node.message_reference,
-                }));
-            }
-            crate::cqapi::cq_add_log(format!("发送qq guild_pri API数据(`{}`):{}",guild_id,json_data.to_string()).as_str()).unwrap();
-            let api_ret = do_qq_json_post(self_t,&format!("/dms/{guild_id}/messages"),json_data).await?;
-            crate::cqapi::cq_add_log(format!("接收qq guild_pri API数据:{}", api_ret.to_string()).as_str()).unwrap();
-            // 构造消息id
-            if id != "" {
-                id += "|";
-            }
-            id += &api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
-        }
-        else // 有图
-        {
-            // 再发送图片
-            for img in &qq_msg_node.imgs {
-                let mut form = reqwest::multipart::Form::new().part(
-                "file_image",
-                reqwest::multipart::Part::bytes(img.clone()).file_name("pic.png"),
-                );
-                
-                if reply_id.is_event {
-                    form = form.text("event_id", to_reply_id.to_owned());
-                }else{
-                    form = form.text("msg_id", to_reply_id.to_owned());
-                }
-                
-                if qq_msg_node.message_reference != None {
-                    // form 不支持回复
-                }
-    
-                if qq_msg_node.content != "" {
-                    form = form.text("content",qq_msg_node.content);
-                    qq_msg_node.content = "".to_owned();
-                }
-                
-                crate::cqapi::cq_add_log(format!("发送qq guild_pri API数据(`{}`):{:?}",guild_id,form).as_str()).unwrap();
-                let api_ret = do_qq_form_post(self_t,&format!("/dms/{guild_id}/messages"),form).await?;
-                crate::cqapi::cq_add_log(format!("接收qq guild_pri API数据:{}", api_ret.to_string()).as_str()).unwrap();
-                // 构造消息id
-                if id != "" {
-                    id += "|";
-                }
-                id += &api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
-            }
-        }
+        send_guildpri_msg_ordered(self_t,&guild_id,to_reply_id,reply_id.is_event,message,&mut id).await?;
         
         let event_id = set_event_id(self_t,&serde_json::json!({"t":"send_private_msg","d":{"id":id,"guild_id":guild_id}}),5 * 60)?;
         return Ok(serde_json::json!({
@@ -1051,70 +1168,9 @@ pub async fn do_qq_form_post(self_t:&SelfData,path:&str,form:reqwest::multipart:
     Ok(json_val)
 }
 
-pub async fn send_qqguild_msg(self_t:&SelfData,channel_id:&str,to_reply_id:&str,_passive_id:&str,mut qq_msg_node:QQMsgNode,is_event:bool) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn send_qqguild_msg(self_t:&SelfData,channel_id:&str,to_reply_id:&str,_passive_id:&str,message:&serde_json::Value,is_event:bool) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let mut id = "".to_owned();
-    if qq_msg_node.imgs.len() == 0 { // 没图
-        let mut json_data = serde_json::json!({
-            "content":qq_msg_node.content,
-        });
-        qq_msg_node.content = "".to_owned();
-        if to_reply_id != "" {
-            if is_event {
-                json_data.as_object_mut().unwrap().insert("event_id".to_owned(), serde_json::json!(to_reply_id));
-            }else{
-                json_data.as_object_mut().unwrap().insert("msg_id".to_owned(), serde_json::json!(to_reply_id));
-            }
-        }
-        
-        if qq_msg_node.message_reference != None {
-            json_data.as_object_mut().unwrap().insert("message_reference".to_owned(), serde_json::json!({
-                "message_id":qq_msg_node.message_reference,
-            }));
-        }
-        crate::cqapi::cq_add_log(format!("发送qq guild API数据(`{}`):{}",channel_id,json_data.to_string()).as_str()).unwrap();
-        let api_ret = do_qq_json_post(self_t,&format!("/channels/{channel_id}/messages"),json_data).await?;
-        crate::cqapi::cq_add_log(format!("接收qq guild API数据:{}", api_ret.to_string()).as_str()).unwrap();
-        // 构造消息id
-        if id != "" {
-            id += "|";
-        }
-        id += &api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
-    }
-    else // 有图
-    {
-        // 再发送图片
-        for img in &qq_msg_node.imgs {
-            let mut form = reqwest::multipart::Form::new().part(
-            "file_image",
-            reqwest::multipart::Part::bytes(img.clone()).file_name("pic.png"),
-            );
-            if to_reply_id != "" {
-                if is_event {
-                    form = form.text("event_id", to_reply_id.to_owned());
-                }else{
-                    form = form.text("msg_id", to_reply_id.to_owned());
-                }
-            }
-            
-            if qq_msg_node.message_reference != None {
-                // form 不支持回复
-            }
-
-            if qq_msg_node.content != "" {
-                form = form.text("content",qq_msg_node.content);
-                qq_msg_node.content = "".to_owned();
-            }
-            
-            crate::cqapi::cq_add_log(format!("发送qq guild API数据(`{}`):{:?}",channel_id,form).as_str()).unwrap();
-            let api_ret = do_qq_form_post(self_t,&format!("/channels/{channel_id}/messages"),form).await?;
-            crate::cqapi::cq_add_log(format!("接收qq guild API数据:{}", api_ret.to_string()).as_str()).unwrap();
-            // 构造消息id
-            if id != "" {
-                id += "|";
-            }
-            id += &api_ret.get("id").ok_or("id not found")?.as_str().ok_or("id not a string")?.to_owned();
-        }
-    }
+    send_qqguild_msg_ordered(self_t,channel_id,to_reply_id,is_event,message,&mut id).await?;
     
     let event_id = set_event_id(self_t,&serde_json::json!({"t":"send_group_msg","d":{"id":id,"channel_id":channel_id}}),5 * 60)?;
     return Ok(serde_json::json!({

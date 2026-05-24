@@ -7,7 +7,7 @@ use tokio_tungstenite::tungstenite;
 
 use crate::{cqapi::cq_add_log_w, mytool::{read_json_str, read_json_obj_or_null, read_json_or_default}, botconn::qq_guild_all::{SelfData, token_refresh, get_gateway, get_json_dat}};
 
-use super::{BotConnectTrait, qq_guild_all::{MsgSrcType, cq_msg_to_qq, MsgTargetType, get_msg_type, get_reply_id, qq_content_to_cqstr, set_event_id, deal_message_reference, deal_attachments, str_msg_to_arr_safe, send_private_msg, send_qqguild_msg, get_login_info, get_group_list, get_group_member_info, get_stranger_info, delete_msg, set_group_ban}};
+use super::{BotConnectTrait, qq_guild_all::{MsgTargetType, get_msg_type, get_reply_id, qq_content_to_cqstr, set_event_id, deal_message_reference, deal_attachments, str_msg_to_arr_safe, send_private_msg, send_qqguild_msg, get_login_info, get_group_list, get_group_member_info, get_stranger_info, delete_msg, set_group_ban}};
 
 #[derive(Debug)]
 pub struct QQGuildPrivateConnect {
@@ -229,12 +229,11 @@ async fn send_group_msg(self_t:&SelfData,json:&serde_json::Value,passive_id:&str
     let group_id = read_json_str(&params, "group_id");
 
     if msg_target_type == MsgTargetType::Guild { // 频道
-        let qq_msg_node = cq_msg_to_qq(&self_t,&message,MsgSrcType::Guild,&group_id).await?;
         // 获得消息ID
         let reply_id = get_reply_id(&self_t, passive_id)?;
         if reply_id.raw_ids.len() > 0 {
             let to_reply_id = &reply_id.raw_ids[0];
-            return send_qqguild_msg(self_t, &group_id, &to_reply_id,passive_id,qq_msg_node,reply_id.is_event).await;
+            return send_qqguild_msg(self_t, &group_id, &to_reply_id,passive_id,&message,reply_id.is_event).await;
         }
 
     }
