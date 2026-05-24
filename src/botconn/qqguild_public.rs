@@ -7,7 +7,7 @@ use tokio_tungstenite::tungstenite;
 
 use crate::{cqapi::cq_add_log_w, mytool::{read_json_str, read_json_obj_or_null, read_json_or_default}, botconn::qq_guild_all::{SelfData, token_refresh, get_gateway, get_json_dat}};
 
-use super::{BotConnectTrait, qq_guild_all::{MsgSrcType, cq_msg_to_qq, MsgTargetType, get_msg_type, get_reply_id, QQMsgNode, qq_content_to_cqstr, set_event_id, deal_message_reference, deal_attachments, do_qq_json_post, wait_qqgroup_audit_result, str_msg_to_arr_safe, send_private_msg, send_qqguild_msg, get_login_info, get_group_list, get_group_member_info, get_stranger_info, delete_msg, set_group_ban}};
+use super::{BotConnectTrait, qq_guild_all::{MsgSrcType, cq_msg_to_qq, MsgTargetType, get_msg_type, get_reply_id, QQMsgNode, qq_content_to_cqstr, set_event_id, deal_message_reference, deal_attachments, do_qq_json_post, wait_qqgroup_audit_result, deal_qqgroup_audit_event, str_msg_to_arr_safe, send_private_msg, send_qqguild_msg, get_login_info, get_group_list, get_group_member_info, get_stranger_info, delete_msg, set_group_ban}};
 
 #[derive(Debug)]
 pub struct QQGuildPublicConnect {
@@ -53,6 +53,9 @@ async fn conv_event(self_t:&SelfData,root:serde_json::Value,qq_group_all_msg:boo
         let user = read_json_obj_or_null(&d, "user");
         let bot_id_t = read_json_str(&user,"id");
         (*self_t.bot_id.upgrade().ok_or("No bot_id")?.write().unwrap()) = bot_id_t;
+    }
+    else if tp == "MESSAGE_AUDIT_PASS" || tp == "MESSAGE_AUDIT_REJECT" {
+        deal_qqgroup_audit_event(root).await?;
     }
     else if tp == "AT_MESSAGE_CREATE" {
         let d = root.get("d").ok_or("No d")?;
@@ -693,6 +696,12 @@ pub async fn send_qqpri_msg(self_t:&SelfData,message:&serde_json::Value,passive_
             set_msg_seq(self_t,passive_id,msg_seq)?;
         }
         // 再发送图片、语音、视频、文件
+        for img_id in &qq_msg_node.sent_img_ids {
+            if id != "" {
+                id += "|";
+            }
+            id += img_id;
+        }
         for img_info in &qq_msg_node.img_infos {
             msg_seq += 1;
             let json_data = serde_json::json!({

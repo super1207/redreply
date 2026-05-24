@@ -45,7 +45,7 @@
 //             不能查到：
 //                 群私聊
 
-use std::{str::FromStr, sync::Weak, time::SystemTime};
+use std::{collections::HashMap, str::FromStr, sync::Weak, time::SystemTime};
 
 use base64::{alphabet, engine::{self, general_purpose}, Engine};
 
@@ -54,6 +54,10 @@ use crate::{mytool::{read_json_obj_or_null, read_json_str, read_json_or_default,
 use super::qqguild_public::send_qqpri_msg;
 
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
+
+lazy_static! {
+    static ref G_QQGROUP_AUDIT_MAP:tokio::sync::RwLock<HashMap<String,tokio::sync::mpsc::Sender<serde_json::Value>>> = tokio::sync::RwLock::new(HashMap::new());
+}
 
 #[derive(PartialEq)]
 #[allow(dead_code)]
@@ -105,6 +109,10 @@ fn make_qq_text(text:&str) -> String {
         }
     }
     ret
+}
+
+fn qq_media_srv_send_msg(msg_type:&MsgSrcType) -> bool {
+    *msg_type == MsgSrcType::QQGroup || *msg_type == MsgSrcType::QQPri
 }
 
 fn make_qq_attr(text:&str) -> String {
@@ -309,13 +317,13 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                     json_data = serde_json::json!({
                         "file_type":1, // 图片
                         "url":file,
-                        "srv_send_msg":msg_type == MsgSrcType::QQGroup
+                        "srv_send_msg":qq_media_srv_send_msg(&msg_type)
                     });
                 } else { // base64://
                     json_data = serde_json::json!({
                         "file_type":1, // 图片
                         "file_data":file.get(9..).ok_or("img not base64")?,
-                        "srv_send_msg":msg_type == MsgSrcType::QQGroup,
+                        "srv_send_msg":qq_media_srv_send_msg(&msg_type),
                     });
                 }
                 let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
@@ -330,7 +338,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                     json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
                 }
                 crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-                if msg_type == MsgSrcType::QQGroup {
+                if qq_media_srv_send_msg(&msg_type) {
                     let id = read_json_str(&json_val, "id");
                     if id != "" {
                         msg_node.sent_img_ids.push(id);
@@ -390,7 +398,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":3, // 语音
                     "file_data":b64_str,
-                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
                 });
             } else { // base64://
                 let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
@@ -403,7 +411,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":3, // 语音
                     "file_data":b64_str,
-                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
                 });
             }
             let client = reqwest::Client::builder().no_proxy().build()?;
@@ -419,7 +427,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-            if msg_type == MsgSrcType::QQGroup {
+            if qq_media_srv_send_msg(&msg_type) {
                 let id = read_json_str(&json_val, "id");
                 if id != "" {
                     msg_node.sent_img_ids.push(id);
@@ -446,7 +454,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":2, // 视频
                     "file_data":b64_str,
-                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
                 });
             } else { // base64://
                 let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
@@ -456,7 +464,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":2, // 视频
                     "file_data":b64_str,
-                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
                 });
             }
             let client = reqwest::Client::builder().no_proxy().build()?;
@@ -472,7 +480,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-            if msg_type == MsgSrcType::QQGroup {
+            if qq_media_srv_send_msg(&msg_type) {
                 let id = read_json_str(&json_val, "id");
                 if id != "" {
                     msg_node.sent_img_ids.push(id);
@@ -499,7 +507,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":4, // 文件
                     "file_data":b64_str,
-                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
                 });
             } else { // base64://
                 let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
@@ -509,7 +517,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":4, // 文件
                     "file_data":b64_str,
-                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
+                    "srv_send_msg":qq_media_srv_send_msg(&msg_type),
                 });
             }
             let client = reqwest::Client::builder().no_proxy().build()?;
@@ -525,7 +533,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-            if msg_type == MsgSrcType::QQGroup {
+            if qq_media_srv_send_msg(&msg_type) {
                 let id = read_json_str(&json_val, "id");
                 if id != "" {
                     msg_node.sent_img_ids.push(id);
@@ -841,23 +849,24 @@ pub async fn do_qq_json_post(self_t:&SelfData,path:&str,json:serde_json::Value) 
     Ok(json_val)
 }
 
-fn find_qqgroup_audit_event(self_t:&SelfData,audit_id:&str) -> Result<Option<serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
-    let binding = self_t.id_event_map.upgrade().ok_or("id_event_map not upgrade")?;
-    let lk = binding.read().unwrap();
-    for (_key,(_tm,event)) in &*lk {
-        let tp = read_json_str(event, "t");
-        if tp != "MESSAGE_AUDIT_PASS" && tp != "MESSAGE_AUDIT_REJECT" {
-            continue;
-        }
-        let d = read_json_obj_or_null(event, "d");
-        if read_json_str(&d, "audit_id") == audit_id {
-            return Ok(Some(event.clone()));
-        }
+pub async fn deal_qqgroup_audit_event(event:serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let d = read_json_obj_or_null(&event, "d");
+    let audit_id = read_json_str(&d, "audit_id");
+    if audit_id == "" {
+        return Ok(());
     }
-    Ok(None)
+
+    let tx = {
+        let lk = G_QQGROUP_AUDIT_MAP.read().await;
+        lk.get(&audit_id).cloned()
+    };
+    if let Some(tx) = tx {
+        let _foo = tx.send(event).await;
+    }
+    Ok(())
 }
 
-pub async fn wait_qqgroup_audit_result(self_t:&SelfData,api_ret:serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn wait_qqgroup_audit_result(_self_t:&SelfData,api_ret:serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let mut audit_id = read_json_str(&api_ret, "audit_id");
     if audit_id == "" {
         let id = read_json_str(&api_ret, "id");
@@ -869,8 +878,16 @@ pub async fn wait_qqgroup_audit_result(self_t:&SelfData,api_ret:serde_json::Valu
         return Ok(api_ret);
     }
 
-    for _ in 0..600 {
-        if let Some(event) = find_qqgroup_audit_event(self_t, &audit_id)? {
+    let (tx_ay, mut rx_ay) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
+    G_QQGROUP_AUDIT_MAP.write().await.insert(audit_id.clone(), tx_ay);
+    let _guard = scopeguard::guard(audit_id.clone(), |audit_id| {
+        crate::RT_PTR.spawn(async move {
+            G_QQGROUP_AUDIT_MAP.write().await.remove(&audit_id);
+        });
+    });
+
+    tokio::select! {
+        Some(event) = rx_ay.recv() => {
             let tp = read_json_str(&event, "t");
             let d = read_json_obj_or_null(&event, "d");
             if tp == "MESSAGE_AUDIT_PASS" {
@@ -884,10 +901,12 @@ pub async fn wait_qqgroup_audit_result(self_t:&SelfData,api_ret:serde_json::Valu
             }else if tp == "MESSAGE_AUDIT_REJECT" {
                 return Err(format!("qq group message audit rejected:{event}").into());
             }
+            Err(format!("qq group message audit result invalid:{event}").into())
+        },
+        _ = tokio::time::sleep(std::time::Duration::from_secs(60)) => {
+            Err(format!("qq group message audit timeout:{audit_id}").into())
         }
-        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     }
-    Err(format!("qq group message audit timeout:{audit_id}").into())
 }
 
 pub fn str_msg_to_arr_safe(js:&serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
