@@ -324,8 +324,11 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
                 req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
                 let ret = client.execute(req).await?;
-                let ret_str =  ret.text().await?; 
-                let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
+                let ret_str =  ret.text().await?;
+                let mut json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
+                if msg_type == MsgSrcType::QQGroup {
+                    json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
+                }
                 crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
                 if msg_type == MsgSrcType::QQGroup {
                     let id = read_json_str(&json_val, "id");
@@ -411,7 +414,10 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
             req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
             let ret = client.execute(req).await?;
             let ret_str =  ret.text().await?; 
-            let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
+            let mut json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
+            if msg_type == MsgSrcType::QQGroup {
+                json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
+            }
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
             if msg_type == MsgSrcType::QQGroup {
                 let id = read_json_str(&json_val, "id");
@@ -461,7 +467,10 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
             req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
             let ret = client.execute(req).await?;
             let ret_str =  ret.text().await?; 
-            let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
+            let mut json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
+            if msg_type == MsgSrcType::QQGroup {
+                json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
+            }
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
             if msg_type == MsgSrcType::QQGroup {
                 let id = read_json_str(&json_val, "id");
@@ -511,7 +520,10 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
             req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
             let ret = client.execute(req).await?;
             let ret_str =  ret.text().await?; 
-            let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
+            let mut json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
+            if msg_type == MsgSrcType::QQGroup {
+                json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
+            }
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
             if msg_type == MsgSrcType::QQGroup {
                 let id = read_json_str(&json_val, "id");
@@ -827,6 +839,55 @@ pub async fn do_qq_json_post(self_t:&SelfData,path:&str,json:serde_json::Value) 
     let ret_str =  ret.text().await?; 
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
     Ok(json_val)
+}
+
+fn find_qqgroup_audit_event(self_t:&SelfData,audit_id:&str) -> Result<Option<serde_json::Value>, Box<dyn std::error::Error + Send + Sync>> {
+    let binding = self_t.id_event_map.upgrade().ok_or("id_event_map not upgrade")?;
+    let lk = binding.read().unwrap();
+    for (_key,(_tm,event)) in &*lk {
+        let tp = read_json_str(event, "t");
+        if tp != "MESSAGE_AUDIT_PASS" && tp != "MESSAGE_AUDIT_REJECT" {
+            continue;
+        }
+        let d = read_json_obj_or_null(event, "d");
+        if read_json_str(&d, "audit_id") == audit_id {
+            return Ok(Some(event.clone()));
+        }
+    }
+    Ok(None)
+}
+
+pub async fn wait_qqgroup_audit_result(self_t:&SelfData,api_ret:serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    let mut audit_id = read_json_str(&api_ret, "audit_id");
+    if audit_id == "" {
+        let id = read_json_str(&api_ret, "id");
+        if id.starts_with("msg_auditid_") {
+            audit_id = id;
+        }
+    }
+    if audit_id == "" {
+        return Ok(api_ret);
+    }
+
+    for _ in 0..600 {
+        if let Some(event) = find_qqgroup_audit_event(self_t, &audit_id)? {
+            let tp = read_json_str(&event, "t");
+            let d = read_json_obj_or_null(&event, "d");
+            if tp == "MESSAGE_AUDIT_PASS" {
+                let message_id = read_json_str(&d, "message_id");
+                if message_id != "" {
+                    let mut ret = api_ret.clone();
+                    ret.as_object_mut().ok_or("qq group audit api_ret not object")?.insert("id".to_owned(), serde_json::json!(message_id));
+                    ret.as_object_mut().ok_or("qq group audit api_ret not object")?.insert("message_id".to_owned(), serde_json::json!(message_id));
+                    return Ok(ret);
+                }
+            }else if tp == "MESSAGE_AUDIT_REJECT" {
+                return Err(format!("qq group message audit rejected:{event}").into());
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    Err(format!("qq group message audit timeout:{audit_id}").into())
 }
 
 pub fn str_msg_to_arr_safe(js:&serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
@@ -1181,18 +1242,46 @@ pub async fn delete_msg(self_t:&SelfData,json:&serde_json::Value) -> Result<serd
     if tp == "MESSAGE_CREATE" || tp == "send_group_msg" {
         let d = read_json_obj_or_null(&event, "d");
         let channel_id = read_json_str(&d, "channel_id");
+        let group_openid = read_json_str(&d, "group_openid");
         let message_id = read_json_str(&d, "id");
-        let uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/channels/{channel_id}/messages/{message_id}?hidetip=false"))?;
-        let client = reqwest::Client::builder().no_proxy().build()?;
-        let mut req = client.delete(uri).build()?;
-        req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
-        req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
-        req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
-        req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
-        let ret = client.execute(req).await?;
-        if ret.status() != 200 {
-            let ret_str =  ret.text().await?; 
-            cq_add_log_w(&format!("delete_msg:{:?}", &ret_str)).unwrap();
+        cq_add_log_w(&format!("delete messageId: {}", message_id)).unwrap();
+        if !message_id.contains("|") {
+            let uri = if group_openid != "" {
+                reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/groups/{group_openid}/messages/{message_id}?hidetip=false"))?
+            }else{
+                reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/channels/{channel_id}/messages/{message_id}?hidetip=false"))?
+            };
+            let client = reqwest::Client::builder().no_proxy().build()?;
+            let mut req = client.delete(uri).build()?;
+            req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+            req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+            req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+            req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
+            let ret = client.execute(req).await?;
+            if ret.status() != 200 {
+                let ret_str =  ret.text().await?;
+                cq_add_log_w(&format!("delete_msg:{:?}", &ret_str)).unwrap();
+            }
+        }else{
+            let ids = message_id.split("|").collect::<Vec<&str>>();
+            for message_id in ids {
+                let uri = if group_openid != "" {
+                    reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/groups/{group_openid}/messages/{message_id}?hidetip=false"))?
+                }else{
+                    reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/channels/{channel_id}/messages/{message_id}?hidetip=false"))?
+                };
+                let client = reqwest::Client::builder().no_proxy().build()?;
+                let mut req = client.delete(uri).build()?;
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Authorization")?, reqwest::header::HeaderValue::from_str(&format!("QQBot {}",self_t.access_token.upgrade().ok_or("access_token not upgrade")?.read().unwrap()))?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("X-Union-Appid")?, reqwest::header::HeaderValue::from_str(&self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap())?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Content-Type")?, reqwest::header::HeaderValue::from_str("application/json")?);
+                req.headers_mut().append(reqwest::header::HeaderName::from_str("Accept")?, reqwest::header::HeaderValue::from_str("application/json")?);
+                let ret = client.execute(req).await?;
+                if ret.status() != 200 {
+                    let ret_str =  ret.text().await?;
+                    cq_add_log_w(&format!("delete_msg:{:?}", &ret_str)).unwrap();
+                }
+            }
         }
         
     }else if tp == "send_private_msg" {
