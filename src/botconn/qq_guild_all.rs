@@ -80,6 +80,8 @@ pub struct QQMsgNode{
     pub content:String,
     pub imgs:Vec<Vec<u8>>,
     pub img_infos:Vec<String>,
+    pub sent_img_ids:Vec<String>,
+    pub reply_event_id:Option<String>,
     pub message_reference:Option<String>,
     pub markdown:Option<serde_json::Value>,
 }
@@ -103,6 +105,105 @@ fn make_qq_text(text:&str) -> String {
         }
     }
     ret
+}
+
+fn make_qq_attr(text:&str) -> String {
+    let mut ret = String::new();
+    for ch in text.chars() {
+        match ch {
+            '&' => {
+                ret += "&amp;";
+            }
+            '<' => {
+                ret += "&lt;";
+            }
+            '>' => {
+                ret += "&gt;";
+            }
+            '"' => {
+                ret += "&quot;";
+            }
+            '\'' => {
+                ret += "&apos;";
+            }
+            _ => {
+                ret += &ch.to_string();
+            }
+        }
+    }
+    ret
+}
+
+fn decode_qq_xml_text(text:&str) -> String {
+    text.replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+}
+
+fn get_xml_attr(text:&str,key:&str) -> Option<String> {
+    let key_text = format!("{key}=\"");
+    let start = text.find(&key_text)? + key_text.len();
+    let end = text.get(start..)?.find('"')? + start;
+    Some(decode_qq_xml_text(text.get(start..end)?))
+}
+
+fn decode_utf8_or_cesu8(bytes:Vec<u8>) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    if let Ok(text) = String::from_utf8(bytes.clone()) {
+        return Ok(text);
+    }
+
+    let mut out = String::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if b < 0x80 {
+            out.push(b as char);
+            i += 1;
+        }else if b & 0b1110_0000 == 0b1100_0000 {
+            if i + 1 >= bytes.len() || bytes[i + 1] & 0b1100_0000 != 0b1000_0000 {
+                return Err("invalid cesu8 data".into());
+            }
+            let code = (((b & 0x1f) as u32) << 6) | ((bytes[i + 1] & 0x3f) as u32);
+            out.push(char::from_u32(code).ok_or("invalid cesu8 char")?);
+            i += 2;
+        }else if b & 0b1111_0000 == 0b1110_0000 {
+            if i + 2 >= bytes.len() || bytes[i + 1] & 0b1100_0000 != 0b1000_0000 || bytes[i + 2] & 0b1100_0000 != 0b1000_0000 {
+                return Err("invalid cesu8 data".into());
+            }
+            let code = (((b & 0x0f) as u32) << 12) | (((bytes[i + 1] & 0x3f) as u32) << 6) | ((bytes[i + 2] & 0x3f) as u32);
+            if (0xd800..=0xdbff).contains(&code) {
+                if i + 5 >= bytes.len() {
+                    return Err("invalid cesu8 surrogate pair".into());
+                }
+                let b2 = bytes[i + 3];
+                if b2 & 0b1111_0000 != 0b1110_0000 || bytes[i + 4] & 0b1100_0000 != 0b1000_0000 || bytes[i + 5] & 0b1100_0000 != 0b1000_0000 {
+                    return Err("invalid cesu8 surrogate pair".into());
+                }
+                let low = (((b2 & 0x0f) as u32) << 12) | (((bytes[i + 4] & 0x3f) as u32) << 6) | ((bytes[i + 5] & 0x3f) as u32);
+                if !(0xdc00..=0xdfff).contains(&low) {
+                    return Err("invalid cesu8 surrogate pair".into());
+                }
+                let code_point = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
+                out.push(char::from_u32(code_point).ok_or("invalid cesu8 char")?);
+                i += 6;
+            }else{
+                out.push(char::from_u32(code).ok_or("invalid cesu8 char")?);
+                i += 3;
+            }
+        }else if b & 0b1111_1000 == 0b1111_0000 {
+            if i + 3 >= bytes.len() || bytes[i + 1] & 0b1100_0000 != 0b1000_0000 || bytes[i + 2] & 0b1100_0000 != 0b1000_0000 || bytes[i + 3] & 0b1100_0000 != 0b1000_0000 {
+                return Err("invalid cesu8 data".into());
+            }
+            let code = (((b & 0x07) as u32) << 18) | (((bytes[i + 1] & 0x3f) as u32) << 12) | (((bytes[i + 2] & 0x3f) as u32) << 6) | ((bytes[i + 3] & 0x3f) as u32);
+            out.push(char::from_u32(code).ok_or("invalid cesu8 char")?);
+            i += 4;
+        }else{
+            return Err("invalid cesu8 data".into());
+        }
+    }
+    Ok(out)
 }
 
 //  决定要发到哪里
@@ -156,6 +257,8 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
         content: "".to_string(),
         imgs: vec![],
         img_infos:vec![],
+        sent_img_ids:vec![],
+        reply_event_id:None,
         message_reference:None,
         markdown: None,
     };
@@ -169,10 +272,10 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
         } else if tp == "at" {
             if msg_type == MsgSrcType::Guild {
                 let qq = it.get("data").ok_or("data not found")?.get("qq").ok_or("qq not found")?.as_str().ok_or("qq not a string")?;
-                if qq == "all" {
-                    msg_node.content += "@全体成员"
-                }else {
-                    msg_node.content += &format!("<@{}>", make_qq_text(qq));
+                if qq == "all" && msg_type == MsgSrcType::Guild {
+                    msg_node.content += "<qqbot-at-everyone />"
+                }else if qq != "all" {
+                    msg_node.content += &format!("<qqbot-at-user id=\"{}\" />", make_qq_attr(qq));
                 }
             }
         }
@@ -206,13 +309,13 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                     json_data = serde_json::json!({
                         "file_type":1, // 图片
                         "url":file,
-                        "srv_send_msg":false
+                        "srv_send_msg":msg_type == MsgSrcType::QQGroup
                     });
                 } else { // base64://
                     json_data = serde_json::json!({
                         "file_type":1, // 图片
                         "file_data":file.get(9..).ok_or("img not base64")?,
-                        "srv_send_msg":false,
+                        "srv_send_msg":msg_type == MsgSrcType::QQGroup,
                     });
                 }
                 let mut req = client.post(uri).body(reqwest::Body::from(json_data.to_string())).build()?;
@@ -224,7 +327,14 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 let ret_str =  ret.text().await?; 
                 let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
                 crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-                msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+                if msg_type == MsgSrcType::QQGroup {
+                    let id = read_json_str(&json_val, "id");
+                    if id != "" {
+                        msg_node.sent_img_ids.push(id);
+                    }
+                }else{
+                    msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+                }
             }
             
         } else if tp == "face" {
@@ -234,19 +344,22 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
             }
         }
         else if tp == "reply" {
-            if msg_type == MsgSrcType::GuildPri || msg_type == MsgSrcType::Guild {
+            if msg_type == MsgSrcType::GuildPri || msg_type == MsgSrcType::Guild || msg_type == MsgSrcType::QQGroup {
                 let reply_id = it.get("data").ok_or("data not found")?.get("id").ok_or("reply_id not found")?.as_str().ok_or("reply_id not a string")?;
                 let lk_arc = self_t.id_event_map.upgrade().ok_or("id_event_map not upgrade")?;
                 let lk = lk_arc.read().unwrap();
                 if let Some((_,event)) = lk.get(reply_id) {
                     let d = read_json_obj_or_null(event, "d");
                     let message_id = read_json_str(&d, "id");
-                    if !message_id.contains("|") {
-                        msg_node.message_reference = Some(message_id);
-                    }else{
-                        let ids = message_id.split("|").collect::<Vec<&str>>();
-                        let id = ids[ids.len() - 1];
-                        msg_node.message_reference = Some(id.to_owned());
+                    if message_id != "" {
+                        msg_node.reply_event_id = Some(reply_id.to_owned());
+                        if !message_id.contains("|") {
+                            msg_node.message_reference = Some(message_id);
+                        }else{
+                            let ids = message_id.split("|").collect::<Vec<&str>>();
+                            let id = ids[ids.len() - 1];
+                            msg_node.message_reference = Some(id.to_owned());
+                        }
                     }
                 } else {
                     cq_add_log_w(&format!("消息ID`{reply_id}`失效")).unwrap();
@@ -274,7 +387,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":3, // 语音
                     "file_data":b64_str,
-                    "srv_send_msg":false,
+                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
                 });
             } else { // base64://
                 let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
@@ -287,7 +400,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":3, // 语音
                     "file_data":b64_str,
-                    "srv_send_msg":false,
+                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
                 });
             }
             let client = reqwest::Client::builder().no_proxy().build()?;
@@ -300,7 +413,14 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
             let ret_str =  ret.text().await?; 
             let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-            msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+            if msg_type == MsgSrcType::QQGroup {
+                let id = read_json_str(&json_val, "id");
+                if id != "" {
+                    msg_node.sent_img_ids.push(id);
+                }
+            }else{
+                msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+            }
         }
         else if tp == "video" { // only qq
             let file = it.get("data").ok_or("data not found")?.get("file").ok_or("file not found")?.as_str().ok_or("file not a string")?;
@@ -320,7 +440,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":2, // 视频
                     "file_data":b64_str,
-                    "srv_send_msg":false,
+                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
                 });
             } else { // base64://
                 let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
@@ -330,7 +450,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":2, // 视频
                     "file_data":b64_str,
-                    "srv_send_msg":false,
+                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
                 });
             }
             let client = reqwest::Client::builder().no_proxy().build()?;
@@ -343,7 +463,14 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
             let ret_str =  ret.text().await?; 
             let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-            msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+            if msg_type == MsgSrcType::QQGroup {
+                let id = read_json_str(&json_val, "id");
+                if id != "" {
+                    msg_node.sent_img_ids.push(id);
+                }
+            }else{
+                msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+            }
         }
         else if tp == "file" { // only qq ，暂时不可用
             let file = it.get("data").ok_or("data not found")?.get("file").ok_or("file not found")?.as_str().ok_or("file not a string")?;
@@ -363,7 +490,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":4, // 文件
                     "file_data":b64_str,
-                    "srv_send_msg":false,
+                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
                 });
             } else { // base64://
                 let retbin = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
@@ -373,7 +500,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":4, // 文件
                     "file_data":b64_str,
-                    "srv_send_msg":false,
+                    "srv_send_msg":msg_type == MsgSrcType::QQGroup,
                 });
             }
             let client = reqwest::Client::builder().no_proxy().build()?;
@@ -386,15 +513,22 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
             let ret_str =  ret.text().await?; 
             let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
             crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val.to_string()).as_str()).unwrap();
-            msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+            if msg_type == MsgSrcType::QQGroup {
+                let id = read_json_str(&json_val, "id");
+                if id != "" {
+                    msg_node.sent_img_ids.push(id);
+                }
+            }else{
+                msg_node.img_infos.push(json_val.get("file_info").ok_or("file_info not found")?.as_str().ok_or("file_info not a string")?.to_owned());
+            }
         }
         else if tp == "qmarkdown" {
             let markdown_data = it.get("data").ok_or("data not found")?.get("data").ok_or("markdown data not found")?.as_str().ok_or("markdown data not a string")?;
-            let b64_str = markdown_data.split_at(9).1;
+            let b64_str = markdown_data.strip_prefix("base64://").unwrap_or(markdown_data);
             let markdown_buffer = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
                 &base64::alphabet::STANDARD,
                 base64::engine::general_purpose::PAD), b64_str)?;
-            let json:serde_json::Value = serde_json::from_str(&String::from_utf8(markdown_buffer)?)?;
+            let json:serde_json::Value = serde_json::from_str(&decode_utf8_or_cesu8(markdown_buffer)?)?;
             msg_node.markdown = Some(json);
         }
     }
@@ -515,7 +649,17 @@ pub fn qq_content_to_cqstr(bot_id:&std::sync::Weak<std::sync::RwLock<String>>,se
                 stat = 0;
                 text += ">";
 
-                if text.starts_with("<@!"){
+                if text.starts_with("<qqbot-at-user"){
+                    let user_id = get_xml_attr(&text, "id").ok_or("get qqbot-at-user id error")?;
+                    let bot_id = bot_id.upgrade().ok_or("get bot id error")?.read().unwrap().to_owned();
+                    if bot_id == user_id {
+                        out_str += &format!("[CQ:at,qq={}]",cq_params_encode(self_id));
+                    }else{
+                        out_str += &format!("[CQ:at,qq={}]",cq_params_encode(&user_id));
+                    }
+                }else if text.starts_with("<qqbot-at-everyone"){
+                    out_str += "[CQ:at,qq=all]";
+                }else if text.starts_with("<@!"){
                     let user_id = text.get(3..text.len()-1).ok_or("get at id error1")?;
                     let bot_id = bot_id.upgrade().ok_or("get bot id error")?.read().unwrap().to_owned();
                     if bot_id == user_id {
@@ -582,7 +726,7 @@ pub fn deal_message_reference(root:&serde_json::Value,id_event_map:&std::sync::W
         let lk = id_event_map_t.read().unwrap();
         for (key,(_,json)) in &*lk {
             let tp = json.get("t").ok_or("no t in id_event_map")?;
-            if tp == "GROUP_AT_MESSAGE_CREATE" || tp == "AT_MESSAGE_CREATE" ||tp == "DIRECT_MESSAGE_CREATE" || tp == "send_private_msg" || tp == "send_group_msg" {
+            if tp == "GROUP_AT_MESSAGE_CREATE" || tp == "GROUP_MESSAGE_CREATE" || tp == "AT_MESSAGE_CREATE" ||tp == "DIRECT_MESSAGE_CREATE" || tp == "send_private_msg" || tp == "send_group_msg" {
                 let d = json.get("d").ok_or("no d in id_event_map")?;
                 let id = d.get("id").ok_or("no id in msg id_event_map")?.as_str().ok_or("id not str")?;
                 if id.contains(&raw_id) {
