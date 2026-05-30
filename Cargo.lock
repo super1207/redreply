@@ -5729,7 +5729,7 @@ dependencies = [
 
 [[package]]
 name = "redlang"
-version = "1.0.80"
+version = "1.0.86"
 dependencies = [
  "ab_glyph",
  "async-trait",
