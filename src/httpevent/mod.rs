@@ -7,7 +7,7 @@ use crate::cqevent::do_script;
 
 use crate::RT_PTR;
 use crate::cqapi::cq_add_log_w;
-use crate::{redlang::RedLang, read_code_cache};
+use crate::{redlang::{RedLang, RedValue, rv_object, rv_text}, read_code_cache};
 use hyper::body::Bytes;
 
 type GenericError = Box<dyn std::error::Error + Send + Sync>;
@@ -118,8 +118,16 @@ pub fn do_http_event(req:hyper::Request<hyper::body::Incoming>,can_write:bool,ca
         let mut rl = RedLang::new();
         if cffs == "网络触发" && pkg_name == pkg_name_t && crate::cqevent::is_key_match(&mut rl,&ppfs,keyword,&msg)? {
             rl.set_coremap("网络-访问方法", &method)?;
-            rl.set_coremap("网络-访问参数", &rl.build_obj(req_params))?;
-            rl.set_coremap("网络-访问头", &rl.build_obj(req_headers))?;
+            let req_params_value = req_params
+                .into_iter()
+                .map(|(k, v)| (k, rv_text(v)))
+                .collect();
+            rl.set_coremap_value("网络-访问参数", rv_object(req_params_value));
+            let req_headers_value = req_headers
+                .into_iter()
+                .map(|(k, v)| (k, rv_text(v)))
+                .collect();
+            rl.set_coremap_value("网络-访问头", rv_object(req_headers_value));
             rl.set_coremap("网络-权限",web_access)?;
             rl.req_tx = Some(body_tx1);
             rl.req_rx = Some(body_rx2);
@@ -127,20 +135,25 @@ pub fn do_http_event(req:hyper::Request<hyper::body::Incoming>,can_write:bool,ca
             rl.script_name = name.to_owned();
             rl.can_wrong = true;
             let rl_ret = do_script(&mut rl, code,"normal",true)?;
-            let mut http_header = BTreeMap::new();
+            let mut http_header: BTreeMap<String, String> = BTreeMap::new();
             let mut res:hyper::Response<BoxBody>;
-            if RedLang::get_legacy_type(&rl_ret)? == "字节集" {
-                http_header.insert("Content-Type", "application/octet-stream");
-                res = hyper::Response::new(crate::httpserver::full(RedLang::parse_bin_raw(&rl_ret)?));
-            } else {
-                http_header.insert("Content-Type", "text/html; charset=utf-8");
-                res = hyper::Response::new(crate::httpserver::full(rl_ret));
+            match &*rl_ret {
+                RedValue::Bin(bin) => {
+                    http_header.insert("Content-Type".to_string(), "application/octet-stream".to_string());
+                    res = hyper::Response::new(crate::httpserver::full(bin.as_ref().clone()));
+                }
+                RedValue::Text(text) => {
+                    http_header.insert("Content-Type".to_string(), "text/html; charset=utf-8".to_string());
+                    res = hyper::Response::new(crate::httpserver::full(text.as_ref().clone()));
+                }
+                other => {
+                    return Err(RedLang::make_err(&format!("网络触发不能返回{}类型", other.get_type_name())).into());
+                }
             }
-            let http_header_str = rl.get_coremap("网络-返回头");
-            if http_header_str != "" {
-                let http_header_t = RedLang::parse_obj(&http_header_str)?;
-                for (k,v) in &http_header_t {
-                    http_header.insert(k, v);
+            let http_header_value = rl.get_coremap_value("网络-返回头");
+            if let RedValue::Object(http_header_t) = &*http_header_value {
+                for (k,v) in http_header_t {
+                    http_header.insert(k.clone(), v.expect_text_value()?);
                 }
                 for (key,val) in &http_header {
                     res.headers_mut().append(HeaderName::from_str(key)?, HeaderValue::from_str(val)?);

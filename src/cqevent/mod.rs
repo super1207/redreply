@@ -3,13 +3,13 @@ mod do_private_msg;
 mod do_other_evt;
 mod do_group_inc;
 
-use std::{rc::Rc, collections::{HashMap, HashSet}, sync::Arc, cell::RefCell};
+use std::{rc::Rc, collections::{HashMap, HashSet}, cell::RefCell};
 
-use crate::{add_running_script_num, cqapi::cq_add_log_w, dec_running_script_num, get_gobal_filter_code, httpserver::send_onebot_event, mqttclient::publish_mqtt_event, mytool::read_json_str, read_code_cache, redlang::RedLang, G_SKIP_MSG_TIME, PAGING_UUID, REDLANG_UUID, RT_PTR};
+use crate::{add_running_script_num, cqapi::cq_add_log_w, dec_running_script_num, get_gobal_filter_code, httpserver::send_onebot_event, mqttclient::publish_mqtt_event, mytool::read_json_str, read_code_cache, redlang::{rv_array, rv_text, RedLang, RedValue, RedValueData}, G_SKIP_MSG_TIME, PAGING_UUID, RT_PTR};
 
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
-    if onebot_json_str.contains(&*crate::REDLANG_UUID) {
+    if onebot_json_str.contains(&*crate::PERSISTENT_VALUE_MARKER) {
         cq_add_log_w(&format!("输入出现内部字符，放弃处理本条消息：`{}`",onebot_json_str)).unwrap();
         return Ok(0)
     }
@@ -132,20 +132,19 @@ pub fn get_msg_type(rl:& RedLang) -> &'static str {
 }
 
 
-fn do_run_code_and_ret_check(rl:&mut RedLang,code:&str,can_ret_raw:bool)-> Result<String, Box<dyn std::error::Error>> {
-    let ret = rl.parse_to_string(code)?;
-
-    // 检查是否包含类型标记
-    if !can_ret_raw && ret.contains(&*REDLANG_UUID) {
-        return Err(RedLang::make_err("尝试输出非文本类型"));
+fn do_run_code_and_ret_check(rl:&mut RedLang,code:&str,can_ret_raw:bool)-> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
+    let ret = rl.parse(code)?;
+    if !can_ret_raw {
+        ret.expect_text_value()
+            .map_err(|_| RedLang::make_err(&format!("尝试输出非文本类型:{}", ret.get_type_name())))?;
     }
-    return Ok(ret.to_owned());
+    Ok(ret)
 }
 
-pub fn do_script(rl:&mut RedLang,code:&str,script_type:&str,can_ret_raw:bool) -> Result<String, Box<dyn std::error::Error>>{
+pub fn do_script(rl:&mut RedLang,code:&str,script_type:&str,can_ret_raw:bool) -> Result<Rc<RedValue>, Box<dyn std::error::Error>>{
     // 增加脚本运行计数
     if add_running_script_num(&rl.pkg_name,&rl.script_name,script_type) == false {
-        return Ok("".to_owned());
+        return Ok(crate::redlang::rv_empty());
     }
     let pkg_name = rl.pkg_name.clone();
     let script_name = rl.script_name.clone();
@@ -179,7 +178,7 @@ pub fn do_script(rl:&mut RedLang,code:&str,script_type:&str,can_ret_raw:bool) ->
                     let code = node.get("code").ok_or("脚本中无code")?.as_str().ok_or("脚本中code不是str")?;
                     return Ok((cffs,code,pkg_name));
                 } 
-                fn fun(err_str:String,exmap:HashMap<String, Arc<String>>,pkg_name:String,script_name:String) -> Result<i32, Box<dyn std::error::Error>> {
+                fn fun(err_str:String,exmap:HashMap<String, RedValueData>,pkg_name:String,script_name:String) -> Result<i32, Box<dyn std::error::Error>> {
                     let script_json = crate::read_code_cache()?;
                     let exmap_ptr = Rc::new(RefCell::new(exmap));
                     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
@@ -210,12 +209,15 @@ pub fn do_script(rl:&mut RedLang,code:&str,script_type:&str,can_ret_raw:bool) ->
     }
     let out_str_t = out_str_t_rst.unwrap();
 
-    // 处理分页指令
-    let out_str_vec = do_paging(&out_str_t)?;
+    if !can_ret_raw {
+        // 处理分页指令
+        let out_str = out_str_t.expect_text_value()?;
+        let out_str_vec = do_paging(&out_str)?;
 
-    // 发送到协议端
-    for out_str in out_str_vec {
-        crate::redlang::cqexfun::send_one_msg(rl, out_str)?;
+        // 发送到协议端
+        for out_str in out_str_vec {
+            crate::redlang::cqexfun::send_one_msg(rl, out_str)?;
+        }
     }
     return Ok(out_str_t);
 }
@@ -261,28 +263,20 @@ pub fn is_key_match(rl:&mut RedLang,ppfs:&str,keyword:&str,msg:&str) -> Result<b
         }
     }else if ppfs == "正则匹配"{
         let re = fancy_regex::Regex::new(keyword)?;
-        let mut sub_key_vec = String::new();
-        sub_key_vec.push_str(&crate::REDLANG_UUID.to_string());
-        sub_key_vec.push('A');
+        let mut sub_key_vec = Vec::new();
         for cap_iter in re.captures_iter(&msg) {
             let cap = cap_iter?;
             is_match = true;
             let len = cap.len();
-            let mut temp_vec = String::new();
-            temp_vec.push_str(&crate::REDLANG_UUID.to_string());
-            temp_vec.push('A');
+            let mut temp_vec = Vec::new();
             for i in 0..len {
                 if let Some(s) = cap.get(i) {
-                    temp_vec.push_str(&s.as_str().len().to_string());
-                    temp_vec.push(',');
-                    temp_vec.push_str(s.as_str());
+                    temp_vec.push(rv_text(s.as_str().to_string()));
                 }
             }
-            sub_key_vec.push_str(&temp_vec.len().to_string());
-            sub_key_vec.push(',');
-            sub_key_vec.push_str(&temp_vec);
+            sub_key_vec.push(rv_array(temp_vec));
         }
-        rl.set_exmap("子关键词", &sub_key_vec);
+        rl.set_exmap_value("子关键词", rv_array(sub_key_vec))?;
     }
     Ok(is_match)
 }

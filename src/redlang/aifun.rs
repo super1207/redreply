@@ -1,6 +1,6 @@
 use std::collections::{BTreeMap, HashMap};
 
-use crate::{cqapi::cq_add_log_w, redlang::{add_fun, rv_empty, rv_text, exfun::http_post, RedLang}, RT_PTR};
+use crate::{cqapi::cq_add_log_w, redlang::{add_fun, rv_empty, rv_text, exfun::http_post}, RT_PTR};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
@@ -26,23 +26,13 @@ pub fn init_ai_fun_map() {
         let uid = self_t.get_param_text_rc(params, 0)?;
         let handle = self_t.get_gobalmap(&uid);
         let image_rv = self_t.get_param(params, 1)?;
-        let image = match &*image_rv {
-            crate::redlang::RedValue::Bin(bin) => {
-                let b64 = BASE64_CUSTOM_ENGINE.encode(bin.as_ref());
-                format!("data:image/png;base64,{b64}")
-            },
-            crate::redlang::RedValue::Text(text) => {
-                text.to_string()
-            },
-            crate::redlang::RedValue::Legacy(s) => {
-                if RedLang::get_legacy_type(s)? == "字节集" {
-                    let b64 = BASE64_CUSTOM_ENGINE.encode(RedLang::parse_bin_raw(s)?);
-                    format!("data:image/png;base64,{b64}")
-                } else {
-                    s.to_string()
-                }
-            }
-            _ => return Err("GPT-增加图片参数2必须是文本或字节集".into()),
+        let image = if let Ok(bin) = image_rv.expect_bin_value() {
+            let b64 = BASE64_CUSTOM_ENGINE.encode(bin);
+            format!("data:image/png;base64,{b64}")
+        } else if let Ok(text) = image_rv.expect_text_value() {
+            text
+        } else {
+            return Err("GPT-增加图片参数2必须是文本或字节集".into());
         };
         let to_ret = format!("{handle}{uid}image,{image}");
         self_t.set_gobalmap(&uid, &to_ret)?;
@@ -86,14 +76,8 @@ pub fn init_ai_fun_map() {
         if timeout_str == "" {
             timeout_str = "60000".to_owned();
         }
-        let mut http_header = BTreeMap::new();
-        let http_header_str = self_t.get_coremap("访问头");
-        if http_header_str != "" {
-            http_header = RedLang::parse_obj(&http_header_str)?;
-            if !http_header.contains_key("User-Agent"){
-                http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
-            }
-        }else {
+        let mut http_header = self_t.get_coremap_text_map("访问头")?;
+        if !http_header.contains_key("User-Agent"){
             http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
         }
         http_header.insert("Authorization".to_string(),format!("Bearer {}",key));
@@ -115,12 +99,12 @@ pub fn init_ai_fun_map() {
                         val
                     } else {
                         cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
-                        (vec![],"".to_owned())
+                        (vec![],BTreeMap::new())
                     }
                 },
                 _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
                     cq_add_log_w(&format!("POST访问:`{}`超时",base_url)).unwrap();
-                    (vec![],"".to_owned())
+                    (vec![],BTreeMap::new())
                 }
             };
             return ret;

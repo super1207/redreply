@@ -19,7 +19,7 @@ use md5::Digest;
 use md5::Md5;
 use mytool::read_json_str;
 use path_clean::PathClean;
-use redlang::RedLang;
+use redlang::{RedLang, RedValueData};
 use serde_json;
 use rust_embed::RustEmbed;
 
@@ -40,6 +40,7 @@ mod botconn;
 mod httpserver;
 mod httpevent;
 mod pyserver;
+#[cfg(test)]
 mod test;
 mod pluscenter;
 mod onebot11s;
@@ -78,17 +79,17 @@ lazy_static! {
     // 用于记录加载的包名(x)
     pub static ref G_PKG_NAME:RwLock<HashSet<String>> = RwLock::new(HashSet::new());
     // 用于类型UUID
-    pub static ref REDLANG_UUID:String = "12331549-6D26-68A5-E192-5EBE9A6EB998".to_owned();
+    pub static ref PERSISTENT_VALUE_MARKER:String = "12331549-6D26-68A5-E192-5EBE9A6EB998".to_owned();
     // 用于分页命令
     pub static ref PAGING_UUID:String = "5f4bf0da-1673-4e3f-8d7c-4932cc923504".to_owned();
     // 用于清空命令
     pub static ref CLEAR_UUID:String = "a1e72c64-4d18-4529-bc19-e61c5a836e8c".to_owned();
     // 用于记录常量:包名-常量名-常量值(x)
-    pub static ref G_CONST_MAP:RwLock<HashMap<String,HashMap<String, String>>> = RwLock::new(HashMap::new());
+    pub static ref G_CONST_MAP:RwLock<HashMap<String,HashMap<String, RedValueData>>> = RwLock::new(HashMap::new());
     // 用于记录信号:uuid-包名-信号名-信号值
-    pub static ref G_SINGAL_ARR:RwLock<Vec<(String, String,String,Option<Arc<String>>)>> = RwLock::new(vec![]);
+    pub static ref G_SINGAL_ARR:RwLock<Vec<(String, String,String,Option<Arc<RedValueData>>)>> = RwLock::new(vec![]);
     // 用于记录临时常量:包名-常量名-常量值-过期时间(x)
-    pub static ref G_TEMP_CONST_MAP:RwLock<HashMap<String,HashMap<String, (String, u128)>>> = RwLock::new(HashMap::new());
+    pub static ref G_TEMP_CONST_MAP:RwLock<HashMap<String,HashMap<String, (RedValueData, u128)>>> = RwLock::new(HashMap::new());
     // 用于撤回消息 key:self_id+group_id  value:user_id + message_id
     pub static ref G_MSG_ID_MAP:RwLock<HashMap<String,VecDeque<(String,String)>> > = RwLock::new(HashMap::new());
     // 用于记录自定义的命令(x)
@@ -120,7 +121,7 @@ lazy_static! {
     // 用于自动关闭进程
     pub static ref G_AUTO_CLOSE:Mutex<bool> = Mutex::new(false);
     // 默认字体
-    pub static ref G_DEFAULF_FONT:RwLock<String> = RwLock::new(String::new());
+    pub static ref G_DEFAULF_FONT:RwLock<Option<Vec<u8>>> = RwLock::new(None);
     // 文件锁
     pub static ref G_FILE_MX:std::sync::Mutex<HashMap<String,i32>> = std::sync::Mutex::new(HashMap::new());
     // 历史日志
@@ -137,73 +138,43 @@ lazy_static! {
 
     // py解析red变量
     pub static ref G_RED_PY_DECODE:String =  r#"
-def __red_py_decode(input:str):
-    if input.startswith('12331549-6D26-68A5-E192-5EBE9A6EB998'):
-        if input[36] == 'B':
-            return bytes.fromhex(input[37:])
-        if input[36] == 'A':
-            retarr = []
-            data = input[37:].encode('utf-8')
-            while len(data) != 0:
-                pos = data.find(b',')
-                l = int(data[0:pos])
-                retarr.append(__red_py_decode(data[pos + 1:pos + l + 1].decode('utf-8')))
-                data = data[pos + l + 1:]
-            return retarr
-        if input[36] == 'O':
-            retobj = {}
-            k = None
-            data = input[37:].encode('utf-8')
-            while len(data) != 0:
-                pos = data.find(b',')
-                l = int(data[0:pos])
-                d = __red_py_decode(data[pos + 1:pos + l + 1].decode('utf-8'))
-                if k == None:
-                    k = d
-                else:
-                    retobj[k] = d
-                    k = None
-                data = data[pos + l + 1:]
-            return retobj
-    else:
-        return input
+import base64
+import json
+
+def __red_py_decode(input):
+    data = json.loads(input) if isinstance(input, str) else input
+    tp = data.get("type", "text")
+    if tp == "text":
+        return data.get("value", "")
+    if tp == "bin":
+        return base64.b64decode(data.get("value_b64", ""))
+    if tp == "array":
+        return [__red_py_decode(it) for it in data.get("items", [])]
+    if tp == "object":
+        return {k: __red_py_decode(v) for k, v in data.get("items", {}).items()}
+    raise Exception("未知RedLang值类型: {}".format(tp))
+
+def __to_red_data(input):
+    if isinstance(input, str):
+        return {"type": "text", "value": input}
+    if isinstance(input, bytes):
+        return {"type": "bin", "value_b64": base64.b64encode(input).decode("ascii")}
+    if isinstance(input, bool):
+        return {"type": "text", "value": "真" if input else "假"}
+    if isinstance(input, int):
+        return {"type": "text", "value": str(input)}
+    if isinstance(input, float):
+        return {"type": "text", "value": str(input)}
+    if isinstance(input, (list, tuple)):
+        return {"type": "array", "items": [__to_red_data(it) for it in input]}
+    if isinstance(input, dict):
+        return {"type": "object", "items": {str(k): __to_red_data(v) for k, v in input.items()}}
+    if input is None:
+        return {"type": "text", "value": ""}
+    return {"type": "text", "value": str(input)}
+
 def __to_red_type(input):
-    if isinstance(input,str):
-        return input
-    if isinstance(input,bytes):
-        print(2)
-        return '12331549-6D26-68A5-E192-5EBE9A6EB998B' + input.hex().upper()
-    if isinstance(input,bool):
-        if input == True:
-            return '真'
-        else:
-            return '假'
-    if isinstance(input,int):
-        return str(input)
-    if isinstance(input,float):
-        return str(input)
-    if isinstance(input,list):
-        retstr = '12331549-6D26-68A5-E192-5EBE9A6EB998A'
-        for it in input:
-            d = __to_red_type(it)
-            l = str(len(d.encode('utf-8')))
-            retstr += l + ',' + d
-        return retstr
-    if isinstance(input,dict):
-        from collections import OrderedDict
-        ordered_dict = OrderedDict()
-        for k,v in input.items():
-            ordered_dict[k] = v
-        retstr = '12331549-6D26-68A5-E192-5EBE9A6EB998O'
-        for k,v in ordered_dict.items():
-            d = __to_red_type(k)
-            l = str(len(d.encode('utf-8')))
-            retstr += l + ',' + d
-            d = __to_red_type(v)
-            l = str(len(d.encode('utf-8')))
-            retstr += l + ',' + d
-        return retstr
-    return str(input)
+    return json.dumps(__to_red_data(input), ensure_ascii=False)
 "#.to_owned();
 }
 
@@ -758,73 +729,42 @@ def deal_msg(message,js):
     code = js["code"]
     code = """
 __red_out_data = ""
-def __red_py_decode(input:str):
-    if input.startswith('12331549-6D26-68A5-E192-5EBE9A6EB998'):
-        if input[36] == 'B':
-            return bytes.fromhex(input[37:])
-        if input[36] == 'A':
-            retarr = []
-            data = input[37:].encode('utf-8')
-            while len(data) != 0:
-                pos = data.find(b',')
-                l = int(data[0:pos])
-                retarr.append(__red_py_decode(data[pos + 1:pos + l + 1].decode('utf-8')))
-                data = data[pos + l + 1:]
-            return retarr
-        if input[36] == 'O':
-            retobj = {}
-            k = None
-            data = input[37:].encode('utf-8')
-            while len(data) != 0:
-                pos = data.find(b',')
-                l = int(data[0:pos])
-                d = __red_py_decode(data[pos + 1:pos + l + 1].decode('utf-8'))
-                if k == None:
-                    k = d
-                else:
-                    retobj[k] = d
-                    k = None
-                data = data[pos + l + 1:]
-            return retobj
-    else:
-        return input
+import base64
+
+def __red_py_decode(input):
+    data = json.loads(input) if isinstance(input, str) else input
+    tp = data.get("type", "text")
+    if tp == "text":
+        return data.get("value", "")
+    if tp == "bin":
+        return base64.b64decode(data.get("value_b64", ""))
+    if tp == "array":
+        return [__red_py_decode(it) for it in data.get("items", [])]
+    if tp == "object":
+        return {k: __red_py_decode(v) for k, v in data.get("items", {}).items()}
+    raise Exception("未知RedLang值类型: {}".format(tp))
+
+def __to_red_data(input):
+    if isinstance(input, str):
+        return {"type": "text", "value": input}
+    if isinstance(input, bytes):
+        return {"type": "bin", "value_b64": base64.b64encode(input).decode("ascii")}
+    if isinstance(input, bool):
+        return {"type": "text", "value": "真" if input else "假"}
+    if isinstance(input, int):
+        return {"type": "text", "value": str(input)}
+    if isinstance(input, float):
+        return {"type": "text", "value": str(input)}
+    if isinstance(input, (list, tuple)):
+        return {"type": "array", "items": [__to_red_data(it) for it in input]}
+    if isinstance(input, dict):
+        return {"type": "object", "items": {str(k): __to_red_data(v) for k, v in input.items()}}
+    if input is None:
+        return {"type": "text", "value": ""}
+    return {"type": "text", "value": str(input)}
+
 def __to_red_type(input):
-    if isinstance(input,str):
-        return input
-    if isinstance(input,bytes):
-        print(2)
-        return '12331549-6D26-68A5-E192-5EBE9A6EB998B' + input.hex().upper()
-    if isinstance(input,bool):
-        if input == True:
-            return '真'
-        else:
-            return '假'
-    if isinstance(input,int):
-        return str(input)
-    if isinstance(input,float):
-        return str(input)
-    if isinstance(input,list):
-        retstr = '12331549-6D26-68A5-E192-5EBE9A6EB998A'
-        for it in input:
-            d = __to_red_type(it)
-            l = str(len(d.encode('utf-8')))
-            retstr += l + ',' + d
-        return retstr
-    if isinstance(input,dict):
-        from collections import OrderedDict
-        ordered_dict = OrderedDict()
-        for k,v in input.items():
-            ordered_dict[k] = v
-        retstr = '12331549-6D26-68A5-E192-5EBE9A6EB998O'
-        for k,v in ordered_dict.items():
-            d = __to_red_type(k)
-            l = str(len(d.encode('utf-8')))
-            retstr += l + ',' + d
-            d = __to_red_type(v)
-            l = str(len(d.encode('utf-8')))
-            retstr += l + ',' + d
-        return retstr
-    return str(input)
+    return json.dumps(__to_red_data(input), ensure_ascii=False)
 def red_install(pkg_name):
     '''安装一个模块'''
     from pip._internal.cli import main
@@ -838,7 +778,7 @@ def red_in():
     return __red_py_decode(__red_in_data)
 def red_out(s):
     global __red_out_data
-    __red_out_data = __to_red_type(s)
+    __red_out_data = __to_red_data(s)
 """ + code
     input_t = js["input"]
     scope = {"__red_in_data":input_t}

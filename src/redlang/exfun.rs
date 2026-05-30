@@ -15,7 +15,7 @@ use super::RedLang;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::io::Write;
-use crate::{G_DEFAULF_FONT, RT_PTR, add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, cronevent::{G_ONE_TIME_RUN, OneTimeRunStruct}, del_file_lock, get_python_cmd_name, pkg_can_run, pyserver::call_py_block, redlang::{RedValue, add_fun, get_random, rv_array, rv_bin, rv_empty, rv_from_legacy, rv_text}};
+use crate::{G_DEFAULF_FONT, RT_PTR, add_file_lock, cq_add_log_w, cqapi::{cq_add_log, get_tmp_dir}, cronevent::{G_ONE_TIME_RUN, OneTimeRunStruct}, del_file_lock, get_python_cmd_name, pkg_can_run, pyserver::call_py_block, redlang::{RedValue, add_fun, get_random, rv_array, rv_bin, rv_empty, rv_object, rv_text}};
 use std::rc::Rc;
 
 use image::{AnimationDecoder, EncodableLayout, GenericImageView, ImageBuffer, Rgba};
@@ -27,7 +27,7 @@ use ab_glyph::{FontRef, PxScale};
 
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
-fn get_param_array_legacy_text(
+fn get_param_text_array(
     self_t: &mut RedLang,
     params: &[astparser::Ast],
     i: usize,
@@ -35,12 +35,167 @@ fn get_param_array_legacy_text(
     Ok(self_t
         .get_param_array(params, i)?
         .into_iter()
-        .map(|v| v.to_legacy_string().to_string())
-        .collect())
+        .map(|v| v.expect_text_value())
+        .collect::<Result<Vec<String>, _>>()?)
+}
+
+fn text_map_to_red_object(map: BTreeMap<String, String>) -> Rc<RedValue> {
+    let out = map
+        .into_iter()
+        .map(|(k, v)| (k, rv_text(v)))
+        .collect();
+    rv_object(out)
+}
+
+fn coremap_value_to_text_map(
+    self_t: &mut RedLang,
+    key: &str,
+) -> Result<BTreeMap<String, String>, Box<dyn std::error::Error>> {
+    self_t.get_coremap_text_map(key)
+}
+
+fn get_param_image(
+    self_t: &mut RedLang,
+    params: &[astparser::Ast],
+    i: usize,
+) -> Result<(image::ImageFormat, ImageBuffer<Rgba<u8>, Vec<u8>>), Box<dyn std::error::Error>> {
+    RedLang::parse_bin_to_img_raw(self_t.get_param_bin(params, i)?)
+}
+
+fn red_to_serde_value(value: &RedValue) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    match value {
+        RedValue::Text(s) => {
+            if let Ok(num) = s.parse::<i64>() {
+                Ok(serde_json::Value::Number(num.into()))
+            } else if let Ok(num) = s.parse::<f64>() {
+                Ok(serde_json::json!(num))
+            } else if s.as_ref() == "真" {
+                Ok(serde_json::Value::Bool(true))
+            } else if s.as_ref() == "假" {
+                Ok(serde_json::Value::Bool(false))
+            } else {
+                Ok(serde_json::Value::String(s.as_ref().clone()))
+            }
+        }
+        RedValue::Array(arr) => {
+            let mut json_arr = Vec::with_capacity(arr.len());
+            for item in arr {
+                json_arr.push(red_to_serde_value(item)?);
+            }
+            Ok(serde_json::Value::Array(json_arr))
+        }
+        RedValue::Object(obj) => {
+            let mut json_map = serde_json::Map::new();
+            for (key, value) in obj {
+                json_map.insert(key.clone(), red_to_serde_value(value)?);
+            }
+            Ok(serde_json::Value::Object(json_map))
+        }
+        RedValue::Bin(_) => Err(RedLang::make_err("字节集不能直接转换为JSON值")),
+        _ => Err(RedLang::make_err(&format!("不支持的类型向JSON转换: {}", value.get_type_name()))),
+    }
+}
+
+fn red_to_python_wire_json(value: &RedValue) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    match value {
+        RedValue::Text(s) => Ok(serde_json::json!({
+            "type": "text",
+            "value": s.as_ref()
+        })),
+        RedValue::Array(arr) => {
+            let mut out = Vec::with_capacity(arr.len());
+            for item in arr {
+                out.push(red_to_python_wire_json(item)?);
+            }
+            Ok(serde_json::json!({
+                "type": "array",
+                "items": out
+            }))
+        }
+        RedValue::Object(obj) => {
+            let mut out = serde_json::Map::new();
+            for (key, value) in obj {
+                out.insert(key.clone(), red_to_python_wire_json(value)?);
+            }
+            Ok(serde_json::json!({
+                "type": "object",
+                "items": out
+            }))
+        }
+        RedValue::Bin(bin) => Ok(serde_json::json!({
+            "type": "bin",
+            "value_b64": BASE64_CUSTOM_ENGINE.encode(bin.as_ref())
+        })),
+        RedValue::Fun(_) => Err(RedLang::make_err("函数不能传递给Python")),
+    }
+}
+
+fn red_to_python_wire_string(value: &RedValue) -> Result<String, Box<dyn std::error::Error>> {
+    Ok(serde_json::to_string(&red_to_python_wire_json(value)?)?)
+}
+
+fn python_wire_json_to_red(value: &serde_json::Value) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
+    let value_type = value
+        .get("type")
+        .and_then(|v| v.as_str())
+        .ok_or("Python返回值缺少type字段")?;
+    match value_type {
+        "text" => Ok(rv_text(
+            value
+                .get("value")
+                .and_then(|v| v.as_str())
+                .unwrap_or_default()
+                .to_string(),
+        )),
+        "bin" => {
+            let encoded = value
+                .get("value_b64")
+                .and_then(|v| v.as_str())
+                .ok_or("Python字节集返回值缺少value_b64字段")?;
+            Ok(rv_bin(BASE64_CUSTOM_ENGINE.decode(encoded)?))
+        }
+        "array" => {
+            let items = value
+                .get("items")
+                .and_then(|v| v.as_array())
+                .ok_or("Python数组返回值缺少items字段")?;
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                out.push(python_wire_json_to_red(item)?);
+            }
+            Ok(rv_array(out))
+        }
+        "object" => {
+            let items = value
+                .get("items")
+                .and_then(|v| v.as_object())
+                .ok_or("Python对象返回值缺少items字段")?;
+            let mut out = BTreeMap::new();
+            for (key, value) in items {
+                out.insert(key.clone(), python_wire_json_to_red(value)?);
+            }
+            Ok(Rc::new(RedValue::Object(out)))
+        }
+        other => Err(RedLang::make_err(&format!("未知Python返回值类型: {other}"))),
+    }
+}
+
+fn python_wire_string_to_red(output: &str) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
+    if output.is_empty() {
+        return Ok(rv_empty());
+    }
+    let wire: serde_json::Value = serde_json::from_str(output)?;
+    python_wire_json_to_red(&wire)
+}
+
+fn python_base64_wire_output_to_red(output: &str) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
+    let content = BASE64_CUSTOM_ENGINE.decode(output)?;
+    let wire = String::from_utf8(content)?;
+    python_wire_string_to_red(&wire)
 }
 
 
-pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,proxy_str:&str,method:&str) -> Result<(Vec<u8>,String), Box<dyn std::error::Error + Send + Sync>> {
+pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,proxy_str:&str,method:&str) -> Result<(Vec<u8>,BTreeMap<String, String>), Box<dyn std::error::Error + Send + Sync>> {
     let client;
     let uri = reqwest::Url::from_str(url)?;
     if proxy_str == "" {
@@ -82,26 +237,27 @@ pub async fn http_post(url:&str,data:Vec<u8>,headers:&BTreeMap<String, String>,p
     let header_map_obj = ret.headers().iter().map(|(key,val)|{
         (key.as_str().to_string(),val.to_str().unwrap_or_default().to_string())
     }).collect::<BTreeMap<String,String>>();
-    let header_map =RedLang::build_obj_with_uid(&crate::REDLANG_UUID, header_map_obj);
     retbin = ret.bytes().await?.to_vec();
-    return Ok((retbin,header_map));
+    return Ok((retbin,header_map_obj));
 }
 
 pub fn init_ex_fun_map() {
     add_fun(vec!["返回头","取返回头"],|self_t,params|{
-        let ret_headers = self_t.get_coremap("返回头");
-        if ret_headers == "" {
-            return Ok(Some(rv_empty())); 
-        }
+        let ret_headers = self_t.get_coremap_value("返回头");
         let key = self_t.get_param_text(params, 0)?;
         if key == "" {
-            return Ok(Some(rv_from_legacy(&ret_headers)?));
+            return Ok(Some(ret_headers));
         } 
         else {
-            let obj = RedLang::parse_obj(&ret_headers)?;
-            let defstr = String::new();
-            let val = obj.get(&key).unwrap_or(&defstr);
-            return Ok(Some(rv_text(val.to_owned())));
+            match &*ret_headers {
+                RedValue::Object(obj) => {
+                    if let Some(val) = obj.get(&key) {
+                        return Ok(Some(val.clone()));
+                    }
+                    return Ok(Some(rv_empty()));
+                }
+                _ => return Ok(Some(rv_empty())),
+            }
         }
     });
     add_fun(vec!["访问"],|self_t,params|{
@@ -111,14 +267,8 @@ pub fn init_ex_fun_map() {
             if timeout_str == "" {
                 timeout_str = "60000".to_owned();
             }
-            let mut http_header = BTreeMap::new();
-            let http_header_str = self_t.get_coremap("访问头");
-            if http_header_str != "" {
-                http_header = RedLang::parse_obj(&http_header_str)?;
-                if !http_header.contains_key("User-Agent"){
-                    http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
-                }
-            }else {
+            let mut http_header = coremap_value_to_text_map(self_t, "访问头")?;
+            if !http_header.contains_key("User-Agent"){
                 http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
             }
             let timeout = timeout_str.parse::<u64>()?;
@@ -129,21 +279,21 @@ pub fn init_ex_fun_map() {
                             val
                         } else {
                             cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
-                            (vec![],String::new())
+                            (vec![],BTreeMap::new())
                         }
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
                         cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
-                        (vec![],String::new())
+                        (vec![],BTreeMap::new())
                     }
                 };
                 return ret;
             });
-            self_t.set_coremap("返回头",&content.1)?;
+            self_t.set_coremap_value("返回头", text_map_to_red_object(content.1));
             Ok(Some(rv_bin(content.0)))
         }
         let url = self_t.get_param_text(params, 0)?;
-        self_t.set_coremap("返回头","")?;
+        self_t.set_coremap_value("返回头", rv_empty());
         match access(self_t,&url) {
             Ok(ret) => Ok(ret),
             Err(err) => {
@@ -159,14 +309,8 @@ pub fn init_ex_fun_map() {
             if timeout_str == "" {
                 timeout_str = "60000".to_owned();
             }
-            let mut http_header = BTreeMap::new();
-            let http_header_str = self_t.get_coremap("访问头");
-            if http_header_str != "" {
-                http_header = RedLang::parse_obj(&http_header_str)?;
-                if !http_header.contains_key("User-Agent"){
-                    http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
-                }
-            }else {
+            let mut http_header = coremap_value_to_text_map(self_t, "访问头")?;
+            if !http_header.contains_key("User-Agent"){
                 http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
             }
             let timeout = timeout_str.parse::<u64>()?;
@@ -178,35 +322,29 @@ pub fn init_ex_fun_map() {
                             val
                         } else {
                             cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
-                            (vec![],String::new())
+                            (vec![],BTreeMap::new())
                         }
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
                         cq_add_log_w(&format!("{}访问:`{}`超时",method,url)).unwrap();
-                        (vec![],String::new())
+                        (vec![],BTreeMap::new())
                     }
                 };
                 return ret;
             });
-            self_t.set_coremap("返回头",&content.1)?;
+            self_t.set_coremap_value("返回头", text_map_to_red_object(content.1));
             Ok(Some(rv_bin(content.0)))
         }
         let url = self_t.get_param_text(params, 0)?;
         let data_rv = self_t.get_param(params, 1)?;
-        let data_t = data_rv.to_legacy_string();
-        let data = if let RedValue::Bin(b) = &*data_rv {
-            b.as_ref().clone()
+        let data = if let Ok(b) = data_rv.expect_bin_value() {
+            b
+        } else if let Ok(text) = data_rv.expect_text_value() {
+            text.into_bytes()
         } else {
-            let tp = RedLang::get_legacy_type(&data_t)?;
-            if tp == "字节集" {
-                RedLang::parse_bin_raw(&data_t)?
-            } else if tp == "文本" {
-                data_t.as_bytes().to_vec()
-            } else {
-                return Err(RedLang::make_err(&("不支持的访问体类型:".to_owned()+&tp)));
-            }
+            return Err(RedLang::make_err(&("不支持的访问体类型:".to_owned()+data_rv.get_type_name())));
         };
-        self_t.set_coremap("返回头","")?;
+        self_t.set_coremap_value("返回头", rv_empty());
         match access(method,self_t,&url,data) {
             Ok(ret) => Ok(ret),
             Err(err) => {
@@ -231,17 +369,11 @@ pub fn init_ex_fun_map() {
         do_http("DELETE", self_t, params)
     });
     add_fun(vec!["设置访问头"],|self_t,params|{
-        let http_header = self_t.get_coremap("访问头");
-        let mut http_header_map:BTreeMap<String, String> = BTreeMap::new();
-        if http_header != "" {
-            for (k,v) in RedLang::parse_obj(&http_header)?{
-                http_header_map.insert(k, v.to_string());
-            }
-        }
+        let mut http_header_map = coremap_value_to_text_map(self_t, "访问头")?;
         let k = self_t.get_param_text(params, 0)?;
         let v = self_t.get_param_text(params, 1)?;
         http_header_map.insert(k, v);
-        self_t.set_coremap("访问头", &self_t.build_obj(http_header_map))?;
+        self_t.set_coremap_value("访问头", text_map_to_red_object(http_header_map));
         return Ok(Some(rv_empty()));
     });
     add_fun(vec!["设置代理"],|self_t,params|{
@@ -336,7 +468,7 @@ pub fn init_ex_fun_map() {
         if arr.len() == 0 {
             return Ok(Some(self_t.get_param(params, 1)?));
         }
-        let index = self_t.parse_to_string(&format!("【取随机数@0@{}】",arr.len() - 1))?.parse::<usize>()?;
+        let index = get_random()? % arr.len();
         let ret = arr.get(index).ok_or("数组下标越界")?.clone();
         return Ok(Some(ret))
     });
@@ -349,13 +481,11 @@ pub fn init_ex_fun_map() {
         return Ok(Some(rv_array(ret_arr)))
     });
     add_fun(vec!["截取"],|self_t,params|{
-        let content = self_t.get_param(params, 0)?.to_legacy_string();
+        let content = self_t.get_param(params, 0)?;
         let begin = self_t.get_param_text(params, 1)?;
         let len = self_t.get_param_text(params, 2)?;
-        let tp = RedLang::get_legacy_type(&content)?;
-        let ret:String;
-        if tp == "文本" {
-            let chs = content.chars().collect::<Vec<char>>();
+        if let Ok(text) = content.expect_text_value() {
+            let chs = text.chars().collect::<Vec<char>>();
             let begen_pos;
             if begin.starts_with("-") {
                 let pos_rev = begin.get(1..).unwrap().parse::<usize>()?;
@@ -381,12 +511,12 @@ pub fn init_ex_fun_map() {
             if end_pos > chs.len() {
                 end_pos = chs.len();
             }
-            ret = match chs.get(begen_pos..end_pos) {
+            let ret = match chs.get(begen_pos..end_pos) {
                 Some(value) => value.iter().collect::<String>(),
                 None => "".to_string()
             };
-        }else if tp == "数组" {
-            let arr = RedLang::parse_arr(&content)?;
+            return Ok(Some(rv_text(ret)));
+        }else if let Ok(arr) = content.expect_array_value() {
             let begen_pos;
             if begin.starts_with("-") {
                 let pos_rev = begin.get(1..).unwrap().parse::<usize>()?;
@@ -413,94 +543,41 @@ pub fn init_ex_fun_map() {
             if end_pos > arr.len() {
                 end_pos = arr.len();
             }
-            ret = match arr.get(begen_pos..end_pos) {
-                Some(value) => {
-                    let mut array:Vec<&str> = vec![];
-                    for it in value {
-                        array.push(it);
-                    }
-                    self_t.build_arr(array)
-                },
-                None => self_t.build_arr(vec![])
-            };
+            let ret = arr.get(begen_pos..end_pos)
+                .map(|value| value.to_vec())
+                .unwrap_or_default();
+            return Ok(Some(rv_array(ret)));
         }
         else{
             return Err(RedLang::make_err("截取命令目前仅支持文本或数组"));
         }
-        
-        if tp == "数组" {
-            return Ok(Some(rv_from_legacy(&ret)?));
-        }
-        return Ok(Some(rv_text(ret)))
     });
     add_fun(vec!["JSON解析"],|self_t,params|{
-
-        fn red_to_serde_value(self_t: &RedLang, red_str: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
-            let tp = RedLang::get_legacy_type(red_str)?;
-            match tp.as_str() {
-                "文本" => {
-                    if let Ok(num) = red_str.parse::<i64>() {
-                        Ok(serde_json::Value::Number(num.into()))
-                    } else if let Ok(num) = red_str.parse::<f64>() {
-                        Ok(serde_json::json!(num))
-                    } else if red_str == "真" {
-                        Ok(serde_json::Value::Bool(true))
-                    } else if red_str == "假" {
-                        Ok(serde_json::Value::Bool(false))
-                    } else {
-                        Ok(serde_json::Value::String(red_str.to_string()))
-                    }
-                }
-                "数组" => {
-                    let arr = RedLang::parse_arr(red_str)?;
-                    let mut json_arr = Vec::new();
-                    for item in arr {
-                        json_arr.push(red_to_serde_value(self_t, item)?);
-                    }
-                    Ok(serde_json::Value::Array(json_arr))
-                }
-                "对象" => {
-                    let obj = RedLang::parse_obj(red_str)?;
-                    let mut json_map = serde_json::Map::new();
-                    for (key, value) in obj {
-                        json_map.insert(key, red_to_serde_value(self_t, &value)?);
-                    }
-                    Ok(serde_json::Value::Object(json_map))
-                }
-                "字节集" => Err(RedLang::make_err("字节集不能直接转换为JSON值")),
-                _ => Err(RedLang::make_err(&format!("不支持的类型向JSON转换: {}", tp))),
-            }
-        }
-
-        let json_obj_str = self_t.get_param(params, 0)?.to_legacy_string();
-        let tp = RedLang::get_legacy_type(&json_obj_str)?;
+        let json_obj = self_t.get_param(params, 0)?;
 
         let json_data: serde_json::Value;
 
-        if tp == "字节集" {
-            let u8_vec = RedLang::parse_bin_raw( &json_obj_str)?;
+        if let Ok(u8_vec) = json_obj.expect_bin_value() {
             let json_str = String::from_utf8(u8_vec)?;
             json_data = serde_json::from_str(&json_str).map_err(|e| format!("字节集内容JSON解析失败: {}", e))?;
-        } else if tp == "对象" {
-            json_data = red_to_serde_value(self_t, &json_obj_str)?;
-        } else {
-            let json_str = &json_obj_str;
+        } else if matches!(&*json_obj, RedValue::Object(_) | RedValue::Array(_)) {
+            json_data = red_to_serde_value(&json_obj)?;
+        } else if let Ok(json_str) = json_obj.expect_text_value() {
             json_data = serde_json::from_str(&json_str).map_err(|e| format!("文本内容JSON解析失败: {}", e))?;
+        } else {
+            return Err(RedLang::make_err(&format!("不支持的JSON解析类型: {}", json_obj.get_type_name())));
         }
 
         let jsonpath = self_t.get_param_text(params, 1)?;
-        let json_parse_out;
         if jsonpath != "" {
             if let Ok(v) = json_data.query(&jsonpath) {
-                json_parse_out = do_json_parse(&serde_json::json!(v), &crate::REDLANG_UUID.to_string())?;
+                return Ok(Some(json_value_to_red(&serde_json::json!(v))?));
             } else {
                 cq_add_log_w("jsonpath解析失败").unwrap();
                 return Ok(Some(rv_empty()));
             }
-        } else {
-            json_parse_out = do_json_parse(&json_data, &crate::REDLANG_UUID.to_string())?;
         }
-        return Ok(Some(rv_from_legacy(&json_parse_out)?));
+        return Ok(Some(json_value_to_red(&json_data)?));
     });
     add_fun(vec!["读文件"],|self_t,params|{
         let file_path = self_t.get_param_text(params, 0)?;
@@ -534,43 +611,35 @@ pub fn init_ex_fun_map() {
         if sub_str == "" {
             split_ret = split_ret.get(1..split_ret.len()-1).ok_or("无法获得分割结果")?.to_vec();
         }
-        let mut ret_str = format!("{}A",crate::REDLANG_UUID.to_string());
-        for it in split_ret {
-            ret_str.push_str(&it.len().to_string());
-            ret_str.push(',');
-            ret_str.push_str(it);
-        }
-        return Ok(Some(rv_from_legacy(&ret_str)?));
+        let ret = split_ret.into_iter().map(|it| rv_text(it.to_string())).collect();
+        return Ok(Some(rv_array(ret)));
     });
     add_fun(vec!["判含"],|self_t,params|{
-        let data_str = self_t.get_param(params, 0)?.to_legacy_string();
+        let data = self_t.get_param(params, 0)?;
         let sub_str = self_t.get_param_text(params, 1)?;
-        let tp = RedLang::get_legacy_type(&data_str)?;
-        if tp == "文本" {
+        if let Ok(data_str) = data.expect_text_value() {
             if !data_str.contains(&sub_str){
                 return Ok(Some(self_t.get_param(params, 2)?));
             }else{
                 return Ok(Some(self_t.get_param(params, 3)?));
             }
-        }else if tp == "数组" {
-            let mut ret_str = format!("{}A",crate::REDLANG_UUID.to_string());
-            for it in RedLang::parse_arr(&data_str)? {
-                if it.contains(&sub_str){
-                    ret_str.push_str(&it.len().to_string());
-                    ret_str.push(',');
-                    ret_str.push_str(it);
+        }else if let Ok(arr) = data.expect_array_value() {
+            let mut ret = Vec::new();
+            for it in arr {
+                if it.expect_text_value()?.contains(&sub_str){
+                    ret.push(it);
                 }
             }
-            return Ok(Some(rv_from_legacy(&ret_str)?)); 
+            return Ok(Some(rv_array(ret)));
         }else{
-            return Err(RedLang::make_err(&("对应类型不能使用判含:".to_owned()+&tp)));
+            return Err(RedLang::make_err(&("对应类型不能使用判含:".to_owned()+data.get_type_name())));
         }
     });
     add_fun(vec!["正则判含"],|self_t,params|{
-        let data_str = self_t.get_param(params, 0)?.to_legacy_string();
+        let data = self_t.get_param(params, 0)?;
         let sub_str = self_t.get_param_text(params, 1)?;
-        let tp = RedLang::get_legacy_type(&data_str)?;
-        if tp == "文本" {
+        let re = fancy_regex::Regex::new(&sub_str)?;
+        if let Ok(data_str) = data.expect_text_value() {
             let re = fancy_regex::Regex::new(&sub_str)?;
             let mut is_have = false;
             for _cap_iter in re.captures_iter(&data_str) {
@@ -582,24 +651,22 @@ pub fn init_ex_fun_map() {
             }else {
                 return Ok(Some(self_t.get_param(params, 3)?));
             }
-        }else if tp == "数组" {
-            let mut ret_str = format!("{}A",crate::REDLANG_UUID.to_string());
-            for it in RedLang::parse_arr(&data_str)? {
-                let re = fancy_regex::Regex::new(&sub_str)?;
+        }else if let Ok(arr) = data.expect_array_value() {
+            let mut ret = Vec::new();
+            for it in arr {
+                let it_text = it.expect_text_value()?;
                 let mut is_have = false;
-                for _cap_iter in re.captures_iter(&it) {
+                for _cap_iter in re.captures_iter(&it_text) {
                     is_have = true;
                     break;
                 }
                 if is_have {
-                    ret_str.push_str(&it.len().to_string());
-                    ret_str.push(',');
-                    ret_str.push_str(it);
+                    ret.push(it);
                 }
             }
-            return Ok(Some(rv_from_legacy(&ret_str)?)); 
+            return Ok(Some(rv_array(ret)));
         }else{
-            return Err(RedLang::make_err(&("对应类型不能使用正则判含:".to_owned()+&tp)));
+            return Err(RedLang::make_err(&("对应类型不能使用正则判含:".to_owned()+data.get_type_name())));
         }
     });
     add_fun(vec!["正则"],|self_t,params|{
@@ -858,11 +925,11 @@ pub fn init_ex_fun_map() {
         return Ok(Some(rv_text(content)));
     });
     add_fun(vec!["图片信息","图像信息"],|self_t,params|{
-        let text = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let (img_fmt,img) = RedLang::parse_bin_to_img(&text)?;
+        let bin = self_t.get_param_bin(params, 0)?;
+        let (img_fmt,img) = RedLang::parse_bin_to_img_raw(bin)?;
         let mut mp = BTreeMap::new();
-        mp.insert("宽".to_string(), img.width().to_string());
-        mp.insert("高".to_string(), img.height().to_string());
+        mp.insert("宽".to_string(), rv_text(img.width().to_string()));
+        mp.insert("高".to_string(), rv_text(img.height().to_string()));
         let img_fmt_str = match img_fmt {
             image::ImageFormat::Png => "png",
             image::ImageFormat::Jpeg => "jpg",
@@ -875,21 +942,19 @@ pub fn init_ex_fun_map() {
         if img_fmt_str == "" {
             return Err(RedLang::make_err("不能识别的图片格式"));
         }else {
-            mp.insert("格式".to_string(), img_fmt_str.to_string());
+            mp.insert("格式".to_string(), rv_text(img_fmt_str.to_string()));
         }
-        let retobj = self_t.build_obj(mp);
-        return Ok(Some(rv_from_legacy(&retobj)?));
+        return Ok(Some(rv_object(mp)));
     });
 
     add_fun(vec!["透视变换"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let dst_t = get_param_array_legacy_text(self_t, params, 1)?;
-        let text3 = self_t.get_param(params, 2)?.to_legacy_string().to_string();
-        let (_img_fmt,img) = RedLang::parse_bin_to_img(&text1)?;
+        let (_img_fmt,img) = get_param_image(self_t, params, 0)?;
+        let dst_t = get_param_text_array(self_t, params, 1)?;
+        let src_rv = self_t.get_param(params, 2)?;
         let img_width_str = img.width().to_string();
         let img_height_str = img.height().to_string();
         let src_t:Vec<String>;
-        if text3 == "" {
+        if src_rv.as_text() == Some("") {
             src_t = vec![
                 "0".to_string(),
                 "0".to_string(),
@@ -901,7 +966,10 @@ pub fn init_ex_fun_map() {
                 img_height_str.clone(),
             ];
         }else{
-            src_t = RedLang::parse_arr(&text3)?.iter().map(|s| (*s).to_string()).collect();
+            src_t = src_rv.expect_array_value()?
+                .into_iter()
+                .map(|v| v.expect_text_value())
+                .collect::<Result<Vec<String>, _>>()?;
         }
         if dst_t.len() != 8 || src_t.len() != 8 {
             return Err(RedLang::make_err("透视变换参数错误1"));
@@ -966,12 +1034,10 @@ pub fn init_ex_fun_map() {
             image::imageops::overlay(&mut img, &img1, 0, 0);
             Ok(img)
         }
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let text2 = { let bin = self_t.get_param_bin(params, 1)?; self_t.build_bin(bin) };
+        let (_img_fmt,img_vec_big) = get_param_image(self_t, params, 0)?;
+        let (_img_fmt,img_vec_sub) = get_param_image(self_t, params, 1)?;
         let text3 = self_t.get_param_text(params, 2)?;
         let text4 = self_t.get_param_text(params, 3)?;
-        let (_img_fmt,img_vec_big) = RedLang::parse_bin_to_img(&text1)?;
-        let (_img_fmt,img_vec_sub) = RedLang::parse_bin_to_img(&text2)?;
         let x = text3.parse::<i64>()?;
         let y = text4.parse::<i64>()?;
         let img_out = img_paste(img_vec_big,img_vec_sub,x,y)?;
@@ -980,10 +1046,8 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片横拼接","图片拼接"],|self_t,params|{
-        let img_text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let img_text2 = { let bin = self_t.get_param_bin(params, 1)?; self_t.build_bin(bin) };
-        let (_,img1) = RedLang::parse_bin_to_img(&img_text1)?;
-        let (_,img2) = RedLang::parse_bin_to_img(&img_text2)?;
+        let (_,img1) = get_param_image(self_t, params, 0)?;
+        let (_,img2) = get_param_image(self_t, params, 1)?;
         let mut back_img = ImageBuffer::new(img1.width() + img2.width(), std::cmp::max(img1.height(),img2.height()));
         image::imageops::overlay(&mut back_img, &img1, 0, 0);
         image::imageops::overlay(&mut back_img, &img2, img1.width() as i64, 0);
@@ -992,10 +1056,8 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片竖拼接"],|self_t,params|{
-        let img_text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let img_text2 = { let bin = self_t.get_param_bin(params, 1)?; self_t.build_bin(bin) };
-        let (_,img1) = RedLang::parse_bin_to_img(&img_text1)?;
-        let (_,img2) = RedLang::parse_bin_to_img(&img_text2)?;
+        let (_,img1) = get_param_image(self_t, params, 0)?;
+        let (_,img2) = get_param_image(self_t, params, 1)?;
         let mut back_img = ImageBuffer::new(std::cmp::max(img1.width(),img2.width()),img1.height() + img2.height());
         image::imageops::overlay(&mut back_img, &img1, 0, 0);
         image::imageops::overlay(&mut back_img, &img2, 0, img1.height() as i64);
@@ -1004,8 +1066,7 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片截取","图像截取"],|self_t,params|{
-        let img_text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let (_,img1) = RedLang::parse_bin_to_img(&img_text1)?;
+        let (_,img1) = get_param_image(self_t, params, 0)?;
         let x = self_t.get_param_text(params, 1)?.parse::<u32>()?;
         let y = self_t.get_param_text(params, 2)?.parse::<u32>()?;
         let mut width = self_t.get_param_text(params,3)?.parse::<u32>()?;
@@ -1025,12 +1086,10 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片覆盖","图像覆盖"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let text2 = { let bin = self_t.get_param_bin(params, 1)?; self_t.build_bin(bin) };
+        let (_,mut img_big) = get_param_image(self_t, params, 0)?;
+        let (_,img_sub) = get_param_image(self_t, params, 1)?;
         let text3 = self_t.get_param_text(params, 2)?;
         let text4 = self_t.get_param_text(params, 3)?;
-        let (_,mut img_big) = RedLang::parse_bin_to_img(&text1)?;
-        let (_,img_sub) = RedLang::parse_bin_to_img(&text2)?;
         let x = text3.parse::<i64>()?;
         let y = text4.parse::<i64>()?;
         for i in 0..img_sub.width() {
@@ -1052,8 +1111,7 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片模糊","图像模糊"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let (_,img) = RedLang::parse_bin_to_img(&text1)?;
+        let (_,img) = get_param_image(self_t, params, 0)?;
         let sigma = self_t.get_param_text(params, 1)?.parse::<f32>()?;
         let img_out;
         if sigma <= 0. {
@@ -1067,8 +1125,7 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片锐化","图像锐化"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let (_,img) = RedLang::parse_bin_to_img(&text1)?;
+        let (_,img) = get_param_image(self_t, params, 0)?;
         let sigma = self_t.get_param_text(params, 1)?.parse::<f32>()?;
         let threshold_text = self_t.get_param_text(params, 2)?;
         let threshold;
@@ -1084,12 +1141,10 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片上叠加","图像上叠加"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let text2 = { let bin = self_t.get_param_bin(params, 1)?; self_t.build_bin(bin) };
+        let (_img_fmt,mut img_big) = get_param_image(self_t, params, 0)?;
+        let (_img_fmt,img_sub) = get_param_image(self_t, params, 1)?;
         let text3 = self_t.get_param_text(params, 2)?;
         let text4 = self_t.get_param_text(params, 3)?;
-        let (_img_fmt,mut img_big) = RedLang::parse_bin_to_img(&text1)?;
-        let (_img_fmt,img_sub) = RedLang::parse_bin_to_img(&text2)?;
         let x = text3.parse::<i64>()?;
         let y = text4.parse::<i64>()?;
         image::imageops::overlay(&mut img_big, &img_sub, x, y);
@@ -1102,8 +1157,9 @@ pub fn init_ex_fun_map() {
         let delay = text2.parse::<u64>()?;
         let mut frame_vec:Vec<image::Frame> = vec![];
         for it in arr {
-            let it = it.to_legacy_string();
-            let (_,img) = RedLang::parse_bin_to_img(&it)?;
+            let raw = it.expect_bin_value()?;
+            let img_t = image::ImageReader::new(Cursor::new(raw)).with_guessed_format()?;
+            let img = img_t.decode()?.to_rgba8();
             let fm = image::Frame::from_parts(img, 0, 0, image::Delay::from_saturating_duration(Duration::from_millis(delay)));
             frame_vec.push(fm);
         }
@@ -1158,8 +1214,9 @@ pub fn init_ex_fun_map() {
         let mut frame_vec:Vec<webp::AnimFrame> = vec![];
         let mut img_buf_vec = vec![];
         for it in arr {
-            let it = it.to_legacy_string();
-            let (_,img_buf) = RedLang::parse_bin_to_img(&it)?;
+            let raw = it.expect_bin_value()?;
+            let img_t = image::ImageReader::new(Cursor::new(raw)).with_guessed_format()?;
+            let img_buf = img_t.decode()?.to_rgba8();
             img_buf_vec.push(img_buf);
             
         }
@@ -1188,8 +1245,7 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片变圆","图像变圆"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let (_,mut img) = RedLang::parse_bin_to_img(&text1)?;
+        let (_,mut img) = get_param_image(self_t, params, 0)?;
         let width = img.width();
         let height = img.height();
         let r:u32;
@@ -1214,12 +1270,11 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["圆角"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
+        let (_,mut img) = get_param_image(self_t, params, 0)?;
         let left_top_t = self_t.get_param_text(params, 1)?.parse::<u32>()?;
         let right_top_t = self_t.get_param_text(params, 2)?.parse::<u32>()?;
         let right_bottom_t = self_t.get_param_text(params, 3)?.parse::<u32>()?;
         let left_bottom_t = self_t.get_param_text(params, 4)?.parse::<u32>()?;
-        let (_,mut img) = RedLang::parse_bin_to_img(&text1)?;
         let width = img.width();
         let height = img.height();
 
@@ -1289,12 +1344,10 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片遮罩","图像遮罩"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let text2 = { let bin = self_t.get_param_bin(params, 1)?; self_t.build_bin(bin) };
+        let (_img_fmt,mut img_big) = get_param_image(self_t, params, 0)?;
+        let (_img_fmt,img_sub) = get_param_image(self_t, params, 1)?;
         let text3 = self_t.get_param_text(params, 2)?;
         let text4 = self_t.get_param_text(params, 3)?;
-        let (_img_fmt,mut img_big) = RedLang::parse_bin_to_img(&text1)?;
-        let (_img_fmt,img_sub) = RedLang::parse_bin_to_img(&text2)?;
         let x = text3.parse::<i64>()?;
         let y = text4.parse::<i64>()?;
         for i in 0..img_sub.width() {
@@ -1320,8 +1373,7 @@ pub fn init_ex_fun_map() {
     }
 
     add_fun(vec!["图片变灰","图像变灰"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let (_,mut img) = RedLang::parse_bin_to_img(&text1)?;
+        let (_,mut img) = get_param_image(self_t, params, 0)?;
         let width = img.width();
         let height = img.height();
         for x in 0..width {
@@ -1338,8 +1390,7 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片反色","图像反色"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let (_,mut img) = RedLang::parse_bin_to_img(&text1)?;
+        let (_,mut img) = get_param_image(self_t, params, 0)?;
         let width = img.width();
         let height = img.height();
         for x in 0..width {
@@ -1355,7 +1406,7 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片线稿","图像线稿"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
+        let (_,img) = get_param_image(self_t, params, 0)?;
         let sigma = self_t.get_param_text(params, 1)?.parse::<f32>()?;
         let contrast = self_t.get_param_text(params, 2)?.parse::<f32>().unwrap_or(1.0);
 
@@ -1367,7 +1418,6 @@ pub fn init_ex_fun_map() {
             return Err(RedLang::make_err("对比度参数必须大于等于0"));
         }
 
-        let (_,img) = RedLang::parse_bin_to_img(&text1)?;
         let (width, height) = img.dimensions();
 
         // 转为灰度图和反向灰度图
@@ -1423,7 +1473,7 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片线稿2","图像线稿2"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
+        let (_,img) = get_param_image(self_t, params, 0)?;
         let kernel_size = self_t.get_param_text(params, 1)?.parse::<u32>()?;
         let contrast = self_t.get_param_text(params, 2)?.parse::<f32>().unwrap_or(1.0);
         if kernel_size == 0 || kernel_size % 2 == 0 {
@@ -1432,7 +1482,6 @@ pub fn init_ex_fun_map() {
         if contrast < 0.0 {
             return Err(RedLang::make_err("对比度参数必须大于等于0"));
         }
-        let (_,img) = RedLang::parse_bin_to_img(&text1)?;
         let (width, height) = img.dimensions();
         // 转为灰度图和反向灰度图
         let mut gray_image: ImageBuffer<image::Luma<u8>, Vec<u8>> = ImageBuffer::new(width, height);
@@ -1506,12 +1555,10 @@ pub fn init_ex_fun_map() {
 
 
     add_fun(vec!["图片蒙版","图像蒙版"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let text2 = { let bin = self_t.get_param_bin(params, 1)?; self_t.build_bin(bin) };
+        let (_img_fmt,mut img_big) = get_param_image(self_t, params, 0)?;
+        let (_img_fmt,img_sub) = get_param_image(self_t, params, 1)?;
         let text3 = self_t.get_param_text(params, 2)?;
         let text4 = self_t.get_param_text(params, 3)?;
-        let (_img_fmt,mut img_big) = RedLang::parse_bin_to_img(&text1)?;
-        let (_img_fmt,img_sub) = RedLang::parse_bin_to_img(&text2)?;
         let x = text3.parse::<i64>()?;
         let y = text4.parse::<i64>()?;
         for i in 0..img_sub.width() {
@@ -1549,7 +1596,7 @@ pub fn init_ex_fun_map() {
         let image_height = self_t.get_param_text(params, 0)?.parse::<u32>()?;
         let text = self_t.get_param_text(params, 1)?;
         let text_size = self_t.get_param_text(params, 2)?.parse::<f32>()?;
-        let text_color = get_param_array_legacy_text(self_t, params, 3)?;
+        let text_color = get_param_text_array(self_t, params, 3)?;
         let mut color = Rgba::<u8>([0,0,0,255]);
         color.0[0] = text_color.get(0).map(|s| s.as_str()).unwrap_or("0").parse::<u8>()?;
         color.0[1] = text_color.get(1).map(|s| s.as_str()).unwrap_or("0").parse::<u8>()?;
@@ -1651,7 +1698,7 @@ pub fn init_ex_fun_map() {
         let image_width = self_t.get_param_text(params, 0)?.parse::<u32>()?;
         let text = self_t.get_param_text(params, 1)?;
         let text_size = self_t.get_param_text(params, 2)?.parse::<f32>()?;
-        let text_color = get_param_array_legacy_text(self_t, params, 3)?;
+        let text_color = get_param_text_array(self_t, params, 3)?;
         let mut color = Rgba::<u8>([0,0,0,255]);
         color.0[0] = text_color.get(0).map(|s| s.as_str()).unwrap_or("0").parse::<u8>()?;
         color.0[1] = text_color.get(1).map(|s| s.as_str()).unwrap_or("0").parse::<u8>()?;
@@ -1750,13 +1797,12 @@ pub fn init_ex_fun_map() {
         return Ok(Some(rv_bin(ret)));
     });
     add_fun(vec!["图片嵌字","图像嵌字"],|self_t,params|{
-        let image_text = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let (_,mut img) = RedLang::parse_bin_to_img(&image_text)?;
+        let (_,mut img) = get_param_image(self_t, params, 0)?;
         let text = self_t.get_param_text(params, 1)?;
         let text_x = self_t.get_param_text(params, 2)?.parse::<i32>()?;
         let text_y = self_t.get_param_text(params, 3)?.parse::<i32>()?;
         let text_size = self_t.get_param_text(params, 4)?.parse::<f32>()?;
-        let text_color = get_param_array_legacy_text(self_t, params, 5)?;
+        let text_color = get_param_text_array(self_t, params, 5)?;
         let mut color = Rgba::<u8>([0,0,0,255]);
         color.0[0] = text_color.get(0).map(|s| s.as_str()).unwrap_or("0").parse::<u8>()?;
         color.0[1] = text_color.get(1).map(|s| s.as_str()).unwrap_or("0").parse::<u8>()?;
@@ -1823,7 +1869,7 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["创建图片","创建图像"],|self_t,params|{
         let image_width = self_t.get_param_text(params, 0)?.parse::<u32>()?;
         let image_height = self_t.get_param_text(params, 1)?.parse::<u32>()?;
-        let text_color = get_param_array_legacy_text(self_t, params, 2)?;
+        let text_color = get_param_text_array(self_t, params, 2)?;
         let mut color = Rgba::<u8>([0,0,0,0]);
         color.0[0] = text_color.get(0).map(|s| s.as_str()).unwrap_or("0").parse::<u8>()?;
         color.0[1] = text_color.get(1).map(|s| s.as_str()).unwrap_or("0").parse::<u8>()?;
@@ -1840,32 +1886,28 @@ pub fn init_ex_fun_map() {
         return Ok(Some(rv_bin(ret)));
     });
     add_fun(vec!["水平翻转"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let (_,img) = RedLang::parse_bin_to_img(&text1)?;
+        let (_,img) = get_param_image(self_t, params, 0)?;
         let img_out = image::imageops::flip_horizontal(&img);
         let ret = self_t.build_bin_raw_from_img(&img_out)?;
         return Ok(Some(rv_bin(ret)));
     });
     add_fun(vec!["垂直翻转"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
-        let (_,img) = RedLang::parse_bin_to_img(&text1)?;
+        let (_,img) = get_param_image(self_t, params, 0)?;
         let img_out = image::imageops::flip_vertical(&img);
         let ret = self_t.build_bin_raw_from_img(&img_out)?;
         return Ok(Some(rv_bin(ret)));
     });
     add_fun(vec!["图像旋转","图片旋转"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
+        let (_,img) = get_param_image(self_t, params, 0)?;
         let text2 = self_t.get_param_text(params, 1)?;
-        let (_,img) = RedLang::parse_bin_to_img(&text1)?;
         let theta = text2.parse::<f32>()? / 360.0 * (2.0 * std::f32::consts::PI);
         let img_out = rotate_about_center(&img,theta,Interpolation::Bilinear,Rgba([0,0,0,0]));
         let ret = self_t.build_bin_raw_from_img(&img_out)?;
         return Ok(Some(rv_bin(ret)));
     });
     add_fun(vec!["完整图像旋转","完整图片旋转"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
+        let (_,img_sub) = get_param_image(self_t, params, 0)?;
         let text2 = self_t.get_param_text(params, 1)?;
-        let (_,img_sub) = RedLang::parse_bin_to_img(&text1)?;
         let theta = text2.parse::<f32>()? / 360.0 * (2.0 * std::f32::consts::PI);
         let img_width = img_sub.width();
         let img_height = img_sub.height();
@@ -1885,10 +1927,9 @@ pub fn init_ex_fun_map() {
         return Ok(Some(rv_bin(ret)));
     });
     add_fun(vec!["图像大小调整","图片大小调整"],|self_t,params|{
-        let text1 = { let bin = self_t.get_param_bin(params, 0)?; self_t.build_bin(bin) };
+        let (_,img) = get_param_image(self_t, params, 0)?;
         let mut width = self_t.get_param_text(params, 1)?.parse::<u32>()?;
         let mut height = self_t.get_param_text(params, 2)?.parse::<u32>()?;
-        let (_,img) = RedLang::parse_bin_to_img(&text1)?;
         if width == 0 && height != 0 {
             let k = (height as f64) / (img.height() as f64);
             width = ((img.width() as f64) * k).round() as u32;
@@ -1983,21 +2024,16 @@ pub fn init_ex_fun_map() {
             RedValue::Bin(ini_bin) => {
                 conf = Ini::load_from_str(&String::from_utf8(ini_bin.to_vec())?)?;
             }
-            RedValue::Legacy(path_text) => {
-                if RedLang::get_legacy_type(path_text)? == "字节集" {
-                    let ini_bin = RedLang::parse_bin_raw(path_text)?;
-                    conf = Ini::load_from_str(&String::from_utf8(ini_bin)?)?;
+            RedValue::Text(path_text) => {
+                let path = crate::mytool::path_to_os_str(path_text);
+                if Path::new(&path).exists() {
+                    add_file_lock(&path);
+                    let _guard = scopeguard::guard(path.clone(), |path| {
+                        del_file_lock(&path);
+                    });
+                    conf = Ini::load_from_file(path)?;
                 } else {
-                    let path = crate::mytool::path_to_os_str(path_text);
-                    if Path::new(&path).exists() {
-                        add_file_lock(&path);
-                        let _guard = scopeguard::guard(path.clone(), |path| {
-                            del_file_lock(&path);
-                        });
-                        conf = Ini::load_from_file(path)?;
-                    } else {
-                        return Ok(Some(rv_empty()));
-                    }
+                    return Ok(Some(rv_empty()));
                 }
             }
             _ => return Err(RedLang::make_err("读配置第1参数必须是文本路径或字节集")),
@@ -2030,21 +2066,16 @@ pub fn init_ex_fun_map() {
             RedValue::Bin(ini_bin) => {
                 conf = Ini::load_from_str(&String::from_utf8(ini_bin.to_vec())?)?;
             }
-            RedValue::Legacy(path_text) => {
-                if RedLang::get_legacy_type(path_text)? == "字节集" {
-                    let ini_bin = RedLang::parse_bin_raw(path_text)?;
-                    conf = Ini::load_from_str(&String::from_utf8(ini_bin)?)?;
+            RedValue::Text(path_text) => {
+                let path = crate::mytool::path_to_os_str(path_text);
+                if Path::new(&path).exists() {
+                    add_file_lock(&path);
+                    let _guard = scopeguard::guard(path.clone(), |path| {
+                        del_file_lock(&path);
+                    });
+                    conf = Ini::load_from_file(path)?;
                 } else {
-                    let path = crate::mytool::path_to_os_str(path_text);
-                    if Path::new(&path).exists() {
-                        add_file_lock(&path);
-                        let _guard = scopeguard::guard(path.clone(), |path| {
-                            del_file_lock(&path);
-                        });
-                        conf = Ini::load_from_file(path)?;
-                    } else {
-                        return Ok(Some(rv_array(vec![])));
-                    }
+                    return Ok(Some(rv_array(vec![])));
                 }
             }
             _ => return Err(RedLang::make_err("读配置节第1参数必须是文本路径或字节集")),
@@ -2067,21 +2098,16 @@ pub fn init_ex_fun_map() {
             RedValue::Bin(ini_bin) => {
                 conf = Ini::load_from_str(&String::from_utf8(ini_bin.to_vec())?)?;
             }
-            RedValue::Legacy(path_text) => {
-                if RedLang::get_legacy_type(path_text)? == "字节集" {
-                    let ini_bin = RedLang::parse_bin_raw(path_text)?;
-                    conf = Ini::load_from_str(&String::from_utf8(ini_bin)?)?;
+            RedValue::Text(path_text) => {
+                let path = crate::mytool::path_to_os_str(path_text);
+                if Path::new(&path).exists() {
+                    add_file_lock(&path);
+                    let _guard = scopeguard::guard(path.clone(), |path| {
+                        del_file_lock(&path);
+                    });
+                    conf = Ini::load_from_file(path)?;
                 } else {
-                    let path = crate::mytool::path_to_os_str(path_text);
-                    if Path::new(&path).exists() {
-                        add_file_lock(&path);
-                        let _guard = scopeguard::guard(path.clone(), |path| {
-                            del_file_lock(&path);
-                        });
-                        conf = Ini::load_from_file(path)?;
-                    } else {
-                        return Ok(Some(rv_array(vec![])));
-                    }
+                    return Ok(Some(rv_array(vec![])));
                 }
             }
             _ => return Err(RedLang::make_err("读配置键第1参数必须是文本路径或字节集")),
@@ -2089,12 +2115,12 @@ pub fn init_ex_fun_map() {
         let mut to_ret_map = BTreeMap::new();
         if let Some(section) = conf.section(Some(section_name)) {
             for (key,val) in section.into_iter() {
-                to_ret_map.insert(key.to_owned(), val.to_owned());
+                to_ret_map.insert(key.to_owned(), rv_text(val.to_owned()));
             }
         }else{
-            return Ok(Some(rv_from_legacy(&self_t.build_obj(BTreeMap::new()))?));
+            return Ok(Some(rv_object(BTreeMap::new())));
         }
-        return Ok(Some(rv_from_legacy(&self_t.build_obj(to_ret_map))?));
+        return Ok(Some(rv_object(to_ret_map)));
     });
     
     add_fun(vec!["写配置"],|self_t,params|{
@@ -2138,13 +2164,6 @@ pub fn init_ex_fun_map() {
         let bin_data = match &*data_rv {
             RedValue::Bin(b) => b.to_vec(),
             RedValue::Text(s) => text_to_bin_data(s),
-            RedValue::Legacy(s) => {
-                if RedLang::get_legacy_type(s)? == "字节集" {
-                    RedLang::parse_bin_raw(s)?
-                } else {
-                    text_to_bin_data(s)
-                }
-            }
             _ => return Err(RedLang::make_err("写文件第2参数必须是文本或字节集")),
         };
         let parent_path = Path::new(&path).parent().ok_or("写文件：无法创建目录或文件")?;
@@ -2164,13 +2183,6 @@ pub fn init_ex_fun_map() {
         let bin_data = match &*data_rv {
             RedValue::Bin(b) => b.to_vec(),
             RedValue::Text(s) => text_to_bin_data(s),
-            RedValue::Legacy(s) => {
-                if RedLang::get_legacy_type(s)? == "字节集" {
-                    RedLang::parse_bin_raw(s)?
-                } else {
-                    text_to_bin_data(s)
-                }
-            }
             _ => return Err(RedLang::make_err("追加文件第2参数必须是文本或字节集")),
         };
         let parent_path = Path::new(&path).parent().ok_or("写文件：无法创建目录或文件")?;
@@ -2251,13 +2263,13 @@ pub fn init_ex_fun_map() {
             let browser = headless_chrome::Browser::new(options)?;
             let tab = browser.new_tab()?;
             {
-                let http_header_str = self_t.get_coremap("访问头");
-                if http_header_str != "" {
-                    let http_header = RedLang::parse_obj(&http_header_str)?;
-                    let mut headers = HashMap::new();
-                    for (k,v) in http_header.iter() {
-                            headers.insert(k.as_str(), v.as_str());
-                    }
+            let http_header_str = self_t.get_coremap("访问头");
+            if http_header_str != "" {
+                let http_header = coremap_value_to_text_map(self_t, "访问头")?;
+                let mut headers = HashMap::new();
+                for (k,v) in http_header.iter() {
+                        headers.insert(k.as_str(), v.as_str());
+                }
                     tab.set_extra_http_headers(headers)?;
                 }
             }
@@ -2324,13 +2336,13 @@ pub fn init_ex_fun_map() {
             let browser = headless_chrome::Browser::new(options)?;
             let tab = browser.new_tab()?;
             {
-                let http_header_str = self_t.get_coremap("访问头");
-                if http_header_str != "" {
-                    let http_header = RedLang::parse_obj(&http_header_str)?;
-                    let mut headers = HashMap::new();
-                    for (k,v) in http_header.iter() {
-                            headers.insert(k.as_str(), v.as_str());
-                    }
+            let http_header_str = self_t.get_coremap("访问头");
+            if http_header_str != "" {
+                let http_header = coremap_value_to_text_map(self_t, "访问头")?;
+                let mut headers = HashMap::new();
+                for (k,v) in http_header.iter() {
+                        headers.insert(k.as_str(), v.as_str());
+                }
                     tab.set_extra_http_headers(headers)?;
                 }
             }
@@ -2392,13 +2404,13 @@ pub fn init_ex_fun_map() {
             let browser = headless_chrome::Browser::new(options)?;
             let tab = browser.new_tab()?;
             {
-                let http_header_str = self_t.get_coremap("访问头");
-                if http_header_str != "" {
-                    let http_header = RedLang::parse_obj(&http_header_str)?;
-                    let mut headers = HashMap::new();
-                    for (k,v) in http_header.iter() {
-                            headers.insert(k.as_str(), v.as_str());
-                    }
+            let http_header_str = self_t.get_coremap("访问头");
+            if http_header_str != "" {
+                let http_header = coremap_value_to_text_map(self_t, "访问头")?;
+                let mut headers = HashMap::new();
+                for (k,v) in http_header.iter() {
+                        headers.insert(k.as_str(), v.as_str());
+                }
                     tab.set_extra_http_headers(headers)?;
                 }
             }
@@ -2509,7 +2521,8 @@ pub fn init_ex_fun_map() {
 
     add_fun(vec!["数组查找"],|self_t,params|{ 
         let arr = self_t.get_param_array(params, 0)?;
-        let sub = self_t.get_param_text(params, 1)?;
+        let sub = self_t.get_param(params, 1)?;
+        let sub_text = sub.expect_text_value().ok();
         let pos_str= self_t.get_param_text(params, 2)?;
         let mut pos;
         if pos_str == "" {
@@ -2518,7 +2531,7 @@ pub fn init_ex_fun_map() {
             pos = pos_str.parse::<usize>()?;
         }
         while pos < arr.len() {
-            if arr[pos].to_legacy_string().as_str() == sub.as_str() {
+            if *arr[pos] == *sub || sub_text.as_ref().is_some_and(|text| arr[pos].as_text() == Some(text.as_str())) {
                 return Ok(Some(rv_text(pos.to_string())));
             }
             pos += 1;
@@ -2534,13 +2547,15 @@ pub fn init_ex_fun_map() {
         let sql_file = self_t.get_param_text(params, 0)?;
         let sql_file = crate::mytool::path_to_os_str(&sql_file);
         let sql = self_t.get_param_text(params, 1)?;
-        let sql_params_str = self_t.get_param(params, 2)?.to_legacy_string().to_string();
-                let sql_params;
-        if sql_params_str == "" {
-            sql_params = vec![];
-        }else{
-            sql_params = RedLang::parse_arr(&sql_params_str)?;
-        }
+        let sql_params_rv = self_t.get_param(params, 2)?;
+        let sql_params = if sql_params_rv.as_text() == Some("") {
+            vec![]
+        } else {
+            sql_params_rv.expect_array_value()?
+                .into_iter()
+                .map(|item| item.expect_text_value())
+                .collect::<Result<Vec<String>, _>>()?
+        };
 
         add_file_lock(&sql_file);
         let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
@@ -2644,7 +2659,8 @@ pub fn init_ex_fun_map() {
         let sql_file = crate::mytool::path_to_os_str(&sql_file);
         
         let key = self_t.get_param_text(params, 0)?;
-        let value = self_t.get_param(params, 1)?.to_legacy_string();
+        let value_rv = self_t.get_param(params, 1)?;
+        let value = crate::redlang::persistent_value_codec::to_persistent_legacy_string(value_rv.as_ref());
 
         add_file_lock(&sql_file);
         let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
@@ -2676,7 +2692,7 @@ pub fn init_ex_fun_map() {
         }
         
         if let Ok(ret) =  ret_rst {
-            return Ok(Some(Rc::new(RedValue::from_legacy_string(&ret)?)));
+            return Ok(Some(Rc::new(crate::redlang::persistent_value_codec::from_persistent_legacy_string(&ret)?)));
         }else {
             return Ok(Some(self_t.get_param(params, 1)?));
         }
@@ -2739,32 +2755,32 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["文件信息"],|self_t,params|{
         let file_path = self_t.get_param_text(params, 0)?;
         let path = Path::new(&file_path);
-        let mut ret_obj:BTreeMap<String, String> = BTreeMap::new();
+        let mut ret_obj:BTreeMap<String, Rc<RedValue>> = BTreeMap::new();
         if !path.exists() {
-            return Ok(Some(rv_from_legacy(&self_t.build_obj(BTreeMap::new()))?));
+            return Ok(Some(rv_object(BTreeMap::new())));
         }
         let file_info = fs::metadata(path)?;
-        ret_obj.insert("大小".to_string(), file_info.len().to_string());
+        ret_obj.insert("大小".to_string(), rv_text(file_info.len().to_string()));
         if let Ok(val) = file_info.created() {
-            ret_obj.insert("创建时间".to_string(), val.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+            ret_obj.insert("创建时间".to_string(), rv_text(val.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string()));
         }
         if let Ok(val) = file_info.modified() {
-            ret_obj.insert("修改时间".to_string(), val.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+            ret_obj.insert("修改时间".to_string(), rv_text(val.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string()));
         }
         if let Ok(val) = file_info.accessed() {
-            ret_obj.insert("访问时间".to_string(), val.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string());
+            ret_obj.insert("访问时间".to_string(), rv_text(val.duration_since(std::time::UNIX_EPOCH)?.as_secs().to_string()));
         }
         if file_info.is_dir() {
-            ret_obj.insert("类型".to_string(), "目录".to_string());
+            ret_obj.insert("类型".to_string(), rv_text("目录".to_string()));
         }else {
-            ret_obj.insert("类型".to_string(), "文件".to_string());
+            ret_obj.insert("类型".to_string(), rv_text("文件".to_string()));
         }
         if file_info.is_symlink() {
-            ret_obj.insert("符号链接".to_string(), "真".to_string());
+            ret_obj.insert("符号链接".to_string(), rv_text("真".to_string()));
         }else {
-            ret_obj.insert("符号链接".to_string(), "假".to_string());
+            ret_obj.insert("符号链接".to_string(), rv_text("假".to_string()));
         }
-        return Ok(Some(rv_from_legacy(&self_t.build_obj(ret_obj))?));
+        return Ok(Some(rv_object(ret_obj)));
     });
 
     add_fun(vec!["判存"],|self_t,params|{
@@ -2807,7 +2823,7 @@ pub fn init_ex_fun_map() {
         let arr = self_t.get_param_array(params, 0)?;
         let mut arr_out:Vec<Rc<RedValue>> = vec![];
         for txt in arr {
-            if !arr_out.iter().any(|x| x.to_legacy_string() == txt.to_legacy_string()) {
+            if !arr_out.iter().any(|x| **x == *txt) {
                 arr_out.push(txt);
             }
         }
@@ -3228,10 +3244,7 @@ pub fn init_ex_fun_map() {
         return Ok(Some(rv_text(out_str_num)));
     });
     add_fun(vec!["排序"],|self_t,params|{
-        let mut arr = self_t.get_param_array(params, 0)?
-            .into_iter()
-            .map(|x| x.to_legacy_string().to_string())
-            .collect::<Vec<String>>();
+        let mut arr = self_t.get_param_array(params, 0)?;
 
         if arr.len() == 0 {
             return Ok(Some(rv_array(vec![])));
@@ -3243,7 +3256,22 @@ pub fn init_ex_fun_map() {
             for i in 0..arr.len() - 1 {
                 for j in i + 1 ..arr.len()
                 {
-                    let ret_str = self_t.call_fun(&[func_ast.clone(), astparser::str_to_ast(arr[i].to_owned()), astparser::str_to_ast(arr[j].to_owned())])?;
+                    let left_name = format!("__RED_SORT_LEFT_{}", get_random().unwrap_or(0));
+                    let right_name = format!("__RED_SORT_RIGHT_{}", get_random().unwrap_or(0));
+                    let var_vec_len = self_t.var_vec.len();
+                    {
+                        let mp = &mut self_t.var_vec[var_vec_len - 1];
+                        mp.insert(left_name.clone(), Rc::new(RefCell::new(arr[i].clone())));
+                        mp.insert(right_name.clone(), Rc::new(RefCell::new(arr[j].clone())));
+                    }
+                    let left_ast = astparser::parse_to_ast(&format!("【变量@{}】", left_name)).map_err(|e| RedLang::make_err(&e))?;
+                    let right_ast = astparser::parse_to_ast(&format!("【变量@{}】", right_name)).map_err(|e| RedLang::make_err(&e))?;
+                    let ret_str = self_t.call_fun(&[func_ast.clone(), left_ast, right_ast])?;
+                    {
+                        let mp = &mut self_t.var_vec[var_vec_len - 1];
+                        mp.remove(&left_name);
+                        mp.remove(&right_name);
+                    }
                     if ret_str.text_or_empty() != "真" {
                         arr.swap(i, j);
                     }
@@ -3253,38 +3281,31 @@ pub fn init_ex_fun_map() {
             for i in 0..arr.len() - 1 {
                 for j in i + 1 ..arr.len()
                 {
-                    let f1 = arr[i].parse::<f64>()?;
-                    let f2 = arr[j].parse::<f64>()?;
+                    let f1 = arr[i].expect_text_value()?.parse::<f64>()?;
+                    let f2 = arr[j].expect_text_value()?.parse::<f64>()?;
                     if f1 > f2 {
                         arr.swap(i, j);
                     }
                 }
             }
         }
-        let ret = arr.into_iter().map(rv_text).collect::<Vec<Rc<RedValue>>>();
-        return Ok(Some(rv_array(ret)));
+        return Ok(Some(rv_array(arr)));
     });
     add_fun(vec!["翻转"],|self_t,params|{
         let to_rev = self_t.get_param(params, 0)?;
-        let to_rev_text = to_rev.to_legacy_string();
-        let tp = RedLang::get_legacy_type(&to_rev_text)?;
-        let ret;
-        if tp == "数组" {
-            let mut arr = self_t.get_param_array(params, 0)?;
+        if let Ok(mut arr) = to_rev.expect_array_value() {
             arr.reverse();
             return Ok(Some(rv_array(arr)));
-        } else if tp == "文本" {
-            let mut s = to_rev_text.chars().collect::<Vec<char>>();
+        } else if let Ok(text) = to_rev.expect_text_value() {
+            let mut s = text.chars().collect::<Vec<char>>();
             s.reverse();
-            ret = String::from_iter(s);
-        } else if tp == "字节集" {
-            let mut bin = self_t.get_param_bin(params, 0)?;
+            return Ok(Some(rv_text(String::from_iter(s))));
+        } else if let Ok(mut bin) = to_rev.expect_bin_value() {
             bin.reverse();
             return Ok(Some(rv_bin(bin)));
         } else {
-            return Err(RedLang::make_err(&format!("不支持的翻转类型:{tp}")));
+            return Err(RedLang::make_err(&format!("不支持的翻转类型:{}", to_rev.get_type_name())));
         }
-        return Ok(Some(rv_text(ret)));
     });
     add_fun(vec!["上传文件"],|self_t,params|{
         fn access(self_t:&mut RedLang,filename:&str,url:&str,file_data:&mut Vec<u8>) -> Result<String, Box<dyn std::error::Error>> {
@@ -3294,14 +3315,8 @@ pub fn init_ex_fun_map() {
             if timeout_str == "" {
                 timeout_str = "60000".to_owned();
             }
-            let mut http_header = BTreeMap::new();
-            let http_header_str = self_t.get_coremap("访问头");
-            if http_header_str != "" {
-                http_header = RedLang::parse_obj(&http_header_str)?;
-                if !http_header.contains_key("User-Agent"){
-                    http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
-                }
-            }else {
+            let mut http_header = coremap_value_to_text_map(self_t, "访问头")?;
+            if !http_header.contains_key("User-Agent"){
                 http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
             }
             let bound = uuid::Uuid::new_v4().to_string();
@@ -3332,12 +3347,12 @@ pub fn init_ex_fun_map() {
                             val
                         } else {
                             cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
-                            (vec![],"".to_owned())
+                            (vec![],BTreeMap::new())
                         }
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
                         cq_add_log_w(&format!("POST访问:`{}`超时",url)).unwrap();
-                        (vec![],"".to_owned())
+            (vec![],BTreeMap::new())
                     }
                 };
                 return ret;
@@ -3395,7 +3410,8 @@ def red_out(sw):
     red_print(en)
 "#;
         let code1 = self_t.get_param_text(params, 0)?;
-        let input = self_t.get_param(params, 1)?.to_legacy_string().to_string();
+        let input_value = self_t.get_param(params, 1)?;
+        let input = red_to_python_wire_string(&input_value)?;
         let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
 
@@ -3487,13 +3503,7 @@ def red_out(sw):
         if err != "" {
             cq_add_log_w(&format!("python中的警告或错误:{}",err)).unwrap();
         }
-        let content_rst = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
-            &base64::alphabet::STANDARD,
-            base64::engine::general_purpose::PAD), &out);
-        if content_rst.is_err() {
-            return Err(RedLang::make_err(&out));
-        }
-        Ok(Some(rv_text(String::from_utf8(content_rst.unwrap())?)))
+        Ok(Some(python_base64_wire_output_to_red(&out)?))
     });
         add_fun(vec!["运行本地PY"],|self_t,params|{
         let code = r#"
@@ -3521,7 +3531,8 @@ def red_out(sw):
 "#;
     
         let code1 = self_t.get_param_text(params, 0)?;
-        let input = self_t.get_param(params, 1)?.to_legacy_string().to_string();
+        let input_value = self_t.get_param(params, 1)?;
+        let input = red_to_python_wire_string(&input_value)?;
         let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let pip_in = std::process::Stdio::piped();
@@ -3565,13 +3576,7 @@ def red_out(sw):
         if err != "" {
             cq_add_log_w(&format!("python中的警告或错误:{}",err)).unwrap();
         }
-        let content_rst = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
-            &base64::alphabet::STANDARD,
-            base64::engine::general_purpose::PAD), &out);
-        if content_rst.is_err() {
-            return Err(RedLang::make_err(&out));
-        }
-        Ok(Some(rv_text(String::from_utf8(content_rst.unwrap())?)))
+        Ok(Some(python_base64_wire_output_to_red(&out)?))
     });
         add_fun(vec!["运行特殊PY"],|self_t,params|{
         let code = r#"
@@ -3600,7 +3605,8 @@ def red_out(sw):
     
         let mut to_add_path = self_t.get_param_text(params, 0)?;
         let code1 = self_t.get_param_text(params, 1)?;
-        let input = self_t.get_param(params, 2)?.to_legacy_string().to_string();
+        let input_value = self_t.get_param(params, 2)?;
+        let input = red_to_python_wire_string(&input_value)?;
         let input_b64 = BASE64_CUSTOM_ENGINE.encode(input);
         let app_dir = crate::redlang::cqexfun::get_app_dir(&self_t.pkg_name)?;
         let pip_in = std::process::Stdio::piped();
@@ -3665,32 +3671,20 @@ def red_out(sw):
         if err != "" {
             cq_add_log_w(&format!("python中的警告或错误:{}",err)).unwrap();
         }
-        let content_rst = base64::Engine::decode(&base64::engine::GeneralPurpose::new(
-            &base64::alphabet::STANDARD,
-            base64::engine::general_purpose::PAD), &out);
-        if content_rst.is_err() {
-            return Err(RedLang::make_err(&out));
-        }
-        Ok(Some(rv_text(String::from_utf8(content_rst.unwrap())?)))
+        Ok(Some(python_base64_wire_output_to_red(&out)?))
     });
     add_fun(vec!["默认字体"],|self_t,_params|{
         let mut ft_lk = G_DEFAULF_FONT.write().unwrap();
-        if *ft_lk != "" {
-            return Ok(Some(rv_from_legacy(ft_lk.as_str())?));
+        if let Some(font) = ft_lk.as_ref() {
+            return Ok(Some(rv_bin(font.clone())));
         }
         let proxy = self_t.get_coremap("代理");
         let mut timeout_str = self_t.get_coremap("访问超时");
         if timeout_str == "" {
             timeout_str = "60000".to_owned();
         }
-        let mut http_header = BTreeMap::new();
-        let http_header_str = self_t.get_coremap("访问头");
-        if http_header_str != "" {
-            http_header = RedLang::parse_obj(&http_header_str)?;
-            if !http_header.contains_key("User-Agent"){
-                http_header.insert("User-Agent".to_string(),"Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
-            }
-        }else {
+        let mut http_header = coremap_value_to_text_map(self_t, "访问头")?;
+        if !http_header.contains_key("User-Agent"){
             http_header.insert("User-Agent".to_string(), "Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/89.0.4389.72 Safari/537.36".to_string());
         }
         let url = "https://fonts.gstatic.com/s/notosanssc/v36/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYxNbPzS5HE.ttf";
@@ -3702,19 +3696,18 @@ def red_out(sw):
                         val
                     } else {
                         cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
-                        (vec![],String::new())
+                        (vec![],BTreeMap::new())
                     }
                 },
                 _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
                     cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
-                    (vec![],String::new())
+                    (vec![],BTreeMap::new())
                 }
             };
             return ret;
         });
         if content.0.len() == 10560380 {
-            let ft = self_t.build_bin(content.0.clone());
-            (*ft_lk) = ft.clone();
+            (*ft_lk) = Some(content.0.clone());
             return Ok(Some(rv_bin(content.0)));
         }else {
             cq_add_log_w(&format!("默认字体下载失败！")).unwrap();
@@ -3723,14 +3716,15 @@ def red_out(sw):
     });
     add_fun(vec!["快速运行PY"],|self_t,params|{
         let code = self_t.get_param_text_rc(params, 0)?;
-        let input = self_t.get_param(params, 1)?.to_legacy_string();
+        let input_value = self_t.get_param(params, 1)?;
+        let input = red_to_python_wire_string(&input_value)?;
         let ret = call_py_block(code.as_str(), input.as_str());
-        Ok(Some(rv_text(ret)))
+        Ok(Some(python_wire_string_to_red(&ret)?))
     });
     add_fun(vec!["区间选择"],|self_t,params|{
-        let obj_text = self_t.get_param_text_rc(params, 0)?;
+        let obj_value = self_t.get_param(params, 0)?;
         let select_num = self_t.get_param_text_rc(params, 1)?.parse::<f64>()? + 0.0000001f64;
-        let obj = RedLang::parse_obj(obj_text.as_str())?;
+        let obj = RedLang::red_value_to_text_map(&obj_value, "区间选择参数1")?;
         for (k,v) in &obj {
             let k_t = k.split('~').collect::<Vec<&str>>();
             let num1_str = k_t.get(0).ok_or("num1 not exist")?;
@@ -3777,7 +3771,7 @@ def red_out(sw):
         return Ok(Some(rv_text((sysinfo::Process::cpu_usage(process) /  sysinfo::System::cpus(&s).len() as f32).to_string())));
     });
 
-    add_fun(vec!["系统信息"],|self_t,_params|{
+    add_fun(vec!["系统信息"],|_self_t,_params|{
         let mut s = sysinfo::System::new_all();
         std::thread::sleep(sysinfo::MINIMUM_CPU_UPDATE_INTERVAL);
         s.refresh_all();
@@ -3792,22 +3786,21 @@ def red_out(sw):
             info.insert("Brand".to_owned(), cpu.brand().to_owned());
             info.insert("Name".to_owned(), cpu.name().to_owned());
             info.insert("VendorID".to_owned(), cpu.vendor_id().to_owned());
-            let info_str = self_t.build_obj(info);
-            cpulist.push(info_str);
+            cpulist.push(text_map_to_red_object(info));
         }
-        mp.insert("CpuList".to_owned(),self_t.build_arr(cpulist.iter().map(|x|x.as_str()).collect()));
+        mp.insert("CpuList".to_owned(),rv_array(cpulist));
 
-        mp.insert("SystemName".to_owned(), sysinfo::System::long_os_version().unwrap_or_default());
-        mp.insert("SystemKernelVersion".to_owned(), sysinfo::System::kernel_version().unwrap_or_default());
-        mp.insert("SystemOSVersion".to_owned(), sysinfo::System::os_version().unwrap_or_default());
-        mp.insert("SystemHostName".to_owned(), sysinfo::System::host_name().unwrap_or_default());
+        mp.insert("SystemName".to_owned(), rv_text(sysinfo::System::long_os_version().unwrap_or_default()));
+        mp.insert("SystemKernelVersion".to_owned(), rv_text(sysinfo::System::kernel_version().unwrap_or_default()));
+        mp.insert("SystemOSVersion".to_owned(), rv_text(sysinfo::System::os_version().unwrap_or_default()));
+        mp.insert("SystemHostName".to_owned(), rv_text(sysinfo::System::host_name().unwrap_or_default()));
 
-        mp.insert("TotalMemory".to_owned(), s.total_memory().to_string());
-        mp.insert("UsedMemory".to_owned(), s.used_memory().to_string());
-        mp.insert("TotalSwap".to_owned(), s.total_swap().to_string());
-        mp.insert("UsedSwap".to_owned(), s.used_swap().to_string());
+        mp.insert("TotalMemory".to_owned(), rv_text(s.total_memory().to_string()));
+        mp.insert("UsedMemory".to_owned(), rv_text(s.used_memory().to_string()));
+        mp.insert("TotalSwap".to_owned(), rv_text(s.total_swap().to_string()));
+        mp.insert("UsedSwap".to_owned(), rv_text(s.used_swap().to_string()));
 
-        mp.insert("CPUCount".to_owned(), s.cpus().len().to_string());
+        mp.insert("CPUCount".to_owned(), rv_text(s.cpus().len().to_string()));
 
         let mut disklist = vec![];
         let disks = sysinfo::Disks::new_with_refreshed_list();
@@ -3819,10 +3812,9 @@ def red_out(sw):
             info.insert("Kind".to_owned(), disk.kind().to_string());
             info.insert("TotalSpace".to_owned(), disk.total_space().to_string());
             info.insert("AvailableSpace".to_owned(), disk.available_space().to_string());
-            let info_str = self_t.build_obj(info);
-            disklist.push(info_str);
+            disklist.push(text_map_to_red_object(info));
         }
-        mp.insert("DiskList".to_owned(),self_t.build_arr(disklist.iter().map(|x|x.as_str()).collect()));
+        mp.insert("DiskList".to_owned(),rv_array(disklist));
 
         let networks = sysinfo::Networks::new_with_refreshed_list();
         let mut netlist = vec![];
@@ -3831,13 +3823,11 @@ def red_out(sw):
             info.insert("TotalReceived".to_owned(), data.total_received().to_string());
             info.insert("TotalTransmitted".to_owned(), data.total_transmitted().to_string());
             info.insert("InterfaceName".to_owned(), interface_name.to_owned());
-            let info_str = self_t.build_obj(info);
-            netlist.push(info_str);
+            netlist.push(text_map_to_red_object(info));
         }
-        mp.insert("NetList".to_owned(),self_t.build_arr(netlist.iter().map(|x|x.as_str()).collect()));
+        mp.insert("NetList".to_owned(),rv_array(netlist));
 
-        let ret = self_t.build_obj(mp);
-        return Ok(Some(rv_from_legacy(&ret)?));
+        return Ok(Some(rv_object(mp)));
     });
     
     add_fun(vec!["渲染SVG","SVG渲染"],|self_t,params|{
@@ -4236,23 +4226,12 @@ def red_out(sw):
 
     add_fun(vec!["HTML解析"],|self_t,params|{
         let html_rv = self_t.get_param(params, 0)?;
-        let html = match &*html_rv {
-            RedValue::Legacy(s) => {
-                if RedLang::get_legacy_type(s)? == "字节集" {
-                    String::from_utf8(RedLang::parse_bin_raw(s)?)?
-                } else {
-                    s.to_string()
-                }
-            }
-            RedValue::Bin(b) => String::from_utf8(b.to_vec())?,
-            _ => {
-                let legacy = html_rv.to_legacy_string();
-                if RedLang::get_legacy_type(&legacy)? == "字节集" {
-                    String::from_utf8(RedLang::parse_bin_raw(&legacy)?)?
-                } else {
-                    return Err(RedLang::make_err("HTML解析第1参数必须是文本或字节集"));
-                }
-            }
+        let html = if let Ok(text) = html_rv.expect_text_value() {
+            text
+        } else if let Ok(bin) = html_rv.expect_bin_value() {
+            String::from_utf8(bin)?
+        } else {
+            return Err(RedLang::make_err("HTML解析第1参数必须是文本或字节集"));
         };
         let css = self_t.get_param_text(params, 1)?;
         let document = scraper::Html::parse_document(&html);
@@ -4262,34 +4241,29 @@ def red_out(sw):
 
         for element in document.select(&selector) {
             let mut obj = BTreeMap::new();
-            obj.insert("html".to_owned(), element.html());
-            obj.insert("inner_html".to_owned(), element.inner_html());
+            obj.insert("html".to_owned(), rv_text(element.html()));
+            obj.insert("inner_html".to_owned(), rv_text(element.inner_html()));
             let text = element.text().collect::<Vec<&str>>();
             let mut text_str = String::new();
             for i in 0..text.len() {
                 text_str.push_str(text[i]);
             }
-            obj.insert("value".to_owned(),text_str);
+            obj.insert("value".to_owned(),rv_text(text_str));
             let atters_map = element.value().attrs();
             let mut atters_obj = BTreeMap::new();
             for (key, value) in atters_map {
                 atters_obj.insert(key.to_string(), value.to_string());
             }
-            let red_obj = self_t.build_obj(atters_obj);
-            obj.insert("attrs".to_owned(), red_obj);
-            retvec.push(self_t.build_obj(obj));
+            obj.insert("attrs".to_owned(), text_map_to_red_object(atters_obj));
+            retvec.push(rv_object(obj));
         }
-        let out2 = retvec.into_iter().map(rv_text).collect::<Vec<Rc<RedValue>>>();
-        Ok(Some(rv_array(out2)))
+        Ok(Some(rv_array(retvec)))
     });
     add_fun(vec!["计数"],|self_t,params|{
         let content_rv = self_t.get_param(params, 0)?;
         let ele_rv = self_t.get_param(params, 1)?;
-        let content = content_rv.to_legacy_string().to_string();
-        let ele = ele_rv.to_legacy_string().to_string();
-
-        let tp = RedLang::get_legacy_type(&content)?;
-        let count = if tp == "文本" {
+        let count = if let Ok(content) = content_rv.expect_text_value() {
+            let ele = ele_rv.expect_text_value()?;
             if ele == "" {
                 return Err(RedLang::make_err("计数的元素不能为空"));
             }
@@ -4300,9 +4274,8 @@ def red_out(sw):
                 pos += found + ele.len();
             }
             text_count
-        } else if tp == "字节集" {
-            let bin_content = RedLang::parse_bin_raw( &content)?;
-            let bin_ele = RedLang::parse_bin_raw( &ele)?;
+        } else if let Ok(bin_content) = content_rv.expect_bin_value() {
+            let bin_ele = ele_rv.expect_bin_value()?;
             if bin_ele.len() == 0 {
                 return Err(RedLang::make_err("计数的元素不能为空"));
             }
@@ -4317,11 +4290,10 @@ def red_out(sw):
                 }
             }
             bin_count
-        } else if tp == "数组" {
-            let arr_content = self_t.get_param_array(params, 0)?;
-            arr_content.iter().filter(|x| ele.as_str() == x.to_legacy_string().as_str()).count()
+        } else if let Ok(arr_content) = content_rv.expect_array_value() {
+            arr_content.iter().filter(|x| ***x == *ele_rv).count()
         } else {
-            return Err(RedLang::make_err(&format!("计数不支持的类型:{}",tp)));
+            return Err(RedLang::make_err(&format!("计数不支持的类型:{}",content_rv.get_type_name())));
         };
         Ok(Some(rv_text(count.to_string())))
     });
@@ -4330,104 +4302,45 @@ def red_out(sw):
 
 
 
-pub fn do_json_parse(json_val:&serde_json::Value,self_uid:&str) ->Result<String, Box<dyn std::error::Error>> {
+pub fn json_value_to_red(json_val:&serde_json::Value) ->Result<Rc<RedValue>, Box<dyn std::error::Error>> {
     let err_str = "Json解析失败";
     if json_val.is_string() {
-        return Ok(json_val.as_str().ok_or(err_str)?.to_string());
+        return Ok(rv_text(json_val.as_str().ok_or(err_str)?.to_string()));
     }
     if json_val.is_object() {
-        return Ok(do_json_obj(self_uid,&json_val)?);
+        return do_json_obj(json_val);
     } 
     if json_val.is_array() {
-        return Ok(do_json_arr(&self_uid,&json_val)?);
+        return do_json_arr(json_val);
     }
     if json_val.is_null() {
-        return Ok("".to_owned());
+        return Ok(rv_empty());
+    }
+    if json_val.is_boolean() {
+        return Ok(rv_text(if json_val.as_bool().ok_or(err_str)? { "真" } else { "假" }.to_string()));
+    }
+    if json_val.is_number() {
+        return Ok(rv_text(json_val.to_string()));
     }
     Err(None.ok_or(err_str)?)
 }
 
-fn do_json_string(root:&serde_json::Value) -> Result<String, Box<dyn std::error::Error>> {
-    let err = "Json字符串解析失败";
-    return Ok(root.as_str().ok_or(err)?.to_string());
-}
-
-fn do_json_bool(root:&serde_json::Value) -> Result<String, Box<dyn std::error::Error>> {
-    let err = "Json布尔解析失败";
-    let v_ret:String;
-    if root.as_bool().ok_or(err)? {
-        v_ret = "真".to_string();
-    }else{
-        v_ret = "假".to_string();
-    }
-    return Ok(v_ret);
-}
-
-fn do_json_number(root:&serde_json::Value) -> Result<String, Box<dyn std::error::Error>> {
-    let err = "Json数字解析失败";
-    let v_ret:String;
-    if root.is_u64() {
-        v_ret = root.as_u64().ok_or(err)?.to_string();
-    }else if root.is_i64() {
-        v_ret = root.as_i64().ok_or(err)?.to_string();
-    }else if root.is_f64() {
-        v_ret = root.as_f64().ok_or(err)?.to_string();
-    }else {
-        return None.ok_or("不支持的Json类型")?;
-    }
-    return Ok(v_ret);
-}
-
-fn do_json_obj(self_uid:&str,root:&serde_json::Value) -> Result<String, Box<dyn std::error::Error>> {
+fn do_json_obj(root:&serde_json::Value) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
     let err = "Json对象解析失败";
-    let mut ret_str:BTreeMap<String,String> = BTreeMap::new();
-    for it in root.as_object().ok_or(err)? {
-        let k = it.0;
-        let v = it.1;
-        let v_ret:String;
-        if v.is_string() {
-            v_ret = do_json_string(v)?;
-        } else if v.is_boolean() {
-            v_ret = do_json_bool(v)?;
-        }else if v.is_number() {
-            v_ret = do_json_number(v)?
-        }else if v.is_null() {
-            v_ret = "".to_string();
-        }else if v.is_object() {
-            v_ret = do_json_obj(self_uid,v)?;
-        }else if v.is_array() {
-            v_ret = do_json_arr(self_uid,v)?;
-        }else{
-            return None.ok_or("不支持的Json类型")?;
-        }
-        ret_str.insert(k.to_string(), v_ret);
+    let mut ret_obj:BTreeMap<String, Rc<RedValue>> = BTreeMap::new();
+    for (k, v) in root.as_object().ok_or(err)? {
+        ret_obj.insert(k.to_string(), json_value_to_red(v)?);
     }
-    Ok(RedLang::build_obj_with_uid(self_uid, ret_str))
+    Ok(Rc::new(RedValue::Object(ret_obj)))
 }
 
-fn do_json_arr(self_uid: &str, root: &serde_json::Value) -> Result<String, Box<dyn std::error::Error>> {
+fn do_json_arr(root: &serde_json::Value) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
     let err = "Json数组解析失败";
-    let mut ret_str:Vec<String> = vec![];
+    let mut ret_arr:Vec<Rc<RedValue>> = vec![];
     for v in root.as_array().ok_or(err)? {
-        let v_ret:String;
-        if v.is_string() {
-            v_ret = do_json_string(v)?;
-        } else if v.is_boolean() {
-            v_ret = do_json_bool(v)?;
-        }else if v.is_number() {
-            v_ret = do_json_number(v)?
-        }else if v.is_null() {
-            v_ret = "".to_string();
-        }else if v.is_object() {
-            v_ret = do_json_obj(self_uid,v)?;
-        }else if v.is_array() {
-            v_ret = do_json_arr(self_uid,v)?;
-        }else{
-            return None.ok_or("不支持的Json类型")?;
-        }
-        ret_str.push(v_ret);
+        ret_arr.push(json_value_to_red(v)?);
     }
-    Ok(RedLang::build_arr_with_uid(self_uid, ret_str.iter().map(AsRef::as_ref).collect()))
+    Ok(rv_array(ret_arr))
 }
 
 fn get_mid<'a>(s:&'a str,sub_begin:&str,sub_end:&str) -> Result<Vec<&'a str>, Box<dyn std::error::Error>> {

@@ -1,5 +1,16 @@
 
 
+use std::sync::Once;
+
+fn init_redlang_test_funs() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        crate::redlang::init_core_fun_map();
+        crate::redlang::cqexfun::init_cq_ex_fun_map();
+        crate::redlang::exfun::init_ex_fun_map();
+    });
+}
+
 
 #[test]
 fn test_cqstr_to_arr() {
@@ -85,6 +96,56 @@ fn test_redformat() {
 
     }
 
+}
+
+#[test]
+fn test_structured_const_keeps_value_shape() {
+    init_redlang_test_funs();
+    let pkg_name = "test_structured_const_keeps_value_shape";
+    crate::del_pkg_memory(pkg_name);
+
+    let result = (|| -> Result<String, Box<dyn std::error::Error>> {
+        let mut rl = crate::redlang::RedLang::new();
+        rl.pkg_name = pkg_name.to_string();
+        let ret = rl.parse(
+            "【定义常量@结构常量@【对象@列表@【数组@甲@乙】@对象@【对象@键@值】】】\
+             【取类型@【取元素@【常量@结构常量】@列表】】|\
+             【取元素@【取元素@【常量@结构常量】@列表】@1】|\
+             【取元素@【取元素@【常量@结构常量】@对象】@键】",
+        )?;
+        match &*ret {
+            crate::redlang::RedValue::Text(s) => Ok(s.to_string()),
+            other => Err(format!("expected text result, got {}", other.get_type_name()).into()),
+        }
+    })();
+
+    crate::del_pkg_memory(pkg_name);
+    assert_eq!(result.unwrap(), "A|乙|值");
+}
+
+#[test]
+fn test_structured_runtime_operations() {
+    init_redlang_test_funs();
+    let pkg_name = "test_structured_runtime_operations";
+    crate::del_pkg_memory(pkg_name);
+
+    let result = (|| -> Result<String, Box<dyn std::error::Error>> {
+        let mut rl = crate::redlang::RedLang::new();
+        rl.pkg_name = pkg_name.to_string();
+        let ret = rl.parse(
+            "【取长度@【截取@【数组@1@2@3】@1@2】】|\
+             【取元素@【取元素@【JSON解析@【对象@列表@【数组@甲@乙】】】@列表】@1】|\
+             【计数@【数组@甲@乙@甲】@甲】|\
+             【取元素@【翻转@【数组@甲@乙】】@0】",
+        )?;
+        match &*ret {
+            crate::redlang::RedValue::Text(s) => Ok(s.to_string()),
+            other => Err(format!("expected text result, got {}", other.get_type_name()).into()),
+        }
+    })();
+
+    crate::del_pkg_memory(pkg_name);
+    assert_eq!(result.unwrap(), "2|乙|2|乙");
 }
 
 // #[test]

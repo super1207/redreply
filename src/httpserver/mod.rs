@@ -33,7 +33,7 @@ type Result<T> = std::result::Result<T, GenericError>;
 
 lazy_static! {
     static ref G_LOG_MAP:tokio::sync::RwLock<HashMap<String,tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(HashMap::new());
-    pub static ref G_PY_ECHO_MAP:tokio::sync::RwLock<HashMap<String,tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(HashMap::new());
+    pub static ref G_PY_ECHO_MAP:tokio::sync::RwLock<HashMap<String,tokio::sync::mpsc::Sender<serde_json::Value>>> = tokio::sync::RwLock::new(HashMap::new());
     pub static ref G_PY_HANDER:tokio::sync::RwLock<Option<tokio::sync::mpsc::Sender<String>>> = tokio::sync::RwLock::new(None);
     static ref G_PYSER_OPEN:AtomicBool = AtomicBool::new(false);
     static ref G_ONEBOT_WS_MAP:tokio::sync::RwLock<HashMap<String,(tokio::sync::mpsc::Sender<String>,String,String)>> = tokio::sync::RwLock::new(HashMap::new());
@@ -1135,7 +1135,8 @@ async fn serve_py_websocket(websocket: hyper_tungstenite::HyperWebsocket,mut rx:
             let echo = read_json_str(&js, "echo");
             let lk = G_PY_ECHO_MAP.read().await;
             if lk.contains_key(&echo) {
-                lk.get(&echo).unwrap().send(read_json_str(&js,"data")).await?;
+                let data = js.get("data").cloned().unwrap_or(serde_json::Value::String(String::new()));
+                lk.get(&echo).unwrap().send(data).await?;
             }
         }
         Ok(())

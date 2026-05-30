@@ -1,8 +1,8 @@
-use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Rc, sync::Arc, thread, time::SystemTime};
+use std::{cell::RefCell, collections::{HashMap, HashSet}, rc::Rc, thread, time::SystemTime};
 
 use chrono::TimeZone;
 
-use crate::{cqapi::cq_add_log_w, cqevent::is_key_match, read_code_cache, redlang::RedLang, RT_PTR};
+use crate::{cqapi::cq_add_log_w, cqevent::is_key_match, read_code_cache, redlang::{RedLang, RedValueData}, RT_PTR};
 
 // 【设置延迟触发@关键词@时间@传递数据】
 #[derive(Clone,Debug)]
@@ -11,7 +11,7 @@ pub struct OneTimeRunStruct {
     pub pkg_name:String,
     pub flag:String,
     pub sub_data:String,
-    pub data:HashMap<String, Arc<String>>,
+    pub data:HashMap<String, RedValueData>,
 }
 
 lazy_static! {

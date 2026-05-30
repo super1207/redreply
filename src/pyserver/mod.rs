@@ -18,7 +18,7 @@ pub fn call_py_block(code:&str,input:&str) -> String {
     RT_PTR.block_on(async {
         let rst = call_py(code,input).await;
         match rst {
-            Ok(s) => s,
+            Ok(s) => s.to_string(),
             Err(err) => {
                 cq_add_log_w(&err.to_string()).unwrap();
                 "".to_string()
@@ -27,14 +27,14 @@ pub fn call_py_block(code:&str,input:&str) -> String {
     })
 }
 
-async fn call_py(code:&str,input:&str) -> Result<String, Box<dyn std::error::Error + Send + Sync>>{
+async fn call_py(code:&str,input:&str) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>>{
     let uid = uuid::Uuid::new_v4().to_string();
     let send_json = serde_json::json!({
         "echo":uid,
         "code":code,
         "input":input
     });
-    let (tx, mut rx) =  tokio::sync::mpsc::channel::<String>(1);
+    let (tx, mut rx) =  tokio::sync::mpsc::channel::<serde_json::Value>(1);
     {
         let mut lk = G_PY_ECHO_MAP.write().await;
         lk.insert(uid.clone(), tx);
@@ -47,7 +47,7 @@ async fn call_py(code:&str,input:&str) -> Result<String, Box<dyn std::error::Err
     let ret = send_to_ser(send_json.to_string()).await;
     if ret.is_err() {
         cq_add_log_w(&format!("call_py err:{:?}",ret.err())).unwrap();
-        return Ok("".to_string());
+        return Ok(serde_json::Value::String(String::new()));
     }
     tokio::select! {
         std::option::Option::Some(val) = rx.recv() => {
@@ -55,7 +55,7 @@ async fn call_py(code:&str,input:&str) -> Result<String, Box<dyn std::error::Err
         },
         _ = tokio::time::sleep(std::time::Duration::from_secs(90)) => {
             cq_add_log_w(&format!("接收python返回超时")).unwrap();
-            return Ok("".to_string());
+            return Ok(serde_json::Value::String(String::new()));
         }
     }
 }
