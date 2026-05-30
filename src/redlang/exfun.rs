@@ -3986,7 +3986,7 @@ def red_out(sw):
             if proxy == "" {
                 voices = msedge_tts::voice::get_voices_list()?;
             } else {
-                voices = msedge_tts::voice::get_voices_list_proxy(proxy.parse()?,None,None)?;
+                voices = msedge_tts::voice::get_voices_list_proxy(proxy)?;
             }
             for voice in &voices {
                 if voice.name.contains(player) {
@@ -3998,7 +3998,7 @@ def red_out(sw):
                         let bt = audio.audio_bytes;
                         return Ok(bt);
                     } else {
-                        let mut tts = msedge_tts::tts::client::connect_proxy(proxy.parse()?,None,None)?;
+                        let mut tts = msedge_tts::tts::client::connect_proxy(proxy)?;
                         let audio: msedge_tts::tts::client::SynthesizedAudio = tts
                             .synthesize(text, &config)?;
                         let bt = audio.audio_bytes;
