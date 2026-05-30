@@ -605,10 +605,14 @@ pub fn init_core_fun_map() {
                 let tms = s.parse::<usize>()?;
                 self_t.xh_vec.push([false, false]);
                 let xh_len = self_t.xh_vec.len();
-                for _i in 0..tms {
+                for i in 0..tms {
                     self_t.xh_vec[xh_len - 1][0] = false;
                     let v = self_t.get_param(params, 1)?;
-                    RedLang::conect_rv(&mut ret_rv, &v)?;
+                    self_t.connect_rv_with_context(
+                        &mut ret_rv,
+                        &v,
+                        &format!("拼接`循环`第{}次结果失败", i + 1),
+                    )?;
                     if self_t.xh_vec[xh_len - 1][1] == true {
                         break;
                     }
@@ -636,7 +640,11 @@ pub fn init_core_fun_map() {
                         mp.insert(loop_val_var.clone(), Rc::new(RefCell::new(arr_clone[i].clone())));
                     }
                     let v = self_t.call_fun(&fun_params)?;
-                    RedLang::conect_rv(&mut ret_rv, &v)?;
+                    self_t.connect_rv_with_context(
+                        &mut ret_rv,
+                        &v,
+                        &format!("拼接`数组循环`第{}次结果失败", i + 1),
+                    )?;
                     if self_t.xh_vec[xh_len - 1][1] == true {
                         break;
                     }
@@ -668,7 +676,11 @@ pub fn init_core_fun_map() {
                         mp.insert(loop_val_var.clone(), Rc::new(RefCell::new(v.clone())));
                     }
                     let v = self_t.call_fun(&fun_params)?;
-                    RedLang::conect_rv(&mut ret_rv, &v)?;
+                    self_t.connect_rv_with_context(
+                        &mut ret_rv,
+                        &v,
+                        &format!("拼接`对象循环`键`{}`的结果失败", k),
+                    )?;
                     if self_t.xh_vec[xh_len - 1][1] == true {
                         break;
                     }
@@ -694,7 +706,11 @@ pub fn init_core_fun_map() {
                 break;
             }
             let v = self_t.get_param(params, 1)?;
-            RedLang::conect_rv(&mut ret_rv, &v)?;
+            self_t.connect_rv_with_context(
+                &mut ret_rv,
+                &v,
+                "拼接`判循`结果失败",
+            )?;
             if self_t.xh_vec[xh_len - 1][1] == true {
                 break;
             }
@@ -2523,6 +2539,15 @@ impl RedLang {
         Ok(self.get_param_bin_rc(params, i)?.as_ref().clone())
     }
 
+    fn connect_rv_with_context(
+        &self,
+        cur: &mut Rc<RedValue>,
+        new_val: &Rc<RedValue>,
+        context: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        RedLang::conect_rv(cur, new_val).map_err(|e| self.make_err_push(e, context))
+    }
+
     pub fn build_bin(&self,bin:Vec<u8>) ->String {
         return Self::build_bin_with_uid(&crate::REDLANG_UUID.to_string(),bin);
     }
@@ -2701,12 +2726,25 @@ impl RedLang {
             match node {
                 astparser::AstNode::Text(text) => {
                     let text_rv = Rc::new(RedValue::Text(text.clone()));
-                    RedLang::conect_rv(&mut chs_out, &text_rv)?;
+                    self.connect_rv_with_context(
+                        &mut chs_out,
+                        &text_rv,
+                        &format!("拼接文本节点失败：{}", astparser::ast_to_string(&vec![node.clone()])),
+                    )?;
                 }
                 astparser::AstNode::Command(cmd) => {
                     // 直接传递参数的 AST，避免重复解析
-                    let ret = self.do_cmd_fun(&cmd.name, &cmd.args)?;
-                    RedLang::conect_rv(&mut chs_out, &ret)?;
+                    let ret = match self.do_cmd_fun(&cmd.name, &cmd.args) {
+                        Ok(ret) => ret,
+                        Err(e) => {
+                            return Err(self.make_err_push(e, &format!("命令`{}`执行失败", cmd.name)));
+                        }
+                    };
+                    self.connect_rv_with_context(
+                        &mut chs_out,
+                        &ret,
+                        &format!("拼接命令`{}`的返回值失败", cmd.name),
+                    )?;
                 }
             }
         }
