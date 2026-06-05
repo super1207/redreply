@@ -3674,9 +3674,20 @@ def red_out(sw):
         Ok(Some(python_base64_wire_output_to_red(&out)?))
     });
     add_fun(vec!["默认字体"],|self_t,_params|{
+        const DEFAULT_FONT_LEN: usize = 10560380;
         let mut ft_lk = G_DEFAULF_FONT.write().unwrap();
         if let Some(font) = ft_lk.as_ref() {
             return Ok(Some(rv_bin(font.clone())));
+        }
+        let font_file_path = format!(
+            "{}default_font.ttf",
+            get_tmp_dir().map_err(|err| RedLang::make_err(&err.to_string()))?
+        );
+        if let Ok(font) = fs::read(&font_file_path) {
+            if font.len() == DEFAULT_FONT_LEN {
+                (*ft_lk) = Some(font.clone());
+                return Ok(Some(rv_bin(font)));
+            }
         }
         let proxy = self_t.get_coremap("代理");
         let mut timeout_str = self_t.get_coremap("访问超时");
@@ -3706,7 +3717,10 @@ def red_out(sw):
             };
             return ret;
         });
-        if content.0.len() == 10560380 {
+        if content.0.len() == DEFAULT_FONT_LEN {
+            if let Err(err) = fs::write(&font_file_path, &content.0) {
+                cq_add_log_w(&format!("默认字体缓存写入失败：{}", err)).unwrap();
+            }
             (*ft_lk) = Some(content.0.clone());
             return Ok(Some(rv_bin(content.0)));
         }else {
