@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>舒尔特方格</title>
+    <link href="theme.css" rel="stylesheet" type="text/css">
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        html,
+        body {
+            min-height: 100%;
+            margin: 0;
+        }
+
+        body {
+            font-family: Arial, "Microsoft YaHei", sans-serif;
+            background: #f5f2f0;
+            color: #20242a;
+        }
+
+        button,
+        select {
+            font: inherit;
+        }
+
+        .schulte-app {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 28px;
+            padding: 32px 20px;
+        }
+
+        .game-shell {
+            width: min(92vw, 740px);
+            display: flex;
+            flex-direction: column;
+            gap: 22px;
+        }
+
+        .topbar {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            grid-template-areas:
+                "timer size"
+                "target score";
+            align-items: center;
+            gap: 14px;
+        }
+
+        .timer,
+        .target,
+        .score {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #1f2933;
+            font-size: clamp(20px, 4vw, 34px);
+            line-height: 1;
+            white-space: nowrap;
+        }
+
+        .timer {
+            grid-area: timer;
+            justify-self: start;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .target {
+            grid-area: target;
+            justify-self: center;
+            font-size: clamp(16px, 3vw, 22px);
+            color: #4c5a66;
+        }
+
+        .score {
+            grid-area: score;
+            justify-self: end;
+            font-size: clamp(16px, 3vw, 22px);
+            color: #4c5a66;
+        }
+
+        .clock {
+            width: 30px;
+            height: 30px;
+            border: 2px solid currentColor;
+            border-radius: 50%;
+            position: relative;
+            flex: 0 0 auto;
+        }
+
+        .clock::before,
+        .clock::after {
+            content: "";
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            width: 2px;
+            background: currentColor;
+            transform-origin: 50% 0;
+        }
+
+        .clock::before {
+            height: 8px;
+            transform: translate(-50%, -1px) rotate(180deg);
+        }
+
+        .clock::after {
+            height: 10px;
+            transform: translate(-50%, -1px) rotate(120deg);
+        }
+
+        .size-control {
+            grid-area: size;
+            display: inline-flex;
+            align-items: center;
+            justify-self: end;
+            gap: 8px;
+            color: #4c5a66;
+            font-size: clamp(20px, 4vw, 34px);
+        }
+
+        .size-control select {
+            min-width: 118px;
+            border: 0;
+            border-bottom: 2px solid transparent;
+            background: transparent !important;
+            color: inherit !important;
+            outline: none;
+            padding: 2px 34px 2px 2px;
+            cursor: pointer;
+        }
+
+        .board {
+            width: min(92vw, 700px);
+            aspect-ratio: 1;
+            display: grid;
+            grid-template-columns: repeat(var(--size), minmax(0, 1fr));
+            grid-template-rows: repeat(var(--size), minmax(0, 1fr));
+            border: 5px solid #b9b9b9;
+            background: #b9b9b9;
+            gap: 1px;
+            touch-action: manipulation;
+        }
+
+        .cell {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border: 0;
+            background: #fbfbfa !important;
+            color: #242a31 !important;
+            font-size: clamp(20px, calc(82vw / var(--size)), 50px);
+            font-weight: 700;
+            line-height: 1;
+            padding: 0;
+            cursor: pointer;
+            user-select: none;
+            transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
+        }
+
+        .cell:hover,
+        .cell:focus-visible {
+            background: #eef6f1 !important;
+            color: #111827 !important;
+            outline: none;
+        }
+
+        .cell.done {
+            background: #fbfbfa !important;
+            color: #242a31 !important;
+            transform: none;
+        }
+
+        .cell.wrong {
+            animation: wrong-flash 180ms ease;
+        }
+
+        .actions {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 14px;
+            flex-wrap: wrap;
+        }
+
+        .primary-btn,
+        .ghost-btn {
+            min-width: 120px;
+            min-height: 48px;
+            border: 0;
+            border-radius: 8px;
+            padding: 10px 22px;
+            cursor: pointer;
+            font-size: clamp(16px, 3vw, 24px);
+            font-weight: 700;
+        }
+
+        .primary-btn {
+            background: #68c994 !important;
+            color: #ffffff !important;
+        }
+
+        .primary-btn:hover,
+        .primary-btn:focus-visible {
+            background: #52b980 !important;
+            color: #ffffff !important;
+            outline: none;
+        }
+
+        .ghost-btn {
+            background: transparent !important;
+            color: #4c5a66 !important;
+            border: 1px solid #b9b9b9 !important;
+        }
+
+        .result {
+            min-height: 26px;
+            text-align: center;
+            color: #4c5a66;
+            font-size: 18px;
+        }
+
+        @keyframes wrong-flash {
+            0% {
+                background: #fbfbfa;
+            }
+            45% {
+                background: #ffd9d9;
+            }
+            100% {
+                background: #fbfbfa;
+            }
+        }
+
+        [data-theme="dark"] body {
+            background: #1a1a1a;
+            color: #e0e0e0;
+        }
+
+        [data-theme="dark"] .timer,
+        [data-theme="dark"] .cell {
+            color: #e7ebef !important;
+        }
+
+        [data-theme="dark"] .target,
+        [data-theme="dark"] .score,
+        [data-theme="dark"] .size-control,
+        [data-theme="dark"] .result {
+            color: #b9c2cb !important;
+        }
+
+        [data-theme="dark"] .board {
+            border-color: #555;
+            background: #555;
+        }
+
+        [data-theme="dark"] .cell {
+            background: #25292d !important;
+        }
+
+        [data-theme="dark"] .cell:hover,
+        [data-theme="dark"] .cell:focus-visible {
+            background: #30373d !important;
+        }
+
+        [data-theme="dark"] .cell.done {
+            background: #25292d !important;
+            color: #e7ebef !important;
+        }
+
+        @media (max-width: 620px) {
+            .schulte-app {
+                justify-content: flex-start;
+                padding-top: 22px;
+            }
+
+            .topbar {
+                grid-template-columns: 1fr 1fr;
+                grid-template-areas:
+                    "timer size"
+                    "target target";
+            }
+
+            .target {
+                justify-self: center;
+            }
+
+            .score {
+                display: none;
+            }
+
+            .board {
+                border-width: 4px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main id="app" class="schulte-app">
+        <section class="game-shell">
+            <div class="topbar">
+                <div class="timer" aria-live="polite">
+                    <span class="clock" aria-hidden="true"></span>
+                    <span>{{ elapsedText }}</span>
+                </div>
+                <div class="target">{{ targetText }}</div>
+                <label class="size-control">
+                    <select v-model.number="size" @change="resetGame" aria-label="方格尺寸">
+                        <option v-for="value in sizes" :key="value" :value="value">{{ value }}×{{ value }}</option>
+                    </select>
+                </label>
+                <div class="score">{{ completedCount }}/{{ totalCount }}</div>
+            </div>
+
+            <div class="board" :style="{ '--size': size }" role="grid" aria-label="舒尔特方格">
+                <button
+                    v-for="cell in cells"
+                    :key="cell.value"
+                    class="cell"
+                    :class="{ done: cell.done, wrong: wrongValue === cell.value }"
+                    type="button"
+                    @click="pickCell(cell)"
+                >{{ cell.value }}</button>
+            </div>
+
+            <div class="result" aria-live="polite">{{ resultText }}</div>
+
+            <div class="actions">
+                <button class="primary-btn" type="button" @click="resetGame">重新开始</button>
+                <button class="ghost-btn" type="button" @click="backHome">返回首页</button>
+            </div>
+        </section>
+    </main>
+
+    <script src="vue.js"></script>
+    <script>
+        const { createApp } = Vue;
+
+        function shuffle(values) {
+            const out = values.slice();
+            for (let i = out.length - 1; i > 0; i -= 1) {
+                const j = Math.floor(Math.random() * (i + 1));
+                const tmp = out[i];
+                out[i] = out[j];
+                out[j] = tmp;
+            }
+            return out;
+        }
+
+        createApp({
+            data() {
+                return {
+                    sizes: [3, 4, 5, 6, 7],
+                    size: 5,
+                    cells: [],
+                    nextNumber: 1,
+                    startTime: 0,
+                    elapsedMs: 0,
+                    timerId: 0,
+                    wrongValue: null,
+                    resultText: "",
+                    finished: false,
+                    audioContext: null,
+                };
+            },
+            computed: {
+                totalCount() {
+                    return this.size * this.size;
+                },
+                completedCount() {
+                    if (this.finished) {
+                        return this.totalCount;
+                    }
+                    return Math.max(0, this.nextNumber - 1);
+                },
+                targetText() {
+                    return this.finished ? "完成" : `下一个 ${this.nextNumber}`;
+                },
+                elapsedText() {
+                    const seconds = Math.floor(this.elapsedMs / 1000);
+                    return `${seconds}秒`;
+                },
+            },
+            mounted() {
+                const savedSize = Number(window.localStorage.getItem("schulte-size"));
+                if (this.sizes.includes(savedSize)) {
+                    this.size = savedSize;
+                }
+                this.resetGame();
+                window.addEventListener("keydown", this.handleKeydown);
+            },
+            beforeUnmount() {
+                window.removeEventListener("keydown", this.handleKeydown);
+                this.stopTimer();
+            },
+            methods: {
+                resetGame() {
+                    window.localStorage.setItem("schulte-size", String(this.size));
+                    this.stopTimer();
+                    this.nextNumber = 1;
+                    this.elapsedMs = 0;
+                    this.startTime = 0;
+                    this.finished = false;
+                    this.wrongValue = null;
+                    this.resultText = "";
+                    this.cells = shuffle(
+                        Array.from({ length: this.totalCount }, (_, index) => ({
+                            value: index + 1,
+                            done: false,
+                        }))
+                    );
+                },
+                startTimer() {
+                    if (this.timerId) {
+                        return;
+                    }
+                    this.startTime = performance.now() - this.elapsedMs;
+                    this.timerId = window.setInterval(() => {
+                        this.elapsedMs = performance.now() - this.startTime;
+                    }, 100);
+                },
+                stopTimer() {
+                    if (this.timerId) {
+                        window.clearInterval(this.timerId);
+                        this.timerId = 0;
+                    }
+                },
+                pickCell(cell) {
+                    if (this.finished) {
+                        return;
+                    }
+                    if (cell.done) {
+                        this.playSound("wrong");
+                        return;
+                    }
+                    this.startTimer();
+                    if (cell.value !== this.nextNumber) {
+                        this.playSound("wrong");
+                        this.flashWrong(cell.value);
+                        return;
+                    }
+                    this.playSound("right");
+                    cell.done = true;
+                    if (this.nextNumber >= this.totalCount) {
+                        this.finishGame();
+                        return;
+                    }
+                    this.nextNumber += 1;
+                },
+                flashWrong(value) {
+                    this.wrongValue = value;
+                    window.setTimeout(() => {
+                        if (this.wrongValue === value) {
+                            this.wrongValue = null;
+                        }
+                    }, 180);
+                },
+                getAudioContext() {
+                    if (!this.audioContext) {
+                        const AudioCtor = window.AudioContext || window.webkitAudioContext;
+                        if (!AudioCtor) {
+                            return null;
+                        }
+                        this.audioContext = new AudioCtor();
+                    }
+                    if (this.audioContext.state === "suspended") {
+                        this.audioContext.resume().catch(() => {});
+                    }
+                    return this.audioContext;
+                },
+                playSound(type) {
+                    const ctx = this.getAudioContext();
+                    if (!ctx) {
+                        return;
+                    }
+                    const now = ctx.currentTime;
+                    const gain = ctx.createGain();
+                    const osc = ctx.createOscillator();
+                    gain.connect(ctx.destination);
+                    osc.connect(gain);
+                    if (type === "right") {
+                        osc.type = "sine";
+                        osc.frequency.setValueAtTime(660, now);
+                        osc.frequency.exponentialRampToValueAtTime(880, now + 0.08);
+                        gain.gain.setValueAtTime(0.0001, now);
+                        gain.gain.exponentialRampToValueAtTime(0.09, now + 0.01);
+                        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+                        osc.start(now);
+                        osc.stop(now + 0.13);
+                    } else {
+                        osc.type = "triangle";
+                        osc.frequency.setValueAtTime(220, now);
+                        osc.frequency.exponentialRampToValueAtTime(150, now + 0.11);
+                        gain.gain.setValueAtTime(0.0001, now);
+                        gain.gain.exponentialRampToValueAtTime(0.11, now + 0.01);
+                        gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+                        osc.start(now);
+                        osc.stop(now + 0.17);
+                    }
+                },
+                finishGame() {
+                    this.nextNumber = this.totalCount;
+                    this.elapsedMs = performance.now() - this.startTime;
+                    this.finished = true;
+                    this.stopTimer();
+                    const seconds = (this.elapsedMs / 1000).toFixed(2);
+                    this.resultText = `完成：${seconds}秒`;
+                },
+                handleKeydown(event) {
+                    if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        this.resetGame();
+                    }
+                },
+                backHome() {
+                    window.location.href = "/index.html";
+                },
+            },
+        }).mount("#app");
+    </script>
+</body>
+</html>
