@@ -1,0 +1,32 @@
+[package]
+name = "redreply-adapter"
+version = "0.1.0"
+edition = "2021"
+description = "Adapter core abstractions for RedReply chat platform connectors"
+license = "MIT"
+
+[dependencies]
+async-trait = "0.1.89"
+base64 = "0.22.1"
+fancy-regex = "0.16.2"
+flate2 = { version = "1.1.1", default-features = false, features = ["rust_backend"] }
+futures-util = "0.3.31"
+chrono = "0.4.42"
+html5gum = "0.8.0"
+html-escape = "0.2.13"
+hyper = { version = "1.7.0", features = ["full"] }
+hyper-tungstenite = "0.18.0"
+imap = { git = "https://github.com/jonhoo/rust-imap" }
+lazy_static = "1.5.0"
+lettre = { version = "0.11.18", features = ["tokio1-native-tls"] }
+mail-parser = "0.11.1"
+native-tls = { version = "0.2.14", features = ["vendored"] }
+regex = "1.11.2"
+reqwest = { version = "0.12.23", default-features = false, features = ["native-tls-vendored", "multipart"] }
+serde = { version = "1.0.226", features = ["derive"] }
+serde_json = "1.0.145"
+scopeguard = "1.2.0"
+tokio = { version = "1.47.1", features = ["full"] }
+tokio-tungstenite = { version = "0.27.0", default-features = false, features = ["native-tls-vendored"] }
+url = "2.5.7"
+uuid = { version = "1.18.1", features = ["v4", "fast-rng"] }

@@ -1,8 +1,8 @@
-use std::{net::TcpStream, sync::{atomic::AtomicBool, Arc}, thread, time::{Duration, SystemTime}};
+﻿use std::{net::TcpStream, sync::{atomic::AtomicBool, Arc}, thread, time::{Duration, SystemTime}};
 use uuid::Uuid;
 
 use super::BotConnectTrait;
-use crate::{RT_PTR, botconn::async_trait, cqapi::cq_add_log,cqapi::cq_add_log_w, mytool::read_json_str};
+use crate::{async_trait, cqapi::cq_add_log,cqapi::cq_add_log_w, mytool::read_json_str};
 use crate::mytool::str_msg_to_arr;
 use lettre::{message::{MultiPart, SinglePart}, AsyncSmtpTransport, AsyncTransport};
 use lettre::Tokio1Executor;
@@ -68,7 +68,7 @@ impl EmailConnect {
             },
             "platform":"email"
         });
-        RT_PTR.spawn_blocking(move ||{
+        tokio::task::spawn_blocking(move ||{
             let json_str = event_json.to_string();
             cq_add_log(&format!("EMAIL_OB_EVENT:{json_str}")).unwrap();
             if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
@@ -396,3 +396,5 @@ impl BotConnectTrait for EmailConnect {
         return vec![("email".to_owned(),lk.to_owned())];
     }
 }
+
+

@@ -215,28 +215,6 @@ pub fn read_json_str(root:&serde_json::Value,key:&str) -> String {
     }
 }
 
-pub fn read_json_obj<'a>(root:&'a serde_json::Value,key:&str) -> Option<&'a serde_json::Value> {
-    if let Some(js_v) = root.get(key) {
-        if js_v.is_object() {
-            if js_v.as_object().unwrap().len() != 0 {
-                return Some(js_v);
-            }
-        }
-    }
-    return None;
-}
-
-pub fn read_json_obj_or_null(root:&serde_json::Value,key:&str) -> serde_json::Value {
-    if let Some(js_v) = root.get(key) {
-        if js_v.is_object() {
-            if js_v.as_object().unwrap().len() != 0 {
-                return js_v.clone();
-            }
-        }
-    }
-    return serde_json::json!({});
-}
-
 pub fn read_json_or_default<'a>(root:&'a serde_json::Value,key:&'a str,def_val:&'a serde_json::Value) -> &'a serde_json::Value {
     if let Some(js_v) = root.get(key) {
         return js_v;

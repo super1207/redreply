@@ -4,6 +4,7 @@ use crate::{add_file_lock, cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directo
 use serde_json;
 use super::{RedLang, RedValue, RedValueData, rv_array, rv_bin, rv_object, rv_text, rv_empty, exfun::json_value_to_red};
 use base64::{Engine as _, engine::{self, general_purpose}, alphabet};
+use url::Url;
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose = engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
 
 pub fn get_app_dir(pkg_name:&str) -> Result<String, Box<dyn std::error::Error>> {
@@ -31,6 +32,69 @@ fn get_sub_id(rl:& RedLang,msg_type:&str) -> String {
         sub_id = "".to_owned();
     }
     sub_id
+}
+
+fn hex_to_num(ch:u8) -> Option<u8> {
+    match ch {
+        b'0'..=b'9' => Some(ch - b'0'),
+        b'a'..=b'f' => Some(ch - b'a' + 10),
+        b'A'..=b'F' => Some(ch - b'A' + 10),
+        _ => None,
+    }
+}
+
+fn percent_decode_path_segment(segment:&str) -> String {
+    let bytes = segment.as_bytes();
+    let mut ret = Vec::with_capacity(bytes.len());
+    let mut changed = false;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'%' && i + 2 < bytes.len() {
+            if let (Some(high), Some(low)) = (hex_to_num(bytes[i + 1]), hex_to_num(bytes[i + 2])) {
+                ret.push(high * 16 + low);
+                i += 3;
+                changed = true;
+                continue;
+            }
+        }
+        ret.push(bytes[i]);
+        i += 1;
+    }
+    if changed {
+        String::from_utf8_lossy(&ret).to_string()
+    } else {
+        segment.to_string()
+    }
+}
+
+fn infer_file_name_from_resource(resource:&str) -> Option<String> {
+    if resource.is_empty() {
+        return None;
+    }
+    if let Ok(url) = Url::parse(resource) {
+        if url.scheme() == "http" || url.scheme() == "https" {
+            return url.path_segments()
+                .and_then(|segments| segments.last())
+                .map(percent_decode_path_segment)
+                .filter(|name| !name.is_empty());
+        }
+    }
+    if resource.ends_with('/') || resource.ends_with('\\') {
+        return None;
+    }
+    resource.rsplit(['/', '\\'])
+        .next()
+        .map(str::to_string)
+        .filter(|name| !name.is_empty())
+}
+
+fn resolve_file_name(name:&str, resource:Option<&str>) -> String {
+    if !name.is_empty() {
+        return name.to_string();
+    }
+    resource
+        .and_then(infer_file_name_from_resource)
+        .unwrap_or_else(|| "未命名".to_string())
 }
 
 pub fn send_one_msg(rl:& RedLang,msg:&str) -> Result<String, Box<dyn std::error::Error>> {
@@ -407,6 +471,27 @@ pub fn init_cq_ex_fun_map() {
                 let bin = std::fs::read(path)?;
                 let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
                 ret = format!("[CQ:record,file=base64://{}]",b64_str);
+            }
+        }
+        return Ok(Some(rv_text(ret)));
+    });
+    add_fun(vec!["文件"],|self_t,params|{
+        let file_rv = self_t.get_param(params, 0)?;
+        let name = self_t.get_param_text(params, 1)?;
+        let mut ret:String = String::new();
+        if let Ok(bin) = file_rv.expect_bin_value() {
+            let name = cq_params_encode(&resolve_file_name(&name, None));
+            let b64_str = BASE64_CUSTOM_ENGINE.encode(&bin);
+            ret = format!("[CQ:file,file=base64://{},name={}]", b64_str, name);
+        }else if let Ok(file) = file_rv.expect_text_value() {
+            let name = cq_params_encode(&resolve_file_name(&name, Some(&file)));
+            if file.starts_with("http://") || file.starts_with("https://"){
+                ret = format!("[CQ:file,file={},name={}]", cq_params_encode(&file), name);
+            }else{
+                let path = Path::new(&*file);
+                let bin = std::fs::read(path)?;
+                let b64_str = BASE64_CUSTOM_ENGINE.encode(bin);
+                ret = format!("[CQ:file,file=base64://{},name={}]", b64_str, name);
             }
         }
         return Ok(Some(rv_text(ret)));

@@ -1,4 +1,4 @@
-use std::{sync::{atomic::AtomicBool, Arc, RwLock}, str::FromStr, collections::HashMap};
+﻿use std::{sync::{atomic::AtomicBool, Arc, RwLock}, str::FromStr, collections::HashMap};
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, SinkExt};
@@ -1122,3 +1122,4 @@ impl BotConnectTrait for Satoriv1Connect {
         return platforms;
     }
 }
+

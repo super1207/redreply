@@ -1,4 +1,4 @@
-use reqwest::header::HeaderName;
+﻿use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::collections::HashMap;
 use std::collections::VecDeque;
@@ -10,7 +10,6 @@ use std::time::SystemTime;
 use super::BotConnectTrait;
 use crate::cqapi::{cq_add_log, cq_add_log_w};
 use crate::mytool::{cq_params_encode, cq_text_encode, read_json_str, str_msg_to_arr};
-use crate::RT_PTR;
 use async_trait::async_trait;
 use uuid::Uuid;
 
@@ -220,7 +219,7 @@ impl TeleTramConnect {
             },
             "platform":"telegram"
         });
-        RT_PTR.spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let json_str = event_json.to_string();
             cq_add_log(&format!("TELEGRAM_OB_EVENT:{json_str}")).unwrap();
             if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
@@ -282,7 +281,7 @@ impl TeleTramConnect {
             "sender":sender,
             "platform":"telegram"
         });
-        RT_PTR.spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let json_str = event_json.to_string();
             cq_add_log(&format!("TELEGRAM_OB_EVENT:{json_str}")).unwrap();
             if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
@@ -1177,3 +1176,5 @@ impl BotConnectTrait for TeleTramConnect {
         return vec![("telegram".to_owned(), lk.to_owned())];
     }
 }
+
+

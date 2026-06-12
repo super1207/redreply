@@ -1,4 +1,4 @@
-// 函数调用判定：
+﻿// 函数调用判定：
 // 有群ID   ->  send_group_msg
 // 无群ID但有user_id   ->  send_private_msg
 // 否则  ->  不处理
@@ -483,7 +483,15 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
             }
         }
         else if tp == "file" { // only qq ，暂时不可用
-            let file = it.get("data").ok_or("data not found")?.get("file").ok_or("file not found")?.as_str().ok_or("file not a string")?;
+            let data = it.get("data").ok_or("data not found")?;
+            let file = data.get("file").ok_or("file not found")?.as_str().ok_or("file not a string")?;
+            // name是可选的
+            let name:Option<String>;
+            if let Some(name_val) = data.get("name") {
+                name = Some(name_val.as_str().ok_or("name not a string")?.to_owned());
+            } else {
+                name = None;
+            }
             let uri;
             if msg_type == MsgSrcType::QQGroup {
                 uri = reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/groups/{target_id}/files"))?;
@@ -500,6 +508,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":4, // 文件
                     "file_data":b64_str,
+                    "file_name":name,
                     "srv_send_msg":qq_media_srv_send_msg(&msg_type,srv_send_msg),
                 });
             } else { // base64://
@@ -510,6 +519,7 @@ pub async fn cq_msg_to_qq(self_t:&SelfData,js_arr:&serde_json::Value,msg_type:Ms
                 json_data = serde_json::json!({
                     "file_type":4, // 文件
                     "file_data":b64_str,
+                    "file_name":name,
                     "srv_send_msg":qq_media_srv_send_msg(&msg_type,srv_send_msg),
                 });
             }
@@ -874,7 +884,7 @@ pub async fn wait_qqgroup_audit_result(_self_t:&SelfData,api_ret:serde_json::Val
     let (tx_ay, mut rx_ay) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
     G_QQGROUP_AUDIT_MAP.write().await.insert(audit_id.clone(), tx_ay);
     let _guard = scopeguard::guard(audit_id.clone(), |audit_id| {
-        crate::RT_PTR.spawn(async move {
+        tokio::spawn(async move {
             G_QQGROUP_AUDIT_MAP.write().await.remove(&audit_id);
         });
     });
@@ -1544,3 +1554,5 @@ pub async fn set_group_ban(self_t:&SelfData,json:&serde_json::Value) -> Result<s
         }));
     }
 }
+
+

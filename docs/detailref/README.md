@@ -2494,6 +2494,18 @@ CQ码**外部**的字符需要CQ转义，以上三个命令的作用可以参考
 注意，可能需要给onebot协议端安装ffmpeg，才能正常使用此功能。
 
 
+### 文件
+
+
+【文件@<font color="red">资源路径</font>@<font color="red">文件名</font>】
+
+支持http/https链接，绝对地址，字节集。
+
+<font color="red">文件名</font>可省略，省略或为空时会先从<font color="red">资源路径</font>的最后一级推测文件名，推测不到时默认为`未命名`。
+
+注意：目前只支持官方QQ
+
+
 ### 视频
 
 

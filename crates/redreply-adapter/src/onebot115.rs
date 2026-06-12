@@ -1,4 +1,4 @@
-use std::{sync::{atomic::AtomicBool, Arc, RwLock}, str::FromStr};
+﻿use std::{sync::{atomic::AtomicBool, Arc, RwLock}, str::FromStr};
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, SinkExt};
@@ -244,3 +244,4 @@ impl BotConnectTrait for OneBot115Connect {
         return platforms;
     }
 }
+

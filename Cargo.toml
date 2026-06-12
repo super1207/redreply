@@ -5,7 +5,14 @@ edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[workspace]
+members = [
+    ".",
+    "crates/redreply-adapter",
+]
+
 [dependencies]
+redreply-adapter = { path = "crates/redreply-adapter" }
 fancy-regex = "0.16.2"
 encoding = "0.2.33"
 getrandom = "0.3.3"

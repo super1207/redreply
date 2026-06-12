@@ -1,4 +1,4 @@
-// 服务端代码见：https://file.uhsea.com/2507/1a128d2616547c71e78ff3b37bf6b8324A.txt
+﻿// 服务端代码见：https://file.uhsea.com/2507/1a128d2616547c71e78ff3b37bf6b8324A.txt
 
 use hyper::header::HeaderName;
 use hyper::header::HeaderValue;
@@ -17,7 +17,6 @@ use std::sync::{Arc, RwLock};
 use super::BotConnectTrait;
 use crate::cqapi::{cq_add_log, cq_add_log_w};
 use crate::mytool::str_msg_to_arr;
-use crate::RT_PTR;
 use crate::mytool::read_json_str;
 use async_trait::async_trait;
 
@@ -228,7 +227,7 @@ impl Yunhuv1Connect {
         event: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let ob_evt = self.to_ob_event(&self.self_id.read().unwrap(), event)?;
-        RT_PTR.spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
             let json_str = ob_evt.to_string();
             cq_add_log(&format!("YUNTU_OB_EVENT:{json_str}")).unwrap();
             if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
@@ -760,3 +759,5 @@ impl BotConnectTrait for Yunhuv1Connect {
         return vec![("yunhu".to_owned(), lk.to_owned())];
     }
 }
+
+

@@ -1,4 +1,4 @@
-use std::{collections::{HashMap, HashSet}, ops::{Index, IndexMut}, str::FromStr, sync::{atomic::AtomicBool, Arc, RwLock}};
+﻿use std::{collections::{HashMap, HashSet}, ops::{Index, IndexMut}, str::FromStr, sync::{atomic::AtomicBool, Arc, RwLock}};
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, SinkExt};
@@ -7,7 +7,7 @@ use crate::mytool::all_to_silk::all_to_silk;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{tungstenite, connect_async};
 
-use crate::{cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory1}, mytool::{read_json_str, str_msg_to_arr}, RT_PTR};
+use crate::{cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory1}, mytool::{read_json_str, str_msg_to_arr}};
 
 use super::BotConnectTrait;
 
@@ -200,9 +200,8 @@ impl OneBot11Connect {
     }
 
     async fn all_to_silk_async(input:&Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-        let rt_ptr = RT_PTR.clone();
         let input = input.clone();
-        let silk_bin = rt_ptr.spawn_blocking(move || {
+        let silk_bin = tokio::task::spawn_blocking(move || {
             // Ensure the error type is Send + Sync + 'static
             all_to_silk(&input).map_err(|e| {
                 // Convert error to Box<dyn Error + Send + Sync>
@@ -688,7 +687,7 @@ impl BotConnectTrait for OneBot11Connect {
         let (tx_ay, mut rx_ay) =  tokio::sync::mpsc::channel::<serde_json::Value>(1);
         G_ECHO_MAP.write().await.insert(echo.clone(), tx_ay);
         let _guard = scopeguard::guard(echo, |echo| {
-            RT_PTR.spawn(async move {
+            tokio::spawn(async move {
                 G_ECHO_MAP.write().await.remove(&echo);
             });
         });
@@ -721,4 +720,6 @@ impl BotConnectTrait for OneBot11Connect {
         return vec![(platform,self_id)];
     }
 }
+
+
 

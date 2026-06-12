@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+﻿use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::io::Read;
 use std::path::Path;
@@ -1579,8 +1579,8 @@ impl BotConnectTrait for KookConnect {
             // 断开连接
             is_stop.store(true, std::sync::atomic::Ordering::Relaxed);
             let _foo = stop_tx.send_timeout(true, Duration::from_secs(1)).await;
-            use crate::botconn::kook::tungstenite::protocol::CloseFrame;
-            use crate::botconn::kook::tungstenite::protocol::frame::coding::CloseCode::Normal;
+            use tokio_tungstenite::tungstenite::protocol::CloseFrame;
+            use tokio_tungstenite::tungstenite::protocol::frame::coding::CloseCode::Normal;
             let _err = write_halt.send(tungstenite::Message::Close(Some(CloseFrame{ 
                 code: Normal, 
                 reason: "byebye".into()
@@ -1818,3 +1818,5 @@ struct GroupInfo {
     member_count:i32,
     max_member_count:i32
 }
+
+

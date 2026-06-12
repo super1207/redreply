@@ -1,11 +1,11 @@
-use std::{sync::{atomic::AtomicBool, Arc, RwLock}, collections::HashMap, time::SystemTime};
+﻿use std::{sync::{atomic::AtomicBool, Arc, RwLock}, collections::HashMap, time::SystemTime};
 
 use async_trait::async_trait;
 use futures_util::{StreamExt, SinkExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
 
-use crate::{cqapi::cq_add_log_w, mytool::{read_json_str, read_json_obj_or_null, read_json_or_default}, botconn::qq_guild_all::{SelfData, token_refresh, get_gateway, get_json_dat}};
+use crate::{cqapi::cq_add_log_w, mytool::{read_json_str, read_json_obj_or_null, read_json_or_default}, qq_guild_all::{SelfData, token_refresh, get_gateway, get_json_dat}};
 
 use super::{BotConnectTrait, qq_guild_all::{MsgTargetType, get_msg_type, get_reply_id, qq_content_to_cqstr, set_event_id, deal_message_reference, deal_attachments, str_msg_to_arr_safe, send_private_msg, send_qqguild_msg, get_login_info, get_group_list, get_group_member_info, get_stranger_info, delete_msg, set_group_ban}, qqguild_public::{conv_group_c2c_event, send_group_msg as send_qq_group_msg}};
 
@@ -472,3 +472,5 @@ impl BotConnectTrait for QQGuildPrivateConnect {
         return vec![("qqguild_private".to_owned(),appid.clone()),("qqgroup_public".to_owned(),appid)];
     }
 }
+
+
