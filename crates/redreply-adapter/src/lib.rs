@@ -1,4 +1,4 @@
-﻿//! Core abstractions for RedReply-style chat platform adapters.
+//! Core abstractions for RedReply-style chat platform adapters.
 //!
 //! This crate intentionally keeps only the adapter boundary here: the async
 //! connector trait, shared error/result aliases, connector handles, and a small
@@ -152,4 +152,3 @@ impl BotRegistry {
         Ok(None)
     }
 }
-

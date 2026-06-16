@@ -1,4 +1,4 @@
-﻿use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, OnceLock};
 
 use crate::AdapterResult;
 
@@ -55,4 +55,3 @@ pub fn all_to_silk(input: &[u8]) -> AdapterResult<Vec<u8>> {
         Err("adapter host does not provide all_to_silk".into())
     }
 }
-

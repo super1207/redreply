@@ -1,10 +1,11 @@
-﻿use reqwest::header::HeaderName;
+use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use std::collections::HashMap;
 use std::collections::VecDeque;
 use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 use std::time::SystemTime;
 
 use super::BotConnectTrait;
@@ -23,21 +24,20 @@ pub struct TeleTramConnect {
     msg_ids: Arc<RwLock<VecDeque<MsgIdPair>>>,
 }
 
-
 lazy_static! {
-    static ref G_USERNAME2USERID:std::sync::RwLock<HashMap<String,i64>> = std::sync::RwLock::new(HashMap::new());
+    static ref G_USERNAME2USERID: std::sync::RwLock<HashMap<String, i64>> =
+        std::sync::RwLock::new(HashMap::new());
 }
 
-fn add_username2userid(username:&str,user_id:i64) {
+fn add_username2userid(username: &str, user_id: i64) {
     let mut lk = G_USERNAME2USERID.write().unwrap();
-    lk.insert(username.to_owned(),user_id);
+    lk.insert(username.to_owned(), user_id);
 }
 
-fn get_username2userid(username:&str) -> Option<i64> {
+fn get_username2userid(username: &str) -> Option<i64> {
     let lk = G_USERNAME2USERID.read().unwrap();
     return lk.get(username).cloned();
 }
-
 
 #[derive(Debug, Clone)]
 struct RawMsgId {
@@ -51,9 +51,6 @@ struct MsgIdPair {
     raw_msg_ids: Vec<RawMsgId>,
 }
 
-
-
-
 impl TeleTramConnect {
     pub fn build(url: &str) -> Self {
         return Self {
@@ -66,7 +63,6 @@ impl TeleTramConnect {
         };
     }
 
-
     fn get_req_client(&self) -> Result<reqwest::Client, Box<dyn std::error::Error + Send + Sync>> {
         let proxy;
         {
@@ -74,9 +70,7 @@ impl TeleTramConnect {
             proxy = lk.to_owned();
         }
         if proxy == "" {
-            Ok(reqwest::Client::builder()
-                .no_proxy()
-                .build()?)
+            Ok(reqwest::Client::builder().no_proxy().build()?)
         } else {
             Ok(reqwest::Client::builder()
                 .proxy(reqwest::Proxy::all(proxy.as_str())?)
@@ -84,12 +78,34 @@ impl TeleTramConnect {
         }
     }
 
-    async fn proxyrequest(&self, url: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        Ok(self.get_req_client()?.get(url).send().await?.text().await?)
+    async fn proxyrequest(
+        &self,
+        url: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let request = self.get_req_client()?.get(url);
+        let request = if url.contains("/getUpdates") {
+            request.timeout(Duration::from_secs(15))
+        } else {
+            request
+        };
+        Ok(request.send().await?.text().await?)
     }
 
-    fn make_msg_with_at(text_message:&str,entities:&serde_json::Value) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let mut ret_cq_msg = "".to_owned(); 
+    fn parse_updates_result(ret: &str) -> Result<Vec<serde_json::Value>, String> {
+        let event_json: serde_json::Value =
+            serde_json::from_str(ret).map_err(|err| format!("invalid json: {err}; raw={ret}"))?;
+        let result = event_json
+            .get("result")
+            .and_then(|value| value.as_array())
+            .ok_or_else(|| format!("result not found; response={event_json}"))?;
+        Ok(result.clone())
+    }
+
+    fn make_msg_with_at(
+        text_message: &str,
+        entities: &serde_json::Value,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let mut ret_cq_msg = "".to_owned();
         if let Some(ents) = entities.as_array() {
             let mut last_end = 0;
             let text = text_message.chars().collect::<Vec<char>>();
@@ -129,38 +145,40 @@ impl TeleTramConnect {
         let mut reply_id = "".to_owned();
         if reply_to_message.is_object() {
             // 频道里面的自动转发消息不是回复
-            let is_automatic_forward = Self::get_json_bool(reply_to_message, "is_automatic_forward");
+            let is_automatic_forward =
+                Self::get_json_bool(reply_to_message, "is_automatic_forward");
             if !is_automatic_forward {
                 reply_id = reply_to_message["message_id"]
-                .as_i64()
-                .ok_or("message_id not i64")?
-                .to_string();
+                    .as_i64()
+                    .ok_or("message_id not i64")?
+                    .to_string();
             }
         }
 
         let text_message = read_json_str(&message_obj, "text");
         let entities = &message_obj["entities"];
-        ret_cq_msg.push_str(&Self::make_msg_with_at(&text_message,entities)?);
+        ret_cq_msg.push_str(&Self::make_msg_with_at(&text_message, entities)?);
 
         let caption_message = read_json_str(&message_obj, "caption");
         let caption_entities = &message_obj["caption_entities"];
-        ret_cq_msg.push_str(&Self::make_msg_with_at(&caption_message,caption_entities)?);
-        
+        ret_cq_msg.push_str(&Self::make_msg_with_at(&caption_message, caption_entities)?);
+
         if message_obj.get("photo").is_some() {
             let photo = message_obj["photo"].as_array().ok_or("photo not array")?;
             let photo_len = photo.len();
             let photo_file_id = photo[photo_len - 1]["file_id"]
                 .as_str()
                 .ok_or("file_id not str")?;
-            let get_file_path_ret = self.proxyrequest(
-                format!(
-                    "https://api.telegram.org/bot{}/getFile?file_id={}",
-                    self.token.read().unwrap(),
-                    photo_file_id
+            let get_file_path_ret = self
+                .proxyrequest(
+                    format!(
+                        "https://api.telegram.org/bot{}/getFile?file_id={}",
+                        self.token.read().unwrap(),
+                        photo_file_id
+                    )
+                    .as_str(),
                 )
-                .as_str(),
-            )
-            .await?;
+                .await?;
             let get_file_path_json: serde_json::Value = serde_json::from_str(&get_file_path_ret)?;
             let file_path = get_file_path_json["result"]["file_path"]
                 .as_str()
@@ -187,7 +205,7 @@ impl TeleTramConnect {
         let nickname = chat["first_name"].as_str().ok_or("first_name not str")?;
         let username = chat["username"].as_str().ok_or("username not str")?;
         let self_id = self.self_id.read().unwrap().clone();
-        
+
         let message_obj = &event["message"];
 
         add_username2userid(&format!("@{username}"), user_id.parse()?);
@@ -198,7 +216,10 @@ impl TeleTramConnect {
             .to_string();
 
         // 存msg_id
-        let msg_id = self.add_msg_id(&vec![RawMsgId{msg_id:message_id.to_owned(),chat_id:user_id.to_string()}]);
+        let msg_id = self.add_msg_id(&vec![RawMsgId {
+            msg_id: message_id.to_owned(),
+            chat_id: user_id.to_string(),
+        }]);
 
         let message = self.to_cq_msg(event).await?;
 
@@ -252,7 +273,10 @@ impl TeleTramConnect {
             .to_string();
 
         // 存msg_id
-        let msg_id = self.add_msg_id(&vec![RawMsgId{msg_id:message_id.to_owned(),chat_id:group_id.to_string()}]);
+        let msg_id = self.add_msg_id(&vec![RawMsgId {
+            msg_id: message_id.to_owned(),
+            chat_id: group_id.to_string(),
+        }]);
 
         let sender = serde_json::json!({
             "user_id":user_id.to_string(),
@@ -304,7 +328,7 @@ impl TeleTramConnect {
             if is_private_msg {
                 self.deal_private_msg(event).await?;
             }
-            let is_group_msg = msg_type == "group" || msg_type == "supergroup"; 
+            let is_group_msg = msg_type == "group" || msg_type == "supergroup";
             if is_group_msg {
                 self.deal_group_msg(event).await?;
             }
@@ -318,13 +342,29 @@ impl TeleTramConnect {
             "https://api.telegram.org/bot{}/getUpdates",
             self.token.read().unwrap()
         );
-        let ret = self.proxyrequest(&url).await?;
-        let event_json: serde_json::Value = serde_json::from_str(&ret)?;
-        let result = event_json
-            .get("result")
-            .ok_or("result not found")?
-            .as_array()
-            .ok_or("result not array")?;
+        let result = match self.proxyrequest(&url).await {
+            Ok(ret) => match Self::parse_updates_result(&ret) {
+                Ok(result) => result,
+                Err(err) => {
+                    cq_add_log_w(&format!(
+                        "telegram bot {} recv warning:{}",
+                        self.self_id.read().unwrap(),
+                        err
+                    ))
+                    .unwrap();
+                    Vec::new()
+                }
+            },
+            Err(err) => {
+                cq_add_log_w(&format!(
+                    "telegram bot {} recv warning:{}",
+                    self.self_id.read().unwrap(),
+                    err
+                ))
+                .unwrap();
+                Vec::new()
+            }
+        };
         if result.len() != 0 {
             last_update_id = Some(
                 result[result.len() - 1]
@@ -342,26 +382,45 @@ impl TeleTramConnect {
             }
             if last_update_id.is_none() {
                 url = format!(
-                    "https://api.telegram.org/bot{}/getUpdates?timeout=30",
+                    "https://api.telegram.org/bot{}/getUpdates?timeout=8",
                     self.token.read().unwrap()
                 );
             } else {
                 url = format!(
-                    "https://api.telegram.org/bot{}/getUpdates?offset={}&timeout=30",
+                    "https://api.telegram.org/bot{}/getUpdates?offset={}&timeout=8",
                     self.token.read().unwrap(),
                     last_update_id.unwrap()
                 );
             }
-            let ret = self.proxyrequest(&url).await?;
+            let ret = match self.proxyrequest(&url).await {
+                Ok(ret) => ret,
+                Err(err) => {
+                    cq_add_log_w(&format!(
+                        "telegram bot {} recv warning:{}",
+                        self.self_id.read().unwrap(),
+                        err
+                    ))
+                    .unwrap();
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
             if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
-            let event_json: serde_json::Value = serde_json::from_str(&ret)?;
-            let result = event_json
-                .get("result")
-                .ok_or("result not found")?
-                .as_array()
-                .ok_or("result not array")?;
+            let result = match Self::parse_updates_result(&ret) {
+                Ok(result) => result,
+                Err(err) => {
+                    cq_add_log_w(&format!(
+                        "telegram bot {} recv warning:{}",
+                        self.self_id.read().unwrap(),
+                        err
+                    ))
+                    .unwrap();
+                    tokio::time::sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
             if result.len() != 0 {
                 last_update_id = Some(
                     result[result.len() - 1]
@@ -420,7 +479,7 @@ impl TeleTramConnect {
         let is_auto_escape = Self::get_json_bool(params, "auto_escape");
         return is_auto_escape;
     }
-    pub fn to_json_str(val:&serde_json::Value) -> String {
+    pub fn to_json_str(val: &serde_json::Value) -> String {
         if val.is_i64() {
             return val.as_i64().unwrap().to_string();
         }
@@ -433,7 +492,7 @@ impl TeleTramConnect {
         return "".to_owned();
     }
 
-    fn get_msg_id(&self,msg_id:&str) -> Vec<RawMsgId> {
+    fn get_msg_id(&self, msg_id: &str) -> Vec<RawMsgId> {
         let lk = self.msg_ids.read().unwrap();
         for msg_id_pair in lk.iter() {
             if msg_id_pair.msg_id == msg_id {
@@ -446,7 +505,7 @@ impl TeleTramConnect {
     async fn make_telegram_msg(
         &self,
         message_arr: &serde_json::Value,
-        group_id: &str
+        group_id: &str,
     ) -> Result<(Vec<(&str, String)>, String), Box<dyn std::error::Error + Send + Sync>> {
         let mut to_send_data: Vec<(&str, String)> = vec![];
         let mut quote = String::new();
@@ -489,29 +548,53 @@ impl TeleTramConnect {
                         last_type = "file_image";
                     }
                 }
-            }
-            else if tp == "reply" {
-                if quote !=  "" {
+            } else if tp == "reply" {
+                if quote != "" {
                     continue;
                 }
-                let cq_id = Self::to_json_str(it.get("data").ok_or("data not found")?.get("id").ok_or("reply not found")?);
+                let cq_id = Self::to_json_str(
+                    it.get("data")
+                        .ok_or("data not found")?
+                        .get("id")
+                        .ok_or("reply not found")?,
+                );
                 let telegram_id = self.get_msg_id(&cq_id);
-                quote = telegram_id.get(0).ok_or("get telegram msg_id err")?.msg_id.to_owned();
-            }
-            else if tp == "at" {
+                quote = telegram_id
+                    .get(0)
+                    .ok_or("get telegram msg_id err")?
+                    .msg_id
+                    .to_owned();
+            } else if tp == "at" {
                 if !is_group {
                     continue;
                 }
-                let qq = Self::to_json_str(it.get("data").ok_or("data not found")?.get("qq").ok_or("qq not found")?);
-                let ret = self.proxyrequest(&format!("https://api.telegram.org/bot{}/getChatMember?chat_id={}&user_id={}",self.token.read().unwrap(),group_id,qq).as_str()).await?;
+                let qq = Self::to_json_str(
+                    it.get("data")
+                        .ok_or("data not found")?
+                        .get("qq")
+                        .ok_or("qq not found")?,
+                );
+                let ret = self
+                    .proxyrequest(
+                        &format!(
+                            "https://api.telegram.org/bot{}/getChatMember?chat_id={}&user_id={}",
+                            self.token.read().unwrap(),
+                            group_id,
+                            qq
+                        )
+                        .as_str(),
+                    )
+                    .await?;
                 let ret_json: serde_json::Value = ret.parse()?;
-                let username = ret_json["result"]["user"]["username"].as_str().ok_or("username not found")?;
-                let at_str = &format!(" @{} ",username);
+                let username = ret_json["result"]["user"]["username"]
+                    .as_str()
+                    .ok_or("username not found")?;
+                let at_str = &format!(" @{} ", username);
                 if last_type == "text" && to_send_data.len() != 0 {
                     let l = to_send_data.len();
                     to_send_data.get_mut(l - 1).unwrap().1.push_str(at_str);
                 } else {
-                    to_send_data.push(("text",at_str.to_owned()));
+                    to_send_data.push(("text", at_str.to_owned()));
                     last_type = "text";
                 }
             } else if tp == "record" {
@@ -527,8 +610,14 @@ impl TeleTramConnect {
                         last_type = "file_record";
                     }
                 }
-            }else if tp == "music"{
-                let music_type = it.get("data").ok_or("data not found")?.get("type").ok_or("type not found")?.as_str().ok_or("type not str")?;
+            } else if tp == "music" {
+                let music_type = it
+                    .get("data")
+                    .ok_or("data not found")?
+                    .get("type")
+                    .ok_or("type not found")?
+                    .as_str()
+                    .ok_or("type not str")?;
                 if music_type == "custom" {
                     let data = it.get("data").ok_or("data not found")?;
                     let mut audio = read_json_str(data, "audio");
@@ -545,9 +634,9 @@ impl TeleTramConnect {
                         "audio": audio,
                         "image": image,
                         "content": content,
-                        "url": url 
+                        "url": url
                     });
-                    to_send_data.push(("music",js.to_string()));
+                    to_send_data.push(("music", js.to_string()));
                     last_type = "music";
                 }
             }
@@ -568,8 +657,27 @@ impl TeleTramConnect {
         return new_id;
     }
 
+    fn telegram_message_id(ret_json: &serde_json::Value) -> Result<String, String> {
+        if ret_json
+            .get("ok")
+            .and_then(serde_json::Value::as_bool)
+            .is_some_and(|ok| !ok)
+        {
+            return Err(format!("telegram api returned error: {ret_json}"));
+        }
 
-    async fn send_message_inner(&self,to_send_data:Vec<(&str, String)>,mut quote:String,chat_id:&str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        ret_json["result"]["message_id"]
+            .as_i64()
+            .map(|id| id.to_string())
+            .ok_or_else(|| format!("telegram api response missing result.message_id: {ret_json}"))
+    }
+
+    async fn send_message_inner(
+        &self,
+        to_send_data: Vec<(&str, String)>,
+        mut quote: String,
+        chat_id: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let mut msg_ids = vec![];
         for (tp, msg) in &to_send_data.clone() {
             if *tp == "text" {
@@ -601,11 +709,7 @@ impl TeleTramConnect {
                 );
                 let resp = client.execute(req).await?;
                 let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                // cq_add_log(&format!("ret_json:{:?}",ret_json)).unwrap();
-                let msg_id = ret_json["result"]["message_id"]
-                    .as_i64()
-                    .ok_or("message_id not i64")?
-                    .to_string();
+                let msg_id = Self::telegram_message_id(&ret_json)?;
                 msg_ids.push(RawMsgId {
                     msg_id,
                     chat_id: chat_id.to_owned(),
@@ -638,11 +742,7 @@ impl TeleTramConnect {
                 );
                 let resp = client.execute(req).await?;
                 let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                // cq_add_log(&format!("ret_json:{:?}", ret_json)).unwrap();
-                let msg_id = ret_json["result"]["message_id"]
-                    .as_i64()
-                    .ok_or("message_id not i64")?
-                    .to_string();
+                let msg_id = Self::telegram_message_id(&ret_json)?;
                 msg_ids.push(RawMsgId {
                     msg_id,
                     chat_id: chat_id.to_owned(),
@@ -666,15 +766,18 @@ impl TeleTramConnect {
                         "chat_id",
                         reqwest::multipart::Part::text(chat_id.to_owned()),
                     );
-                    if quote != "" {
-                        form = form.part(
-                            "reply_parameters",
-                            reqwest::multipart::Part::text(serde_json::json!({
+                if quote != "" {
+                    form = form.part(
+                        "reply_parameters",
+                        reqwest::multipart::Part::text(
+                            serde_json::json!({
                                 "message_id":quote.parse::<i64>()?
-                            }).to_string()),
-                        );
-                        quote = "".to_owned();
-                    }
+                            })
+                            .to_string(),
+                        ),
+                    );
+                    quote = "".to_owned();
+                }
                 let req = client
                     .post(
                         format!(
@@ -687,11 +790,7 @@ impl TeleTramConnect {
                     .build()?;
                 let resp = client.execute(req).await?;
                 let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                // cq_add_log(&format!("ret_json:{:?}", ret_json)).unwrap();
-                let msg_id = ret_json["result"]["message_id"]
-                    .as_i64()
-                    .ok_or("message_id not i64")?
-                    .to_string();
+                let msg_id = Self::telegram_message_id(&ret_json)?;
                 msg_ids.push(RawMsgId {
                     msg_id,
                     chat_id: chat_id.to_owned(),
@@ -724,10 +823,7 @@ impl TeleTramConnect {
                 );
                 let resp = client.execute(req).await?;
                 let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                // cq_add_log(&format!("ret_json:{:?}", ret_json)).unwrap();
-                let msg_id = ret_json["result"]["message_id"].as_i64() 
-                    .ok_or("message_id not i64")?
-                    .to_string();
+                let msg_id = Self::telegram_message_id(&ret_json)?;
                 msg_ids.push(RawMsgId {
                     msg_id,
                     chat_id: chat_id.to_owned(),
@@ -751,15 +847,18 @@ impl TeleTramConnect {
                         "chat_id",
                         reqwest::multipart::Part::text(chat_id.to_owned()),
                     );
-                    if quote != "" {
-                        form = form.part(
-                            "reply_parameters",
-                            reqwest::multipart::Part::text(serde_json::json!({
+                if quote != "" {
+                    form = form.part(
+                        "reply_parameters",
+                        reqwest::multipart::Part::text(
+                            serde_json::json!({
                                 "message_id":quote.parse::<i64>()?
-                            }).to_string()),
-                        );
-                        quote = "".to_owned();
-                    }
+                            })
+                            .to_string(),
+                        ),
+                    );
+                    quote = "".to_owned();
+                }
                 let req = client
                     .post(
                         format!(
@@ -772,22 +871,27 @@ impl TeleTramConnect {
                     .build()?;
                 let resp = client.execute(req).await?;
                 let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                // cq_add_log(&format!("ret_json:{:?}", ret_json)).unwrap();
-                let msg_id = ret_json["result"]["message_id"]
-                    .as_i64()
-                    .ok_or("message_id not i64")?
-                    .to_string();
+                let msg_id = Self::telegram_message_id(&ret_json)?;
                 msg_ids.push(RawMsgId {
                     msg_id,
                     chat_id: chat_id.to_owned(),
                 });
-            }else if *tp == "music" {
+            } else if *tp == "music" {
                 let client = self.get_req_client()?;
-                let msg_json:serde_json::Value = serde_json::from_str(msg)?;
-                let title = msg_json["title"].as_str().ok_or("title not str")?.to_owned();
-                let audio = msg_json["audio"].as_str().ok_or("audio not str")?.to_owned();
+                let msg_json: serde_json::Value = serde_json::from_str(msg)?;
+                let title = msg_json["title"]
+                    .as_str()
+                    .ok_or("title not str")?
+                    .to_owned();
+                let audio = msg_json["audio"]
+                    .as_str()
+                    .ok_or("audio not str")?
+                    .to_owned();
                 let image = msg_json["image"].as_str().ok_or("image not str")?;
-                let content = msg_json["content"].as_str().ok_or("content not str")?.to_owned();
+                let content = msg_json["content"]
+                    .as_str()
+                    .ok_or("content not str")?
+                    .to_owned();
                 let url = msg_json["url"].as_str().ok_or("url not str")?.to_owned();
 
                 let mut form = reqwest::multipart::Form::new();
@@ -808,30 +912,22 @@ impl TeleTramConnect {
                     let audio_bin = resp.bytes().await?;
                     form = form.part(
                         "audio",
-                        reqwest::multipart::Part::bytes(audio_bin.to_vec()).file_name(title.clone()),
+                        reqwest::multipart::Part::bytes(audio_bin.to_vec())
+                            .file_name(title.clone()),
                     )
                 }
 
                 if title != "" {
-                    form = form.part(
-                        "title",
-                        reqwest::multipart::Part::text(title),
-                    );
+                    form = form.part("title", reqwest::multipart::Part::text(title));
                 }
 
                 if content != "" {
-                    form = form.part(
-                        "performer",
-                        reqwest::multipart::Part::text(content),
-                    );
+                    form = form.part("performer", reqwest::multipart::Part::text(content));
                 }
 
                 if url != "" {
-                    form = form.part(
-                        "caption",
-                        reqwest::multipart::Part::text(url),
-                    );
-                }    
+                    form = form.part("caption", reqwest::multipart::Part::text(url));
+                }
 
                 form = form.part(
                     "chat_id",
@@ -851,16 +947,13 @@ impl TeleTramConnect {
                 let resp = client.execute(req).await?;
                 let ret_json: serde_json::Value = resp.text().await?.parse()?;
                 cq_add_log(&format!("music card ret:{:?}", ret_json)).unwrap();
-                let msg_id = ret_json["result"]["message_id"]
-                    .as_i64()
-                    .ok_or("message_id not i64")?
-                    .to_string();
+                let msg_id = Self::telegram_message_id(&ret_json)?;
                 msg_ids.push(RawMsgId {
                     msg_id,
                     chat_id: chat_id.to_owned(),
                 });
             }
-        } 
+        }
         let msg_id = self.add_msg_id(&msg_ids);
         Ok(msg_id)
     }
@@ -891,7 +984,9 @@ impl TeleTramConnect {
 
         let (to_send_data, quote) = self.make_telegram_msg(&message_arr, &group_id).await?;
 
-        let msg_id = self.send_message_inner(to_send_data,quote,&group_id).await?;
+        let msg_id = self
+            .send_message_inner(to_send_data, quote, &group_id)
+            .await?;
 
         let send_json = serde_json::json!({
             "status":"ok",
@@ -930,7 +1025,9 @@ impl TeleTramConnect {
 
         let (to_send_data, quote) = self.make_telegram_msg(&message_arr, "").await?;
 
-        let msg_id = self.send_message_inner(to_send_data,quote,&user_id).await?;
+        let msg_id = self
+            .send_message_inner(to_send_data, quote, &user_id)
+            .await?;
 
         let send_json = serde_json::json!({
             "status":"ok",
@@ -943,16 +1040,34 @@ impl TeleTramConnect {
         Ok(send_json)
     }
 
-    async fn deal_ob_delete_msg(&self,params:&serde_json::Value,echo:&serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let msg_id = read_json_str(params,"message_id");
+    async fn deal_ob_delete_msg(
+        &self,
+        params: &serde_json::Value,
+        echo: &serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        let msg_id = read_json_str(params, "message_id");
         let msg_ids = self.get_msg_id(&msg_id);
         if msg_ids.len() == 0 {
             return Err("msg_id not found")?;
         }
         for it in msg_ids {
-            let ret_text = self.proxyrequest(&format!("https://api.telegram.org/bot{}/deleteMessage?chat_id={}&message_id={}",self.token.read().unwrap(),it.chat_id,it.msg_id).as_str()).await?;
+            let ret_text = self
+                .proxyrequest(
+                    &format!(
+                        "https://api.telegram.org/bot{}/deleteMessage?chat_id={}&message_id={}",
+                        self.token.read().unwrap(),
+                        it.chat_id,
+                        it.msg_id
+                    )
+                    .as_str(),
+                )
+                .await?;
             let ret_json: serde_json::Value = serde_json::from_str(&ret_text)?;
-            let result = ret_json.get("result").ok_or("result not found")?.as_bool().ok_or("result not bool")?;
+            let result = ret_json
+                .get("result")
+                .ok_or("result not found")?
+                .as_bool()
+                .ok_or("result not bool")?;
             if !result {
                 return Err("delete message error")?;
             }
@@ -965,8 +1080,20 @@ impl TeleTramConnect {
         });
         Ok(send_json)
     }
-    async fn deal_ob_get_login_info(&self,_params:&serde_json::Value,echo:&serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let ret_text = self.proxyrequest(&format!("https://api.telegram.org/bot{}/getMe",self.token.read().unwrap()).as_str()).await?;
+    async fn deal_ob_get_login_info(
+        &self,
+        _params: &serde_json::Value,
+        echo: &serde_json::Value,
+    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        let ret_text = self
+            .proxyrequest(
+                &format!(
+                    "https://api.telegram.org/bot{}/getMe",
+                    self.token.read().unwrap()
+                )
+                .as_str(),
+            )
+            .await?;
         let ret_json: serde_json::Value = serde_json::from_str(&ret_text)?;
         let info = serde_json::json!({
             "user_id":ret_json["result"]["id"].as_i64().ok_or("id not i64")?,
@@ -981,8 +1108,6 @@ impl TeleTramConnect {
         Ok(send_json)
     }
 }
-
-
 
 #[async_trait]
 impl BotConnectTrait for TeleTramConnect {
@@ -1009,8 +1134,9 @@ impl BotConnectTrait for TeleTramConnect {
             .as_str()
             .ok_or("proxy not str")?;
         self.proxy.write().unwrap().push_str(proxy);
-        let ret_text =
-            self.proxyrequest(format!("https://api.telegram.org/bot{}/getMe", token).as_str()).await?;
+        let ret_text = self
+            .proxyrequest(format!("https://api.telegram.org/bot{}/getMe", token).as_str())
+            .await?;
         let ret_json: serde_json::Value = serde_json::from_str(&ret_text)?;
         let self_id = ret_json
             .get("result")
@@ -1068,23 +1194,17 @@ impl BotConnectTrait for TeleTramConnect {
         let params = json.get("params").unwrap_or(&def);
         let send_json = match action {
             "send_group_msg" => self.deal_ob_send_group_msg(&params, &echo).await?,
-            "send_private_msg" => {
-                self.deal_ob_send_private_msg(&params,&echo).await?
-            },
+            "send_private_msg" => self.deal_ob_send_private_msg(&params, &echo).await?,
             "send_msg" => {
                 let group_id = read_json_str(params, "group_id");
                 if group_id != "" {
-                    self.deal_ob_send_group_msg(&params,&echo).await?
-                }else {
-                    self.deal_ob_send_private_msg(&params,&echo).await?
+                    self.deal_ob_send_group_msg(&params, &echo).await?
+                } else {
+                    self.deal_ob_send_private_msg(&params, &echo).await?
                 }
-            },
-            "delete_msg" => {
-                self.deal_ob_delete_msg(&params,&echo).await?
-            },
-            "get_login_info" => {
-                self.deal_ob_get_login_info(&params,&echo).await?
-            },
+            }
+            "delete_msg" => self.deal_ob_delete_msg(&params, &echo).await?,
+            "get_login_info" => self.deal_ob_get_login_info(&params, &echo).await?,
             // "get_stranger_info" => {
             //     self.deal_ob_get_stranger_info(&params,&echo).await?
             // },
@@ -1176,5 +1296,3 @@ impl BotConnectTrait for TeleTramConnect {
         return vec![("telegram".to_owned(), lk.to_owned())];
     }
 }
-
-

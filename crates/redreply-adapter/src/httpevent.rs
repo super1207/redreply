@@ -1,4 +1,4 @@
-﻿use std::collections::HashMap;
+use std::collections::HashMap;
 
 pub fn get_params_from_uri(uri: &hyper::Uri) -> HashMap<String, String> {
     let mut params = HashMap::new();
@@ -9,4 +9,3 @@ pub fn get_params_from_uri(uri: &hyper::Uri) -> HashMap<String, String> {
     }
     params
 }
-

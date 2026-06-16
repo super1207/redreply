@@ -668,6 +668,8 @@ AdapterHost::dispatch_event(event_json)
 | `raw_message` | string | 原始文本。 |
 | `sender` | object | 群成员信息。 |
 
+`sender.role` 表示发送者在群内的身份，常见值为 `owner`、`admin`、`member`。官方 QQ 群消息会从原始事件的 `author.member_role` 映射到此字段；平台未提供时默认为 `member`。
+
 ### 8.4 通知事件
 
 ```json

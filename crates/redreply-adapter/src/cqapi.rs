@@ -1,4 +1,4 @@
-﻿use crate::AdapterResult;
+use crate::AdapterResult;
 
 pub fn cq_add_log(msg: &str) -> AdapterResult<()> {
     crate::host::log(msg);
@@ -13,4 +13,3 @@ pub fn cq_add_log_w(msg: &str) -> AdapterResult<()> {
 pub fn cq_get_app_directory1() -> AdapterResult<String> {
     crate::host::app_dir()
 }
-

@@ -228,10 +228,7 @@ pub fn read_json_str(root: &serde_json::Value, key: &str) -> String {
     String::new()
 }
 
-pub fn read_json_obj<'a>(
-    root: &'a serde_json::Value,
-    key: &str,
-) -> Option<&'a serde_json::Value> {
+pub fn read_json_obj<'a>(root: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
     if let Some(js_v) = root.get(key) {
         if js_v.is_object() && !js_v.as_object().unwrap().is_empty() {
             return Some(js_v);
