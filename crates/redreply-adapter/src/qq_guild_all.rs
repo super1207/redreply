@@ -1,4 +1,4 @@
-// 函数调用判定：
+﻿// 函数调用判定：
 // 有群ID   ->  send_group_msg
 // 无群ID但有user_id   ->  send_private_msg
 // 否则  ->  不处理
@@ -106,24 +106,7 @@ pub struct QQMsgNode {
 }
 
 fn make_qq_text(text: &str) -> String {
-    let mut ret = String::new();
-    for ch in text.chars() {
-        match ch {
-            '&' => {
-                ret += "&amp;";
-            }
-            '<' => {
-                ret += "&lt;";
-            }
-            '>' => {
-                ret += "&gt;";
-            }
-            _ => {
-                ret += &ch.to_string();
-            }
-        }
-    }
-    ret
+    text.to_owned()
 }
 
 fn qq_media_srv_send_msg(msg_type: &MsgSrcType, srv_send_msg: bool) -> bool {
