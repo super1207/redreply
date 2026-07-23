@@ -2061,232 +2061,158 @@ pub async fn get_stranger_info(
     }));
 }
 
+async fn do_qq_delete_request(
+    self_t: &SelfData,
+    uri: reqwest::Url,
+) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let access_token = self_t
+        .access_token
+        .upgrade()
+        .ok_or("access_token not upgrade")?
+        .read()
+        .unwrap()
+        .to_owned();
+    let appid = self_t
+        .appid
+        .upgrade()
+        .ok_or("appid not upgrade")?
+        .read()
+        .unwrap()
+        .to_owned();
+    let client = reqwest::Client::builder().no_proxy().build()?;
+    let mut req = client.delete(uri).build()?;
+    req.headers_mut().append(
+        reqwest::header::HeaderName::from_str("Authorization")?,
+        reqwest::header::HeaderValue::from_str(&format!("QQBot {}", access_token))?,
+    );
+    req.headers_mut().append(
+        reqwest::header::HeaderName::from_str("X-Union-Appid")?,
+        reqwest::header::HeaderValue::from_str(&appid)?,
+    );
+    req.headers_mut().append(
+        reqwest::header::HeaderName::from_str("Content-Type")?,
+        reqwest::header::HeaderValue::from_str("application/json")?,
+    );
+    req.headers_mut().append(
+        reqwest::header::HeaderName::from_str("Accept")?,
+        reqwest::header::HeaderValue::from_str("application/json")?,
+    );
+    let ret = client.execute(req).await?;
+    let status = ret.status();
+    if status != reqwest::StatusCode::OK {
+        let ret_str = ret.text().await?;
+        let message = format!("delete_msg failed, status: {}, body: {}", status, ret_str);
+        cq_add_log_w(&message).unwrap();
+        return Ok(Some(message));
+    }
+    Ok(None)
+}
+
 pub async fn delete_msg(
     self_t: &SelfData,
     json: &serde_json::Value,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let params = read_json_obj_or_null(json, "params");
 
-    let message_id = read_json_str(&params, "message_id");
-
+    let adapter_message_id = read_json_str(&params, "message_id");
     let event: serde_json::Value = self_t
         .id_event_map
         .upgrade()
         .ok_or("id_event_map not upgrade")?
         .read()
         .unwrap()
-        .get(&message_id)
+        .get(&adapter_message_id)
         .ok_or("event is not found")?
         .1
         .to_owned();
     let tp = read_json_str(&event, "t");
-    if tp == "MESSAGE_CREATE" || tp == "send_group_msg" {
-        let d = read_json_obj_or_null(&event, "d");
+    let d = read_json_obj_or_null(&event, "d");
+    let message_id = read_json_str(&d, "id");
+    if message_id == "" {
+        return Ok(serde_json::json!({
+            "retcode":10000,
+            "status":"failed",
+            "message":"message_id is empty",
+            "data":{}
+        }));
+    }
+    let mut failures: Vec<String> = vec![];
+
+    if tp == "MESSAGE_CREATE"
+        || tp == "GROUP_MESSAGE_CREATE"
+        || tp == "GROUP_AT_MESSAGE_CREATE"
+        || tp == "send_group_msg"
+    {
         let channel_id = read_json_str(&d, "channel_id");
         let group_openid = read_json_str(&d, "group_openid");
-        let message_id = read_json_str(&d, "id");
         cq_add_log_w(&format!("delete messageId: {}", message_id)).unwrap();
-        if !message_id.contains("|") {
+        for message_id in message_id.split('|').filter(|id| !id.is_empty()) {
             let uri = if group_openid != "" {
-                reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/groups/{group_openid}/messages/{message_id}?hidetip=false"))?
+                reqwest::Url::from_str(&format!(
+                    "https://api.sgroup.qq.com/v2/groups/{group_openid}/messages/{message_id}"
+                ))?
+            } else if channel_id != "" {
+                reqwest::Url::from_str(&format!(
+                    "https://api.sgroup.qq.com/channels/{channel_id}/messages/{message_id}?hidetip=false"
+                ))?
             } else {
-                reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/channels/{channel_id}/messages/{message_id}?hidetip=false"))?
+                return Ok(serde_json::json!({
+                    "retcode":10001,
+                    "status":"failed",
+                    "message":"group_openid or channel_id is empty",
+                    "data":{}
+                }));
             };
-            let client = reqwest::Client::builder().no_proxy().build()?;
-            let mut req = client.delete(uri).build()?;
-            req.headers_mut().append(
-                reqwest::header::HeaderName::from_str("Authorization")?,
-                reqwest::header::HeaderValue::from_str(&format!(
-                    "QQBot {}",
-                    self_t
-                        .access_token
-                        .upgrade()
-                        .ok_or("access_token not upgrade")?
-                        .read()
-                        .unwrap()
-                ))?,
-            );
-            req.headers_mut().append(
-                reqwest::header::HeaderName::from_str("X-Union-Appid")?,
-                reqwest::header::HeaderValue::from_str(
-                    &self_t
-                        .appid
-                        .upgrade()
-                        .ok_or("appid not upgrade")?
-                        .read()
-                        .unwrap(),
-                )?,
-            );
-            req.headers_mut().append(
-                reqwest::header::HeaderName::from_str("Content-Type")?,
-                reqwest::header::HeaderValue::from_str("application/json")?,
-            );
-            req.headers_mut().append(
-                reqwest::header::HeaderName::from_str("Accept")?,
-                reqwest::header::HeaderValue::from_str("application/json")?,
-            );
-            let ret = client.execute(req).await?;
-            if ret.status() != 200 {
-                let ret_str = ret.text().await?;
-                cq_add_log_w(&format!("delete_msg:{:?}", &ret_str)).unwrap();
-            }
-        } else {
-            let ids = message_id.split("|").collect::<Vec<&str>>();
-            for message_id in ids {
-                let uri = if group_openid != "" {
-                    reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/v2/groups/{group_openid}/messages/{message_id}?hidetip=false"))?
-                } else {
-                    reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/channels/{channel_id}/messages/{message_id}?hidetip=false"))?
-                };
-                let client = reqwest::Client::builder().no_proxy().build()?;
-                let mut req = client.delete(uri).build()?;
-                req.headers_mut().append(
-                    reqwest::header::HeaderName::from_str("Authorization")?,
-                    reqwest::header::HeaderValue::from_str(&format!(
-                        "QQBot {}",
-                        self_t
-                            .access_token
-                            .upgrade()
-                            .ok_or("access_token not upgrade")?
-                            .read()
-                            .unwrap()
-                    ))?,
-                );
-                req.headers_mut().append(
-                    reqwest::header::HeaderName::from_str("X-Union-Appid")?,
-                    reqwest::header::HeaderValue::from_str(
-                        &self_t
-                            .appid
-                            .upgrade()
-                            .ok_or("appid not upgrade")?
-                            .read()
-                            .unwrap(),
-                    )?,
-                );
-                req.headers_mut().append(
-                    reqwest::header::HeaderName::from_str("Content-Type")?,
-                    reqwest::header::HeaderValue::from_str("application/json")?,
-                );
-                req.headers_mut().append(
-                    reqwest::header::HeaderName::from_str("Accept")?,
-                    reqwest::header::HeaderValue::from_str("application/json")?,
-                );
-                let ret = client.execute(req).await?;
-                if ret.status() != 200 {
-                    let ret_str = ret.text().await?;
-                    cq_add_log_w(&format!("delete_msg:{:?}", &ret_str)).unwrap();
-                }
+            if let Some(message) = do_qq_delete_request(self_t, uri).await? {
+                failures.push(message);
             }
         }
     } else if tp == "send_private_msg" {
-        let d = read_json_obj_or_null(&event, "d");
         let guild_id = read_json_str(&d, "guild_id");
         let user_openid = read_json_str(&d, "user_openid");
-        let message_id = read_json_str(&d, "id");
-        if !message_id.contains("|") {
+        for message_id in message_id.split('|').filter(|id| !id.is_empty()) {
             let uri = if user_openid != "" {
                 reqwest::Url::from_str(&format!(
                     "https://api.sgroup.qq.com/v2/users/{user_openid}/messages/{message_id}"
                 ))?
-            } else {
+            } else if guild_id != "" {
                 reqwest::Url::from_str(&format!(
                     "https://api.sgroup.qq.com/dms/{guild_id}/messages/{message_id}?hidetip=false"
                 ))?
+            } else {
+                return Ok(serde_json::json!({
+                    "retcode":10001,
+                    "status":"failed",
+                    "message":"user_openid or guild_id is empty",
+                    "data":{}
+                }));
             };
-            let client = reqwest::Client::builder().no_proxy().build()?;
-            let mut req = client.delete(uri).build()?;
-            req.headers_mut().append(
-                reqwest::header::HeaderName::from_str("Authorization")?,
-                reqwest::header::HeaderValue::from_str(&format!(
-                    "QQBot {}",
-                    self_t
-                        .access_token
-                        .upgrade()
-                        .ok_or("access_token not upgrade")?
-                        .read()
-                        .unwrap()
-                ))?,
-            );
-            req.headers_mut().append(
-                reqwest::header::HeaderName::from_str("X-Union-Appid")?,
-                reqwest::header::HeaderValue::from_str(
-                    &self_t
-                        .appid
-                        .upgrade()
-                        .ok_or("appid not upgrade")?
-                        .read()
-                        .unwrap(),
-                )?,
-            );
-            req.headers_mut().append(
-                reqwest::header::HeaderName::from_str("Content-Type")?,
-                reqwest::header::HeaderValue::from_str("application/json")?,
-            );
-            req.headers_mut().append(
-                reqwest::header::HeaderName::from_str("Accept")?,
-                reqwest::header::HeaderValue::from_str("application/json")?,
-            );
-            let ret = client.execute(req).await?;
-            if ret.status() != 200 {
-                let ret_str = ret.text().await?;
-                cq_add_log_w(&format!("delete_msg:{:?}", &ret_str)).unwrap();
-            }
-        } else {
-            let ids = message_id.split("|").collect::<Vec<&str>>();
-            for message_id in ids {
-                let uri = if user_openid != "" {
-                    reqwest::Url::from_str(&format!(
-                        "https://api.sgroup.qq.com/v2/users/{user_openid}/messages/{message_id}"
-                    ))?
-                } else {
-                    reqwest::Url::from_str(&format!("https://api.sgroup.qq.com/dms/{guild_id}/messages/{message_id}?hidetip=false"))?
-                };
-                let client = reqwest::Client::builder().no_proxy().build()?;
-                let mut req = client.delete(uri).build()?;
-                req.headers_mut().append(
-                    reqwest::header::HeaderName::from_str("Authorization")?,
-                    reqwest::header::HeaderValue::from_str(&format!(
-                        "QQBot {}",
-                        self_t
-                            .access_token
-                            .upgrade()
-                            .ok_or("access_token not upgrade")?
-                            .read()
-                            .unwrap()
-                    ))?,
-                );
-                req.headers_mut().append(
-                    reqwest::header::HeaderName::from_str("X-Union-Appid")?,
-                    reqwest::header::HeaderValue::from_str(
-                        &self_t
-                            .appid
-                            .upgrade()
-                            .ok_or("appid not upgrade")?
-                            .read()
-                            .unwrap(),
-                    )?,
-                );
-                req.headers_mut().append(
-                    reqwest::header::HeaderName::from_str("Content-Type")?,
-                    reqwest::header::HeaderValue::from_str("application/json")?,
-                );
-                req.headers_mut().append(
-                    reqwest::header::HeaderName::from_str("Accept")?,
-                    reqwest::header::HeaderValue::from_str("application/json")?,
-                );
-                let ret = client.execute(req).await?;
-                if ret.status() != 200 {
-                    let ret_str = ret.text().await?;
-                    cq_add_log_w(&format!("delete_msg:{:?}", &ret_str)).unwrap();
-                }
+            if let Some(message) = do_qq_delete_request(self_t, uri).await? {
+                failures.push(message);
             }
         }
+    } else {
+        return Ok(serde_json::json!({
+            "retcode":10002,
+            "status":"failed",
+            "message":format!("unsupported message event type: {}", tp),
+            "data":{}
+        }));
     }
-    return Ok(serde_json::json!({
+
+    if !failures.is_empty() {
+        return Ok(serde_json::json!({
+            "retcode":10003,
+            "status":"failed",
+            "message":failures.join("\n"),
+            "data":{}
+        }));
+    }
+    Ok(serde_json::json!({
         "retcode":0,
         "status":"ok",
         "data":{}
-    }));
+    }))
 }
 
 pub async fn get_group_member_info(

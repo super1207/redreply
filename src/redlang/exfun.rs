@@ -62,6 +62,61 @@ fn get_param_image(
     RedLang::parse_bin_to_img_raw(self_t.get_param_bin(params, i)?)
 }
 
+fn make_round_square_image(img: &ImageBuffer<Rgba<u8>, Vec<u8>>) -> ImageBuffer<Rgba<u8>, Vec<u8>> {
+    let width = img.width();
+    let height = img.height();
+    let size = width.min(height);
+    let mut out: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(size, size);
+
+    for pixel in out.pixels_mut() {
+        *pixel = Rgba([0, 0, 0, 0]);
+    }
+
+    let offset_x = if width > height { (width - size) / 2 } else { 0 };
+    let offset_y = if height > width { (height - size) / 2 } else { 0 };
+    let center = (size as i32) / 2;
+    let radius = (size as i32) / 2;
+
+    for x in 0..size {
+        for y in 0..size {
+            let dx = x as i32 - center;
+            let dy = y as i32 - center;
+            if dx * dx + dy * dy > radius * radius {
+                continue;
+            }
+
+            let src_x = offset_x + x;
+            let src_y = offset_y + y;
+            if src_x >= width || src_y >= height {
+                continue;
+            }
+
+            let pixel = img.get_pixel(src_x, src_y);
+            if let Some(dest) = out.get_pixel_mut_checked(x, y) {
+                *dest = *pixel;
+            }
+        }
+    }
+
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn make_round_square_image_creates_square_output() {
+        let img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_fn(10, 6, |_, _| Rgba([255, 0, 0, 255]));
+        let out = make_round_square_image(&img);
+
+        assert_eq!(out.width(), 6);
+        assert_eq!(out.height(), 6);
+        assert_eq!(out.get_pixel(0, 0).0[3], 0);
+        assert_eq!(out.get_pixel(3, 3).0[3], 255);
+    }
+}
+
 fn red_to_serde_value(value: &RedValue) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     match value {
         RedValue::Text(s) => {
@@ -1245,27 +1300,9 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["图片变圆","图像变圆"],|self_t,params|{
-        let (_,mut img) = get_param_image(self_t, params, 0)?;
-        let width = img.width();
-        let height = img.height();
-        let r:u32;
-        if width < height {
-            r = width / 2;
-        }else{
-            r = height / 2;
-        }
-        for x in 0..width {
-            for y in 0..height {
-                if x.wrapping_sub(r).wrapping_mul(x.wrapping_sub(r)) + y.wrapping_sub(r).wrapping_mul(y.wrapping_sub(r)) > r.wrapping_mul(r){
-                    let pix = img.get_pixel_mut_checked(x, y).ok_or("image out of bound")?;
-                    pix.0[0] = 0;  //r
-                    pix.0[1] = 0;  //g
-                    pix.0[2] = 0;  //b
-                    pix.0[3] = 0;  //a
-                }
-            }
-        }
-        let ret = self_t.build_bin_raw_from_img(&img)?;
+        let (_, img) = get_param_image(self_t, params, 0)?;
+        let out = make_round_square_image(&img);
+        let ret = self_t.build_bin_raw_from_img(&out)?;
         return Ok(Some(rv_bin(ret)));
     });
 
