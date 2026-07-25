@@ -1834,10 +1834,10 @@ pub fn init_core_fun_map() {
                 let mut v_num = v_str.parse::<i64>()?;
                 v_num += number;
                 *(**val).borrow_mut() = Rc::new(RedValue::Text(Rc::new(v_num.to_string())));
-                break;
+                return Ok(Some(rv_empty()));
             }
         }
-        return Ok(Some(rv_empty()));
+        return Err(RedLang::make_err(&format!("自增：变量`{}`不存在", var_name)));
     });
     add_fun(vec!["复制命令"],|self_t,params|{
         let old_cmd = self_t.get_param_text_rc(params, 0)?;

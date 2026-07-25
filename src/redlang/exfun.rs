@@ -613,12 +613,21 @@ pub fn init_ex_fun_map() {
         let json_data: serde_json::Value;
 
         if let Ok(u8_vec) = json_obj.expect_bin_value() {
-            let json_str = String::from_utf8(u8_vec)?;
-            json_data = serde_json::from_str(&json_str).map_err(|e| format!("字节集内容JSON解析失败: {}", e))?;
+            let json_str = match String::from_utf8(u8_vec) {
+                Ok(s) => s,
+                Err(_) => return Ok(Some(rv_empty())),
+            };
+            match serde_json::from_str(&json_str) {
+                Ok(v) => json_data = v,
+                Err(_) => return Ok(Some(rv_empty())),
+            }
         } else if matches!(&*json_obj, RedValue::Object(_) | RedValue::Array(_)) {
             json_data = red_to_serde_value(&json_obj)?;
         } else if let Ok(json_str) = json_obj.expect_text_value() {
-            json_data = serde_json::from_str(&json_str).map_err(|e| format!("文本内容JSON解析失败: {}", e))?;
+            match serde_json::from_str(&json_str) {
+                Ok(v) => json_data = v,
+                Err(_) => return Ok(Some(rv_empty())),
+            }
         } else {
             return Err(RedLang::make_err(&format!("不支持的JSON解析类型: {}", json_obj.get_type_name())));
         }

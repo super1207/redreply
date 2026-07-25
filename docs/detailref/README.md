@@ -996,9 +996,16 @@ bbb=2
 ### 正则
 
 
-【正则@<font color="red">文本</font>@<font color="red">正则表达式</font>】
+【正则@<font color="red">文本</font>@<font color="red">正则表达式</font>@<font color="red">匹配索引</font>@<font color="red">分组索引</font>】
 
-返回正则匹配结果(一个二维数组)
+返回正则匹配结果。
+
+<font color="red">匹配索引</font>与<font color="red">分组索引</font>均可省略，也可用`*`表示省略。
+
+- 两个索引都省略：返回二维数组，每一行是一次完整匹配及其捕获组
+- 仅指定<font color="red">匹配索引</font>：返回该次匹配的一维数组（含完整匹配与捕获组）
+- 仅指定<font color="red">分组索引</font>（匹配索引写`*`）：返回该分组在所有匹配中的一维数组
+- 两个索引都指定：返回对应的单个文本；越界则返回空文本
 
 有一些特殊用法，请参考如下代码：
 
