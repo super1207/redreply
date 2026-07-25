@@ -2961,10 +2961,20 @@ pub fn init_ex_fun_map() {
             let tokens = get_token(input);
             let mp = get_params(&tokens);
         
-            fn get_tou(m:i64,des:&mut String) -> i64 {
-                let ret = get_random().unwrap() % m as usize + 1;
+            fn get_tou(m:i64,des:&mut String) -> Result<i64, Box<dyn std::error::Error>> {
+                if m <= 0 {
+                    return Err("骰子面数必须大于0".into());
+                }
+                let ret = get_random()? % m as usize + 1;
                 des.push_str(&format!("掷出面数为{}的骰子:{}\n",m,ret));
-                return ret as i64;
+                return Ok(ret as i64);
+            }
+
+            fn rand_faces(m: i64) -> Result<i64, Box<dyn std::error::Error>> {
+                if m <= 0 {
+                    return Err("骰子面数必须大于0".into());
+                }
+                Ok((get_random()? % m as usize + 1) as i64)
             }
         
             fn get_two_tou(des:&mut String) -> i64 {
@@ -3009,7 +3019,7 @@ pub fn init_ex_fun_map() {
                     let mut tou_vec:Vec<i64> = vec![];
                     for i in 0..ts {
                         des.push_str(&format!("第{}次:",i+1));
-                        tou_vec.push(get_tou(ms,&mut des));
+                        tou_vec.push(get_tou(ms,&mut des)?);
                     }
                     tou_vec.sort();
                     tou_vec.reverse();
@@ -3028,7 +3038,7 @@ pub fn init_ex_fun_map() {
                     let mut tou_vec:Vec<i64> = vec![];
                     for i in 0..ts {
                         des.push_str(&format!("第{}次:",i+1));
-                        tou_vec.push(get_tou(ms,&mut des));
+                        tou_vec.push(get_tou(ms,&mut des)?);
                     }
                     tou_vec.sort();
                     des.push_str(&format!("从小到大排序后为:{:?}\n",tou_vec));
@@ -3077,7 +3087,7 @@ pub fn init_ex_fun_map() {
                     let mut sum:i64 = 0;
                     for i in 0..ts {
                         des.push_str(&format!("第{}次:",i+1));
-                        sum += get_tou(ms,&mut des);
+                        sum += get_tou(ms,&mut des)?;
                     }
                     des.push_str(&format!("{}个骰子的总和为:{}",ts,sum));
                 }
@@ -3135,7 +3145,7 @@ pub fn init_ex_fun_map() {
                 loop {
                     let mut tou_vec:Vec<i64> = vec![];
                     for _i in 0..a1 {
-                        tou_vec.push((get_random().unwrap() % m as usize + 1) as i64);
+                        tou_vec.push(rand_faces(m)?);
                     }
                     des.push_str(&format!("第{ls}轮掷骰:{tou_vec:?}\n"));
                     tou_vec.sort();
@@ -3173,7 +3183,7 @@ pub fn init_ex_fun_map() {
                 loop {
                     let mut tou_vec:Vec<i64> = vec![];
                     for _i in 0..a {
-                        tou_vec.push((get_random().unwrap() % m as usize + 1) as i64);
+                        tou_vec.push(rand_faces(m)?);
                     }
                     des.push_str(&format!("第{ls}轮掷骰:{tou_vec:?}\n"));
                     tou_vec.sort();

@@ -2283,7 +2283,7 @@ pub async fn get_group_member_info(
     let guild_id = read_json_str(&channel_info, "guild_id");
 
     let uri = reqwest::Url::from_str(&format!(
-        "https://api.sgroup.qq.com/guilds/guilds/{guild_id}/members/{user_id}"
+        "https://api.sgroup.qq.com/guilds/{guild_id}/members/{user_id}"
     ))?;
     //println!("uri:{}", &uri);
     let client = reqwest::Client::builder().no_proxy().build()?;

@@ -68,7 +68,8 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
                     cq_add_log_w(&format!("检测到时间大幅倒流 ({} 秒)，进行补偿触发", diff)).unwrap();
                     let baseline = now_time;
                     let trigger_threshold = prev_time;
-                    *last_time_lk = Some(prev_time);
+                    // 补偿一轮后推进水位，避免每 500ms 重复补偿
+                    *last_time_lk = Some(now_time);
                     (baseline, trigger_threshold)
                 } else {
                     cq_add_log_w(&format!("检测到时间小幅倒流 ({} 秒)，不补偿触发", diff)).unwrap();
@@ -95,14 +96,30 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
         .ok_or("script.json文件不是数组格式")?
         .len()
     {
-        let (keyword, cffs, code, name, pkg_name) = get_script_info(&script_json[i])?;
+        let (keyword, cffs, code, name, pkg_name) = match get_script_info(&script_json[i]) {
+            Ok(v) => v,
+            Err(err) => {
+                cq_add_log_w(&format!("读取CRON脚本信息失败: {}", err)).unwrap();
+                continue;
+            }
+        };
         if cffs == "CRON定时器" {
-            let schedule = <cron::Schedule as std::str::FromStr>::from_str(&keyword)?;
+            let schedule = match <cron::Schedule as std::str::FromStr>::from_str(&keyword) {
+                Ok(s) => s,
+                Err(err) => {
+                    cq_add_log_w(&format!("无效的CRON表达式 `{}` (脚本:{}): {}", keyword, name, err)).unwrap();
+                    continue;
+                }
+            };
 
             // 以上次处理时间为基准，获取在这段时间内是否有触发时间
-            let dt_baseline = chrono::Local.timestamp_opt(baseline, 0)
-                .single()
-                .ok_or("Invalid baseline timestamp")?;
+            let dt_baseline = match chrono::Local.timestamp_opt(baseline, 0).single() {
+                Some(dt) => dt,
+                None => {
+                    cq_add_log_w("Invalid baseline timestamp").unwrap();
+                    continue;
+                }
+            };
             let mut upcoming = schedule.after(&dt_baseline);
 
             // 持续触发期间内所有调度点

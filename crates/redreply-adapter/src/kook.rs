@@ -453,8 +453,8 @@ impl KookConnect {
         } else {
             // 处理回复
             if let Some(quote) = extra.get("quote") {
-                let rong_id = read_json_str(quote, "rong_id");
-                let cq_id = self.get_cq_msg_id(&rong_id).0;
+                let quote_id = read_json_str(quote, "id");
+                let cq_id = self.get_cq_msg_id(&quote_id).0;
                 msg.push_str(&format!("[CQ:reply,id={cq_id}]"));
             }
 
@@ -692,8 +692,8 @@ impl KookConnect {
         } else {
             // 处理回复
             if let Some(quote) = extra.get("quote") {
-                let rong_id = read_json_str(quote, "rong_id");
-                let cq_id = self.get_cq_msg_id(&rong_id).0;
+                let quote_id = read_json_str(quote, "id");
+                let cq_id = self.get_cq_msg_id(&quote_id).0;
                 msg.push_str(&format!("[CQ:reply,id={cq_id}]"));
             }
 

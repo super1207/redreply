@@ -42,18 +42,24 @@ pub fn get_params_from_uri(uri:&hyper::Uri) -> BTreeMap<String,String> {
         }
         let index_opt = it.find("=");
         if index_opt.is_some() {
-            let k_rst: String = url::form_urlencoded::parse(it.get(0..index_opt.unwrap()).unwrap().as_bytes())
-                .map(|(key, val)| [key, val].concat())
-                .collect::<String>();
-            let v_rst: String = url::form_urlencoded::parse(it.get(index_opt.unwrap() + 1..).unwrap().as_bytes())
-                .map(|(key, val)| [key, val].concat())
-                .collect::<String>();
+            // 用 x=... 包装，避免值中的 '=' 被 form_urlencoded 拆成多对
+            let k_raw = it.get(0..index_opt.unwrap()).unwrap();
+            let v_raw = it.get(index_opt.unwrap() + 1..).unwrap();
+            let k_rst = url::form_urlencoded::parse(format!("x={}", k_raw).as_bytes())
+                .next()
+                .map(|(_, v)| v.into_owned())
+                .unwrap_or_else(|| k_raw.to_owned());
+            let v_rst = url::form_urlencoded::parse(format!("x={}", v_raw).as_bytes())
+                .next()
+                .map(|(_, v)| v.into_owned())
+                .unwrap_or_else(|| v_raw.to_owned());
             ret_map.insert(k_rst, v_rst);
         }
         else {
-            let k_rst: String = url::form_urlencoded::parse(it.as_bytes())
-                .map(|(key, val)| [key, val].concat())
-                .collect::<String>();
+            let k_rst = url::form_urlencoded::parse(format!("x={}", it).as_bytes())
+                .next()
+                .map(|(_, v)| v.into_owned())
+                .unwrap_or_else(|| it.to_owned());
             ret_map.insert(k_rst,"".to_owned());
         }
     }

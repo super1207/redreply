@@ -101,8 +101,9 @@ impl EmailConnect {
         cq_add_log(&format!("邮件协议已经连接:{}", self.url)).unwrap();
 
         // 首次运行时，获取当前最大 UID 作为基准，不处理历史未读邮件
+        // 必须使用 uid_search：search 返回的是 sequence number，不是 UID
         if *self.last_uid.read().unwrap() == 0 {
-            let uids = imap_session.search("UNSEEN")?;
+            let uids = imap_session.uid_search("UNSEEN")?;
             if let Some(&max_uid) = uids.iter().max() {
                 *self.last_uid.write().unwrap() = max_uid;
                 cq_add_log(&format!(
@@ -121,7 +122,7 @@ impl EmailConnect {
             // 使用增量拉取：只搜索 UID 大于 last_uid 的未读邮件
             let last_uid = *self.last_uid.read().unwrap();
             let query = format!("UID {}:* UNSEEN", last_uid + 1);
-            let uids = imap_session.search(&query)?;
+            let uids = imap_session.uid_search(&query)?;
             // 防御性过滤：某些 IMAP 服务器在指定 UID 不存在时可能返回意外结果
             let uids: Vec<u32> = uids.into_iter().filter(|&uid| uid > last_uid).collect();
             if uids.is_empty() {
@@ -135,7 +136,7 @@ impl EmailConnect {
                 continue;
             } else {
                 for uid in uids {
-                    let size_fetch = imap_session.fetch(uid.to_string(), "RFC822.SIZE")?;
+                    let size_fetch = imap_session.uid_fetch(uid.to_string(), "RFC822.SIZE")?;
                     let mut is_large = false;
                     if let Some(m) = size_fetch.iter().next() {
                         if let Some(s) = m.size {
@@ -152,13 +153,13 @@ impl EmailConnect {
                     }
 
                     if !is_large {
-                        let fetcharr = imap_session.fetch(uid.to_string(), "RFC822")?;
+                        let fetcharr = imap_session.uid_fetch(uid.to_string(), "RFC822")?;
                         if let Err(err) = self.deal_fetcharr(&fetcharr) {
                             cq_add_log_w(&format!("邮件处理错误:{:?}", err)).unwrap();
                         }
                     }
                     // 设置已读标记，现在不标记已读了
-                    // imap_session.store(uid.to_string(), "+FLAGS (\\Seen)")?;
+                    // imap_session.uid_store(uid.to_string(), "+FLAGS (\\Seen)")?;
                     // 更新 last_uid
                     let mut last_uid_lock = self.last_uid.write().unwrap();
                     if uid > *last_uid_lock {

@@ -108,7 +108,14 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
     ensure_adapter_host();
     std::thread::spawn(move ||{
         loop {
-            let config_urls = get_ws_urls().unwrap();
+            let config_urls = match get_ws_urls() {
+                Ok(urls) => urls,
+                Err(err) => {
+                    cq_add_log_w(&format!("读取连接配置失败，将重试: {}", err)).unwrap();
+                    std::thread::sleep(std::time::Duration::from_secs(5));
+                    continue;
+                }
+            };
             
             RT_PTR.clone().block_on(async move {
                 // 删除所有不在列表中的url和死去的bot

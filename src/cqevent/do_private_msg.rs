@@ -15,7 +15,8 @@ fn do_redlang(root: &serde_json::Value,ban_pkgs:&HashSet<String>) -> Result<(), 
         for i in 0..vec_len {
             let st = vec_lk.get(i).unwrap();
             if st.stream_type == "输入流" {
-                if self_id == st.self_id && user_id == st.user_id {
+                // 仅匹配私聊输入流（group_id 为空），避免群内等待被私聊误唤醒
+                if self_id == st.self_id && user_id == st.user_id && st.group_id.is_empty() {
                     let k_arc = st.tx.clone().unwrap();
                     k_arc.lock().unwrap().send(msg.clone())?;
                 }

@@ -13,8 +13,9 @@ pub fn msg_id_map_insert(self_id:String,user_id:String,group_id:String,message_i
         if v.len() > 100 {
             v.pop_back();
         }
-    }else{
-        let v = VecDeque::new();
+    } else {
+        let mut v = VecDeque::new();
+        v.push_front((user_id.to_string(), message_id.to_string()));
         mp.insert(flag, v);
     }
     Ok(())

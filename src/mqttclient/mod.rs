@@ -236,7 +236,7 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
         return Ok(());
     }
     let mqtt_config = mqtt_config.as_object().unwrap();
-    let broker_host = mqtt_config.get("broker_host").ok_or("broker_host not found")?.as_str().ok_or("broker_host not string")?;
+    let broker_host = mqtt_config.get("broker_host").ok_or("broker_host not found")?.as_str().ok_or("broker_host not string")?.to_string();
     let broker_port = mqtt_config.get("broker_port").ok_or("broker_port not found")?.as_u64().ok_or("broker_port not number")?;
     
     if let Some(remote_clients) = mqtt_config.get("remote_clients") {
@@ -251,80 +251,87 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
         }
     }
     
-    let broker_username_opt = mqtt_config.get("broker_username");
-    let broker_password_opt = mqtt_config.get("broker_password");
-    let mqtt_client_id = mqtt_config.get("client_id").ok_or("client_id not found")?.as_str().ok_or("client_id not string")?;
+    let mqtt_client_id = mqtt_config.get("client_id").ok_or("client_id not found")?.as_str().ok_or("client_id not string")?.to_string();
     
     // Validate the client ID
-    validate_mqtt_client_id(mqtt_client_id)?;
-    
-    let mut mqttoptions = MqttOptions::new(mqtt_client_id, broker_host, broker_port.try_into()?);
-    mqttoptions
-    .set_keep_alive(Duration::from_secs(30))
-    .set_clean_start(true)
-    .set_max_packet_size(Some(268435456));
-    if broker_username_opt.is_some() && broker_password_opt.is_some() {
-        let broker_username = broker_username_opt.unwrap();
-        let broker_password = broker_password_opt.unwrap();
-        if !broker_password.is_null() && !broker_username.is_null() {
-            let broker_username = broker_username.as_str().ok_or("username not string")?;
-            let broker_password = broker_password.as_str().ok_or("password not string")?;
-            mqttoptions.set_credentials(broker_username, broker_password);
+    validate_mqtt_client_id(&mqtt_client_id)?;
+
+    let mut broker_username: Option<String> = None;
+    let mut broker_password: Option<String> = None;
+    if let (Some(u), Some(p)) = (mqtt_config.get("broker_username"), mqtt_config.get("broker_password")) {
+        if !u.is_null() && !p.is_null() {
+            broker_username = Some(u.as_str().ok_or("username not string")?.to_string());
+            broker_password = Some(p.as_str().ok_or("password not string")?.to_string());
         }
     }
-    let (client, mut connection) = Client::new(mqttoptions, 10);
+
     {
         let mut lk = CLIENT_ID.lock().unwrap();
-        *lk = mqtt_client_id.to_string();
+        *lk = mqtt_client_id.clone();
     }
-    {
-        let mut lk = MQTT_CLIENT.lock().unwrap();
-        *lk = Some(client.clone());
-    }
-    std::thread::spawn(move ||{
-        for (_, notification) in connection.iter().enumerate() {
-            if let Ok(notification) = notification {
-                if let rumqttc::v5::Event::Incoming(Publish(p)) = notification {
-                    RT_PTR.spawn_blocking(move ||{
-                        if let Err(e) = deal_pushlish(p) {
-                            cq_add_log_w(&format!("deal_publish_api error: {}", e)).unwrap();
-                        }
-                    });
-                } else if let rumqttc::v5::Event::Incoming(ConnAck(p)) = notification {
-                    let code: rumqttc::v5::mqttbytes::v5::ConnectReturnCode = p.code;
-                    if code == rumqttc::v5::mqttbytes::v5::ConnectReturnCode::Success {
-                        let mqtt_client_id = get_mqtt_client_id();
-                        let resp = client.try_subscribe(format!("bot/{mqtt_client_id}/+/+/api"), QoS::ExactlyOnce);
-                        if let Err(err) = resp {
-                            cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
-                        }
-                        let resp = client.try_subscribe(format!("plus/{mqtt_client_id}/response"), QoS::ExactlyOnce);
-                        if let Err(err) = resp {
-                            cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
-                        }
-                        let remote_clients;
-                        {
-                            let lk = REMOTE_CLIENTS.lock().unwrap();
-                            remote_clients = (*lk).clone();
-                        }
-                        for remote_client in remote_clients {
-                            let topic = format!("bot/{remote_client}/+/+/event");
-                            let qos = QoS::ExactlyOnce;
-                            let mut filter = Filter::new(topic, qos);
-                            filter.nolocal = true;
-                            let subscribe = Subscribe::new(filter, None);
-                            let resp = client.client.request_tx.try_send(subscribe.into());
-                            if let Err(err) = resp {
+
+    cq_add_log("MQTT 推送已开启！").unwrap();
+    cq_add_log(&format!("MQTT Client ID: {}", mqtt_client_id)).unwrap();
+    cq_add_log(&format!("MQTT Broker: {}:{}", broker_host, broker_port)).unwrap();
+
+    std::thread::spawn(move || {
+        loop {
+            let mut mqttoptions = MqttOptions::new(&mqtt_client_id, &broker_host, broker_port as u16);
+            mqttoptions
+                .set_keep_alive(Duration::from_secs(30))
+                .set_clean_start(true)
+                .set_max_packet_size(Some(268435456));
+            if let (Some(u), Some(p)) = (&broker_username, &broker_password) {
+                mqttoptions.set_credentials(u, p);
+            }
+            let (client, mut connection) = Client::new(mqttoptions, 10);
+            {
+                let mut lk = MQTT_CLIENT.lock().unwrap();
+                *lk = Some(client.clone());
+            }
+            for notification in connection.iter() {
+                if let Ok(notification) = notification {
+                    if let rumqttc::v5::Event::Incoming(Publish(p)) = notification {
+                        RT_PTR.spawn_blocking(move || {
+                            if let Err(e) = deal_pushlish(p) {
+                                cq_add_log_w(&format!("deal_publish_api error: {}", e)).unwrap();
+                            }
+                        });
+                    } else if let rumqttc::v5::Event::Incoming(ConnAck(p)) = notification {
+                        let code: rumqttc::v5::mqttbytes::v5::ConnectReturnCode = p.code;
+                        if code == rumqttc::v5::mqttbytes::v5::ConnectReturnCode::Success {
+                            let mqtt_client_id = get_mqtt_client_id();
+                            if let Err(err) = client.try_subscribe(format!("bot/{mqtt_client_id}/+/+/api"), QoS::ExactlyOnce) {
                                 cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
+                            }
+                            if let Err(err) = client.try_subscribe(format!("plus/{mqtt_client_id}/response"), QoS::ExactlyOnce) {
+                                cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
+                            }
+                            let remote_clients = {
+                                let lk = REMOTE_CLIENTS.lock().unwrap();
+                                (*lk).clone()
+                            };
+                            for remote_client in remote_clients {
+                                let topic = format!("bot/{remote_client}/+/+/event");
+                                let mut filter = Filter::new(topic, QoS::ExactlyOnce);
+                                filter.nolocal = true;
+                                let subscribe = Subscribe::new(filter, None);
+                                if let Err(err) = client.client.request_tx.try_send(subscribe.into()) {
+                                    cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
+                                }
                             }
                         }
                     }
                 }
-            } 
+            }
+            // 连接断开后清理并重连
+            {
+                let mut lk = MQTT_CLIENT.lock().unwrap();
+                *lk = None;
+            }
+            cq_add_log_w("MQTT 连接已断开，5秒后重连...").unwrap();
+            std::thread::sleep(Duration::from_secs(5));
         }
     });
-    cq_add_log("MQTT 推送已开启！").unwrap();
-    cq_add_log(&format!("MQTT Client ID: {}", mqtt_client_id)).unwrap();
-    cq_add_log(&format!("MQTT Broker: {}:{}", broker_host, broker_port)).unwrap();
     Ok(())
 }

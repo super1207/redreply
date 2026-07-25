@@ -390,7 +390,7 @@ impl Satoriv1Connect {
                 } else {
                     if index == usize::MAX {
                         cq_add_log_w(&format!("add account:`{}`:`{}`", platform, self_id)).unwrap();
-                        lk.push((self_id, platform));
+                        lk.push((platform, self_id));
                     }
                 }
             } else if type_t == "message-created" {

@@ -817,7 +817,11 @@ pub fn init_core_fun_map() {
     });
     add_fun(vec!["二类参数"],|self_t,params|{
         let k1 = self_t.get_param_text_rc(params, 0)?;
-        let tms = k1.parse::<usize>()? - 1;
+        let tms_t = k1.parse::<usize>()?;
+        if tms_t == 0 {
+            return Ok(Some(rv_empty()));
+        }
+        let tms = tms_t - 1;
         let params_vec_len = self_t.params_vec.len();
         let ret_val = self_t.params_vec[params_vec_len - 1]
             .get(tms)
@@ -996,9 +1000,9 @@ pub fn init_core_fun_map() {
                                 op_stack.push(it);
                                 break;
                             }
-                            let pri_it = OOP_MAP.get(&it).ok_or(&format!("未知的运算符:`{}`",it)).unwrap();
+                            let pri_it = OOP_MAP.get(&it).ok_or_else(|| format!("未知的运算符:`{}`",it))?;
                             let up = op_stack[op_stack.len() - 1].clone();
-                            let pri_up = OOP_MAP.get(&up).ok_or(&format!("未知的运算符:`{}`",up)).unwrap();
+                            let pri_up = OOP_MAP.get(&up).ok_or_else(|| format!("未知的运算符:`{}`",up))?;
                             if pri_it > pri_up {
                                 op_stack.push(it);
                                 break;
@@ -1020,7 +1024,7 @@ pub fn init_core_fun_map() {
             for it in out_vec {
                 if it.starts_with('N') {
                     out_vec2.push(it.get(1..).unwrap().to_string());
-                }if it == "真" || it == "假" {
+                } else if it == "真" || it == "假" {
                     out_vec2.push(it.to_owned());
                 }else if it == "^" {
                     let l2 = out_vec2.pop().ok_or("^ err")?;

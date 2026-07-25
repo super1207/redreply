@@ -101,14 +101,26 @@ impl TeleTramConnect {
         Ok(result.clone())
     }
 
+    fn utf16_slice(text: &str, start: usize, end: usize) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let units: Vec<u16> = text.encode_utf16().collect();
+        if start > end || end > units.len() {
+            return Err(format!(
+                "telegram entity range out of bounds: start={start}, end={end}, len={}",
+                units.len()
+            )
+            .into());
+        }
+        Ok(String::from_utf16_lossy(&units[start..end]))
+    }
+
     fn make_msg_with_at(
         text_message: &str,
         entities: &serde_json::Value,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let mut ret_cq_msg = "".to_owned();
         if let Some(ents) = entities.as_array() {
-            let mut last_end = 0;
-            let text = text_message.chars().collect::<Vec<char>>();
+            // Telegram Bot API uses UTF-16 code units for entity offset/length.
+            let mut last_end: usize = 0;
             for ent in ents {
                 let tp = ent["type"].as_str().ok_or("type not str")?;
                 if tp != "mention" {
@@ -116,19 +128,30 @@ impl TeleTramConnect {
                 }
                 let offset = ent["offset"].as_i64().ok_or("offset not i64")?;
                 let length = ent["length"].as_i64().ok_or("length not i64")?;
-                let end = offset + length;
-                let text_before = &text[last_end as usize..offset as usize];
-                ret_cq_msg.push_str(&cq_text_encode(&text_before.iter().collect::<String>()));
-                let mention = text[offset as usize..end as usize]
-                    .iter()
-                    .collect::<String>();
+                if offset < 0 || length < 0 {
+                    return Err("telegram entity offset/length must be non-negative".into());
+                }
+                let start = offset as usize;
+                let end = (offset + length) as usize;
+                if start < last_end {
+                    return Err("telegram entity ranges are not ordered".into());
+                }
+                let text_before = Self::utf16_slice(text_message, last_end, start)?;
+                ret_cq_msg.push_str(&cq_text_encode(&text_before));
+                let mention = Self::utf16_slice(text_message, start, end)?;
                 if let Some(userid) = get_username2userid(&mention) {
                     ret_cq_msg.push_str(&format!("[CQ:at,qq={}]", userid));
+                } else {
+                    ret_cq_msg.push_str(&cq_text_encode(&mention));
                 }
                 last_end = end;
             }
-            let text_end = &text[last_end as usize..];
-            ret_cq_msg.push_str(&cq_text_encode(&text_end.iter().collect::<String>()));
+            let text_end = Self::utf16_slice(
+                text_message,
+                last_end,
+                text_message.encode_utf16().count(),
+            )?;
+            ret_cq_msg.push_str(&cq_text_encode(&text_end));
         } else {
             ret_cq_msg.push_str(&cq_text_encode(&text_message));
         }
@@ -165,30 +188,32 @@ impl TeleTramConnect {
 
         if message_obj.get("photo").is_some() {
             let photo = message_obj["photo"].as_array().ok_or("photo not array")?;
-            let photo_len = photo.len();
-            let photo_file_id = photo[photo_len - 1]["file_id"]
-                .as_str()
-                .ok_or("file_id not str")?;
-            let get_file_path_ret = self
-                .proxyrequest(
-                    format!(
-                        "https://api.telegram.org/bot{}/getFile?file_id={}",
-                        self.token.read().unwrap(),
-                        photo_file_id
+            if !photo.is_empty() {
+                let photo_len = photo.len();
+                let photo_file_id = photo[photo_len - 1]["file_id"]
+                    .as_str()
+                    .ok_or("file_id not str")?;
+                let get_file_path_ret = self
+                    .proxyrequest(
+                        format!(
+                            "https://api.telegram.org/bot{}/getFile?file_id={}",
+                            self.token.read().unwrap(),
+                            photo_file_id
+                        )
+                        .as_str(),
                     )
-                    .as_str(),
-                )
-                .await?;
-            let get_file_path_json: serde_json::Value = serde_json::from_str(&get_file_path_ret)?;
-            let file_path = get_file_path_json["result"]["file_path"]
-                .as_str()
-                .ok_or("file_path not str")?;
-            let file_url = format!(
-                "https://api.telegram.org/file/bot{}/{}",
-                self.token.read().unwrap(),
-                file_path
-            );
-            ret_cq_msg.push_str(&format!("[CQ:image,file={}]", &cq_params_encode(&file_url)));
+                    .await?;
+                let get_file_path_json: serde_json::Value = serde_json::from_str(&get_file_path_ret)?;
+                let file_path = get_file_path_json["result"]["file_path"]
+                    .as_str()
+                    .ok_or("file_path not str")?;
+                let file_url = format!(
+                    "https://api.telegram.org/file/bot{}/{}",
+                    self.token.read().unwrap(),
+                    file_path
+                );
+                ret_cq_msg.push_str(&format!("[CQ:image,file={}]", &cq_params_encode(&file_url)));
+            }
         }
         if reply_id != "" {
             ret_cq_msg = format!("[CQ:reply,id={}]{}", reply_id, ret_cq_msg);
@@ -202,13 +227,15 @@ impl TeleTramConnect {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let chat = &event["message"]["chat"];
         let user_id = chat["id"].as_i64().ok_or("id not i64")?.to_string();
-        let nickname = chat["first_name"].as_str().ok_or("first_name not str")?;
-        let username = chat["username"].as_str().ok_or("username not str")?;
+        let nickname = chat["first_name"].as_str().unwrap_or("");
+        let username = chat["username"].as_str().unwrap_or("");
         let self_id = self.self_id.read().unwrap().clone();
 
         let message_obj = &event["message"];
 
-        add_username2userid(&format!("@{username}"), user_id.parse()?);
+        if !username.is_empty() {
+            add_username2userid(&format!("@{username}"), user_id.parse()?);
+        }
 
         let message_id = message_obj["message_id"]
             .as_i64()
