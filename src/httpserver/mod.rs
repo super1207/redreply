@@ -10,7 +10,6 @@ use crate::cqevent::do_script;
 use crate::httpevent::do_http_event;
 use crate::mytool::read_json_str;
 use crate::onebot11s::event_to_onebot;
-use crate::pluscenter::PlusCenterPlusBase;
 use crate::{initevent, read_config, set_gobal_filter_code, set_gobal_init_code, G_AUTO_CLOSE, G_PKG_NAME, G_SCRIPT};
 use crate::redlang::RedLang;
 use crate::{cqapi::cq_add_log_w, RT_PTR};
@@ -128,69 +127,6 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)
     }
-    else if url_path == "/get_pluscenter_list" {
-        if !can_read {
-            let res = hyper::Response::new(full("api not found"));
-            return Ok(res);
-        }
-        let info = crate::pluscenter::get_plus_list().await?;
-        let ret = serde_json::json!({
-            "retcode":0,
-            "data":info
-        });
-        let mut res = hyper::Response::new(full(ret.to_string()));
-        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
-        Ok(res)
-    }
-    else if url_path == "/get_pluscenter_info" {
-        if !can_read {
-            let res = hyper::Response::new(full("api not found"));
-            return Ok(res);
-        }
-        let def_str = String::new();
-        let params = crate::httpevent::get_params_from_uri(request.uri());
-        let repo = params.get("repo").unwrap_or(&def_str);
-        let branch = params.get("branch").unwrap_or(&def_str);
-        let info = crate::pluscenter::get_plus_info(&PlusCenterPlusBase{
-            repo:repo.to_owned(),
-            branch:branch.to_owned()
-        }).await?;
-        let ret = serde_json::json!({
-            "retcode":0,
-            "data":info
-        });
-        let mut res = hyper::Response::new(full(ret.to_string()));
-        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
-        Ok(res)
-    } 
-    else if url_path == "/install_plus" {
-        if !can_write {
-            let res = hyper::Response::new(full("api not found"));
-            return Ok(res);
-        }
-        let def_str = String::new();
-        let params = crate::httpevent::get_params_from_uri(request.uri());
-        let repo = params.get("repo").unwrap_or(&def_str);
-        let name = params.get("name").unwrap_or(&def_str);
-        let version = params.get("version").unwrap_or(&def_str);
-        let info_rst = crate::pluscenter::install_plus(repo,name,version).await;
-        let ret;
-        if info_rst.is_err() {
-            ret = serde_json::json!({
-                "retcode":-1,
-                "data":info_rst.err().unwrap().to_string()
-            });
-        }else{
-            ret = serde_json::json!({
-                "retcode":0,
-                "data":{}
-            });
-        }
-        
-        let mut res = hyper::Response::new(full(ret.to_string()));
-        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
-        Ok(res)
-    }
     else if url_path.starts_with("/5350b16b-b5e2-425a-bba1-d33d92813ab4/") { // github代理
         if !can_write {
             let res = hyper::Response::new(full("api not found"));
@@ -198,7 +134,7 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         }
         let sp_ret = url_path.split("5350b16b-b5e2-425a-bba1-d33d92813ab4").collect::<Vec<&str>>();
         let github_url = sp_ret.get(1).ok_or("url error")?;
-        let git_proxy = crate::pluscenter::get_proxy().await?;
+        let git_proxy = crate::mytool::get_github_proxy().await?;
         let client = reqwest::Client::builder().danger_accept_invalid_certs(true).no_proxy().build().unwrap();
         let uri = <reqwest::Url as std::str::FromStr>::from_str(&(git_proxy.to_owned() + github_url))?;
         let req = client.get(uri).build().unwrap();

@@ -5,12 +5,11 @@ mod wav_deal;
 mod mp3_deal;
 mod deal_ogg;
 
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, str::FromStr, time::SystemTime};
 
-use crate::{cqapi::cq_add_log, redlang::RedLang};
+use crate::redlang::RedLang;
 
 use serde_json::Value;
-use tokio::io::AsyncWriteExt;
 use zhconv::{zhconv, Variant};
 
 pub fn cq_text_encode(data:&str) -> String {
@@ -215,14 +214,6 @@ pub fn read_json_str(root:&serde_json::Value,key:&str) -> String {
     }
 }
 
-pub fn read_json_or_default<'a>(root:&'a serde_json::Value,key:&'a str,def_val:&'a serde_json::Value) -> &'a serde_json::Value {
-    if let Some(js_v) = root.get(key) {
-        return js_v;
-    }
-    return def_val;
-}
-
-
 // 将字符串转化为简体
 pub fn str_to_jt(s:&str) -> String {
     return zhconv(s, Variant::ZhCN);
@@ -328,7 +319,7 @@ pub async fn github_proxy() -> Option<String> {
         let tx = tx.clone();
         tokio::spawn(async move{
             let client = reqwest::Client::builder().danger_accept_invalid_certs(true).no_proxy().build().unwrap();
-            let uri = reqwest::Url::from_str(&(url.to_owned() + 
+            let uri = reqwest::Url::from_str(&(url.to_owned() +
 				"https://raw.githubusercontent.com/super1207/redreply/master/res/version.txt")).unwrap();
             let req = client.get(uri).build().unwrap();
             if let Ok(ret) = client.execute(req).await {
@@ -350,40 +341,17 @@ pub async fn github_proxy() -> Option<String> {
     }
     None
 }
-pub async fn download_github(url:&str,path:&str) -> Result<(),Box<dyn std::error::Error + Send + Sync>> {
-    // 文件已经存在就不下载了
-    if std::path::Path::new(path).is_file() {
-        return Ok(());
+
+pub async fn get_github_proxy() -> Result<String,Box<dyn std::error::Error + Send + Sync>> {
+    lazy_static! {
+        static ref G_PROXY:tokio::sync::Mutex<(Option<String>,u64)> = tokio::sync::Mutex::new((None,0));
     }
-    // 获取一个github代理
-    let proxy = github_proxy().await;
-    if proxy.is_none() {
-        return Err("cann't connect to github".into());
+    let mut proxy = G_PROXY.lock().await;
+    let now = SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
+    if proxy.0.is_none() || proxy.1 + 60 < now {
+        proxy.0 = github_proxy().await;
+        proxy.1 = now;
     }
-    // 先把数据下入一个临时文件里面
-    cq_add_log(&format!("proxy:{proxy:?}")).unwrap();
-    let proxy = proxy.unwrap();
-    let url = proxy + url;
-    let uri = reqwest::Url::from_str(&url)?;
-    let mut resp: reqwest::Response  = reqwest::get(uri).await?;
-    if !resp.status().is_success() {
-        return Err(format!("can't access to {url}").into());
-    }
-    let tmp_path = format!("{path}.tmp");
-    let mut tmp_dest = tokio::fs::File::create(&tmp_path).await?;
-    let mut content_len_str = "?".to_owned();
-    if let Some(content_len) = resp.content_length(){
-        content_len_str = content_len.to_string();
-    }
-    let mut download_len = 0;
-    cq_add_log(&format!("download:{download_len} all:{content_len_str}")).unwrap();
-    while let Some(mut chunk) = resp.chunk().await? {
-        download_len += chunk.len();
-        cq_add_log(&format!("download:{download_len} all:{content_len_str}")).unwrap();
-        tmp_dest.write(&mut chunk).await?;
-    }
-    // 再重命名文件
-    tokio::fs::rename(tmp_path, path).await?;
-    Ok(())
+    proxy.0.clone().ok_or_else(|| "cann't connect to github".into())
 }
 

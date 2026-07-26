@@ -43,7 +43,6 @@ mod httpevent;
 mod pyserver;
 #[cfg(test)]
 mod test;
-mod pluscenter;
 mod onebot11s;
 mod status;
 mod mqttclient;
