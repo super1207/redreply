@@ -83,7 +83,7 @@ pub fn cq_call_api(platform:&str,self_id:&str,passive_id:&str,json_str: &str,rem
             }).to_string();
         }
     }
-    let out_str = RT_PTR.block_on(async {
+    let fut = async {
         let ret = crate::botconn::call_api(platform,self_id,passive_id,&mut js).await;
         if let Ok(ret) =  ret {
             return ret.to_string();
@@ -95,8 +95,13 @@ pub fn cq_call_api(platform:&str,self_id:&str,passive_id:&str,json_str: &str,rem
             "status":"failed",
             "data":format!("call api error:{:?}",ret.err().unwrap())
         }).to_string();
-    });
-    out_str
+    };
+    // 已在 runtime worker 上时禁止 RT_PTR.block_on，否则会死锁
+    if let Ok(handle) = tokio::runtime::Handle::try_current() {
+        tokio::task::block_in_place(|| handle.block_on(fut))
+    } else {
+        RT_PTR.block_on(fut)
+    }
 }
 
 

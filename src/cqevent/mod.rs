@@ -142,14 +142,13 @@ fn do_run_code_and_ret_check(rl:&mut RedLang,code:&str,can_ret_raw:bool)-> Resul
 }
 
 pub fn do_script(rl:&mut RedLang,code:&str,script_type:&str,can_ret_raw:bool) -> Result<Rc<RedValue>, Box<dyn std::error::Error>>{
-    // 增加脚本运行计数
-    if add_running_script_num(&rl.pkg_name,&rl.script_name,script_type) == false {
-        return Ok(crate::redlang::rv_empty());
-    }
-    let pkg_name = rl.pkg_name.clone();
-    let script_name = rl.script_name.clone();
-    let _guard = scopeguard::guard((),|_| {
-        dec_running_script_num(&pkg_name,&script_name);
+    // 增加脚本运行计数（run_id 保证并发同名脚本正确递减）
+    let run_id = match add_running_script_num(&rl.pkg_name,&rl.script_name,script_type) {
+        Some(id) => id,
+        None => return Ok(crate::redlang::rv_empty()),
+    };
+    let _guard = scopeguard::guard(run_id,|run_id| {
+        dec_running_script_num(run_id);
     });
 
     // 执行脚本

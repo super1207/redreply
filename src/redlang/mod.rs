@@ -1747,7 +1747,10 @@ pub fn init_core_fun_map() {
             return Ok(Some(rv_empty()));
         } else {
             let mut k = crate::G_LOCK.lock()?;
-            k.get_mut(&self_t.pkg_name).unwrap().remove(&lock_name.to_string());
+            // 包卸载后 G_LOCK 条目可能已删除，勿 unwrap panic
+            if let Some(pkg_locks) = k.get_mut(&self_t.pkg_name) {
+                pkg_locks.remove(&lock_name.to_string());
+            }
             self_t.lock_vec.remove(&lock_name.to_string());
             return Ok(Some(rv_empty()));
         }

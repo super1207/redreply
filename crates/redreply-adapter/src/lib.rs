@@ -10,7 +10,7 @@
 #[macro_use]
 extern crate lazy_static;
 
-use std::{collections::HashMap, error::Error, sync::Arc};
+use std::{collections::{HashMap, HashSet}, error::Error, sync::Arc};
 
 pub use async_trait::async_trait;
 use tokio::sync::RwLock;
@@ -55,6 +55,8 @@ pub trait BotConnectTrait: Send + Sync {
 #[derive(Default)]
 pub struct BotRegistry {
     bots: RwLock<HashMap<String, BotHandle>>,
+    /// 正在连接中的 URL，与 bots 配合实现 single-flight，避免重复并发连接
+    connecting: RwLock<HashSet<String>>,
 }
 
 impl BotRegistry {
@@ -66,18 +68,38 @@ impl BotRegistry {
     where
         T: BotConnectTrait + 'static,
     {
-        self.bots
-            .write()
-            .await
-            .insert(url, Arc::new(RwLock::new(bot)));
+        // 锁顺序固定：bots 再 connecting，避免与 try_begin_connect 死锁
+        let mut bots = self.bots.write().await;
+        let mut connecting = self.connecting.write().await;
+        bots.insert(url.clone(), Arc::new(RwLock::new(bot)));
+        connecting.remove(&url);
     }
 
     pub async fn contains_url(&self, url: &str) -> bool {
         self.bots.read().await.contains_key(url)
     }
 
+    /// 原子标记 URL 开始连接；若已在线或已在连接中则返回 false
+    pub async fn try_begin_connect(&self, url: &str) -> bool {
+        let bots = self.bots.write().await;
+        let mut connecting = self.connecting.write().await;
+        if bots.contains_key(url) || connecting.contains(url) {
+            return false;
+        }
+        connecting.insert(url.to_string());
+        true
+    }
+
+    /// 连接失败或取消时清除 connecting 标记
+    pub async fn end_connect(&self, url: &str) {
+        self.connecting.write().await.remove(url);
+    }
+
     pub async fn remove(&self, url: &str) -> Option<BotHandle> {
-        self.bots.write().await.remove(url)
+        let mut bots = self.bots.write().await;
+        let mut connecting = self.connecting.write().await;
+        connecting.remove(url);
+        bots.remove(url)
     }
 
     pub async fn removable_urls(&self, configured_urls: &[String]) -> Vec<String> {

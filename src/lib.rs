@@ -5,6 +5,7 @@ use std::fs;
 use std::panic;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::RwLock;
@@ -54,8 +55,12 @@ extern crate lazy_static;
 #[derive(Clone,Debug)]
 pub struct ScriptInfo {
     pkg_name:String,
-    script_name:String
+    script_name:String,
+    /// 每次运行实例唯一 ID，避免同名脚本并发时 dec 删错条目
+    run_id:u64,
 }
+
+static G_SCRIPT_RUN_ID: AtomicU64 = AtomicU64::new(1);
 
 pub struct InputStream {
     pub self_id:String,
@@ -492,18 +497,30 @@ pub fn wait_for_quit() -> ! {
     std::process::exit(0);
 }
 
-pub fn add_running_script_num(pkg_name:&str,script_name:&str,script_type:&str) -> bool {
-    if pkg_can_run(pkg_name,script_type) == false {
-        return false;
+/// 登记脚本开始运行；成功返回 run_id，失败（包不可运行）返回 None
+pub fn add_running_script_num(pkg_name:&str,script_name:&str,script_type:&str) -> Option<u64> {
+    // 先拿运行表写锁，再检查退出/加载标记，缩小 TOCTOU 窗口
+    let mut scripts = G_RUNNING_SCRIPT.write().unwrap();
+    let mut num = G_RUNNING_SCRIPT_NUM.write().unwrap();
+    if *G_QUIT_FLAG.read().unwrap() {
+        return None;
     }
-    let mut lk = G_RUNNING_SCRIPT_NUM.write().unwrap();
-    (*lk) += 1;
-    let mut lk = G_RUNNING_SCRIPT.write().unwrap();
-    lk.push(ScriptInfo {
+    if G_PKG_QUIT_FLAG.read().unwrap().contains(pkg_name) {
+        return None;
+    }
+    if script_type != "init" && script_type != "输入流" && script_type != "延时" && script_type != "等待信号" {
+        if G_LOADING_SCRIPT_FLAG.read().unwrap().contains(pkg_name) {
+            return None;
+        }
+    }
+    let run_id = G_SCRIPT_RUN_ID.fetch_add(1, Ordering::Relaxed);
+    *num += 1;
+    scripts.push(ScriptInfo {
         pkg_name: pkg_name.to_owned(),
-        script_name: script_name.to_owned()
+        script_name: script_name.to_owned(),
+        run_id,
     });
-    return true;
+    Some(run_id)
 }
 
 pub fn get_running_script_info() -> Vec<ScriptInfo> {
@@ -516,24 +533,14 @@ pub fn get_running_script_info() -> Vec<ScriptInfo> {
     return ret_vec;
 }
 
-pub fn dec_running_script_num(pkg_name:&str,script_name:&str) {
-    let mut lk = G_RUNNING_SCRIPT_NUM.write().unwrap();
-    if (*lk) != 0 {
-        (*lk) -= 1;
-    }
-    let mut lk = G_RUNNING_SCRIPT.write().unwrap();
-    let mut pos = 0;
-    let mut isfind = false;
-    for i in 0..lk.len() {
-        let script_info = lk.get(i).unwrap();
-        if script_info.script_name == script_name && pkg_name == script_info.pkg_name {
-            pos = i;
-            isfind = true;
-            break;
+pub fn dec_running_script_num(run_id:u64) {
+    let mut scripts = G_RUNNING_SCRIPT.write().unwrap();
+    let mut num = G_RUNNING_SCRIPT_NUM.write().unwrap();
+    if let Some(pos) = scripts.iter().position(|s| s.run_id == run_id) {
+        scripts.remove(pos);
+        if *num != 0 {
+            *num -= 1;
         }
-    }
-    if isfind {
-        lk.remove(pos);
     }
 }
 

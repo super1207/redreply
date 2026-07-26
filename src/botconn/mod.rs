@@ -130,81 +130,106 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
-                // 连接未在bot_map中的url
+                // 连接未在bot_map中的url（try_begin_connect 保证同一 URL 不会并发重复连接）
                 for url in &config_urls {
-                    let is_exist = G_BOT_REGISTRY.contains_url(url).await;
-                    if !is_exist {
-                        let url_t = url.clone();
-                        RT_PTR.clone().spawn(async move {
+                    if !G_BOT_REGISTRY.try_begin_connect(url).await {
+                        continue;
+                    }
+                    let url_t = url.clone();
+                    RT_PTR.clone().spawn(async move {
+                        let connect_ok = async {
                             if url_t.starts_with("ws://") || url_t.starts_with("wss://") {
                                 let mut bot = OneBot11Connect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到onebot失败:{},{}",url_t,err)).unwrap();
+                                    false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t, bot).await;
+                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    true
                                 }
                             }else if url_t.starts_with("ovo://") {
                                 let mut bot = OneBot115Connect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到ovo失败:{url_t},{err:?}")).unwrap();
+                                    false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t, bot).await;
+                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    true
                                 }
                             }
                             else if url_t.starts_with("satori://") {
                                 let mut bot = Satoriv1Connect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到satori失败:{url_t},{err:?}")).unwrap();
+                                    false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t, bot).await;
+                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    true
                                 }
                             }
                             else if url_t.starts_with("qqguild_private://") {
                                 let mut bot = QQGuildPrivateConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到qqguild_private失败:{url_t},{err:?}")).unwrap();
+                                    false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t, bot).await;
+                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    true
                                 }
                             }
                             else if url_t.starts_with("qqguild_public://") {
                                 let mut bot = QQGuildPublicConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到qqguild_public失败:{url_t},{err:?}")).unwrap();
+                                    false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t, bot).await;
+                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    true
                                 }
                             }else if url_t.starts_with("kook://") {
                                 let mut bot = KookConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到kook失败:{url_t},{err:?}")).unwrap();
+                                    false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t, bot).await;
+                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    true
                                 }
                             }else if url_t.starts_with("email://") {
                                 let mut bot = EmailConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到email失败:{url_t},{err:?}")).unwrap();
+                                    false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t, bot).await;
+                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    true
                                 }
                             }else if url_t.starts_with("telegram://") {
                                 let mut bot = TeleTramConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到telegram失败:{url_t},{err:?}")).unwrap();
+                                    false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t, bot).await;
+                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    true
                                 }
                             }else if url_t.starts_with("yunhu://") {
                                 let mut bot = Yunhuv1Connect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
                                     cq_add_log_w(&format!("连接到yunhu失败:{url_t},{err:?}")).unwrap();
+                                    false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t, bot).await;
+                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    true
                                 }
+                            } else {
+                                false
                             }
-                        });
-                    }
+                        }.await;
+                        if !connect_ok {
+                            G_BOT_REGISTRY.end_connect(&url_t).await;
+                        }
+                    });
                 }
             });
             
