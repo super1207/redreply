@@ -1,0 +1,13 @@
+[package]
+name = "redreply-browser"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+headless_chrome = "1.0.22"
+serde = { workspace = true }
+serde_json = { workspace = true }

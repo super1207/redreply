@@ -54,6 +54,48 @@ fn coremap_value_to_text_map(
     self_t.get_coremap_text_map(key)
 }
 
+fn browser_access(
+    self_t: &mut RedLang,
+    params: &[astparser::Ast],
+    operation: &str,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    let mut path = self_t.get_param_text(params, 0)?;
+    if !cfg!(target_os = "windows") && path.starts_with('/') {
+        path = format!("file://{path}");
+    }
+
+    let selector = self_t.get_param_text(params, 1)?;
+    let width = self_t
+        .get_coremap("浏览器宽")
+        .parse::<u32>()
+        .unwrap_or(1920);
+    let height = self_t
+        .get_coremap("浏览器高")
+        .parse::<u32>()
+        .unwrap_or(1080);
+    let timeout = match self_t.get_coremap("访问超时") {
+        value if value.is_empty() => 30000,
+        value => value.parse::<u64>()?,
+    };
+    let headers = if self_t.get_coremap("访问头").is_empty() {
+        BTreeMap::new()
+    } else {
+        coremap_value_to_text_map(self_t, "访问头")?
+    };
+    let request = serde_json::json!({
+        "operation": operation,
+        "path": path,
+        "selector": selector,
+        "proxy": self_t.get_coremap("代理"),
+        "width": width,
+        "height": height,
+        "headless": self_t.get_coremap("网页截图调试") != "真",
+        "timeout_ms": timeout,
+        "headers": headers,
+    });
+    crate::browserbridge::execute(&request)
+}
+
 fn get_param_image(
     self_t: &mut RedLang,
     params: &[astparser::Ast],
@@ -1313,7 +1355,7 @@ pub fn init_ex_fun_map() {
         let out = make_round_square_image(&img);
         let ret = self_t.build_bin_raw_from_img(&out)?;
         return Ok(Some(rv_bin(ret)));
-    });
+    }); 
 
     add_fun(vec!["圆角"],|self_t,params|{
         let (_,mut img) = get_param_image(self_t, params, 0)?;
@@ -2267,76 +2309,8 @@ pub fn init_ex_fun_map() {
 
     
     add_fun(vec!["网页截图"],|self_t,params|{
-        fn access(self_t:&mut RedLang,params: &[astparser::Ast]) -> Result<Option<Rc<RedValue>>, Box<dyn std::error::Error>> {
-            let mut path = self_t.get_param_text(params, 0)?;
-            if !cfg!(target_os = "windows") {
-                if path.starts_with("/") {
-                    path = format!("file://{}", &path);
-                }
-            }
-            let sec = self_t.get_param_text(params, 1)?;
-            let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
-            let proxy_str = self_t.get_coremap("代理");
-            let proxy:std::ffi::OsString;
-            if proxy_str != "" {
-                proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
-                arg_vec.push(&proxy);
-            }
-
-            let width = self_t.get_coremap("浏览器宽").parse::<u32>().unwrap_or(1920);
-            let height = self_t.get_coremap("浏览器高").parse::<u32>().unwrap_or(1080);
-
-            let headless;
-            if self_t.get_coremap("网页截图调试") == "真" {
-                headless = false;
-            } else{
-                headless = true;
-            }
-
-            let mut timeout_str = self_t.get_coremap("访问超时");
-            if timeout_str == "" {
-                timeout_str = "30000".to_owned();
-            }
-
-            let options = headless_chrome::LaunchOptions::default_builder()
-                .window_size(Some((width, height)))
-                .headless(headless)
-                .devtools(false)
-                .sandbox(false)
-                .idle_browser_timeout(Duration::from_millis(timeout_str.parse()?))
-                .args(arg_vec)
-                .build()?;
-            let browser = headless_chrome::Browser::new(options)?;
-            let tab = browser.new_tab()?;
-            {
-            let http_header_str = self_t.get_coremap("访问头");
-            if http_header_str != "" {
-                let http_header = coremap_value_to_text_map(self_t, "访问头")?;
-                let mut headers = HashMap::new();
-                for (k,v) in http_header.iter() {
-                        headers.insert(k.as_str(), v.as_str());
-                }
-                    tab.set_extra_http_headers(headers)?;
-                }
-            }
-            tab.navigate_to(&path)?.wait_until_navigated()?;
-            let el_html= tab.wait_for_element("html")?;
-            let body_height = el_html.get_box_model()?.height;
-            let body_width = el_html.get_box_model()?.width;
-            
-            tab.set_bounds(headless_chrome::types::Bounds::Normal { left: Some(0), top: Some(0), width:Some(body_width), height: Some(body_height + 200f64) })?;
-            let mut el = el_html;
-            if sec != ""{
-                el = tab.wait_for_element(&sec)?;
-            }
-            let png_data = tab.capture_screenshot(headless_chrome::protocol::cdp::Page::CaptureScreenshotFormatOption::Png,
-                None,
-                Some(el.get_box_model()?.content_viewport()),
-                true)?;
-            return Ok(Some(rv_bin(png_data)));
-        }
-        match access(self_t,params) {
-            Ok(ret) => return Ok(ret),
+        match browser_access(self_t, params, "screenshot") {
+            Ok(data) => return Ok(Some(rv_bin(data))),
             Err(err) => {
                 cq_add_log_w(&format!("网页截图失败：`{:?}`",err)).unwrap();
                 return Ok(Some(rv_bin(vec![])));
@@ -2345,65 +2319,8 @@ pub fn init_ex_fun_map() {
     });
 
     add_fun(vec!["网页获取"],|self_t,params|{
-        fn access(self_t:&mut RedLang,params: &[astparser::Ast]) -> Result<Option<Rc<RedValue>>, Box<dyn std::error::Error>> {
-            let path = self_t.get_param_text(params, 0)?;
-            let sec = self_t.get_param_text(params, 1)?;
-            let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
-            let proxy_str = self_t.get_coremap("代理");
-            let proxy:std::ffi::OsString;
-            if proxy_str != "" {
-                proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
-                arg_vec.push(&proxy);
-            }
-
-            let width = self_t.get_coremap("浏览器宽").parse::<u32>().unwrap_or(1920);
-            let height = self_t.get_coremap("浏览器高").parse::<u32>().unwrap_or(1080);
-
-            let headless;
-            if self_t.get_coremap("网页截图调试") == "真" {
-                headless = false;
-            } else{
-                headless = true;
-            }
-
-            let mut timeout_str = self_t.get_coremap("访问超时");
-            if timeout_str == "" {
-                timeout_str = "30000".to_owned();
-            }
-
-            let options = headless_chrome::LaunchOptions::default_builder()
-                .window_size(Some((width, height)))
-                .headless(headless)
-                .sandbox(false)
-                .devtools(false)
-                .idle_browser_timeout(Duration::from_millis(timeout_str.parse()?))
-                .args(arg_vec)
-                .build()?;
-            let browser = headless_chrome::Browser::new(options)?;
-            let tab = browser.new_tab()?;
-            {
-            let http_header_str = self_t.get_coremap("访问头");
-            if http_header_str != "" {
-                let http_header = coremap_value_to_text_map(self_t, "访问头")?;
-                let mut headers = HashMap::new();
-                for (k,v) in http_header.iter() {
-                        headers.insert(k.as_str(), v.as_str());
-                }
-                    tab.set_extra_http_headers(headers)?;
-                }
-            }
-            tab.navigate_to(&path)?.wait_until_navigated()?;
-            let el_html= tab.wait_for_element("html")?;
-            let mut el = el_html;
-            if sec != ""{
-                el = tab.wait_for_element(&sec)?;
-            }
-            
-            let inner_text = el.get_content()?;
-            return Ok(Some(rv_text(inner_text)));
-        }
-        match access(self_t,params) {
-            Ok(ret) => return Ok(ret),
+        match browser_access(self_t, params, "content") {
+            Ok(data) => return Ok(Some(rv_text(String::from_utf8(data)?))),
             Err(err) => {
                 cq_add_log_w(&format!("网页获取失败：`{:?}`",err)).unwrap();
                 return Ok(Some(rv_empty()));
@@ -2413,65 +2330,8 @@ pub fn init_ex_fun_map() {
 
 
     add_fun(vec!["网页获取文本"],|self_t,params|{
-        fn access(self_t:&mut RedLang,params: &[astparser::Ast]) -> Result<Option<Rc<RedValue>>, Box<dyn std::error::Error>> {
-            let path = self_t.get_param_text(params, 0)?;
-            let sec = self_t.get_param_text(params, 1)?;
-            let mut arg_vec:Vec<&std::ffi::OsStr> = vec![];
-            let proxy_str = self_t.get_coremap("代理");
-            let proxy:std::ffi::OsString;
-            if proxy_str != "" {
-                proxy = std::ffi::OsString::from("--proxy-server=".to_owned() + &proxy_str);
-                arg_vec.push(&proxy);
-            }
-
-            let width = self_t.get_coremap("浏览器宽").parse::<u32>().unwrap_or(1920);
-            let height = self_t.get_coremap("浏览器高").parse::<u32>().unwrap_or(1080);
-
-            let headless;
-            if self_t.get_coremap("网页截图调试") == "真" {
-                headless = false;
-            } else{
-                headless = true;
-            }
-
-            let mut timeout_str = self_t.get_coremap("访问超时");
-            if timeout_str == "" {
-                timeout_str = "30000".to_owned();
-            }
-
-            let options = headless_chrome::LaunchOptions::default_builder()
-                .window_size(Some((width, height)))
-                .headless(headless)
-                .devtools(false)
-                .sandbox(false)
-                .idle_browser_timeout(Duration::from_millis(timeout_str.parse()?))
-                .args(arg_vec)
-                .build()?;
-            let browser = headless_chrome::Browser::new(options)?;
-            let tab = browser.new_tab()?;
-            {
-            let http_header_str = self_t.get_coremap("访问头");
-            if http_header_str != "" {
-                let http_header = coremap_value_to_text_map(self_t, "访问头")?;
-                let mut headers = HashMap::new();
-                for (k,v) in http_header.iter() {
-                        headers.insert(k.as_str(), v.as_str());
-                }
-                    tab.set_extra_http_headers(headers)?;
-                }
-            }
-            tab.navigate_to(&path)?.wait_until_navigated()?;
-            let el_html= tab.wait_for_element("html")?;
-            let mut el = el_html;
-            if sec != ""{
-                el = tab.wait_for_element(&sec)?;
-            }
-            
-            let inner_text = el.get_inner_text()?;
-            return Ok(Some(rv_text(inner_text)));
-        }
-        match access(self_t,params) {
-            Ok(ret) => return Ok(ret),
+        match browser_access(self_t, params, "inner_text") {
+            Ok(data) => return Ok(Some(rv_text(String::from_utf8(data)?))),
             Err(err) => {
                 cq_add_log_w(&format!("网页获取文本失败：`{:?}`",err)).unwrap();
                 return Ok(Some(rv_empty()));

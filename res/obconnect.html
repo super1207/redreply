@@ -62,6 +62,24 @@
             #show > div:hover {
                 background: rgba(100, 0, 0, 0.03);
             }
+            #show > div.disabled_item {
+                opacity: 0.45;
+                text-decoration: line-through;
+            }
+            #show > div > .url_row {
+                display: flex;
+                align-items: center;
+                gap: 0.5em;
+            }
+            #show > div > .url_row > input[type="checkbox"] {
+                flex: 0 0 auto;
+                width: 1.1em;
+                height: 1.1em;
+                accent-color: #e55743;
+            }
+            #show > div > .url_row > span {
+                word-break: break-all;
+            }
             #foot{
                 display: flex;
                 flex: 0 0 2.5em;
@@ -177,8 +195,11 @@
             </dialog>
             <h1>连接平台协议</h1>
             <div id = "show">
-                <div v-for="(url,index) in ws_urls" @click="select_name_index=index" :class="{name_active:index==select_name_index}">
-                    {{ url }}
+                <div v-for="(url,index) in ws_urls" @click="select_name_index=index" :class="{name_active:index==select_name_index, disabled_item:disabled_ws_urls.includes(index)}">
+                    <div class="url_row">
+                        <input type="checkbox" :checked="!disabled_ws_urls.includes(index)" @change="toggle_disable(index)" @click.stop>
+                        <span>{{ url }}</span>
+                    </div>
                 </div>
             </div>
             <div id = "foot">
@@ -196,6 +217,7 @@
                         is_add:true,
                         select_name_index: -1,
                         ws_urls : [],
+                        disabled_ws_urls : [],
                         ws_url:"",
                         token:"",
                         shame:"onebot11",
@@ -359,6 +381,7 @@
                         // console.log(res)
                         let ret = res.data["data"];
                         this.ws_urls = ret["ws_urls"]
+                        this.disabled_ws_urls = ret["disabled_ws_urls"] || []
                         console.log(this.ws_urls)
                     })
                     .catch(function (error) {
@@ -458,21 +481,33 @@
                     save_endpoint(event) {
                         axios
                         .post("/set_ws_urls",this.ws_urls)
-                        .then(function (res){
+                        .then((res) => {
                             if(res.data['retcode'] == 0){
-                                alert("保存成功")
+                                return axios.post("/set_disabled_ws_urls", this.disabled_ws_urls);
                             }else {
+                                alert("保存失败")
+                                return Promise.reject();
+                            }
+                        })
+                        .then((res) => {
+                            if(res && res.data['retcode'] == 0){
+                                alert("保存成功")
+                            }else if(res) {
                                 alert("保存失败")
                             }
                         })
                         .catch(function (error) {
                             console.log(error);
-                            alert("保存失败")
                         });
                     },
                     del_endpoint(event) {
                         if(this.select_name_index != -1){
                             this.ws_urls.splice(this.select_name_index,1);
+                            // 同步更新禁用列表索引
+                            let removed = this.select_name_index;
+                            this.disabled_ws_urls = this.disabled_ws_urls
+                                .filter(i => i !== removed)
+                                .map(i => i > removed ? i - 1 : i);
                             this.select_name_index -= 1;
                         }
                     },
@@ -537,6 +572,14 @@
                         }
                     },
                     dialog_cancel(event) {
+                    },
+                    toggle_disable(index) {
+                        let pos = this.disabled_ws_urls.indexOf(index);
+                        if(pos == -1){
+                            this.disabled_ws_urls.push(index);
+                        }else{
+                            this.disabled_ws_urls.splice(pos, 1);
+                        }
                     }
                 }
             }).mount('#app')

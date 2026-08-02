@@ -9,34 +9,67 @@ edition = "2021"
 members = [
     ".",
     "crates/redreply-adapter",
+    "crates/redreply-browser",
+    "crates/msedge-tts",
 ]
+default-members = [
+    ".",
+    "crates/redreply-browser",
+]
+
+[workspace.dependencies]
+async-trait = "0.1.89"
+base64 = "0.22.1"
+chrono = "0.4.42"
+fancy-regex = "0.16.2"
+flate2 = { version = "1.1.1", default-features = false, features = ["rust_backend"] }
+futures-util = "0.3.31"
+html5gum = "0.8.0"
+html-escape = "0.2.13"
+hyper = { version = "1.7.0", features = ["full"] }
+hyper-tungstenite = "0.20.0"
+imap = { git = "https://github.com/jonhoo/rust-imap" }
+lazy_static = "1.5.0"
+lettre = { version = "0.11.18", features = ["tokio1-native-tls"] }
+mail-parser = "0.11.1"
+native-tls = { version = "0.2.14", features = ["vendored"] }
+regex = "1.11.2"
+reqwest = { version = "0.12.23", default-features = false, features = ["native-tls-vendored", "multipart"] }
+scopeguard = "1.2.0"
+serde = { version = "1.0.226", features = ["derive"] }
+serde_json = "1.0.145"
+tokio = { version = "1.47.1", features = ["full"] }
+tokio-tungstenite = { version = "0.29.0", default-features = false, features = ["native-tls-vendored"] }
+tungstenite = "0.29.0"
+url = "2.5.7"
+uuid = { version = "1.18.1", features = ["v4", "fast-rng"] }
 
 [dependencies]
 redreply-adapter = { path = "crates/redreply-adapter" }
-fancy-regex = "0.16.2"
+fancy-regex = { workspace = true }
 encoding = "0.2.33"
 getrandom = "0.3.3"
-base64 = "0.22.1"
-serde_json = "1.0.145"
-serde = {version = "1.0.226",features = ["derive"]}
-uuid = {version = "1.18.1",features = ["v4","fast-rng"]}
+base64 = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+uuid = { workspace = true }
 brotli = "8.0.2"
-lazy_static = "1.5.0"
-chrono = "0.4.42"
+lazy_static = { workspace = true }
+chrono = { workspace = true }
 md-5 = "0.10.6"
 rcnb-rs = "0.1.0"
 rust-embed = {version="8.7.2",features = ["compression"]}
-image = "0.25.8"
-imageproc = "0.25.0"
+image = { version = "0.25.8", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
+imageproc = { version = "0.25.0", default-features = false, features = ["rayon"] }
 gif = "0.13.1"
 cron = "0.15.0"
-hyper = { version = "1.7.0", features = ["full"] }
-tokio = { version = "1.47.1", features = ["full"] }
-url = "2.5.7"
-futures-util = "0.3.31"
-hyper-tungstenite = "0.18.0"
-tokio-tungstenite = { version = "0.27.0", default-features = false, features = ["native-tls-vendored"] }
-scopeguard = "1.2.0"
+hyper = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+futures-util = { workspace = true }
+hyper-tungstenite = { workspace = true }
+tokio-tungstenite = { workspace = true }
+scopeguard = { workspace = true }
 log = "0.4.28"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.20", features = ["env-filter","time","local-time"]}
@@ -46,7 +79,7 @@ sevenz-rust2 = {"git" = "https://github.com/super1207/sevenz-rust2"}
 jsonpath-rust = "1.0.4"
 rusttype = "0.9.3"
 # markdown = "1.0.0-alpha.7"
-reqwest = {version = "0.12.23",default-features = false,features = ["native-tls-vendored","multipart"]}
+reqwest = { workspace = true }
 time = { version = "0.3.44", features = ["formatting", "macros"] }
 # headless_chrome = {version="1.0.5",default-features = false}
 webp = "0.3.1"
@@ -54,17 +87,16 @@ sysinfo = "0.37.0"
 usvg = "0.45.1"
 resvg = { version = "0.45.1", default-features = false, features = [ "text", "raster-images"  ] }
 fontdb = { version = "0.23.0", default-features = false, features = [ "fs" ] }
-flate2 = { version = "1.1.1",default-features = false}
+flate2 = { workspace = true }
 zhconv = {version  = "0.3.3", features = ["opencc","compress"]}
-async-trait = "0.1.89"
-html5gum = "0.8.0"
-html-escape = "0.2.13"
+async-trait = { workspace = true }
+html5gum = { workspace = true }
+html-escape = { workspace = true }
 tokio-util = { version = "0.7.16", default-features = false, features = [ "io" ] }
 http-body-util = "0.1.3"
 hyper-util = { version = "0.1.17", features = ["full"] }
 bytes = "1.10.1"
 crc64 = "2.0.0"
-headless_chrome = "1.0.18"
 path-clean = "1.0.1"
 rust-ini = "0.21.3"
 mlua = { version = "0.11.3", features = ["lua54", "vendored"] }
@@ -75,18 +107,18 @@ minimp3_fixed ="0.5.4"
 silk-rs-no-llvm = {git = "https://github.com/super1207/silk-rs-no-llvm"}
 lewton = "0.10.2"
 
-msedge-tts = { version = "0.4.0", features = ["proxy"] }
+msedge-tts = { path = "crates/msedge-tts", features = ["proxy"] }
 
-imap = { git = "https://github.com/jonhoo/rust-imap"}
-native-tls = { version = "0.2.14", features = ["vendored"] }
-mail-parser = "0.11.1"
-lettre = { version = "0.11.18",features = ["tokio1-native-tls"]}
+imap = { workspace = true }
+native-tls = { workspace = true }
+mail-parser = { workspace = true }
+lettre = { workspace = true }
 
 scraper = "0.24.0"
-tungstenite = "0.27.0"
+tungstenite = { workspace = true }
 markdown = "1.0.0-alpha.21"
 rumqttc = {git = "https://github.com/super1207/rumqtt",default-features = false}
-regex = "1.11.2"
+regex = { workspace = true }
 
 tokio-postgres = { version = "0.7.15", features = ["with-serde_json-1"] }
 
@@ -103,6 +135,19 @@ wry = "0.53.5"
 winapi = { version = "0.3.9", features = ["winuser"] }
 dirs = "5.0"
 rfd = "0.15"
+libloading = "0.8.9"
+
+[target.'cfg(not(windows))'.dependencies]
+redreply-browser = { path = "crates/redreply-browser" }
+
+
+[profile.dev]
+debug = 0
+codegen-units = 16
+incremental = true
+
+[profile.dev.package."*"]
+debug = 0
  
 [profile.release]
 panic = "abort" # Strip expensive panic clean-up logic
@@ -110,4 +155,3 @@ codegen-units = 1 # Compile crates one after another so the compiler can optimiz
 lto = true # Enables link to optimizations
 opt-level = "s" # Optimize for binary size
 strip = true # Remove debug symbols
-

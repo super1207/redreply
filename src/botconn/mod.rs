@@ -60,15 +60,33 @@ pub fn mark_config_changed() {
     CONFIG_CHANGED.store(true, Ordering::Relaxed);
 }
 
+fn read_ws_urls_from_config() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let config = crate::read_config()?;
+    let urls_val = config.get("ws_urls").ok_or("无法获取ws_urls")?.as_array().ok_or("无法获取ws_urls")?.to_owned();
+    let mut urls = vec![];
+    for url in &urls_val {
+        let url_str = url.as_str().ok_or("ws_url不是字符数组")?.to_string();
+        urls.push(url_str);
+    }
+    // 按索引过滤被禁用的适配器
+    if let Some(disabled_val) = config.get("disabled_ws_urls") {
+        if let Some(disabled_arr) = disabled_val.as_array() {
+            let disabled_indices: std::collections::HashSet<usize> = disabled_arr
+                .iter()
+                .filter_map(|v| v.as_u64().map(|n| n as usize))
+                .collect();
+            urls = urls.into_iter().enumerate()
+                .filter(|(i, _)| !disabled_indices.contains(i))
+                .map(|(_, u)| u)
+                .collect();
+        }
+    }
+    Ok(urls)
+}
+
 fn get_ws_urls() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
     if CONFIG_CHANGED.swap(false, Ordering::Relaxed) {
-        let config = crate::read_config()?;
-        let urls_val = config.get("ws_urls").ok_or("无法获取ws_urls")?.as_array().ok_or("无法获取ws_urls")?.to_owned();
-        let mut urls = vec![];
-        for url in &urls_val {
-            let url_str = url.as_str().ok_or("ws_url不是字符数组")?.to_string();
-            urls.push(url_str);
-        }
+        let urls = read_ws_urls_from_config()?;
         *CACHED_WS_URLS.write().unwrap() = Some(urls.clone());
         Ok(urls)
     } else {
@@ -77,13 +95,7 @@ fn get_ws_urls() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>
             Ok(urls.clone())
         } else {
             drop(cache);
-            let config = crate::read_config()?;
-            let urls_val = config.get("ws_urls").ok_or("无法获取ws_urls")?.as_array().ok_or("无法获取ws_urls")?.to_owned();
-            let mut urls = vec![];
-            for url in &urls_val {
-                let url_str = url.as_str().ok_or("ws_url不是字符数组")?.to_string();
-                urls.push(url_str);
-            }
+            let urls = read_ws_urls_from_config()?;
             *CACHED_WS_URLS.write().unwrap() = Some(urls.clone());
             Ok(urls)
         }

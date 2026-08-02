@@ -48,7 +48,7 @@ pub fn all_to_silk(input:&Vec<u8>) -> Result<Vec<u8>, Box<dyn std::error::Error>
     }else {
         return Err("not support".into());
     }
-    let silk = deal_silk::to_qq_silk(&pcm);
+    let silk = deal_silk::to_qq_silk(&pcm).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
     return Ok(silk);
 }
 

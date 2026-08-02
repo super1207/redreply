@@ -6,7 +6,7 @@
 
 ## 开始使用
 
-1：下载项目release中的`redlang.exe`，双击并执行，会自动弹出一个网页。<br />
+1：下载项目 release 中的 Windows 发布包，保持`redlang.exe`和`redreply_browser.dll`位于同一目录。双击执行`redlang.exe`，会自动弹出一个网页。浏览器相关命令首次使用时才会加载 DLL。<br />
 
 2：在自动弹出的浏览器界面中，点击`连接平台协议`，然后按需求添加协议。 <br />
 

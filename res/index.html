@@ -98,12 +98,24 @@
                 overflow: hidden;
                 background-color: #f3f5f6;
                 border-radius: 5%;
+                position: relative;
             }
             .acard:hover {
                 box-shadow: 0px 0px 12px rgba(0, 0, 0, 0.24);
                 background-color: rgb(152, 152, 100);
                 color: white;
                 cursor: pointer;
+            }
+            .acard_disabled {
+                background-color: #d8d8d8;
+                color: #999;
+            }
+            .ban_badge {
+                position: absolute;
+                right: 0.5em;
+                bottom: 0.5em;
+                font-size: 0.8em;
+                color: #e55743;
             }
             .moveFromBottom{
                 position: fixed;
@@ -197,8 +209,9 @@
             </h1>
             <div id="pkg_btn_vec" style="background-color: #f5f2f0; height: 0; display: flex;flex-wrap: wrap;flex: 1 0 auto;align-content: flex-start;overflow-y: auto;justify-content: center;">
                 <div v-for="name in pkg_vec" @click="" style="flex: 0 0 auto;margin: 0.5em;">
-                    <button class="acard" @click="upup(name)">
+                    <button class="acard" :class="{acard_disabled: ban_pkgs.includes(name)}" @click="upup(name)">
                         {{ name }}
+                        <span v-if="ban_pkgs.includes(name)" class="ban_badge">（已禁用）</span>
                     </button>
                 </div>
             </div>
@@ -208,6 +221,7 @@
                 <button style="flex: 1 0 auto;" @click="edit_click()">编辑</button>
                 <button @click="rename_pkg()" style="flex: 1 0 auto;">改名</button>
                 <button @click="del_pkg()" style="flex: 1 0 auto;">删除</button>
+                <button @click="toggle_ban_pkg()" style="flex: 1 0 auto;">{{ ban_pkgs.includes(select_name) ? '启用' : '禁用' }}</button>
                 <button @click="export_pkg()" style="flex: 1 0 auto;">导出</button>
             </div>
             <div id="cmd_content" style="display: flex;flex: 0 0 2.5em;padding: 0.5em;background-color: #b6cde4;">
@@ -240,6 +254,7 @@
                     return {
                         version:"",
                         pkg_vec:[],
+                        ban_pkgs:[],
                         select_name:"",
                         add_pkg_name:"",
                         playbkmusic:"播放背景音乐",
@@ -269,6 +284,15 @@
                             let ret = res.data["data"];
                             ret.unshift("默认包");
                             this.pkg_vec = ret;
+                        })
+                        .catch(function (error) {
+                            console.log(error);
+                        });
+                        axios
+                        .get("/get_ban_pkgs")
+                        .then(
+                        res => {
+                            this.ban_pkgs = res.data["data"];
                         })
                         .catch(function (error) {
                             console.log(error);
@@ -374,6 +398,28 @@
                             url += "?pkg_name=" + encodeURIComponent(this.select_name);
                         }
                         window.location.href = url;
+                        this.downdown()
+                    },
+                    toggle_ban_pkg(){
+                        let banned = !this.ban_pkgs.includes(this.select_name);
+                        axios.post("/set_ban_pkg",{
+                            "pkg_name":this.select_name,
+                            "banned":banned
+                        })
+                        .then((res) => {
+                            if(res.data['retcode'] == 0){
+                                if(banned) {
+                                    this.ban_pkgs.push(this.select_name)
+                                }else {
+                                    this.ban_pkgs = this.ban_pkgs.filter(it => it != this.select_name)
+                                }
+                            }else {
+                                alert("操作失败")
+                            }
+                        })
+                        .catch(function (error) {
+                            alert("操作失败")
+                        });
                         this.downdown()
                     },
                     rename_pkg(){

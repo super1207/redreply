@@ -1,98 +1,180 @@
 use super::all_to_silk::PCMStruct;
 
-// 线性插值
-pub fn linear_resample(in_pcm: &Vec<f64>, out_pcm: &mut Vec<f64>) {
-    let in_sample_count: usize = in_pcm.len() as usize;
-    let out_sample_count: usize = out_pcm.len() as usize;
-    for i in 0..out_sample_count {
-        let pos_inpcm = i as f64 / out_sample_count as f64 * in_sample_count as f64;
-        let pos_low = pos_inpcm as usize;
-        let pos_high = (pos_inpcm + 1.0) as usize;
-        let q_high = pos_inpcm - pos_low as f64;
-        let q_low = pos_high as f64 - pos_inpcm;
-        if pos_high >= in_sample_count || pos_low >= in_sample_count{
-            out_pcm[i] = in_pcm[in_sample_count - 1];
-        }else {
-            out_pcm[i] = in_pcm[pos_high] * q_high+in_pcm[pos_low] * q_low;
-        }
-        
+const SILK_SAMPLE_RATE: usize = 24_000;
+const SILK_FRAME_SAMPLES: usize = SILK_SAMPLE_RATE / 50; // 20ms per frame
+// QQ-compatible profile: 24 kHz wideband PCM encoded at 24 kbps.
+const SILK_BITRATE: i32 = 24_000;
+
+// 97 taps total. Keeps the passband flat while giving enough transition width
+// to suppress content above the target Nyquist.
+const RESAMPLE_TAPS: i64 = 48;
+const RESAMPLE_CUTOFF_GUARD: f64 = 0.96;
+
+fn sinc(x: f64) -> f64 {
+    if x.abs() < 1e-12 {
+        1.0
+    } else {
+        (std::f64::consts::PI * x).sin() / (std::f64::consts::PI * x)
     }
 }
 
-pub fn to_qq_silk(pcm: &PCMStruct) -> Vec<u8> {
+/// Four-term Blackman-Harris window centered at x=0, x in [-1, 1].
+fn blackman_harris(x: f64) -> f64 {
+    const A0: f64 = 0.35875;
+    const A1: f64 = 0.48829;
+    const A2: f64 = 0.14128;
+    const A3: f64 = 0.01168;
+    A0 + A1 * (std::f64::consts::PI * x).cos()
+        + A2 * (2.0 * std::f64::consts::PI * x).cos()
+        + A3 * (3.0 * std::f64::consts::PI * x).cos()
+}
 
-    // 腾讯极有可能只支持24000
-    let out_sample_rate = 24000;
-
-    // 分解通道
-    let mut datas = vec![];
-    for _i in 0..pcm.channel_num {
-        datas.push(vec![]);
+/// Band-limited windowed-sinc resampling into a fixed-size output buffer.
+pub fn resample(in_pcm: &[f64], out_pcm: &mut [f64]) {
+    let in_count = in_pcm.len();
+    let out_count = out_pcm.len();
+    if in_count == 0 || out_count == 0 {
+        return;
     }
-    if pcm.data.len() % pcm.channel_num != 0 { // 防止下面数组越界
-        return vec![];
-    }
-    let mut index = 0usize;
-    loop {
-        if index + pcm.channel_num > pcm.data.len() {
-            break;
-        }
-        for i in 0..pcm.channel_num {
-            let mut dat = pcm.data[index + i];
-            // 采样深度缩放为16位（此处可以决定音量），silk只支持16位
-            dat *= f64::powi(2.0,  16 - pcm.bits_per_sample as i32); 
-            datas[i].push(dat);
-        }
-        index += pcm.channel_num;
+    if in_count == out_count {
+        out_pcm.copy_from_slice(in_pcm);
+        return;
     }
 
-    // 转为单通道(自适应混音加权)
-    let coloum = datas[0].len(); // 最终合成的长度
-    let mut f = 1.0; // 衰减因子
-    let mut single_channel_data = vec![];
-    let max = 32767.0;
-    let min = -32768.0;
-    let mut mix_val;
-    for i in 0..coloum {
-        let mut sum = 0.0;
-        for it in 0..pcm.channel_num {
-            sum += datas[it][i];
+    let step = in_count as f64 / out_count as f64;
+    let cutoff = (1.0 / step).min(1.0) * RESAMPLE_CUTOFF_GUARD;
+    let taps = RESAMPLE_TAPS as f64;
+    for (i, sample) in out_pcm.iter_mut().enumerate() {
+        let pos = (i as f64 + 0.5) * step - 0.5;
+        let center = pos.floor() as i64;
+        let frac = pos - center as f64;
+        let mut acc = 0.0;
+        let mut weight_sum = 0.0;
+        for k in -RESAMPLE_TAPS..=RESAMPLE_TAPS {
+            let index = center + k;
+            if index < 0 || index >= in_count as i64 {
+                continue;
+            }
+            let distance = k as f64 - frac;
+            let weight = sinc(distance * cutoff) * blackman_harris(distance / taps);
+            acc += in_pcm[index as usize] * weight;
+            weight_sum += weight;
         }
-        mix_val = sum * f;
-        if mix_val > max {
-            f = max / mix_val;
-            mix_val = max;
+        *sample = if weight_sum.abs() > 1e-12 {
+            acc / weight_sum
+        } else {
+            in_pcm[pos.round().clamp(0.0, (in_count - 1) as f64) as usize]
+        };
+    }
+}
+
+/// Headphone-first downmix coefficients for standard WAVE/FLAC channel order.
+/// Only FL/FR contribute; center, LFE, and surround are deliberately discarded.
+pub fn downmix_coeffs(channel_num: usize) -> Vec<f64> {
+    match channel_num {
+        0 => Vec::new(),
+        1 => vec![1.0],
+        n => {
+            let mut weights = vec![0.0; n];
+            weights[0] = 0.5; // FL
+            weights[1] = 0.5; // FR
+            weights
         }
-        if mix_val < min {
-            f = min / mix_val;
-            mix_val = min;
-        }
-        if f < 1.0 {
-            f += (1.0 - f) / 16.0;
-        }
-        single_channel_data.push(mix_val);
+    }
+}
+
+/// Convert interleaved native-depth PCM to 16-bit-scale mono.
+pub fn downmix_to_mono(pcm: &PCMStruct) -> Result<Vec<f64>, String> {
+    if pcm.channel_num == 0 {
+        return Err("audio channel count is zero".into());
+    }
+    if pcm.sample_rate == 0 {
+        return Err("audio sample rate is zero".into());
+    }
+    if pcm.bits_per_sample == 0 || pcm.bits_per_sample > 32 {
+        return Err(format!("unsupported PCM depth: {}", pcm.bits_per_sample));
+    }
+    if pcm.data.is_empty() {
+        return Err("audio contains no samples".into());
+    }
+    if pcm.data.len() % pcm.channel_num != 0 {
+        return Err("PCM sample count is not channel-aligned".into());
     }
 
-    // 采样率转换24000（使用线性插值）
-    let new_24000_data_len = ((single_channel_data.len() as f64 * pcm.channel_num as f64/ pcm.sample_rate as f64) * out_sample_rate as f64).round() as usize;
-    let mut new_24000_data = vec![0f64; new_24000_data_len];
-    linear_resample(&single_channel_data, &mut new_24000_data);
+    let channels = pcm.channel_num;
+    let bit_scale = f64::powi(2.0, 16 - pcm.bits_per_sample as i32);
+    let frames = pcm.data.len() / channels;
+    let weights = downmix_coeffs(channels);
 
-    // 转为单通道i16
-    let mut u16_data = vec![];
-    let mut index = 0usize;
-    while index < new_24000_data_len{
-        let dat_avg = new_24000_data[index];
-        let dat_avg_u16 = dat_avg as i16;
-        let bits = dat_avg_u16.to_le_bytes();
-        u16_data.push(bits[0]);
-        u16_data.push(bits[1]);
-        index += pcm.channel_num;
+    let mut mono = Vec::with_capacity(frames);
+    for frame in pcm.data.chunks_exact(channels) {
+        let sample = frame
+            .iter()
+            .zip(&weights)
+            .map(|(value, weight)| value * bit_scale * weight)
+            .sum();
+        mono.push(sample);
     }
-    // bit_rate也最好是24000，不然可能在NTQQ上无法播放
-    if let Ok(out) = silk_rs_no_llvm::encode_silk(u16_data, out_sample_rate, out_sample_rate, true){
-        return out;
-    }else{
-        return vec![];
+    Ok(mono)
+}
+
+/// Clamp samples to i16 range with minimal whole-stream attenuation.
+pub fn fit_i16_range(samples: &mut [f64]) {
+    let max = samples
+        .iter()
+        .fold(f64::NEG_INFINITY, |current, value| current.max(*value));
+    let min = samples
+        .iter()
+        .fold(f64::INFINITY, |current, value| current.min(*value));
+    let mut gain = 1.0f64;
+    if max > 32767.0 {
+        gain = gain.min(32767.0 / max);
     }
+    if min < -32768.0 {
+        gain = gain.min(-32768.0 / min);
+    }
+    if gain < 1.0 {
+        for value in samples {
+            *value *= gain;
+        }
+    }
+}
+
+/// Encode arbitrary PCM as Tencent SILK (24 kHz, 24 kbps, mono).
+pub fn to_qq_silk(pcm: &PCMStruct) -> Result<Vec<u8>, String> {
+    let mono = downmix_to_mono(pcm)?;
+    let mut mono_24k = if pcm.sample_rate == SILK_SAMPLE_RATE {
+        mono
+    } else {
+        let output_len_u128 = (mono.len() as u128)
+            .saturating_mul(SILK_SAMPLE_RATE as u128)
+            .saturating_add((pcm.sample_rate / 2) as u128)
+            / pcm.sample_rate as u128;
+        let output_len = usize::try_from(output_len_u128)
+            .map_err(|_| "resampled audio is too large".to_string())?;
+        if output_len == 0 {
+            return Err("audio is too short after resampling".into());
+        }
+        let mut resampled = vec![0.0; output_len];
+        resample(&mono, &mut resampled);
+        resampled
+    };
+    fit_i16_range(&mut mono_24k);
+    // Pad to SILK frame boundary (20ms = 480 samples at 24kHz)
+    let remainder = mono_24k.len() % SILK_FRAME_SAMPLES;
+    if remainder != 0 {
+        let padded_len = mono_24k
+            .len()
+            .checked_add(SILK_FRAME_SAMPLES - remainder)
+            .ok_or_else(|| "resampled audio is too large".to_string())?;
+        mono_24k.resize(padded_len, 0.0);
+    }
+
+    let mut pcm16 = Vec::with_capacity(mono_24k.len().saturating_mul(2));
+    for sample in mono_24k {
+        pcm16.extend_from_slice(&(sample.round() as i16).to_le_bytes());
+    }
+    let silk = silk_rs_no_llvm::encode_silk(pcm16, SILK_SAMPLE_RATE as i32, SILK_BITRATE, true)
+        .map_err(|error| format!("silk encode failed: {error}"))?;
+    Ok(silk)
 }

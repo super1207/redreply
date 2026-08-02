@@ -776,10 +776,14 @@ impl BotConnectTrait for OneBot11Connect {
 
         tokio::select! {
             std::option::Option::Some(mut val) = rx_ay.recv() => {
-                if is_add_avatar {
-                    // 要补充头像
+                if is_add_avatar && read_json_str(&val["data"], "avatar").is_empty() {
+                    // 协议端没有返回头像时，才按已识别的平台补充。
                     let user_id = read_json_str(&val["data"],"user_id");
-                    val["data"]["avatar"] = serde_json::json!(self.get_avatar(&user_id).await.unwrap_or("".to_owned()));
+                    if let Ok(avatar) = self.get_avatar(&user_id).await {
+                        if !avatar.is_empty() {
+                            val["data"]["avatar"] = serde_json::json!(avatar);
+                        }
+                    }
                 }
                 return Ok(val);
             },

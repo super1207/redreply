@@ -200,7 +200,66 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
                 Ok(res)
             },
         }
-    }else if url_path == "/get_config" {
+    }
+    else if url_path == "/get_ban_pkgs" {
+        if !can_read {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        match crate::get_ban_pkgs() {
+            Ok(code) => {
+                let ret = json!({
+                    "retcode":0,
+                    "data":code
+                });
+                let mut res = hyper::Response::new(full(ret.to_string()));
+                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+                Ok(res)
+            },
+            Err(err) => {
+                let mut res = hyper::Response::new(full(err.to_string()));
+                *res.status_mut() = hyper::StatusCode::INTERNAL_SERVER_ERROR;
+                Ok(res)
+            },
+        }
+    }
+    else if url_path == "/set_ban_pkg" {
+        if can_write == false {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let body = request.collect().await?.aggregate().reader();
+        let js:serde_json::Value = serde_json::from_reader(body)?;
+        let pkg_name = read_json_str(&js, "pkg_name");
+        let banned = js.get("banned").and_then(|v|v.as_bool()).unwrap_or(false);
+        let (tx, rx) =  tokio::sync::oneshot::channel();
+        tokio::task::spawn_blocking(move || {
+            let rst = crate::set_ban_pkg(&pkg_name,banned);
+            if rst.is_ok() {
+                let ret = json!({
+                    "retcode":0,
+                });
+                let rst = tx.send(ret);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
+            }
+            else {
+                let ret = json!({
+                    "retcode":-1,
+                });
+                let rst = tx.send(ret);
+                if rst.is_err() {
+                    cq_add_log_w(&format!("Error:{:?}",rst.err())).unwrap();
+                }
+            }
+        }).await?;
+        let ret = rx.await?;
+        let mut res = hyper::Response::new(full(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        Ok(res)    
+    }
+    else if url_path == "/get_config" {
         if !can_write {
             let res = hyper::Response::new(full("api not found"));
             return Ok(res);
@@ -229,6 +288,31 @@ async fn deal_api(request: hyper::Request<hyper::body::Incoming>,can_write:bool,
         let body = request.collect().await?.aggregate().reader();
         let js:serde_json::Value = serde_json::from_reader(body)?;
         match crate::set_ws_urls(js){
+            Ok(_) => {
+                let ret = json!({
+                    "retcode":0,
+                });
+                let mut res = hyper::Response::new(full(ret.to_string()));
+                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+                Ok(res)
+            },
+            Err(_) => {
+                let ret = json!({
+                    "retcode":-1,
+                });
+                let mut res = hyper::Response::new(full(ret.to_string()));
+                res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+                Ok(res)
+            },
+        }
+    }else if url_path == "/set_disabled_ws_urls" {
+        if can_write == false {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let body = request.collect().await?.aggregate().reader();
+        let js:serde_json::Value = serde_json::from_reader(body)?;
+        match crate::set_disabled_ws_urls(js){
             Ok(_) => {
                 let ret = json!({
                     "retcode":0,

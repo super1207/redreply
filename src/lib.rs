@@ -38,6 +38,7 @@ mod mytool;
 mod initevent;
 mod cronevent;
 mod botconn;
+mod browserbridge;
 mod httpserver;
 mod httpevent;
 mod pyserver;
@@ -54,6 +55,7 @@ extern crate lazy_static;
 #[derive(Clone,Debug)]
 pub struct ScriptInfo {
     pkg_name:String,
+    #[allow(dead_code)]
     script_name:String,
     /// 每次运行实例唯一 ID，避免同名脚本并发时 dec 删错条目
     run_id:u64,
@@ -962,6 +964,76 @@ pub fn set_ws_urls(ws_urls:serde_json::Value) -> Result<(), Box<dyn std::error::
     Ok(())
 }
 
+pub fn set_disabled_ws_urls(disabled:serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut config = read_config()?;
+    config["disabled_ws_urls"] = disabled;
+    let script_path = cq_get_app_directory1()? + "config.json";
+    fs::write(script_path,config.to_string())?;
+    botconn::mark_config_changed();
+    Ok(())
+}
+
+// 包名转为前端展示名(内部用空字符串表示默认包)
+pub fn pkg_name_to_display(pkg_name:&str) -> String {
+    if pkg_name.is_empty() {
+        "默认包".to_owned()
+    }else {
+        pkg_name.to_owned()
+    }
+}
+
+// 从config.json中读取禁用的包名列表
+pub fn get_ban_pkgs() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let config = read_config()?;
+    let mut ret_vec = vec![];
+    if let Some(ban_pkgs) = config.get("ban_pkgs") {
+        if let Some(ban_pkgs) = ban_pkgs.as_array() {
+            for it in ban_pkgs {
+                if let Some(s) = it.as_str() {
+                    ret_vec.push(s.to_owned());
+                }
+            }
+        }
+    }
+    Ok(ret_vec)
+}
+
+// 设置一个包的禁用(启用)状态，banned为true表示禁用，false表示启用
+pub fn set_ban_pkg(pkg_name:&str,banned:bool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut config = read_config()?;
+    let mut ban_pkgs = get_ban_pkgs()?;
+    let pkg_name = pkg_name_to_display(pkg_name);
+    if banned {
+        if !ban_pkgs.contains(&pkg_name) {
+            ban_pkgs.push(pkg_name);
+        }
+    }else {
+        ban_pkgs.retain(|it| *it != pkg_name);
+    }
+    config["ban_pkgs"] = serde_json::Value::Array(ban_pkgs.into_iter().map(serde_json::Value::String).collect());
+    let script_path = cq_get_app_directory1()? + "config.json";
+    fs::write(script_path, serde_json::to_string_pretty(&config)?)?;
+    Ok(())
+}
+
+// 包改名时同步禁用列表
+pub fn rename_ban_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut config = read_config()?;
+    let mut ban_pkgs = get_ban_pkgs()?;
+    let old_pkg_name = pkg_name_to_display(old_pkg_name);
+    let new_pkg_name = pkg_name_to_display(new_pkg_name);
+    if ban_pkgs.contains(&old_pkg_name) {
+        ban_pkgs.retain(|it| *it != old_pkg_name);
+        if !ban_pkgs.contains(&new_pkg_name) {
+            ban_pkgs.push(new_pkg_name);
+        }
+        config["ban_pkgs"] = serde_json::Value::Array(ban_pkgs.into_iter().map(serde_json::Value::String).collect());
+        let script_path = cq_get_app_directory1()? + "config.json";
+        fs::write(script_path, serde_json::to_string_pretty(&config)?)?;
+    }
+    Ok(())
+}
+
 pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
     let sep = std::path::MAIN_SEPARATOR;
     let err = "get asset err";
@@ -1330,6 +1402,10 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error + Send 
                 let script_path = pkg_dir.join(name);
                 let _ = fs::remove_dir_all(script_path);
                 del_pkg_memory(name);
+                // 如果该包在禁用列表中，一并删除
+                if let Err(err) = set_ban_pkg(name, false) {
+                    cq_add_log_w(&format!("从禁用列表删除包`{}`失败:{}",name,err)).unwrap();
+                }
             }
         }
 
@@ -1427,6 +1503,11 @@ fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std
         del_pkg_memory(old_pkg_name);
         lk.insert(new_pkg_name.to_owned());
 
+        // 同步禁用列表
+        if let Err(err) = crate::rename_ban_pkg(old_pkg_name,new_pkg_name) {
+            cq_add_log_w(&format!("同步禁用列表失败:{}",err)).unwrap();
+        }
+
         // 修改内存中的脚本
         {
             let mut new_script = vec![];
@@ -1442,6 +1523,11 @@ fn rename_one_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn std
                 }
             }
             (*wk) = serde_json::Value::Array(new_script);
+        }
+
+        // 执行初始化脚本，重建被清空的常量等内存
+        if let Err(err) = initevent::do_init_event(Some(&new_pkg_name)){
+            cq_add_log_w(&err.to_string()).unwrap();
         }
         
     }else{
@@ -1475,6 +1561,10 @@ fn del_one_pkg(pkg_name:&str) -> Result<(), Box<dyn std::error::Error + Send + S
         G_PKG_NAME.write().unwrap().remove(pkg_name);
         // 删除脚本占用的内存
         del_pkg_memory(pkg_name);
+        // 如果该包在禁用列表中，一并删除
+        if let Err(err) = set_ban_pkg(pkg_name, false) {
+            cq_add_log_w(&format!("从禁用列表删除包`{}`失败:{}",pkg_name,err)).unwrap();
+        }
     }
     else {
         return Err(None.ok_or("default_pkg can't be deleted")?);

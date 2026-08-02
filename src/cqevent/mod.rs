@@ -72,12 +72,33 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
         cq_add_log_w(&format!("mqtt publish error:{}", err)).unwrap();
     }
     
+    // 读取被禁用的包
+    let mut ban_pkgs = HashSet::new();
+    match crate::get_ban_pkgs() {
+        Ok(ban_list) => {
+            for it in ban_list {
+                // config.json中以显示名记录，这里转换为内部名
+                if it == "默认包" {
+                    ban_pkgs.insert("".to_owned());
+                }else {
+                    ban_pkgs.insert(it);
+                }
+            }
+        },
+        Err(err) => {
+            cq_add_log_w(&format!("读取禁用包列表失败:{}",err)).unwrap();
+        },
+    }
+
     // 预处理脚本
     let script_json = read_code_cache()?;
-    let mut ban_pkgs = HashSet::new();
     for i in 0..script_json.as_array().ok_or("script.json文件不是数组格式")?.len(){
         let (_keyword,cffs,code,_ppfs,name,pkg_name) = get_script_info(&script_json[i])?;
         if cffs == "内容过滤" {
+            // 如果包已经在禁用列表中，内容过滤不需要执行(等同已被过滤)
+            if ban_pkgs.contains(pkg_name) {
+                continue;
+            }
             let mut rl = RedLang::new();
             set_normal_evt_info(&mut rl, &root)?;
             rl.pkg_name = pkg_name.to_owned();
