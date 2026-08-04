@@ -2,7 +2,7 @@ use std::{cell::RefCell, collections::{BTreeMap, HashMap, HashSet, VecDeque}, er
 use encoding::Encoding;
 use image::{ImageBuffer, Rgba};
 
-use crate::{cqapi::cq_add_log_w, cqevent::do_script, pkg_can_run, G_CONST_MAP, G_LOCK, G_SINGAL_ARR, G_TEMP_CONST_MAP};
+use crate::{cqapi::cq_add_log_w, cqevent::do_script, pkg_can_run, G_CONST_MAP, G_LOCK, G_LOCK_COND, G_SINGAL_ARR, G_SINGAL_COND, G_TEMP_CONST_MAP};
 
 pub mod exfun;
 pub(crate) mod cqexfun;
@@ -1702,23 +1702,23 @@ pub fn init_core_fun_map() {
     });
     add_fun(vec!["加锁"],|self_t,params|{
         let lock_name = self_t.get_param_text_rc(params, 0)?;
+        // 先尝试获取；失败则挂起等待解锁通知(替代原来的10ms自旋轮询)
+        let mut k = crate::G_LOCK.lock()?;
         loop {
             if self_t.lock_vec.contains(&*lock_name) {
                 break;
             }
-            {
-                let mut k = crate::G_LOCK.lock()?;
-                if !k.contains_key(&self_t.pkg_name) {
-                    k.insert(self_t.pkg_name.clone(), HashMap::new());
-                }
-                if !k[&self_t.pkg_name].contains_key(&lock_name.to_string()) {
-                    k.get_mut(&self_t.pkg_name).unwrap().insert(lock_name.to_string(), 0);
-                    self_t.lock_vec.insert(lock_name.to_string());
-                    break;
-                }
+            if !k.contains_key(&self_t.pkg_name) {
+                k.insert(self_t.pkg_name.clone(), HashMap::new());
             }
-            let time_struct = core::time::Duration::from_millis(10);
-            std::thread::sleep(time_struct);
+            if !k[&self_t.pkg_name].contains_key(&lock_name.to_string()) {
+                k.get_mut(&self_t.pkg_name).unwrap().insert(lock_name.to_string(), 0);
+                self_t.lock_vec.insert(lock_name.to_string());
+                break;
+            }
+            // 锁被其它脚本持有，挂起等待(每1s醒来复查一次，防止意外丢失唤醒)
+            let (guard, _timeout_result) = crate::G_LOCK_COND.wait_timeout(k, core::time::Duration::from_millis(1000)).unwrap();
+            k = guard;
         }
         return Ok(Some(rv_empty()));
     });
@@ -1752,6 +1752,8 @@ pub fn init_core_fun_map() {
                 pkg_locks.remove(&lock_name.to_string());
             }
             self_t.lock_vec.remove(&lock_name.to_string());
+            // 唤醒等待该锁的脚本
+            crate::G_LOCK_COND.notify_all();
             return Ok(Some(rv_empty()));
         }
     });
@@ -1759,11 +1761,19 @@ pub fn init_core_fun_map() {
         let sigal_name = self_t.get_param_text_rc(params, 0)?;
         let param = self_t.get_param(params, 1)?;
         let to_send = Arc::new(RedValueData::from_red_value(&param)?);
-        let mut lk = G_SINGAL_ARR.write().unwrap();
-        for (_,pkg_name,singal_name_t,data) in  &mut *lk {
-            if *pkg_name == self_t.pkg_name && *singal_name_t == *sigal_name {
-                *data = Some(to_send.clone());
+        let mut changed = false;
+        {
+            let mut lk = G_SINGAL_ARR.lock().unwrap();
+            for (_,pkg_name,singal_name_t,data) in  &mut *lk {
+                if *pkg_name == self_t.pkg_name && *singal_name_t == *sigal_name {
+                    *data = Some(to_send.clone());
+                    changed = true;
+                }
             }
+        }
+        // 有等待者被赋值，唤醒它们(替代原来的轮询检查)
+        if changed {
+            G_SINGAL_COND.notify_all();
         }
         return Ok(Some(rv_empty()));
     });
@@ -1773,11 +1783,11 @@ pub fn init_core_fun_map() {
         let tm = tm.parse::<u64>().unwrap_or(15000);
         let uid = uuid::Uuid::new_v4().to_string();
         {
-            let mut lk_vec = G_SINGAL_ARR.write().unwrap();
+            let mut lk_vec = G_SINGAL_ARR.lock().unwrap();
             lk_vec.push((uid.to_owned(),self_t.pkg_name.to_owned(),sigal_name.to_string(),None));
         }
         let _guard = scopeguard::guard(uid.to_owned(), |uid| {
-            let mut lk_vec = G_SINGAL_ARR.write().unwrap();
+            let mut lk_vec = G_SINGAL_ARR.lock().unwrap();
             let mut index = 0usize;
             for it in &*lk_vec {
                 if uid == it.0 {
@@ -1789,26 +1799,30 @@ pub fn init_core_fun_map() {
                 lk_vec.remove(index);
             }
         });
-        let mut tm = tm;
+        // 挂起等待信号，直到被发送信号唤醒或超时(替代原来的10ms自旋轮询)
+        let start_time = std::time::Instant::now();
+        let mut lk = G_SINGAL_ARR.lock().unwrap();
         loop {
-            {
-                let lk = G_SINGAL_ARR.read().unwrap();
-                for (uid_t,_,_,data) in  &*lk {
-                    if uid == *uid_t && data.is_some() {
-                        let dat = data.clone().unwrap();
-                        return Ok(Some((*dat).clone().into_rc_value()?));
-                    }
+            for (uid_t,_,_,data) in &*lk {
+                if uid == *uid_t && data.is_some() {
+                    let dat = data.clone().unwrap();
+                    return Ok(Some((*dat).clone().into_rc_value()?));
                 }
             }
             if pkg_can_run(&self_t.pkg_name,"等待信号") == false {
                 return Err("等待信号终止，因用户要求退出".into());
             }
-            if tm < 10 {
+            let elapsed = start_time.elapsed().as_millis() as u64;
+            if elapsed >= tm {
                 break;
             }
-            tm -= 10;
-            let time_struct = core::time::Duration::from_millis(10);
-            std::thread::sleep(time_struct);
+            let remain = tm - elapsed;
+            let (guard, timeout_result) = G_SINGAL_COND.wait_timeout(lk, core::time::Duration::from_millis(remain)).unwrap();
+            lk = guard;
+            if timeout_result.timed_out() {
+                // 等待期间无人发送信号，直接超时退出
+                break;
+            }
         }
         return Ok(Some(rv_empty()));
     });
@@ -2263,6 +2277,10 @@ impl Drop for RedLang {
             for lock_name in &self.lock_vec {
                 lk.get_mut(&self.pkg_name).unwrap().remove(lock_name);
             }
+        }
+        // 脚本执行完毕自动释放锁，唤醒等待者
+        if self.lock_vec.len() > 0 {
+            G_LOCK_COND.notify_all();
         }
     }
 }

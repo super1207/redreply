@@ -15,6 +15,30 @@ use lettre::{
     AsyncSmtpTransport, AsyncTransport,
 };
 
+/// rustls 包装流，用于 imap 连接
+struct RustlsImapStream(rustls::StreamOwned<rustls::ClientConnection, TcpStream>);
+
+impl std::io::Read for RustlsImapStream {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.0.read(buf)
+    }
+}
+
+impl std::io::Write for RustlsImapStream {
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.0.write(buf)
+    }
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.0.flush()
+    }
+}
+
+impl imap::extensions::idle::SetReadTimeout for RustlsImapStream {
+    fn set_read_timeout(&mut self, dur: Option<Duration>) -> Result<(), imap::Error> {
+        self.0.get_ref().set_read_timeout(dur).map_err(imap::Error::Io)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct EmailConnect {
     pub self_id: Arc<std::sync::RwLock<String>>,
@@ -210,9 +234,21 @@ impl EmailConnect {
         *self.password.write().unwrap() = password.to_owned();
         *self.smtp_ssl.write().unwrap() = smtp_ssl.to_owned();
         if imap_ssl {
-            // et tls = native_tls::TlsConnector::builder().build()?;
-            let client =
-                imap::ClientBuilder::new(imap_server.to_owned(), imap_port as u16).connect()?;
+            let tcp_stream = TcpStream::connect(format!("{imap_server}:{imap_port}"))?;
+            let _ = rustls::crypto::ring::default_provider().install_default();
+            let mut root_store = rustls::RootCertStore::empty();
+            root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            let config = rustls::ClientConfig::builder()
+                .with_root_certificates(root_store)
+                .with_no_client_auth();
+            let server_name = rustls::pki_types::ServerName::try_from(imap_server.clone())
+                .map_err(|e| format!("TLS服务器名称无效: {}", e))?;
+            let conn = rustls::ClientConnection::new(Arc::new(config), server_name)
+                .map_err(|e| format!("TLS连接创建失败: {}", e))?;
+            let mut tls_stream = rustls::StreamOwned::new(conn, tcp_stream);
+            use std::io::Write;
+            tls_stream.flush().map_err(|e| format!("TLS握手失败: {}", e))?;
+            let client = imap::Client::new(RustlsImapStream(tls_stream));
             let mut imap_session = client.login(username, password).map_err(|e| e.0)?;
             let caps = imap_session.capabilities()?;
             if caps.has_str("ID") {

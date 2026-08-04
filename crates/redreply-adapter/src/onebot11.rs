@@ -573,24 +573,22 @@ impl BotConnectTrait for OneBot11Connect {
                         // 将ID转换为字符串
                         change_id_to_str(&mut json_dat);
                         tokio::spawn(async move {
-                            if post_type == "" { // 是api回复
-                                let tx;
-                                {
-                                    let echo_lk = G_ECHO_MAP.read().await;
-                                    let ttt =  echo_lk.get(&echo);
-                                    if let Some(ttt) = ttt {
-                                        tx = ttt.clone();
-                                    }else{
-                                        return ();
-                                    }
-                                }
+                            // 优先按echo判定API回复：echo非空且在注册表中即为回复
+                            // (兼容部分协议端在API回复中附带post_type等字段的不规范情况，避免回复被误判为事件)
+                            let tx = {
+                                let echo_lk = G_ECHO_MAP.read().await;
+                                echo_lk.get(&echo).cloned()
+                            };
+                            if let Some(tx) = tx { // 是api回复
                                 let _foo = tx.send(json_dat).await;
-                            }else { // 是事件
+                            }else if post_type != "" { // 是事件
                                 tokio::task::spawn_blocking(move ||{
                                     if let Err(e) = crate::cqevent::do_1207_event(&json_dat.to_string()) {
                                         crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
                                     }
                                 });
+                            }else {
+                                // 非事件且回复不在注册表中(如超时后的迟到回复或未知数据)，丢弃
                             }
                         });
                     },
@@ -760,6 +758,7 @@ impl BotConnectTrait for OneBot11Connect {
 
         let (tx_ay, mut rx_ay) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
         G_ECHO_MAP.write().await.insert(echo.clone(), tx_ay);
+        let echo_for_log = echo.clone();
         let _guard = scopeguard::guard(echo, |echo| {
             tokio::spawn(async move {
                 G_ECHO_MAP.write().await.remove(&echo);
@@ -788,7 +787,7 @@ impl BotConnectTrait for OneBot11Connect {
                 return Ok(val);
             },
             _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
-                cq_add_log_w(&format!("接收api返回超时")).unwrap();
+                cq_add_log_w(&format!("接收api返回超时(action:{},echo:{})", action, echo_for_log)).unwrap();
                 return Ok(serde_json::json!(""));
             }
         }

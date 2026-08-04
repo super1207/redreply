@@ -619,6 +619,37 @@ pub fn init_cq_ex_fun_map() {
             return Ok(Some(rv_text(format!("[CQ:at,qq={}]",cq_params_encode(&user_id)))));
         }
     });
+    add_fun(vec!["合并转发"],|self_t,params|{
+        let param0 = self_t.get_param(params, 0)?;
+        let tp = param0.get_type_name();
+        let mut ret_str = String::new();
+        if tp == "数组" {
+            let arr = param0.as_array().ok_or("合并转发:第1个参数不是数组")?;
+            for it in arr {
+                let content = it.expect_text_value()?;
+                if content == "" {
+                    continue;
+                }
+                ret_str.push_str(&format!("[CQ:node,content={}]",cq_params_encode(&content)));
+            }
+        }else {
+            let content = param0.expect_text_value()?;
+            if content != "" {
+                ret_str.push_str(&format!("[CQ:node,content={}]",cq_params_encode(&content)));
+            }
+            for i in 1..params.len() {
+                let content = self_t.get_param_text(params, i)?;
+                if content == "" {
+                    continue;
+                }
+                ret_str.push_str(&format!("[CQ:node,content={}]",cq_params_encode(&content)));
+            }
+        }
+        if ret_str == "" {
+            return Ok(Some(rv_empty()));
+        }
+        return Ok(Some(rv_text(ret_str)));
+    });
     add_fun(vec!["CQ码转义"],|self_t,params|{
         let cq_code = self_t.get_param_text(params, 0)?;
         return Ok(Some(rv_text(cq_params_encode(&cq_code))));

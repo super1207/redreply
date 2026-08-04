@@ -92,8 +92,10 @@ lazy_static! {
     pub static ref CLEAR_UUID:String = "a1e72c64-4d18-4529-bc19-e61c5a836e8c".to_owned();
     // 用于记录常量:包名-常量名-常量值(x)
     pub static ref G_CONST_MAP:RwLock<HashMap<String,HashMap<String, RedValueData>>> = RwLock::new(HashMap::new());
-    // 用于记录信号:uuid-包名-信号名-信号值
-    pub static ref G_SINGAL_ARR:RwLock<Vec<(String, String,String,Option<Arc<RedValueData>>)>> = RwLock::new(vec![]);
+    // 用于记录信号:uuid-包名-信号名-信号值(使用Mutex以配合条件变量，替代等待时的自旋轮询)
+    pub static ref G_SINGAL_ARR:std::sync::Mutex<Vec<(String, String,String,Option<Arc<RedValueData>>)>> = std::sync::Mutex::new(vec![]);
+    // 信号条件变量(用于唤醒等待信号的脚本)
+    pub static ref G_SINGAL_COND:std::sync::Condvar = std::sync::Condvar::new();
     // 用于记录临时常量:包名-常量名-常量值-过期时间(x)
     pub static ref G_TEMP_CONST_MAP:RwLock<HashMap<String,HashMap<String, (RedValueData, u128)>>> = RwLock::new(HashMap::new());
     // 用于撤回消息 key:self_id+group_id  value:user_id + message_id
@@ -112,8 +114,10 @@ lazy_static! {
     pub static ref G_RUNNING_SCRIPT_NUM:RwLock<usize> = RwLock::new(0usize);
     // 记录正在加载的脚本
     pub static ref G_LOADING_SCRIPT_FLAG:RwLock<HashSet<String>> = RwLock::new(HashSet::new());
-    // 记录正在运行的脚本名字
-    pub static ref G_RUNNING_SCRIPT:RwLock<Vec<ScriptInfo>> = RwLock::new(vec![]);
+    // 记录正在运行的脚本名字(使用Mutex以配合条件变量)
+    pub static ref G_RUNNING_SCRIPT:std::sync::Mutex<Vec<ScriptInfo>> = std::sync::Mutex::new(vec![]);
+    // 脚本退出通知条件变量(替代等待脚本退出的1ms轮询)
+    static ref G_SCRIPT_QUIT_COND:std::sync::Condvar = std::sync::Condvar::new();
     // 输入流记录
     pub static ref G_INPUTSTREAM_VEC:RwLock<Vec<InputStream>> = RwLock::new(vec![]);
     // webui的访问密码
@@ -122,6 +126,8 @@ lazy_static! {
     pub static ref G_READONLY_WEB_PASSWORD:RwLock<Option<String>> = RwLock::new(None);
     // 全局锁(x)
     pub static ref G_LOCK:Mutex<HashMap<String,HashMap<String, i32>>> = Mutex::new(HashMap::new());
+    // 全局锁条件变量(替代加锁命令的10ms自旋轮询)
+    pub static ref G_LOCK_COND:std::sync::Condvar = std::sync::Condvar::new();
     // 记录与某条消息相关的脚本输出(x)
     pub static ref G_SCRIPT_RELATE_MSG:RwLock<HashMap<String,ScriptRelatMsg>> = RwLock::new(HashMap::new());
     // 用于自动关闭进程
@@ -130,12 +136,16 @@ lazy_static! {
     pub static ref G_DEFAULF_FONT:RwLock<Option<Vec<u8>>> = RwLock::new(None);
     // 文件锁
     pub static ref G_FILE_MX:std::sync::Mutex<HashMap<String,i32>> = std::sync::Mutex::new(HashMap::new());
+    // 文件锁条件变量(替代自旋轮询等待)
+    static ref G_FILE_MX_COND:std::sync::Condvar = std::sync::Condvar::new();
     // 历史日志
     static ref G_HISTORY_LOG:std::sync::RwLock<VecDeque<String>> = std::sync::RwLock::new(VecDeque::new());
     // 全局过滤器缓存
     pub static ref G_GOBAL_FILTER:std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
     // 全局初始化缓存
     pub static ref G_GOBAL_INIT:std::sync::RwLock<Option<String>> = std::sync::RwLock::new(None);
+    // 禁用的包名缓存(与config.json中ban_pkgs保持一致，避免每条消息都读盘)
+    static ref G_BAN_PKGS_CACHE:std::sync::RwLock<Option<Vec<String>>> = std::sync::RwLock::new(None);
     // 跳过多长时间的消息
     pub static ref G_SKIP_MSG_TIME:RwLock<i64> = RwLock::new(600);
 
@@ -213,47 +223,47 @@ pub fn pkg_can_run(pkg_name:&str,script_type:&str) -> bool {
 
 pub fn wait_one_pkg_quit(pkg_name:&str,timeoutms:i64) -> bool {
     let start_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    let mut lk = G_RUNNING_SCRIPT.lock().unwrap();
     loop {
         let mut can_break = true;
-        {
-            let lk = G_RUNNING_SCRIPT.read().unwrap();
-            for it in &*lk {
-                if it.pkg_name == pkg_name {
-                    can_break = false;
-                    break;
-                }
+        for it in &*lk {
+            if it.pkg_name == pkg_name {
+                can_break = false;
+                break;
             }
         }
         if can_break == true {
             break;
         }
         let now_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
-        if now_time - start_time > timeoutms {
+        let elapsed = now_time - start_time;
+        if elapsed > timeoutms {
             return false;
         }
-        std::thread::sleep(core::time::Duration::from_millis(1));
+        // 挂起等待脚本退出通知(替代1ms轮询)
+        let remain = (timeoutms - elapsed).max(1) as u64;
+        let (guard, _timeout_result) = G_SCRIPT_QUIT_COND.wait_timeout(lk, core::time::Duration::from_millis(remain)).unwrap();
+        lk = guard;
     }
     return true;
 }
 
 pub fn wait_all_pkg_quit(timeoutms:i64) -> bool {
     let start_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
+    let mut lk = G_RUNNING_SCRIPT.lock().unwrap();
     loop {
-        let mut can_break = true;
-        {
-            let lk = G_RUNNING_SCRIPT.read().unwrap();
-            if lk.len() != 0 {
-                can_break = false;
-            }
-        }
-        if can_break == true {
+        if lk.len() == 0 {
             break;
         }
         let now_time = SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis() as i64;
-        if now_time - start_time > timeoutms {
+        let elapsed = now_time - start_time;
+        if elapsed > timeoutms {
             return false;
         }
-        std::thread::sleep(core::time::Duration::from_millis(1));
+        // 挂起等待脚本退出通知(替代1ms轮询)
+        let remain = (timeoutms - elapsed).max(1) as u64;
+        let (guard, _timeout_result) = G_SCRIPT_QUIT_COND.wait_timeout(lk, core::time::Duration::from_millis(remain)).unwrap();
+        lk = guard;
     }
     return true;
 }
@@ -389,17 +399,19 @@ pub fn add_file_lock(filename:&str) {
     } else {
         return;
     }
+    let mut lk = G_FILE_MX.lock().unwrap();
     loop {
-        {
-            let mut lk = G_FILE_MX.lock().unwrap();
-            if !lk.contains_key(&fname) {
-                lk.insert(fname.to_string(), 0);
-                return;
-            }
+        if !lk.contains_key(&fname) {
+            lk.insert(fname.to_string(), 0);
+            return;
         }
-        // 如果这个文件正在被读写的话，就等待
-        let time_struct = core::time::Duration::from_millis(10);
-        std::thread::sleep(time_struct);
+        // 文件正被其它线程使用，挂起等待释放信号(替代原来的自旋轮询)
+        let (guard, timeout_result) = G_FILE_MX_COND.wait_timeout(lk, core::time::Duration::from_secs(5)).unwrap();
+        lk = guard;
+        if timeout_result.timed_out() {
+            // 防御性超时日志：正常情况下持有者都会释放(scopeguard保证)，这里仅用于诊断异常
+            cq_add_log_w(&format!("等待文件锁超时(5s)，仍在等待:{}",fname)).unwrap();
+        }
     }
 }
 
@@ -411,7 +423,10 @@ pub fn del_file_lock(filename:&str) {
         return;
     }
     let mut lk = G_FILE_MX.lock().unwrap();
-    lk.remove(&fname);
+    if lk.remove(&fname).is_some() {
+        // 唤醒所有等待者，它们会自行检查自己的文件是否可用
+        G_FILE_MX_COND.notify_all();
+    }
 }
 
 // 用于清理一个包使用的内存
@@ -424,6 +439,8 @@ pub fn del_pkg_memory(pkg_name:&str) {
     G_CMD_MAP.write().unwrap().remove(pkg_name);
     // 删除全局锁
     G_LOCK.lock().unwrap().remove(pkg_name);
+    // 唤醒等待该包锁的脚本(若有)
+    G_LOCK_COND.notify_all();
     // 删除脚本输出记录
     {
         let mut lk = G_SCRIPT_RELATE_MSG.write().unwrap();
@@ -485,14 +502,8 @@ pub fn wait_for_quit() -> ! {
 
         std::process::exit(-1);
     });
-    loop {
-        {
-            if (*G_RUNNING_SCRIPT_NUM.read().unwrap()) == 0 {
-                break;
-            }
-        }
-        std::thread::sleep(core::time::Duration::from_millis(1));
-    }
+    // 等待所有脚本退出(挂起等待，替代1ms轮询；5s后由强制退出线程兑底)
+    while !wait_all_pkg_quit(5000) {}
 
     status::flush_cache_to_db().unwrap() ;
     std::process::exit(0);
@@ -501,7 +512,7 @@ pub fn wait_for_quit() -> ! {
 /// 登记脚本开始运行；成功返回 run_id，失败（包不可运行）返回 None
 pub fn add_running_script_num(pkg_name:&str,script_name:&str,script_type:&str) -> Option<u64> {
     // 先拿运行表写锁，再检查退出/加载标记，缩小 TOCTOU 窗口
-    let mut scripts = G_RUNNING_SCRIPT.write().unwrap();
+    let mut scripts = G_RUNNING_SCRIPT.lock().unwrap();
     let mut num = G_RUNNING_SCRIPT_NUM.write().unwrap();
     if *G_QUIT_FLAG.read().unwrap() {
         return None;
@@ -525,7 +536,7 @@ pub fn add_running_script_num(pkg_name:&str,script_name:&str,script_type:&str) -
 }
 
 pub fn get_running_script_info() -> Vec<ScriptInfo> {
-    let lk = G_RUNNING_SCRIPT.read().unwrap();
+    let lk = G_RUNNING_SCRIPT.lock().unwrap();
     let mut ret_vec:Vec<ScriptInfo> = vec![];
     for i in 0..lk.len() {
         let script_info = lk.get(i).unwrap();
@@ -535,13 +546,15 @@ pub fn get_running_script_info() -> Vec<ScriptInfo> {
 }
 
 pub fn dec_running_script_num(run_id:u64) {
-    let mut scripts = G_RUNNING_SCRIPT.write().unwrap();
+    let mut scripts = G_RUNNING_SCRIPT.lock().unwrap();
     let mut num = G_RUNNING_SCRIPT_NUM.write().unwrap();
     if let Some(pos) = scripts.iter().position(|s| s.run_id == run_id) {
         scripts.remove(pos);
         if *num != 0 {
             *num -= 1;
         }
+        // 唤醒等待脚本退出的线程(替代1ms轮询)
+        G_SCRIPT_QUIT_COND.notify_all();
     }
 }
 
@@ -982,8 +995,20 @@ pub fn pkg_name_to_display(pkg_name:&str) -> String {
     }
 }
 
-// 从config.json中读取禁用的包名列表
+// 从config.json中读取禁用的包名列表(带内存缓存，避免每条消息都读盘)
 pub fn get_ban_pkgs() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    // 优先使用内存缓存
+    {
+        let cache = G_BAN_PKGS_CACHE.read().unwrap();
+        if let Some(v) = cache.as_ref() {
+            return Ok(v.clone());
+        }
+    }
+    // 缓存未命中时读取配置文件(双重检查)
+    let mut cache = G_BAN_PKGS_CACHE.write().unwrap();
+    if let Some(v) = cache.as_ref() {
+        return Ok(v.clone());
+    }
     let config = read_config()?;
     let mut ret_vec = vec![];
     if let Some(ban_pkgs) = config.get("ban_pkgs") {
@@ -995,6 +1020,7 @@ pub fn get_ban_pkgs() -> Result<Vec<String>, Box<dyn std::error::Error + Send + 
             }
         }
     }
+    *cache = Some(ret_vec.clone());
     Ok(ret_vec)
 }
 
@@ -1010,9 +1036,11 @@ pub fn set_ban_pkg(pkg_name:&str,banned:bool) -> Result<(), Box<dyn std::error::
     }else {
         ban_pkgs.retain(|it| *it != pkg_name);
     }
-    config["ban_pkgs"] = serde_json::Value::Array(ban_pkgs.into_iter().map(serde_json::Value::String).collect());
+    config["ban_pkgs"] = serde_json::Value::Array(ban_pkgs.iter().map(|it| serde_json::Value::String(it.clone())).collect());
     let script_path = cq_get_app_directory1()? + "config.json";
     fs::write(script_path, serde_json::to_string_pretty(&config)?)?;
+    // 同步更新内存缓存
+    *G_BAN_PKGS_CACHE.write().unwrap() = Some(ban_pkgs);
     Ok(())
 }
 
@@ -1027,9 +1055,11 @@ pub fn rename_ban_pkg(old_pkg_name:&str,new_pkg_name:&str) -> Result<(), Box<dyn
         if !ban_pkgs.contains(&new_pkg_name) {
             ban_pkgs.push(new_pkg_name);
         }
-        config["ban_pkgs"] = serde_json::Value::Array(ban_pkgs.into_iter().map(serde_json::Value::String).collect());
+        config["ban_pkgs"] = serde_json::Value::Array(ban_pkgs.iter().map(|it| serde_json::Value::String(it.clone())).collect());
         let script_path = cq_get_app_directory1()? + "config.json";
         fs::write(script_path, serde_json::to_string_pretty(&config)?)?;
+        // 同步更新内存缓存
+        *G_BAN_PKGS_CACHE.write().unwrap() = Some(ban_pkgs);
     }
     Ok(())
 }
@@ -1347,20 +1377,10 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn std::error::Error + Send 
             (*G_QUIT_FLAG.write().unwrap()) = false;
         });
 
-        // 等待所有脚本退出
-        let mut tm = 0;
-        loop {
-            tm += 1;
-            {
-                if (*G_RUNNING_SCRIPT_NUM.read().unwrap()) == 0 {
-                    break;
-                }
-            }
-            std::thread::sleep(core::time::Duration::from_millis(1));
-            if tm > 10000 {
-                let running_scripts = get_running_script_info();
-                return Err(format!("有脚本:{:?}不愿意退出,所以无法保存", running_scripts).into());
-            }
+        // 等待所有脚本退出(挂起等待，替代1ms轮询)
+        if !wait_all_pkg_quit(10000) {
+            let running_scripts = get_running_script_info();
+            return Err(format!("有脚本:{:?}不愿意退出,所以无法保存", running_scripts).into());
         }
 
         // 修改文件名

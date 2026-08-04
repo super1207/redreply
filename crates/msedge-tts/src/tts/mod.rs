@@ -208,29 +208,29 @@ fn build_websocket_request() -> tungstenite::Result<tungstenite::handshake::clie
 }
 
 #[cfg(feature = "blocking")]
-type NativeTlsStream<T> = native_tls::TlsStream<T>;
+type NativeTlsStream<T> = rustls::StreamOwned<rustls::ClientConnection, T>;
 
 #[cfg(feature = "blocking")]
 fn native_tls_connect<T: std::io::Read + std::io::Write>(
     host: &str,
     stream: T,
 ) -> Result<NativeTlsStream<T>> {
-    let connector = native_tls::TlsConnector::new().map_err(|err| {
-        tungstenite::Error::Tls(tungstenite::error::TlsError::Native(Box::new(err)))
+    use std::io::Write;
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    let config = rustls::ClientConfig::builder()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+    let server_name = rustls::pki_types::ServerName::try_from(host.to_owned())
+        .map_err(|e| tungstenite::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
+    let conn = rustls::ClientConnection::new(std::sync::Arc::new(config), server_name)
+        .map_err(|e| tungstenite::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+    let mut tls_stream = rustls::StreamOwned::new(conn, stream);
+    tls_stream.flush().map_err(|e| {
+        tungstenite::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("TLS handshake failed: {}", e)))
     })?;
-    match connector.connect(host, stream) {
-        Ok(stream) => Ok(stream),
-        Err(native_tls::HandshakeError::Failure(err)) => {
-            Err(tungstenite::Error::Tls(tungstenite::error::TlsError::Native(Box::new(err))).into())
-        }
-        Err(native_tls::HandshakeError::WouldBlock(_)) => {
-            Err(tungstenite::Error::Io(std::io::Error::new(
-                std::io::ErrorKind::WouldBlock,
-                "native TLS handshake unexpectedly blocked",
-            ))
-            .into())
-        }
-    }
+    Ok(tls_stream)
 }
 
 #[cfg(feature = "blocking")]

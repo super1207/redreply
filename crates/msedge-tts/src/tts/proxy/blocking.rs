@@ -269,19 +269,19 @@ fn http_proxy(
                 let stream = std::net::TcpStream::connect((proxy_host.as_str(), 443))?;
                 stream.set_nodelay(true)?;
 
-                let connector = native_tls::TlsConnector::new()?;
-                let stream = match connector.connect(&proxy_host, stream) {
-                    Ok(stream) => stream,
-                    Err(native_tls::HandshakeError::Failure(err)) => return Err(err.into()),
-                    Err(native_tls::HandshakeError::WouldBlock(_)) => {
-                        return Err(std::io::Error::new(
-                            std::io::ErrorKind::WouldBlock,
-                            "native TLS proxy handshake unexpectedly blocked",
-                        )
-                        .into());
-                    }
-                };
-                ProxyStream::TlsStream(Box::new(stream))
+                let _ = rustls::crypto::ring::default_provider().install_default();
+                let mut root_store = rustls::RootCertStore::empty();
+                root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+                let config = rustls::ClientConfig::builder()
+                    .with_root_certificates(root_store)
+                    .with_no_client_auth();
+                let server_name = rustls::pki_types::ServerName::try_from(proxy_host.clone())
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
+                let conn = rustls::ClientConnection::new(std::sync::Arc::new(config), server_name)
+                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                let mut tls_stream = rustls::StreamOwned::new(conn, stream);
+                tls_stream.flush()?;
+                ProxyStream::TlsStream(Box::new(tls_stream))
             }
             _ => return Err(HttpProxyError::NotSupportedScheme(proxy)),
         },

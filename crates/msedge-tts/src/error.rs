@@ -50,8 +50,6 @@ mod proxy {
         EmptyProxyServerHostName(http::Uri),
         #[error("io error: {0}")]
         IoError(#[from] std::io::Error),
-        #[error("native TLS error: {0}")]
-        NativeTlsError(#[from] native_tls::Error),
         #[error("invalid response: {0}")]
         InvalidResponse(#[from] httparse::Error),
         #[error("bad response: {0} {1}")]

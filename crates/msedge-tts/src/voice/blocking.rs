@@ -8,7 +8,7 @@ use crate::{constants, error::Result, voice::Voice};
 /// Get all available voices
 pub fn get_voices_list() -> Result<Vec<Voice>> {
     let tls_config = ureq::tls::TlsConfig::builder()
-        .provider(ureq::tls::TlsProvider::NativeTls)
+        .provider(ureq::tls::TlsProvider::Rustls)
         .build();
     let config = ureq::config::Config::builder()
         .tls_config(tls_config)
@@ -50,7 +50,7 @@ pub fn get_voices_list() -> Result<Vec<Voice>> {
 #[cfg(feature = "proxy")]
 pub fn get_voices_list_proxy(proxy: &str) -> Result<Vec<Voice>> {
     let tls_config = ureq::tls::TlsConfig::builder()
-        .provider(ureq::tls::TlsProvider::NativeTls)
+        .provider(ureq::tls::TlsProvider::Rustls)
         .build();
     let proxy = ureq::Proxy::new(proxy)?;
     let config = ureq::config::Config::builder()
