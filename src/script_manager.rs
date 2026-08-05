@@ -109,23 +109,29 @@ fn get_global_code_from_sql(table: &str, key: &str) -> Result<String, Box<dyn Er
 }
 
 pub fn set_gobal_filter_code(code: &str) -> Result<(), Box<dyn Error>> {
-    set_global_code("GOBAL_FILTER_TABLE", "GOBAL_FILTER_NAME", code)?;
-    runtime_context()
-        .scripts
-        .set_global_filter_code(code.to_owned());
+    let code_owned = code.to_owned();
+    set_global_code("GOBAL_FILTER_TABLE", "GOBAL_FILTER_NAME", code, move || {
+        // 在文件锁范围内同步更新缓存，与父版本行为一致，避免并发设置时缓存被旧值覆盖
+        runtime_context().scripts.set_global_filter_code(code_owned);
+    })?;
     Ok(())
 }
 
 pub fn set_gobal_init_code(code: &str) -> Result<(), Box<dyn Error>> {
-    set_global_code("GOBAL_INIT_TABLE", "GOBAL_INIT_NAME", code)?;
-    runtime_context()
-        .scripts
-        .set_global_init_code(code.to_owned());
+    let code_owned = code.to_owned();
+    set_global_code("GOBAL_INIT_TABLE", "GOBAL_INIT_NAME", code, move || {
+        runtime_context().scripts.set_global_init_code(code_owned);
+    })?;
     crate::initevent::do_gobal_init_event(None)?;
     Ok(())
 }
 
-fn set_global_code(table: &str, key: &str, code: &str) -> Result<(), Box<dyn Error>> {
+fn set_global_code(
+    table: &str,
+    key: &str,
+    code: &str,
+    update_cache: impl FnOnce(),
+) -> Result<(), Box<dyn Error>> {
     let app_dir =
         cq_get_app_directory1().map_err(|error| std::io::Error::other(error.to_string()))?;
     let sql_file = path_to_os_str(&(app_dir + "reddat.db"));
@@ -149,6 +155,8 @@ fn set_global_code(table: &str, key: &str, code: &str) -> Result<(), Box<dyn Err
         &format!("REPLACE INTO {table} ({key},VALUE) VALUES (?,?)"),
         ["CODE", code],
     )?;
+    // 在文件锁仍持有的情况下更新内存缓存，与 DB 写入原子化，防止并发设置时缓存被旧值覆盖
+    update_cache();
     Ok(())
 }
 
@@ -217,7 +225,8 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
 
     let pkg_dir = PathBuf::from_str(&cq_get_app_directory1()?).map(|path| path.join("pkg_dir"))?;
     runtime_context().control.set_quit(true);
-    let _guard = scopeguard::guard((), |_| runtime_context().control.set_quit(false));
+    // 在文件操作结束后显式 drop，确保 quit_flag 在 init_code() 调用前已恢复 false
+    let quit_guard = scopeguard::guard((), |_| runtime_context().control.set_quit(false));
     if !crate::lifecycle::wait_all_pkg_quit(10000) {
         return Err(format!(
             "有脚本:{:?}不愿意退出,所以无法保存",
@@ -258,6 +267,9 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         }
     }
 
+    // 文件操作全部完成，在此释放 quit_guard，使 quit_flag 恢复 false
+    // 再调用 init_code()，否则 add_running_script_num 会因 quit_flag==true 跳过初始化脚本
+    drop(quit_guard);
     if let Err(err) = init_code() {
         cq_add_log_w(&format!("can't call init evt:{err}")).unwrap();
     }

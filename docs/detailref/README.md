@@ -2485,9 +2485,17 @@ CQ码**外部**的字符需要CQ转义，以上三个命令的作用可以参考
 
 【设置图片参数@<font color="red">key</font>@<font color="red">val</font>】
 
-在【图片】命令之前使用，在QQ等聊天平台，可以给图片附加一些特殊参数。目前<font color="red">key</font>支持summary。
+在【图片】命令**之前**使用，为紧随其后的【图片】命令附加额外参数。目前 <font color="red">key</font> 支持以下值：
 
-示例：【设置图片参数@summary@[涩图]】
+| key | 说明 | 平台支持 |
+|---|---|---|
+| summary | 图片的文字描述/标题 | QQ（显示为图片摘要）、Telegram（作为图片 caption 显示在图片下方） |
+
+示例——发送一张带标题的图片：
+
+```
+【设置图片参数@summary@这是一张少女图片】【图片@https://www.loliapi.com/acg】
+```
 
 ### 语音
 

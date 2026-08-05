@@ -527,8 +527,9 @@ impl TeleTramConnect {
         &self,
         message_arr: &serde_json::Value,
         group_id: &str,
-    ) -> Result<(Vec<(&str, String)>, String), Box<dyn std::error::Error + Send + Sync>> {
-        let mut to_send_data: Vec<(&str, String)> = vec![];
+    ) -> Result<(Vec<(&str, String, String)>, String), Box<dyn std::error::Error + Send + Sync>> {
+        // 每个元素为 (类型, 内容, caption)；caption 仅对图片类型有意义
+        let mut to_send_data: Vec<(&str, String, String)> = vec![];
         let mut quote = String::new();
         let mut last_type = "text";
         let is_group = !group_id.is_empty();
@@ -548,26 +549,30 @@ impl TeleTramConnect {
                     let l = to_send_data.len();
                     to_send_data.get_mut(l - 1).unwrap().1.push_str(&s);
                 } else {
-                    to_send_data.push(("text", s));
+                    to_send_data.push(("text", s, String::new()));
                     last_type = "text";
                 }
             } else if tp == "image" {
-                let file = it
-                    .get("data")
-                    .ok_or("data not found")?
+                let data = it.get("data").ok_or("data not found")?;
+                let file = data
                     .get("file")
                     .ok_or("file not found")?
                     .as_str()
                     .ok_or("file not str")?;
+                // 【设置图片参数@summary@文字】→ 图片命令输出 [CQ:image,file=...,summary=文字]
+                // str_msg_to_arr 将其解析为 data.summary 字段
+                let caption = data
+                    .get("summary")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_owned();
                 if file.starts_with("http") {
-                    to_send_data.push(("url_image", file.to_owned()));
+                    to_send_data.push(("url_image", file.to_owned(), caption));
                     last_type = "url_image";
-                } else {
-                    if file.starts_with("base64://") {
-                        let b64_str = file.get(9..).unwrap();
-                        to_send_data.push(("file_image", b64_str.to_owned()));
-                        last_type = "file_image";
-                    }
+                } else if file.starts_with("base64://") {
+                    let b64_str = file.get(9..).unwrap();
+                    to_send_data.push(("file_image", b64_str.to_owned(), caption));
+                    last_type = "file_image";
                 }
             } else if tp == "reply" {
                 if !quote.is_empty() {
@@ -614,21 +619,19 @@ impl TeleTramConnect {
                     let l = to_send_data.len();
                     to_send_data.get_mut(l - 1).unwrap().1.push_str(at_str);
                 } else {
-                    to_send_data.push(("text", at_str.to_owned()));
+                    to_send_data.push(("text", at_str.to_owned(), String::new()));
                     last_type = "text";
                 }
             } else if tp == "record" {
                 let data = it.get("data").ok_or("data not found")?;
                 let file = read_json_str(data, "file");
                 if file.starts_with("http") {
-                    to_send_data.push(("url_record", file.to_owned()));
+                    to_send_data.push(("url_record", file.to_owned(), String::new()));
                     last_type = "url_record";
-                } else {
-                    if file.starts_with("base64://") {
-                        let b64_str = file.get(9..).unwrap();
-                        to_send_data.push(("file_record", b64_str.to_owned()));
-                        last_type = "file_record";
-                    }
+                } else if file.starts_with("base64://") {
+                    let b64_str = file.get(9..).unwrap();
+                    to_send_data.push(("file_record", b64_str.to_owned(), String::new()));
+                    last_type = "file_record";
                 }
             } else if tp == "music" {
                 let music_type = it
@@ -656,7 +659,7 @@ impl TeleTramConnect {
                         "content": content,
                         "url": url
                     });
-                    to_send_data.push(("music", js.to_string()));
+                    to_send_data.push(("music", js.to_string(), String::new()));
                     last_type = "music";
                 }
             }
@@ -694,12 +697,12 @@ impl TeleTramConnect {
 
     async fn send_message_inner(
         &self,
-        to_send_data: Vec<(&str, String)>,
+        to_send_data: Vec<(&str, String, String)>,
         mut quote: String,
         chat_id: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let mut msg_ids = vec![];
-        for (tp, msg) in &to_send_data.clone() {
+        for (tp, msg, caption) in &to_send_data.clone() {
             if *tp == "text" {
                 // do post
                 let client = self.get_req_client()?;
@@ -740,6 +743,9 @@ impl TeleTramConnect {
                     "chat_id":chat_id.parse::<i64>()?,
                     "photo":msg,
                 });
+                if !caption.is_empty() {
+                    data_json["caption"] = serde_json::Value::String(caption.clone());
+                }
                 if !quote.is_empty() {
                     data_json["reply_parameters"] = serde_json::json!({
                         "message_id":quote.parse::<i64>()?
@@ -786,6 +792,12 @@ impl TeleTramConnect {
                         "chat_id",
                         reqwest::multipart::Part::text(chat_id.to_owned()),
                     );
+                if !caption.is_empty() {
+                    form = form.part(
+                        "caption",
+                        reqwest::multipart::Part::text(caption.clone()),
+                    );
+                }
                 if !quote.is_empty() {
                     form = form.part(
                         "reply_parameters",
