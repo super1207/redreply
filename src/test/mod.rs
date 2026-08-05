@@ -1,5 +1,3 @@
-
-
 use std::sync::Once;
 
 fn init_redlang_test_funs() {
@@ -11,17 +9,13 @@ fn init_redlang_test_funs() {
     });
 }
 
-
 #[test]
 fn test_cqstr_to_arr() {
-
-
     use crate::mytool::str_msg_to_arr;
     let js = serde_json::json!("hello,world[CQ:image,file=xxx.png]hello,world");
     let ret = str_msg_to_arr(&js).unwrap();
-    println!("test_cqstr_to_arr ret:`{}`",ret.to_string());
+    println!("test_cqstr_to_arr ret:`{}`", ret);
 }
-
 
 #[test]
 fn test_cqparse() {
@@ -29,11 +23,11 @@ fn test_cqparse() {
     let data_str = "[CQ:image,file=620a6c143114a4feaaf9e89cc83162b6.image,subType=0,url=https://gchat.qpic.cn/]";
     let pos1 = data_str.find(",").ok_or("CQ码解析失败").unwrap();
     let tp = data_str.get(4..pos1).ok_or("CQ码解析失败").unwrap();
-    let mut sub_key_obj:BTreeMap<String,String> = BTreeMap::new();
+    let mut sub_key_obj: BTreeMap<String, String> = BTreeMap::new();
     sub_key_obj.insert("type".to_string(), tp.to_string());
     let re = fancy_regex::Regex::new("[:,]([^\\[\\],]+?)=([^\\[\\],]*?)(?=[\\],])").unwrap();
 
-    for cap_iter in re.captures_iter(&data_str) {
+    for cap_iter in re.captures_iter(data_str) {
         let cap = cap_iter.unwrap();
         let len = cap.len();
         if len == 3 {
@@ -50,59 +44,14 @@ fn test_cqparse() {
             sub_key_obj.insert(key, val);
         }
     }
-    println!("{:?}",sub_key_obj);
-}
-
-#[test]
-fn test_redformat() {
-    // fn is_black_char(ch: char) -> bool {
-    //     ch == ' ' || ch == '\r' || ch == '\n' || ch == '\t'
-    // }
-    let test_str = "【定义变量@使用情况数组@【数组@0@0@0】】";
-    let content = test_str.chars().collect::<Vec<char>>();
-    let mut out_content = String::new();
-    let mut index = 0;
-    while index < content.len() {
-        if content[index] != '【' {
-            out_content.push(content[index]);
-            index += 1;
-            continue;
-        }
-        else {
-            let next_char = content.get(index + 1).ok_or("syntax error").unwrap();
-            if next_char.to_owned() == '@' {
-                let mut num = 1;
-                for index2 in index..content.len() {
-                    if content[index2] == '【' {
-                        num += 1;
-                    }
-                    else if content[index2] == '】' {
-                        num -= 1;
-                    }
-                    if num == 0 {
-                        let s = content.get(index..index2).unwrap();
-                        out_content.push_str(&String::from_iter(s.iter()));
-                        index = index2 + 1;
-                        break;
-                    }
-                }
-                if num != 0 {
-                    break;
-                }
-            } else {
-
-            }
-        }
-
-    }
-
+    println!("{:?}", sub_key_obj);
 }
 
 #[test]
 fn test_structured_const_keeps_value_shape() {
     init_redlang_test_funs();
     let pkg_name = "test_structured_const_keeps_value_shape";
-    crate::del_pkg_memory(pkg_name);
+    crate::script_manager::del_pkg_memory(pkg_name);
 
     let result = (|| -> Result<String, Box<dyn std::error::Error>> {
         let mut rl = crate::redlang::RedLang::new();
@@ -119,7 +68,7 @@ fn test_structured_const_keeps_value_shape() {
         }
     })();
 
-    crate::del_pkg_memory(pkg_name);
+    crate::script_manager::del_pkg_memory(pkg_name);
     assert_eq!(result.unwrap(), "A|乙|值");
 }
 
@@ -127,7 +76,7 @@ fn test_structured_const_keeps_value_shape() {
 fn test_structured_runtime_operations() {
     init_redlang_test_funs();
     let pkg_name = "test_structured_runtime_operations";
-    crate::del_pkg_memory(pkg_name);
+    crate::script_manager::del_pkg_memory(pkg_name);
 
     let result = (|| -> Result<String, Box<dyn std::error::Error>> {
         let mut rl = crate::redlang::RedLang::new();
@@ -144,7 +93,7 @@ fn test_structured_runtime_operations() {
         }
     })();
 
-    crate::del_pkg_memory(pkg_name);
+    crate::script_manager::del_pkg_memory(pkg_name);
     assert_eq!(result.unwrap(), "2|乙|2|乙");
 }
 

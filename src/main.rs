@@ -11,8 +11,7 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         target: &tao::event_loop::EventLoopWindowTarget<T>,
         proxy: &EventLoopProxy<UserEvent>,
     )  -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let config = redlang::read_config()?;
-        let port = config.get("web_port").ok_or("无法获取web_port")?.as_u64().ok_or("无法获取web_port")?;
+        let port = redlang::config_manager::startup_config()?.web_port;
         create_specific_window(webviews, target, proxy, &format!("http://localhost:{port}"))?;
         Ok(())
     }
@@ -117,7 +116,7 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                     .and_then(|name| name.to_str())
                     .unwrap_or_else(|| {
                         // 从URL中提取文件名
-                        url.split('/').last().unwrap_or("download")
+                        url.split('/').next_back().unwrap_or("download")
                     });
 
                 // 显示文件保存对话框
@@ -253,17 +252,17 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
                 UserEvent::MenuEvent(menu_event) => {
                     if menu_event.id == show_web.id() {
-                        let _err = redlang::show_ctrl_web();
+                        let _err = redlang::resource_manager::show_ctrl_web();
                     } else if menu_event.id == quit.id() {
-                        redlang::wait_for_quit();
+                        redlang::lifecycle::wait_for_quit();
                     } else if menu_event.id == help_web.id() {
-                        let _err = redlang::show_help_web();
+                        let _err = redlang::resource_manager::show_help_web();
                     } else if menu_event.id == log_web.id() {
-                        let _err = redlang::show_log_web();
+                        let _err = redlang::resource_manager::show_log_web();
                     } else if menu_event.id == dir_web.id() {
-                        let _err = redlang::show_dir_web();
+                        let _err = redlang::resource_manager::show_dir_web();
                     } else if menu_event.id == debug_web.id() {
-                        let _err = redlang::show_debug_web();
+                        let _err = redlang::resource_manager::show_debug_web();
                     }
                 }
 
@@ -313,8 +312,7 @@ fn main() {
     // 记录程序开始时间
     {
         let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis().to_string();
-        let mut lk = redlang::G_START_TIME.lock().unwrap();
-        *lk = d;
+        redlang::lifecycle::set_start_time(d);
     }
     
     // 初始化日志

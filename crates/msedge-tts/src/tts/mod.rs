@@ -225,10 +225,10 @@ fn native_tls_connect<T: std::io::Read + std::io::Write>(
     let server_name = rustls::pki_types::ServerName::try_from(host.to_owned())
         .map_err(|e| tungstenite::Error::Io(std::io::Error::new(std::io::ErrorKind::InvalidInput, e)))?;
     let conn = rustls::ClientConnection::new(std::sync::Arc::new(config), server_name)
-        .map_err(|e| tungstenite::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, e)))?;
+        .map_err(|e| tungstenite::Error::Io(std::io::Error::other(e)))?;
     let mut tls_stream = rustls::StreamOwned::new(conn, stream);
     tls_stream.flush().map_err(|e| {
-        tungstenite::Error::Io(std::io::Error::new(std::io::ErrorKind::Other, format!("TLS handshake failed: {}", e)))
+        tungstenite::Error::Io(std::io::Error::other(format!("TLS handshake failed: {}", e)))
     })?;
     Ok(tls_stream)
 }

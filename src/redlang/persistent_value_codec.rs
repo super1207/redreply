@@ -7,7 +7,7 @@ pub fn to_persistent_legacy_string(value: &RedValue) -> Rc<String> {
         RedValue::Text(s) => s.clone(),
         RedValue::Array(arr) => {
             let mut ret = String::new();
-            ret.push_str(&crate::PERSISTENT_VALUE_MARKER);
+            ret.push_str(crate::PERSISTENT_VALUE_MARKER);
             ret.push('A');
             for item in arr {
                 let s = to_persistent_legacy_string(item);
@@ -19,7 +19,7 @@ pub fn to_persistent_legacy_string(value: &RedValue) -> Rc<String> {
         }
         RedValue::Object(obj) => {
             let mut ret = String::new();
-            ret.push_str(&crate::PERSISTENT_VALUE_MARKER);
+            ret.push_str(crate::PERSISTENT_VALUE_MARKER);
             ret.push('O');
             for (k, v) in obj {
                 ret.push_str(&k.len().to_string());
@@ -34,7 +34,7 @@ pub fn to_persistent_legacy_string(value: &RedValue) -> Rc<String> {
         }
         RedValue::Bin(bin) => {
             let mut ret = String::new();
-            ret.push_str(&crate::PERSISTENT_VALUE_MARKER);
+            ret.push_str(crate::PERSISTENT_VALUE_MARKER);
             ret.push('B');
             for ch in bin.iter() {
                 ret.push_str(&format!("{:02X}", ch));
@@ -43,7 +43,7 @@ pub fn to_persistent_legacy_string(value: &RedValue) -> Rc<String> {
         }
         RedValue::Fun(ast) => {
             let mut ret = String::new();
-            ret.push_str(&crate::PERSISTENT_VALUE_MARKER);
+            ret.push_str(crate::PERSISTENT_VALUE_MARKER);
             ret.push('F');
             ret.push_str(&astparser::ast_to_string(ast));
             Rc::new(ret)
@@ -52,12 +52,14 @@ pub fn to_persistent_legacy_string(value: &RedValue) -> Rc<String> {
 }
 
 pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::error::Error>> {
-    let marker = crate::PERSISTENT_VALUE_MARKER.as_str();
+    let marker = crate::PERSISTENT_VALUE_MARKER;
     if !s.starts_with(marker) {
         return Ok(RedValue::Text(Rc::new(s.to_string())));
     }
     let marker_len = marker.len();
-    let tp = s.get(marker_len..marker_len + 1).ok_or("类型解析错误,无类型标识")?;
+    let tp = s
+        .get(marker_len..marker_len + 1)
+        .ok_or("类型解析错误,无类型标识")?;
     match tp {
         "A" => {
             let mut ret_arr: Vec<Rc<RedValue>> = vec![];
@@ -70,7 +72,9 @@ pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::e
                 let spos_num = spos_opt.unwrap();
                 let num_str = arr.get(0..spos_num).ok_or("不能获得数组类型")?;
                 let num = num_str.parse::<usize>()?;
-                let str_val = arr.get(spos_num + 1..spos_num + 1 + num).ok_or("不能获得数组类型")?;
+                let str_val = arr
+                    .get(spos_num + 1..spos_num + 1 + num)
+                    .ok_or("不能获得数组类型")?;
                 ret_arr.push(Rc::new(from_persistent_legacy_string(str_val)?));
                 arr = arr.get(spos_num + 1 + num..).ok_or("不能获得数组类型")?;
             }
@@ -88,11 +92,13 @@ pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::e
                 let spos_num = spos_opt.unwrap();
                 let num_str = arr.get(0..spos_num).ok_or("不能获得对象类型")?;
                 let num = num_str.parse::<usize>()?;
-                let str_val = arr.get(spos_num + 1..spos_num + 1 + num).ok_or("不能获得对象类型")?;
+                let str_val = arr
+                    .get(spos_num + 1..spos_num + 1 + num)
+                    .ok_or("不能获得对象类型")?;
                 arr_strs.push(str_val);
                 arr = arr.get(spos_num + 1 + num..).ok_or("不能获得对象类型")?;
             }
-            if arr_strs.len() % 2 != 0 {
+            if !arr_strs.len().is_multiple_of(2) {
                 return Err(RedLang::make_err("不能获得对象类型"));
             }
             for i in 0..(arr_strs.len() / 2) {
@@ -103,7 +109,10 @@ pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::e
             Ok(RedValue::Object(ret_map))
         }
         "B" => {
-            let content_text = s.get(marker_len + 1..).ok_or("不能获得字节集类型")?.as_bytes();
+            let content_text = s
+                .get(marker_len + 1..)
+                .ok_or("不能获得字节集类型")?
+                .as_bytes();
             if content_text.len() % 2 != 0 {
                 return Err(RedLang::make_err("不能获得字节集类型"));
             }
@@ -111,14 +120,27 @@ pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::e
             for pos in 0..(content_text.len() / 2) {
                 let mut ch1 = content_text[pos * 2];
                 let mut ch2 = content_text[pos * 2 + 1];
-                if ch1 < 0x3A { ch1 -= 0x30; } else { ch1 -= 0x41; ch1 += 10; }
-                if ch2 < 0x3A { ch2 -= 0x30; } else { ch2 -= 0x41; ch2 += 10; }
+                if ch1 < 0x3A {
+                    ch1 -= 0x30;
+                } else {
+                    ch1 -= 0x41;
+                    ch1 += 10;
+                }
+                if ch2 < 0x3A {
+                    ch2 -= 0x30;
+                } else {
+                    ch2 -= 0x41;
+                    ch2 += 10;
+                }
                 content2.push((ch1 << 4) + ch2);
             }
             Ok(RedValue::Bin(Rc::new(content2)))
         }
         "F" => {
-            let body = s.get(marker_len + 1..).ok_or("不能获得函数类型")?.to_string();
+            let body = s
+                .get(marker_len + 1..)
+                .ok_or("不能获得函数类型")?
+                .to_string();
             let ast = astparser::parse_to_ast(&body).map_err(|e| RedLang::make_err(&e))?;
             Ok(RedValue::Fun(ast))
         }

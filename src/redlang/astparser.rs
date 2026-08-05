@@ -83,7 +83,10 @@ impl AstParser {
                 read_pos += 1;
             } else {
                 if curr_char == '\\' {
-                    let next = *self.chars.get(read_pos + 1).ok_or_else(|| "期望转义字符，但输入结束".to_string())?;
+                    let next = *self
+                        .chars
+                        .get(read_pos + 1)
+                        .ok_or_else(|| "期望转义字符，但输入结束".to_string())?;
                     self.chars[write_pos] = curr_char;
                     self.chars[write_pos + 1] = next;
                     write_pos += 2;
@@ -166,7 +169,8 @@ impl<'a> AstParserInner<'a> {
                         }
                     } else if curr_char == '】' {
                         if g_num == 0 {
-                            let mut arg_parser = AstParserInner::new(&self.chars[temp_start..self.pos]);
+                            let mut arg_parser =
+                                AstParserInner::new(&self.chars[temp_start..self.pos]);
                             args.push(arg_parser.parse()?);
                             self.consume_char(1)?;
                             is_normal_break = true;
@@ -176,7 +180,8 @@ impl<'a> AstParserInner<'a> {
                         self.consume_char(1)?;
                     } else if curr_char == '@' {
                         if g_num == 0 {
-                            let mut arg_parser = AstParserInner::new(&self.chars[temp_start..self.pos]);
+                            let mut arg_parser =
+                                AstParserInner::new(&self.chars[temp_start..self.pos]);
                             args.push(arg_parser.parse()?);
                             self.consume_char(1)?;
                             temp_start = self.pos;
@@ -186,7 +191,7 @@ impl<'a> AstParserInner<'a> {
                     } else {
                         self.consume_char(1)?;
                     }
-                },
+                }
                 ArgState::RawText => {
                     if curr_char == '】' {
                         if s_num == 0 {
@@ -206,7 +211,7 @@ impl<'a> AstParserInner<'a> {
             }
         }
         if s_num != 0 {
-            return Err(format!("未闭合的原始字符串 '【@'"));
+            return Err("未闭合的原始字符串 '【@'".to_string());
         }
         if !is_normal_break {
             return Err("未闭合的开始括号 '【'".to_string());
@@ -229,7 +234,7 @@ impl<'a> AstParserInner<'a> {
         let mut command_name = String::new();
 
         let mut s_num = 0usize;
-        
+
         while self.pos < self.chars.len() {
             let curr_char = self.chars[self.pos];
             match state {
@@ -240,7 +245,7 @@ impl<'a> AstParserInner<'a> {
                                 self.consume_char(2)?;
                                 s_num = 1;
                                 state = State::RawText;
-                            },
+                            }
                             _ => {
                                 self.consume_char(1)?;
                                 state = State::CommandName;
@@ -253,14 +258,13 @@ impl<'a> AstParserInner<'a> {
                     } else if curr_char == '\\' {
                         text.push(self.look_ahead(1)?);
                         self.consume_char(2)?;
-                    }
-                    else {
+                    } else {
                         if !curr_char.is_whitespace() {
                             text.push(curr_char);
                         }
                         self.consume_char(1)?;
                     }
-                },
+                }
                 State::RawText => {
                     if curr_char == '】' {
                         if s_num == 0 {
@@ -293,15 +297,13 @@ impl<'a> AstParserInner<'a> {
                         self.consume_char(1)?;
                     } else if curr_char == '【' {
                         state = State::CommandArgs;
-                    }
-                    else {
+                    } else {
                         if !curr_char.is_whitespace() {
                             command_name.push(curr_char);
                         }
                         self.consume_char(1)?;
                     }
-                    
-                },
+                }
                 State::CommandArgs => {
                     let args = self.parse_command_args()?;
                     result.push(AstNode::Command(AstCommand {
@@ -318,7 +320,7 @@ impl<'a> AstParserInner<'a> {
                 if !text.is_empty() {
                     result.push(AstNode::Text(Rc::new(text)));
                 }
-            },
+            }
             State::RawText => return Err("未闭合的原始字符串 '【@'".to_string()),
             State::CommandName => return Err("未闭合的命令名 '【'".to_string()),
             State::CommandArgs => return Err("未闭合的命令参数 '【'".to_string()),
@@ -329,5 +331,4 @@ impl<'a> AstParserInner<'a> {
         }
         Ok(result)
     }
-
 }

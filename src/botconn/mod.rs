@@ -1,9 +1,10 @@
-use std::{sync::{atomic::{AtomicBool, Ordering}, Arc, Once}, time::Duration};
+use std::{sync::Arc, time::Duration};
 
-use crate::{cqapi::cq_add_log_w, RT_PTR};
+use crate::{cqapi::cq_add_log_w, runtime, runtime_context};
+pub use redreply_adapter::BotConnectTrait;
 use redreply_adapter::{
     email::EmailConnect,
-    host::{set_host, AdapterHost},
+    host::{ensure_host, AdapterHost},
     kook::KookConnect,
     onebot11::OneBot11Connect,
     onebot115::OneBot115Connect,
@@ -13,14 +14,7 @@ use redreply_adapter::{
     telegram::TeleTramConnect,
     yunhuv1::Yunhuv1Connect,
     AdapterResult,
-    BotRegistry,
 };
-pub use redreply_adapter::BotConnectTrait;
-
-lazy_static! {
-    static ref CONFIG_CHANGED: AtomicBool = AtomicBool::new(false);
-    static ref CACHED_WS_URLS: std::sync::RwLock<Option<Vec<String>>> = std::sync::RwLock::new(None);
-}
 
 struct RedReplyAdapterHost;
 
@@ -44,81 +38,44 @@ impl AdapterHost for RedReplyAdapterHost {
     }
 
     fn all_to_silk(&self, input: &[u8]) -> AdapterResult<Vec<u8>> {
-        crate::mytool::all_to_silk::all_to_silk(&input.to_vec()).map_err(|err| err.to_string().into())
+        crate::mytool::all_to_silk::all_to_silk(input)
+            .map_err(|err| err.to_string().into())
     }
 }
 
 fn ensure_adapter_host() {
-    static INIT: Once = Once::new();
-    INIT.call_once(|| {
-        let _ = set_host(Arc::new(RedReplyAdapterHost));
-    });
-}
-
-
-pub fn mark_config_changed() {
-    CONFIG_CHANGED.store(true, Ordering::Relaxed);
-}
-
-fn read_ws_urls_from_config() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
-    let config = crate::read_config()?;
-    let urls_val = config.get("ws_urls").ok_or("无法获取ws_urls")?.as_array().ok_or("无法获取ws_urls")?.to_owned();
-    let mut urls = vec![];
-    for url in &urls_val {
-        let url_str = url.as_str().ok_or("ws_url不是字符数组")?.to_string();
-        urls.push(url_str);
-    }
-    // 按索引过滤被禁用的适配器
-    if let Some(disabled_val) = config.get("disabled_ws_urls") {
-        if let Some(disabled_arr) = disabled_val.as_array() {
-            let disabled_indices: std::collections::HashSet<usize> = disabled_arr
-                .iter()
-                .filter_map(|v| v.as_u64().map(|n| n as usize))
-                .collect();
-            urls = urls.into_iter().enumerate()
-                .filter(|(i, _)| !disabled_indices.contains(i))
-                .map(|(_, u)| u)
-                .collect();
-        }
-    }
-    Ok(urls)
+    ensure_host(|| Arc::new(RedReplyAdapterHost));
 }
 
 fn get_ws_urls() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
-    if CONFIG_CHANGED.swap(false, Ordering::Relaxed) {
-        let urls = read_ws_urls_from_config()?;
-        *CACHED_WS_URLS.write().unwrap() = Some(urls.clone());
-        Ok(urls)
-    } else {
-        let cache = CACHED_WS_URLS.read().unwrap();
-        if let Some(urls) = cache.as_ref() {
-            Ok(urls.clone())
-        } else {
-            drop(cache);
-            let urls = read_ws_urls_from_config()?;
-            *CACHED_WS_URLS.write().unwrap() = Some(urls.clone());
-            Ok(urls)
-        }
-    }
+    crate::config_manager::ws_urls()
 }
 
-lazy_static! {
-    static ref G_BOT_REGISTRY: BotRegistry = BotRegistry::new();
-}
-
-pub async fn call_api(platform:&str,self_id:&str,passive_id:&str,json:&mut serde_json::Value) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn call_api(
+    platform: &str,
+    self_id: &str,
+    passive_id: &str,
+    json: &mut serde_json::Value,
+) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     ensure_adapter_host();
-    if let Some(ret) = G_BOT_REGISTRY.call_api(platform, self_id, passive_id, json).await? {
+    if let Some(ret) = runtime_context()
+        .services
+        .bot_registry()
+        .call_api(platform, self_id, passive_id, json)
+        .await?
+    {
         return Ok(ret);
     }
-    cq_add_log_w(&format!("no such bot:platform:`{platform}`,self_id:`{self_id}`")).unwrap();
-    return Ok(serde_json::json!(""));
+    cq_add_log_w(&format!(
+        "no such bot:platform:`{platform}`,self_id:`{self_id}`"
+    ))
+    .unwrap();
+    Ok(serde_json::json!(""))
 }
-
 
 pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
     ensure_adapter_host();
-    std::thread::spawn(move ||{
+    std::thread::spawn(move || {
         loop {
             let config_urls = match get_ws_urls() {
                 Ok(urls) => urls,
@@ -128,123 +85,187 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                     continue;
                 }
             };
-            
-            RT_PTR.clone().block_on(async move {
+
+            runtime().block_on(async move {
                 // 删除所有不在列表中的url和死去的bot
                 {
-                    let earse_urls = G_BOT_REGISTRY.removable_urls(&config_urls).await;
+                    let earse_urls = runtime_context()
+                        .services
+                        .bot_registry()
+                        .removable_urls(&config_urls)
+                        .await;
                     // 移除这些bot
                     for url in &earse_urls {
-                        G_BOT_REGISTRY.disconnect_and_remove(url).await;
+                        runtime_context()
+                            .services
+                            .bot_registry()
+                            .disconnect_and_remove(url)
+                            .await;
                     }
                     // 有bot移除，等1秒再进行连接
-                    if earse_urls.len() > 0 {
+                    if !earse_urls.is_empty() {
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
                 // 连接未在bot_map中的url（try_begin_connect 保证同一 URL 不会并发重复连接）
                 for url in &config_urls {
-                    if !G_BOT_REGISTRY.try_begin_connect(url).await {
+                    if !runtime_context()
+                        .services
+                        .bot_registry()
+                        .try_begin_connect(url)
+                        .await
+                    {
                         continue;
                     }
                     let url_t = url.clone();
-                    RT_PTR.clone().spawn(async move {
+                    runtime().spawn(async move {
                         let connect_ok = async {
                             if url_t.starts_with("ws://") || url_t.starts_with("wss://") {
                                 let mut bot = OneBot11Connect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
-                                    cq_add_log_w(&format!("连接到onebot失败:{},{}",url_t,err)).unwrap();
+                                    cq_add_log_w(&format!("连接到onebot失败:{},{}", url_t, err))
+                                        .unwrap();
                                     false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    runtime_context()
+                                        .services
+                                        .bot_registry()
+                                        .insert(url_t.clone(), bot)
+                                        .await;
                                     true
                                 }
-                            }else if url_t.starts_with("ovo://") {
+                            } else if url_t.starts_with("ovo://") {
                                 let mut bot = OneBot115Connect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
-                                    cq_add_log_w(&format!("连接到ovo失败:{url_t},{err:?}")).unwrap();
+                                    cq_add_log_w(&format!("连接到ovo失败:{url_t},{err:?}"))
+                                        .unwrap();
                                     false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    runtime_context()
+                                        .services
+                                        .bot_registry()
+                                        .insert(url_t.clone(), bot)
+                                        .await;
                                     true
                                 }
-                            }
-                            else if url_t.starts_with("satori://") {
+                            } else if url_t.starts_with("satori://") {
                                 let mut bot = Satoriv1Connect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
-                                    cq_add_log_w(&format!("连接到satori失败:{url_t},{err:?}")).unwrap();
+                                    cq_add_log_w(&format!("连接到satori失败:{url_t},{err:?}"))
+                                        .unwrap();
                                     false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    runtime_context()
+                                        .services
+                                        .bot_registry()
+                                        .insert(url_t.clone(), bot)
+                                        .await;
                                     true
                                 }
-                            }
-                            else if url_t.starts_with("qqguild_private://") {
+                            } else if url_t.starts_with("qqguild_private://") {
                                 let mut bot = QQGuildPrivateConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
-                                    cq_add_log_w(&format!("连接到qqguild_private失败:{url_t},{err:?}")).unwrap();
+                                    cq_add_log_w(&format!(
+                                        "连接到qqguild_private失败:{url_t},{err:?}"
+                                    ))
+                                    .unwrap();
                                     false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    runtime_context()
+                                        .services
+                                        .bot_registry()
+                                        .insert(url_t.clone(), bot)
+                                        .await;
                                     true
                                 }
-                            }
-                            else if url_t.starts_with("qqguild_public://") {
+                            } else if url_t.starts_with("qqguild_public://") {
                                 let mut bot = QQGuildPublicConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
-                                    cq_add_log_w(&format!("连接到qqguild_public失败:{url_t},{err:?}")).unwrap();
+                                    cq_add_log_w(&format!(
+                                        "连接到qqguild_public失败:{url_t},{err:?}"
+                                    ))
+                                    .unwrap();
                                     false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    runtime_context()
+                                        .services
+                                        .bot_registry()
+                                        .insert(url_t.clone(), bot)
+                                        .await;
                                     true
                                 }
-                            }else if url_t.starts_with("kook://") {
+                            } else if url_t.starts_with("kook://") {
                                 let mut bot = KookConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
-                                    cq_add_log_w(&format!("连接到kook失败:{url_t},{err:?}")).unwrap();
+                                    cq_add_log_w(&format!("连接到kook失败:{url_t},{err:?}"))
+                                        .unwrap();
                                     false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    runtime_context()
+                                        .services
+                                        .bot_registry()
+                                        .insert(url_t.clone(), bot)
+                                        .await;
                                     true
                                 }
-                            }else if url_t.starts_with("email://") {
+                            } else if url_t.starts_with("email://") {
                                 let mut bot = EmailConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
-                                    cq_add_log_w(&format!("连接到email失败:{url_t},{err:?}")).unwrap();
+                                    cq_add_log_w(&format!("连接到email失败:{url_t},{err:?}"))
+                                        .unwrap();
                                     false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    runtime_context()
+                                        .services
+                                        .bot_registry()
+                                        .insert(url_t.clone(), bot)
+                                        .await;
                                     true
                                 }
-                            }else if url_t.starts_with("telegram://") {
+                            } else if url_t.starts_with("telegram://") {
                                 let mut bot = TeleTramConnect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
-                                    cq_add_log_w(&format!("连接到telegram失败:{url_t},{err:?}")).unwrap();
+                                    cq_add_log_w(&format!("连接到telegram失败:{url_t},{err:?}"))
+                                        .unwrap();
                                     false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    runtime_context()
+                                        .services
+                                        .bot_registry()
+                                        .insert(url_t.clone(), bot)
+                                        .await;
                                     true
                                 }
-                            }else if url_t.starts_with("yunhu://") {
+                            } else if url_t.starts_with("yunhu://") {
                                 let mut bot = Yunhuv1Connect::build(&url_t);
                                 if let Err(err) = bot.connect().await {
-                                    cq_add_log_w(&format!("连接到yunhu失败:{url_t},{err:?}")).unwrap();
+                                    cq_add_log_w(&format!("连接到yunhu失败:{url_t},{err:?}"))
+                                        .unwrap();
                                     false
                                 } else {
-                                    G_BOT_REGISTRY.insert(url_t.clone(), bot).await;
+                                    runtime_context()
+                                        .services
+                                        .bot_registry()
+                                        .insert(url_t.clone(), bot)
+                                        .await;
                                     true
                                 }
                             } else {
                                 false
                             }
-                        }.await;
+                        }
+                        .await;
                         if !connect_ok {
-                            G_BOT_REGISTRY.end_connect(&url_t).await;
+                            runtime_context()
+                                .services
+                                .bot_registry()
+                                .end_connect(&url_t)
+                                .await;
                         }
                     });
                 }
             });
-            
+
             std::thread::sleep(std::time::Duration::from_secs(5));
         }
     });

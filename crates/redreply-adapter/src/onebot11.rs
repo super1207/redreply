@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     ops::{Index, IndexMut},
     str::FromStr,
     sync::{atomic::AtomicBool, Arc, RwLock},
@@ -35,26 +35,22 @@ pub struct OneBot11Connect {
     pub is_stop: Arc<AtomicBool>,
     pub stop_tx: Option<tokio::sync::mpsc::Sender<bool>>,
     pub real_platform: Arc<std::sync::RwLock<Option<String>>>,
-}
-
-lazy_static! {
-    static ref G_ECHO_MAP: tokio::sync::RwLock<HashMap<String, tokio::sync::mpsc::Sender<serde_json::Value>>> =
-        tokio::sync::RwLock::new(HashMap::new());
+    echo_map: Arc<tokio::sync::RwLock<HashMap<String, tokio::sync::mpsc::Sender<serde_json::Value>>>>,
 }
 
 fn get_json_from_msg(msg: hyper_tungstenite::tungstenite::Message) -> Option<serde_json::Value> {
     if let Ok(msg_text) = msg.to_text() {
-        if let Ok(json_dat_t) = serde_json::from_str::<serde_json::Value>(&msg_text) {
+        if let Ok(json_dat_t) = serde_json::from_str::<serde_json::Value>(msg_text) {
             if json_dat_t.is_object() {
-                return Some(json_dat_t);
+                Some(json_dat_t)
             } else {
-                return None;
+                None
             }
         } else {
-            return None;
+            None
         }
     } else {
-        return None;
+        None
     }
 }
 
@@ -74,7 +70,7 @@ fn get_json_dat(
     } else {
         return None;
     }
-    return Some(json_dat);
+    Some(json_dat)
 }
 
 impl OneBot11Connect {
@@ -86,6 +82,7 @@ impl OneBot11Connect {
             is_stop: Arc::new(AtomicBool::new(false)),
             stop_tx: None,
             real_platform: Arc::new(RwLock::new(None)),
+            echo_map: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         }
     }
 
@@ -107,7 +104,7 @@ impl OneBot11Connect {
                 let tp = read_json_str(&msg_arr[i], "type");
                 if tp == "poke" {
                     let mut ret_id = read_json_str(&msg_arr[i]["data"], "id");
-                    if ret_id == "" {
+                    if ret_id.is_empty() {
                         ret_id = read_json_str(&msg_arr[i]["data"], "qq");
                     }
                     if !ret_id.is_empty() {
@@ -152,7 +149,7 @@ impl OneBot11Connect {
                     continue;
                 }
 
-                if music_card_sign == "" {
+                if music_card_sign.is_empty() {
                     let plus_dir = cq_get_app_directory1()?;
                     let config = plus_dir + "adapter_onebot11_config.json";
                     let config_str;
@@ -163,15 +160,15 @@ impl OneBot11Connect {
                     }
                     let config_json: serde_json::Value = serde_json::from_str(&config_str)?;
                     music_card_sign = read_json_str(&config_json, "music_card_sign");
-                    if music_card_sign == "" {
+                    if music_card_sign.is_empty() {
                         return Ok(());
                     }
                     if !music_card_sign.ends_with("/") {
-                        music_card_sign.push_str("/");
+                        music_card_sign.push('/');
                     }
                 }
 
-                if music_card_sign == "" {
+                if music_card_sign.is_empty() {
                     return Ok(());
                 }
 
@@ -230,16 +227,16 @@ impl OneBot11Connect {
     }
 
     async fn all_to_silk_async(
-        input: &Vec<u8>,
+        input: &[u8],
     ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-        let input = input.clone();
+        let input = input.to_owned();
         let silk_bin = tokio::task::spawn_blocking(move || {
             // Ensure the error type is Send + Sync + 'static
             all_to_silk(&input).map_err(|e| {
                 // Convert error to Box<dyn Error + Send + Sync>
                 // Convert error to a string and wrap it in a std::io::Error
                 let s = format!("{:?}", e);
-                Box::new(std::io::Error::new(std::io::ErrorKind::Other, s))
+                Box::new(std::io::Error::other(s))
                     as Box<dyn std::error::Error + Send + Sync>
             })
         })
@@ -269,7 +266,7 @@ impl OneBot11Connect {
                     continue;
                 }
 
-                if is_convert == false {
+                if !is_convert {
                     let plus_dir = cq_get_app_directory1()?;
                     let config = plus_dir + "adapter_onebot11_config.json";
                     let config_str;
@@ -280,7 +277,7 @@ impl OneBot11Connect {
                     }
                     let config_json: serde_json::Value = serde_json::from_str(&config_str)?;
                     let auto_convert_record = &config_json["auto_convert_record"];
-                    if auto_convert_record.as_bool().unwrap_or_default() == false {
+                    if !auto_convert_record.as_bool().unwrap_or_default() {
                         return Ok(());
                     }
                     is_convert = true;
@@ -300,12 +297,11 @@ impl OneBot11Connect {
                         b64_str,
                     )?;
                 } else if uri.starts_with("file://") {
-                    let file_path;
-                    if cfg!(target_os = "windows") {
-                        file_path = uri.get(8..).ok_or("can't get file_path")?;
+                    let file_path = if cfg!(target_os = "windows") {
+                        uri.get(8..).ok_or("can't get file_path")?
                     } else {
-                        file_path = uri.get(7..).ok_or("can't get file_path")?;
-                    }
+                        uri.get(7..).ok_or("can't get file_path")?
+                    };
                     let path = std::path::Path::new(&file_path);
                     file_bin = tokio::fs::read(path).await?;
                 } else {
@@ -361,7 +357,7 @@ impl OneBot11Connect {
 
     pub async fn get_platform(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let read_platform = self.real_platform.read().unwrap().to_owned();
-        if read_platform == None {
+        if read_platform.is_none() {
             let mut send_json;
             send_json = serde_json::json!({
                 "action":"get_version_info",
@@ -391,7 +387,7 @@ impl OneBot11Connect {
         if let Some(platform) = read_platform {
             return Ok(platform);
         }
-        return Ok("".to_string());
+        Ok("".to_string())
     }
     pub async fn get_avatar(
         &self,
@@ -407,26 +403,14 @@ impl OneBot11Connect {
                 "https://thirdqq.qlogo.cn/g?b=qq&nk={user_id}&s=640"
             ));
         }
-        return Err("can't get avatar".into());
+        Err("can't get avatar".into())
     }
 }
 
 fn change_id_to_str(root: &mut serde_json::Value) {
-    lazy_static! {
-        static ref ID_SET: HashSet<String> = {
-            let mut st = HashSet::new();
-            st.insert("target_id".to_owned());
-            st.insert("user_id".to_owned());
-            st.insert("group_id".to_owned());
-            st.insert("self_id".to_owned());
-            st.insert("message_id".to_owned());
-            st.insert("operator_id".to_owned());
-            st
-        };
-    }
     if root.is_object() {
         for (k, v) in root.as_object_mut().unwrap() {
-            if ID_SET.contains(k) {
+            if matches!(k.as_str(), "target_id" | "user_id" | "group_id" | "self_id" | "message_id" | "operator_id") {
                 if v.is_i64() {
                     (*v) = serde_json::to_value(v.as_i64().unwrap().to_string()).unwrap();
                 }
@@ -444,7 +428,7 @@ fn change_id_to_str(root: &mut serde_json::Value) {
 fn deal_cq_arr(root: &mut serde_json::Value) {
     let message: &serde_json::Value = &root["message"];
     if message.is_string() {
-        if let Ok(msg) = crate::mytool::str_msg_to_arr(&message) {
+        if let Ok(msg) = crate::mytool::str_msg_to_arr(message) {
             root["message"] = msg;
         }
     }
@@ -482,7 +466,7 @@ impl BotConnectTrait for OneBot11Connect {
     }
 
     fn get_alive(&self) -> bool {
-        return !self.is_stop.load(std::sync::atomic::Ordering::Relaxed);
+        !self.is_stop.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -499,13 +483,11 @@ impl BotConnectTrait for OneBot11Connect {
         }
         let ws_rst;
         if self.url.starts_with("wss://") {
-            let port_opt = request.uri().port();
-            let port;
-            if port_opt.is_none() {
-                port = 443;
-            } else {
-                port = port_opt.unwrap().into();
-            }
+            let port = request
+                .uri()
+                .port()
+                .map(Into::into)
+                .unwrap_or(443);
             let addr = format!("{}:{}", request.uri().host().unwrap(), port);
             let socket = TcpStream::connect(addr).await?;
             ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
@@ -523,13 +505,10 @@ impl BotConnectTrait for OneBot11Connect {
         // 这里使用弱引用，防止可能的循环依赖
         let self_id_ptr = Arc::<std::sync::RwLock<std::string::String>>::downgrade(&self.self_id);
         let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
+        let echo_map = Arc::clone(&self.echo_map);
         tokio::spawn(async move {
-            loop {
-                if let Some(val) = is_stop.upgrade() {
-                    if val.load(std::sync::atomic::Ordering::Relaxed) {
-                        break;
-                    }
-                } else {
+            while let Some(val) = is_stop.upgrade() {
+                if val.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
                 }
                 tokio::select! {
@@ -544,7 +523,7 @@ impl BotConnectTrait for OneBot11Connect {
 
                         // 设置self_id
                         let self_id = read_json_str(&json_dat, "self_id");
-                        if self_id != "" {
+                        if !self_id.is_empty() {
                             if let Some(val) = self_id_ptr.upgrade() {
                                 *val.write().unwrap() = self_id;
                             }
@@ -557,7 +536,7 @@ impl BotConnectTrait for OneBot11Connect {
                         let post_type = read_json_str(&json_dat, "post_type");
                         let meta_event_type = read_json_str(&json_dat, "meta_event_type");
                         if meta_event_type != "heartbeat" && echo != "CBC949B6-8C9F-8060-A149-A045ED9AD405" {
-                            crate::cqapi::cq_add_log(format!("OB11收到数据:{}", json_dat.to_string()).as_str()).unwrap();
+                            crate::cqapi::cq_add_log(format!("OB11收到数据:{}", json_dat).as_str()).unwrap();
                         }else{
                             continue;
                         }
@@ -566,22 +545,23 @@ impl BotConnectTrait for OneBot11Connect {
                         json_obj.insert("platform".to_string(), serde_json::to_value("onebot11").unwrap());
 
                         // 处理message,规范化数据
-                        if post_type != "" {
+                        if !post_type.is_empty() {
                             deal_cq_arr(&mut json_dat);
                         }
 
                         // 将ID转换为字符串
                         change_id_to_str(&mut json_dat);
+                        let echo_map = Arc::clone(&echo_map);
                         tokio::spawn(async move {
                             // 优先按echo判定API回复：echo非空且在注册表中即为回复
                             // (兼容部分协议端在API回复中附带post_type等字段的不规范情况，避免回复被误判为事件)
                             let tx = {
-                                let echo_lk = G_ECHO_MAP.read().await;
+                                let echo_lk = echo_map.read().await;
                                 echo_lk.get(&echo).cloned()
                             };
                             if let Some(tx) = tx { // 是api回复
                                 let _foo = tx.send(json_dat).await;
-                            }else if post_type != "" { // 是事件
+                            }else if !post_type.is_empty() { // 是事件
                                 tokio::task::spawn_blocking(move ||{
                                     if let Err(e) = crate::cqevent::do_1207_event(&json_dat.to_string()) {
                                         crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
@@ -712,7 +692,7 @@ impl BotConnectTrait for OneBot11Connect {
             if !to_poke.is_empty() {
                 let group_id = read_json_str(&json["params"], "group_id");
                 for poke_id in to_poke.iter() {
-                    if group_id != "" {
+                    if !group_id.is_empty() {
                         let group_id = &json["params"]["group_id"];
                         let mut to_send = serde_json::json!({
                             "action":"group_poke",
@@ -747,7 +727,7 @@ impl BotConnectTrait for OneBot11Connect {
                     .ok_or("not found message segment")?;
                 if message.is_array() {
                     let arr = message.as_array().unwrap();
-                    if arr.len() == 0 {
+                    if arr.is_empty() {
                         return Ok(ret_json);
                     }
                 }
@@ -757,15 +737,16 @@ impl BotConnectTrait for OneBot11Connect {
         }
 
         let (tx_ay, mut rx_ay) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
-        G_ECHO_MAP.write().await.insert(echo.clone(), tx_ay);
+        self.echo_map.write().await.insert(echo.clone(), tx_ay);
         let echo_for_log = echo.clone();
+        let echo_map = Arc::clone(&self.echo_map);
         let _guard = scopeguard::guard(echo, |echo| {
             tokio::spawn(async move {
-                G_ECHO_MAP.write().await.remove(&echo);
+                echo_map.write().await.remove(&echo);
             });
         });
 
-        crate::cqapi::cq_add_log(format!("发送数据:{}", json.to_string()).as_str()).unwrap();
+        crate::cqapi::cq_add_log(format!("发送数据:{}", json).as_str()).unwrap();
 
         self.tx
             .clone()
@@ -797,6 +778,6 @@ impl BotConnectTrait for OneBot11Connect {
         let lk = self.self_id.read().unwrap();
         let self_id = (*lk).clone();
         let platform = "onebot11".to_owned();
-        return vec![(platform, self_id)];
+        vec![(platform, self_id)]
     }
 }

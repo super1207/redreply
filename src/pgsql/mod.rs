@@ -1,72 +1,64 @@
-use chrono::TimeZone;
-use tokio::sync::RwLock;
-use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use std::time::Duration;
-use crate::cqapi::cq_add_log_w;
-use crate::{RT_PTR, read_config};
 use crate::cq_add_log;
+use crate::cqapi::cq_add_log_w;
+use crate::{runtime, runtime_context};
+use chrono::TimeZone;
+use std::sync::Arc;
+use std::time::Duration;
 use tokio_postgres::NoTls;
 
-lazy_static::lazy_static! {
-    static ref USE_PGSQL: AtomicBool = AtomicBool::new(false);
-    static ref CLIENT: RwLock<Option<Arc<tokio_postgres::Client>>> = RwLock::new(None);
-}
-
 async fn manage_connection(conn_str: &str) {
-	let mut backoff = 1u64;
-	loop {
-		match tokio_postgres::connect(conn_str, NoTls).await {
-			Ok((client, connection)) => {
-				{
-					let mut w = CLIENT.write().await;
-					*w = Some(Arc::new(client));
-				}
+    let mut backoff = 1u64;
+    loop {
+        match tokio_postgres::connect(conn_str, NoTls).await {
+            Ok((client, connection)) => {
+                {
+                    runtime_context()
+                        .services
+                        .set_pgsql_client(Some(Arc::new(client)))
+                        .await;
+                }
                 cq_add_log(&format!("数据库连接成功:{}", conn_str)).unwrap();
-				// 等待 connection 结束，结束后清理 client 并重试
-				if let Err(e) = connection.await {
+                // 等待 connection 结束，结束后清理 client 并重试
+                if let Err(e) = connection.await {
                     cq_add_log_w(&format!("数据库连接错误：{}", e)).unwrap();
-				} else {
+                } else {
                     cq_add_log("数据库连接已断开").unwrap();
-				}
-				{
-					let mut w = CLIENT.write().await;
-					*w = None;
-				}
-				// 连接断开后立即尝试重连，但加入短暂退避
-				backoff = 1;
-				tokio::time::sleep(Duration::from_secs(backoff)).await;
-			}
-			Err(e) => {
+                }
+                {
+                    runtime_context().services.set_pgsql_client(None).await;
+                }
+                // 连接断开后立即尝试重连，但加入短暂退避
+                backoff = 1;
+                tokio::time::sleep(Duration::from_secs(backoff)).await;
+            }
+            Err(e) => {
                 cq_add_log_w(&format!("连接数据库失败：{}，{}秒后重试", e, backoff)).unwrap();
-				tokio::time::sleep(Duration::from_secs(backoff)).await;
-				backoff = std::cmp::min(backoff * 2, 60); // 指数退避上限 60s
-			}
-		}
-	}
+                tokio::time::sleep(Duration::from_secs(backoff)).await;
+                backoff = std::cmp::min(backoff * 2, 60); // 指数退避上限 60s
+            }
+        }
+    }
 }
-
 
 async fn get_client(timeout_secs: u64) -> Option<Arc<tokio_postgres::Client>> {
     // 在给定超时时间内轮询 CLIENT，超时则返回 None（不再无限等待）
     let dur = Duration::from_secs(timeout_secs);
-    match tokio::time::timeout(dur, async {
+    tokio::time::timeout(dur, async {
         loop {
             {
-                let r = CLIENT.read().await;
-                if let Some(c) = r.as_ref() {
-                    return c.clone();
+                if let Some(client) = runtime_context().services.pgsql_client().await {
+                    return client;
                 }
             }
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
-    }).await {
-        Ok(client) => Some(client),
-        Err(_) => None,
-    }
+    })
+    .await.ok()
 }
 
-async fn init_postgresql_db_async(conn_str: &str) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn init_postgresql_db_async(
+    conn_str: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let conn_str = conn_str.to_string();
 
     tokio::spawn(async move {
@@ -93,44 +85,47 @@ async fn init_postgresql_db_async(conn_str: &str) -> Result<(), Box<dyn std::err
     // 有限等待客户端可用，超时则返回错误
     if let Some(client) = get_client(10).await {
         if let Err(e) = client.batch_execute(create_table_sql).await {
-            cq_add_log_w(&format!("数据库初始化失败，创建或检查 message 表失败：{}", e)).unwrap();
+            cq_add_log_w(&format!(
+                "数据库初始化失败，创建或检查 message 表失败：{}",
+                e
+            ))
+            .unwrap();
             return Err(Box::new(e));
         }
         Ok(())
     } else {
         cq_add_log_w("数据库客户端在初始化时不可用（超时），取消创建表操作").ok();
-        return Err(Box::new(std::io::Error::new(std::io::ErrorKind::TimedOut, "timeout waiting for pg client")));
+        Err(Box::new(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "timeout waiting for pg client",
+        )))
     }
 }
 
-
-pub fn do_insert(root:&serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if !USE_PGSQL.load(std::sync::atomic::Ordering::SeqCst) {
+pub fn do_insert(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if !runtime_context().services.pgsql_enabled() {
         // 未启用pgsql，直接返回
         return Ok(());
     }
     let root = root.to_owned();
-    
-    RT_PTR.spawn(async move {
-        if let Err(err) = do_insert_async(
-            &root
-        ).await {
+
+    runtime().spawn(async move {
+        if let Err(err) = do_insert_async(&root).await {
             cq_add_log_w(&format!("插入消息记录失败：{}", err)).unwrap();
         }
     });
     Ok(())
 }
 
-async fn do_insert_async (
-	root:&serde_json::Value
+async fn do_insert_async(
+    root: &serde_json::Value,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-
     let message_type = root["message_type"].as_str().unwrap_or("");
     if message_type != "group" && message_type != "private" {
         // 仅存储群消息和私聊消息
         return Ok(());
     }
-    let msg_type: i16 = if message_type == "group" {0} else {1};
+    let msg_type: i16 = if message_type == "group" { 0 } else { 1 };
     let group_id = root["group_id"].as_str();
     let groups_id = root["groups_id"].as_str();
     let platform = root["platform"].as_str().unwrap_or("");
@@ -145,12 +140,12 @@ async fn do_insert_async (
     let time_str;
     if let chrono::LocalResult::Single(datetime) = datetime_rst {
         let newdate = datetime.format("%Y-%m-%d %H:%M:%S");
-        time_str = format!("{}",newdate);
+        time_str = format!("{}", newdate);
     } else {
         time_str = "1970-01-01 00:00:00".to_string();
     }
 
-    let msg_arr = &root["message"];   // json value
+    let msg_arr = &root["message"]; // json value
 
     // 从全局 CLIENT 获取 client（有限等待）
     if let Some(client) = get_client(3).await {
@@ -189,20 +184,22 @@ async fn do_insert_async (
 }
 
 pub fn init_postgresql_db() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let cfg = read_config()?;
-    let postgresql_cfg = cfg["postgresql"].to_owned();
-    if postgresql_cfg.is_null() {
+    let config = crate::config_manager::startup_config()?;
+    let Some(postgresql_cfg) = config.postgresql else {
         // 未配置postgresql，跳过初始化
         return Ok(());
-    }
-    USE_PGSQL.store(true, std::sync::atomic::Ordering::SeqCst);
+    };
+    runtime_context().services.set_pgsql_enabled(true);
     let host = postgresql_cfg["host"].as_str().unwrap_or("localhost");
     let port = postgresql_cfg["port"].as_u64().unwrap_or(5432);
     let user = postgresql_cfg["user"].as_str().unwrap_or("postgres");
     let password = postgresql_cfg["password"].as_str().unwrap_or("");
     let dbname = postgresql_cfg["dbname"].as_str().unwrap_or("postgres");
-    let conn_str = format!("host={} port={} user={} password={} dbname={}", host, port, user, password, dbname);
-    RT_PTR.spawn(async move {
+    let conn_str = format!(
+        "host={} port={} user={} password={} dbname={}",
+        host, port, user, password, dbname
+    );
+    runtime().spawn(async move {
         if let Err(err) = init_postgresql_db_async(&conn_str).await {
             cq_add_log_w(&format!("初始化PostgreSQL数据库失败：{}", err)).unwrap();
         } else {

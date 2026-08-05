@@ -43,21 +43,16 @@ struct MsgIdPair {
     raw_msg_ids: Vec<RawMsgId>,
 }
 
-lazy_static! {
-    static ref G_USERNAME2USERID: std::sync::RwLock<HashMap<String, String>> =
-        std::sync::RwLock::new(HashMap::new());
-}
-
 impl Yunhuv1Connect {
     pub fn build(url: &str) -> Self {
-        return Self {
+        Self {
             self_id: Arc::new(RwLock::new("".to_owned())),
             token: Arc::new(RwLock::new("".to_owned())),
             url: url.to_owned(),
             url_proxy: Arc::new(RwLock::new("".to_owned())),
             is_stop: Arc::new(AtomicBool::new(false)),
             msg_ids: Arc::new(RwLock::new(VecDeque::new())),
-        };
+        }
     }
 
     fn add_msg_id(&self, raw_msg_ids: &Vec<RawMsgId>) -> String {
@@ -71,7 +66,7 @@ impl Yunhuv1Connect {
         while lk.len() > 9999 {
             lk.pop_front();
         }
-        return new_id;
+        new_id
     }
 
     fn get_req_client(&self) -> Result<reqwest::Client, Box<dyn std::error::Error + Send + Sync>> {
@@ -175,7 +170,7 @@ impl Yunhuv1Connect {
                 if let Some(at_users) = yh_content["at"].as_array().filter(|a| !a.is_empty()) {
                     let mut last_index = 0;
                     let at_ids: Vec<&str> = at_users.iter().filter_map(|v| v.as_str()).collect();
-                    let re = Regex::new(r"@[^\s​]+").unwrap();
+                    let re = Regex::new(r"@[^\s\u{200B}]+").unwrap();
 
                     for (i, mat) in re.find_iter(text_content).enumerate() {
                         if mat.start() > last_index {
@@ -225,7 +220,7 @@ impl Yunhuv1Connect {
                 crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
             }
         });
-        return Ok(());
+        Ok(())
     }
 
     async fn do_recv_loop(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -240,7 +235,8 @@ impl Yunhuv1Connect {
             }
             let event_json: serde_json::Value = serde_json::from_str(&ret)?;
             let eventarr = event_json.as_array().ok_or("eventarr not array")?;
-            for event in eventarr.to_owned() {
+            for event in eventarr {
+                let event = event.clone();
                 cq_add_log(&format!(
                     "yunhu bot {} recv:{}",
                     self.self_id.read().unwrap(),
@@ -263,12 +259,11 @@ impl Yunhuv1Connect {
                 });
             }
         }
-        return Ok(());
+        Ok(())
     }
 
     fn get_auto_escape_from_params(&self, params: &serde_json::Value) -> bool {
-        let is_auto_escape = Self::get_json_bool(params, "auto_escape");
-        return is_auto_escape;
+        Self::get_json_bool(params, "auto_escape")
     }
 
     async fn send_message_inner(
@@ -296,7 +291,7 @@ impl Yunhuv1Connect {
                         "text": data
                     }
                 });
-                if quote != "" {
+                if !quote.is_empty() {
                     to_send_json["parentId"] = json!(quote);
                     quote = "".to_owned();
                 }
@@ -328,7 +323,7 @@ impl Yunhuv1Connect {
                         "imageKey": data,
                     }
                 });
-                if quote != "" {
+                if !quote.is_empty() {
                     to_send_json["parentId"] = json!(quote);
                     quote = "".to_owned();
                 }
@@ -365,19 +360,18 @@ impl Yunhuv1Connect {
         echo: &serde_json::Value,
         chat_type: &str,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let chat_id;
-        if chat_type == "group" {
-            chat_id = read_json_str(params, "group_id");
+        let chat_id = if chat_type == "group" {
+            read_json_str(params, "group_id")
         } else {
-            chat_id = read_json_str(params, "user_id");
-        }
+            read_json_str(params, "user_id")
+        };
 
         // let group_id = read_json_str(params, "group_id");
         let message_arr: serde_json::Value;
         let message_rst = params.get("message").ok_or("message not found")?;
 
         if message_rst.is_string() {
-            if self.get_auto_escape_from_params(&params) {
+            if self.get_auto_escape_from_params(params) {
                 message_arr = serde_json::json!(
                     [{"type":"text","data":{
                         "text": message_rst.as_str()
@@ -415,7 +409,7 @@ impl Yunhuv1Connect {
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let msg_id = read_json_str(params, "message_id");
         let msg_ids = self.get_msg_id(&msg_id);
-        if msg_ids.len() == 0 {
+        if msg_ids.is_empty() {
             return Err("msg_id not found")?;
         }
 
@@ -455,18 +449,14 @@ impl Yunhuv1Connect {
     fn get_json_bool(js: &serde_json::Value, key: &str) -> bool {
         if let Some(j) = js.get(key) {
             if j.is_boolean() {
-                return j.as_bool().unwrap();
+                j.as_bool().unwrap()
             } else if j.is_string() {
-                if j.as_str().unwrap() == "true" {
-                    return true;
-                } else {
-                    return false;
-                }
+                j.as_str().unwrap() == "true"
             } else {
-                return false;
+                false
             }
         } else {
-            return false;
+            false
         }
     }
 
@@ -505,16 +495,15 @@ impl Yunhuv1Connect {
         headers: &HashMap<String, String>,
         is_post: bool,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-        let client;
         let uri = reqwest::Url::from_str(url)?;
-        if uri.scheme() == "http" {
-            client = reqwest::Client::builder().no_proxy().build()?;
+        let client = if uri.scheme() == "http" {
+            reqwest::Client::builder().no_proxy().build()?
         } else {
-            client = reqwest::Client::builder()
+            reqwest::Client::builder()
                 .danger_accept_invalid_certs(true)
                 .no_proxy()
-                .build()?;
-        }
+                .build()?
+        };
         let mut req;
         if is_post {
             req = client.post(uri).body(reqwest::Body::from(data)).build()?;
@@ -525,10 +514,9 @@ impl Yunhuv1Connect {
             req.headers_mut()
                 .append(HeaderName::from_str(key)?, HeaderValue::from_str(val)?);
         }
-        let retbin;
         let ret = client.execute(req).await?;
-        retbin = ret.bytes().await?.to_vec();
-        return Ok(retbin);
+        let retbin = ret.bytes().await?.to_vec();
+        Ok(retbin)
     }
 
     async fn get_asset(
@@ -548,12 +536,11 @@ impl Yunhuv1Connect {
                 b64_str,
             )?;
         } else {
-            let file_path;
-            if cfg!(target_os = "windows") {
-                file_path = uri.get(8..).ok_or("can't get file_path")?;
+            let file_path = if cfg!(target_os = "windows") {
+                uri.get(8..).ok_or("can't get file_path")?
             } else {
-                file_path = uri.get(7..).ok_or("can't get file_path")?;
-            }
+                uri.get(7..).ok_or("can't get file_path")?
+            };
             let path = Path::new(&file_path);
             file_bin = tokio::fs::read(path).await?;
         }
@@ -580,7 +567,7 @@ impl Yunhuv1Connect {
                     .ok_or("text not str")?
                     .to_owned();
                 let s = t;
-                if last_type == "text" && to_send_data.len() != 0 {
+                if last_type == "text" && !to_send_data.is_empty() {
                     let l = to_send_data.len();
                     to_send_data.get_mut(l - 1).unwrap().1.push_str(&s);
                 } else {
@@ -601,7 +588,7 @@ impl Yunhuv1Connect {
                 to_send_data.push(("image", image_key));
                 last_type = "image";
             } else if tp == "reply" {
-                if quote != "" {
+                if !quote.is_empty() {
                     continue;
                 }
                 let cq_id = Self::to_json_str(
@@ -611,8 +598,7 @@ impl Yunhuv1Connect {
                         .ok_or("reply not found")?,
                 );
                 let yunhu_id = self.get_msg_id(&cq_id);
-                quote = yunhu_id
-                    .get(0)
+                quote = yunhu_id.first()
                     .ok_or("get yunhu msg_id err")?
                     .msg_id
                     .to_owned();
@@ -630,7 +616,7 @@ impl Yunhuv1Connect {
         if val.is_string() {
             return val.as_str().unwrap().to_string();
         }
-        return "".to_owned();
+        "".to_owned()
     }
     fn get_msg_id(&self, msg_id: &str) -> Vec<RawMsgId> {
         let lk = self.msg_ids.read().unwrap();
@@ -639,7 +625,7 @@ impl Yunhuv1Connect {
                 return msg_id_pair.raw_msg_ids.to_owned();
             }
         }
-        return vec![];
+        vec![]
     }
 }
 
@@ -651,7 +637,7 @@ impl BotConnectTrait for Yunhuv1Connect {
     }
 
     fn get_alive(&self) -> bool {
-        return !self.is_stop.load(std::sync::atomic::Ordering::Relaxed);
+        !self.is_stop.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -719,17 +705,17 @@ impl BotConnectTrait for Yunhuv1Connect {
         let def = serde_json::json!({});
         let params = json.get("params").unwrap_or(&def);
         let send_json = match action {
-            "send_group_msg" => self.deal_ob_send_msg(&params, &echo, "group").await?,
-            "send_private_msg" => self.deal_ob_send_msg(&params, &echo, "user").await?,
+            "send_group_msg" => self.deal_ob_send_msg(params, echo, "group").await?,
+            "send_private_msg" => self.deal_ob_send_msg(params, echo, "user").await?,
             "send_msg" => {
                 let group_id = read_json_str(params, "group_id");
-                if group_id != "" {
-                    self.deal_ob_send_msg(&params, &echo, "group").await?
+                if !group_id.is_empty() {
+                    self.deal_ob_send_msg(params, echo, "group").await?
                 } else {
-                    self.deal_ob_send_msg(&params, &echo, "user").await?
+                    self.deal_ob_send_msg(params, echo, "user").await?
                 }
             }
-            "delete_msg" => self.deal_ob_delete_msg(&params, &echo).await?,
+            "delete_msg" => self.deal_ob_delete_msg(params, echo).await?,
             "can_send_image" => {
                 serde_json::json!({
                     "status":"ok",
@@ -785,6 +771,6 @@ impl BotConnectTrait for Yunhuv1Connect {
         if lk.is_empty() {
             return vec![];
         }
-        return vec![("yunhu".to_owned(), lk.to_owned())];
+        vec![("yunhu".to_owned(), lk.to_owned())]
     }
 }

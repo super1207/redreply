@@ -7,9 +7,6 @@
 //! Concrete adapters can implement [`BotConnectTrait`] in any application and
 //! register themselves in [`BotRegistry`].
 
-#[macro_use]
-extern crate lazy_static;
-
 use std::{collections::{HashMap, HashSet}, error::Error, sync::Arc};
 
 pub use async_trait::async_trait;

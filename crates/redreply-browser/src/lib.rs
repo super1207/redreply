@@ -118,6 +118,11 @@ pub extern "C" fn redreply_browser_api_version() -> u32 {
 }
 
 #[no_mangle]
+/// Execute a browser request through the C ABI.
+///
+/// # Safety
+/// `request_ptr` must be null or point to `request_len` readable bytes, and
+/// `output` must be null or point to writable `BrowserBuffer` storage.
 pub unsafe extern "C" fn redreply_browser_execute(
     request_ptr: *const u8,
     request_len: usize,
@@ -151,6 +156,11 @@ pub unsafe extern "C" fn redreply_browser_execute(
 }
 
 #[no_mangle]
+/// Release a buffer returned by [`redreply_browser_execute`].
+///
+/// # Safety
+/// `buffer` must have been returned by this crate and must not have already
+/// been released.
 pub unsafe extern "C" fn redreply_browser_free(buffer: BrowserBuffer) {
     if buffer.ptr.is_null() {
         return;

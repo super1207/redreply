@@ -39,9 +39,8 @@ async fn http_post(
     token: &str,
     json_data: &serde_json::Value,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-    let client;
     let uri = reqwest::Url::from_str(url)?;
-    client = reqwest::Client::builder().no_proxy().build()?;
+    let client = reqwest::Client::builder().no_proxy().build()?;
     let mut req = client
         .post(uri)
         .body(reqwest::Body::from(json_data.to_string()))
@@ -58,7 +57,7 @@ async fn http_post(
         reqwest::header::HeaderName::from_str("Content-Type")?,
         reqwest::header::HeaderValue::from_str("application/json")?,
     );
-    if token != "" {
+    if !token.is_empty() {
         req.headers_mut().append(
             reqwest::header::HeaderName::from_str("Authorization")?,
             reqwest::header::HeaderValue::from_str(&format!("Bearer {}", token))?,
@@ -68,22 +67,22 @@ async fn http_post(
     let ret_str = ret.text().await?;
     crate::cqapi::cq_add_log(&format!("接收数据:{ret_str}")).unwrap();
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
-    return Ok(json_val);
+    Ok(json_val)
 }
 
 fn get_json_from_msg(msg: hyper_tungstenite::tungstenite::Message) -> Option<serde_json::Value> {
     if let Ok(msg_text) = msg.to_text() {
-        if let Ok(json_dat_t) = serde_json::from_str::<serde_json::Value>(&msg_text) {
+        if let Ok(json_dat_t) = serde_json::from_str::<serde_json::Value>(msg_text) {
             if json_dat_t.is_object() {
-                return Some(json_dat_t);
+                Some(json_dat_t)
             } else {
-                return None;
+                None
             }
         } else {
-            return None;
+            None
         }
     } else {
-        return None;
+        None
     }
 }
 
@@ -104,7 +103,7 @@ fn get_json_dat(
         return None;
     }
 
-    return Some(json_dat);
+    Some(json_dat)
 }
 
 struct SatoriNode {
@@ -200,23 +199,22 @@ impl Satoriv1Connect {
                 let id_str = child.attr_map.get("id").ok_or("No id at quote element")?;
                 let id = html_escape::decode_html_entities(&id_str);
                 let cq_id = cq_params_encode(&id);
-                let channel_id_t = cq_params_encode(&channel_id);
+                let channel_id_t = cq_params_encode(channel_id);
                 let cq_id_t = format!("{cq_id}b73d7536-d8fa-4dda-b194-4acc51898a91{channel_id_t}");
                 out += &format!("[CQ:reply,id={cq_id_t}]");
             } else if child.tag_name == "text" {
                 let text_str = child.content;
                 let text = html_escape::decode_html_entities(&text_str);
                 out += &cq_text_encode(&text);
-            } else if child.tag_name == "face" {
-                if platform == "llonebot" {
+            } else if child.tag_name == "face"
+                && platform == "llonebot" {
                     let face_id = child
                         .attr_map
                         .get("id")
                         .ok_or("No id at llonebot face element")?;
-                    let face_id_t = cq_params_encode(&face_id);
+                    let face_id_t = cq_params_encode(face_id);
                     out += &format!("[CQ:face,id={face_id_t}]");
                 }
-            }
         }
         Ok(out)
     }
@@ -280,7 +278,7 @@ impl Satoriv1Connect {
                 let t = id
                     .split("b73d7536-d8fa-4dda-b194-4acc51898a91")
                     .collect::<Vec<&str>>();
-                let real_id = t.get(0).ok_or("can't get message_id")?;
+                let real_id = t.first().ok_or("can't get message_id")?;
                 out += &format!("<quote id={} />", serde_json::json!(real_id));
             } else if tp == "record" {
                 let file = it
@@ -310,8 +308,8 @@ impl Satoriv1Connect {
                         .ok_or("id not a string")?;
                     out += &format!("<chronocat:poke user-id={} />", serde_json::json!(id));
                 }
-            } else if tp == "face" {
-                if platform == "llonebot" {
+            } else if tp == "face"
+                && platform == "llonebot" {
                     let id: &str = it
                         .get("data")
                         .ok_or("data not found")?
@@ -321,7 +319,6 @@ impl Satoriv1Connect {
                         .ok_or("id not a string")?;
                     out += &format!("<face id={} />", serde_json::json!(id));
                 }
-            }
         }
         Ok(out)
     }
@@ -338,7 +335,7 @@ impl Satoriv1Connect {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let op = read_json_str(&json_data, "op");
         if op != "2" {
-            crate::cqapi::cq_add_log(format!("SATORI收到数据:{}", json_data.to_string()).as_str())
+            crate::cqapi::cq_add_log(format!("SATORI收到数据:{}", json_data).as_str())
                 .unwrap();
         }
         if op == "2" {
@@ -369,7 +366,7 @@ impl Satoriv1Connect {
                 let login = body.get("login").ok_or("login 不存在")?;
                 let self_id = read_json_str(login, "self_id");
                 let platform = read_json_str(login, "platform");
-                if self_id == "" || platform == "" {
+                if self_id.is_empty() || platform.is_empty() {
                     return Ok(());
                 }
                 let platforms_t = platforms.upgrade().ok_or("upgrade platforms失败")?;
@@ -412,13 +409,12 @@ impl Satoriv1Connect {
                 let channel = body.get("channel").ok_or("channel 不存在")?; // 没有channel就无法回复
                 let channel_id = read_json_str(channel, "id");
                 let cq_msg = Self::satori_msg_to_cq_msg(&content, &channel_id, &platform)?;
-                if guild_opt.is_some() {
+                if let Some(guild) = guild_opt {
                     //group
                     if user_id == self_id {
                         //机器人自己的消息，忽略
                         return Ok(());
                     }
-                    let guild = guild_opt.unwrap();
                     let guild_id = read_json_str(guild, "id");
                     let member = read_json_obj_or_null(body, "member"); // 可以没有member
                     let card = read_json_str(&member, "nick");
@@ -613,12 +609,12 @@ impl Satoriv1Connect {
                 let self_id = read_json_str(body, "self_id");
                 let platform = read_json_str(body, "platform");
                 let user = body.get("user").ok_or("user 不存在")?;
-                let user_id = read_json_str(&user, "id");
+                let user_id = read_json_str(user, "id");
                 let channel = body.get("channel").ok_or("channel 不存在")?;
                 let channel_id = read_json_str(channel, "id");
                 let operator = read_json_obj_or_null(body, "operator");
                 let mut operator_id = read_json_str(&operator, "id");
-                if operator_id == "" {
+                if operator_id.is_empty() {
                     operator_id = user_id.to_owned();
                 }
                 let message = body.get("message").ok_or("message 不存在")?;
@@ -690,7 +686,7 @@ impl Satoriv1Connect {
         let to_send;
         if message.is_array() {
             let mut satori_content = Self::cq_msg_to_satori(message, platform)?;
-            if passive_id != "" {
+            if !passive_id.is_empty() {
                 satori_content = format!(
                     "<passive id={} />{}",
                     serde_json::json!(passive_id),
@@ -705,7 +701,7 @@ impl Satoriv1Connect {
             let msg_arr_rst = str_msg_to_arr(message);
             if let Ok(msg_arr) = msg_arr_rst {
                 let mut satori_content = Self::cq_msg_to_satori(&msg_arr, platform)?;
-                if passive_id != "" {
+                if !passive_id.is_empty() {
                     satori_content = format!(
                         "<passive id={} />{}",
                         serde_json::json!(passive_id),
@@ -725,11 +721,11 @@ impl Satoriv1Connect {
         {
             let js_str = to_send.to_string();
             let out_str = js_str.get(0..2000);
-            if out_str.is_some() {
+            if let Some(out_str) = out_str {
                 crate::cqapi::cq_add_log(
                     format!(
                         "发送数据(platform:{platform},self_id:{self_id}):{}...",
-                        out_str.unwrap()
+                        out_str
                     )
                     .as_str(),
                 )
@@ -751,13 +747,13 @@ impl Satoriv1Connect {
         )
         .await?;
         let msg_id = ret[0]["id"].as_str().ok_or("id is not str")?;
-        return Ok(serde_json::json!({
+        Ok(serde_json::json!({
             "retcode":0,
             "status":"ok",
             "data":{
                 "message_id":format!("{msg_id}b73d7536-d8fa-4dda-b194-4acc51898a91{group_id}")
             }
-        }));
+        }))
     }
     async fn send_private_msg(
         self_t: &Satoriv1Connect,
@@ -780,7 +776,7 @@ impl Satoriv1Connect {
         let to_send;
         if message.is_array() {
             let mut satori_content = Self::cq_msg_to_satori(message, platform)?;
-            if passive_id != "" {
+            if !passive_id.is_empty() {
                 satori_content = format!(
                     "<passive id={} />{}",
                     serde_json::json!(passive_id),
@@ -795,7 +791,7 @@ impl Satoriv1Connect {
             let msg_arr_rst = str_msg_to_arr(message);
             if let Ok(msg_arr) = msg_arr_rst {
                 let mut satori_content = Self::cq_msg_to_satori(&msg_arr, platform)?;
-                if passive_id != "" {
+                if !passive_id.is_empty() {
                     satori_content = format!(
                         "<passive id={} />{}",
                         serde_json::json!(passive_id),
@@ -815,11 +811,11 @@ impl Satoriv1Connect {
         {
             let js_str = to_send.to_string();
             let out_str = js_str.get(0..2000);
-            if out_str.is_some() {
+            if let Some(out_str) = out_str {
                 crate::cqapi::cq_add_log(
                     format!(
                         "发送数据(platform:{platform},self_id:{self_id}):{}...",
-                        out_str.unwrap()
+                        out_str
                     )
                     .as_str(),
                 )
@@ -841,13 +837,13 @@ impl Satoriv1Connect {
         )
         .await?;
         let msg_id = ret[0]["id"].as_str().ok_or("id is not str")?;
-        return Ok(serde_json::json!({
+        Ok(serde_json::json!({
             "retcode":0,
             "status":"ok",
             "data":{
                 "message_id":format!("{msg_id}b73d7536-d8fa-4dda-b194-4acc51898a91{channel_id}")
             }
-        }));
+        }))
     }
     async fn get_login_info(
         self_t: &Satoriv1Connect,
@@ -861,11 +857,11 @@ impl Satoriv1Connect {
         {
             let js_str = to_send.to_string();
             let out_str = js_str.get(0..2000);
-            if out_str.is_some() {
+            if let Some(out_str) = out_str {
                 crate::cqapi::cq_add_log(
                     format!(
                         "发送数据(platform:{platform},self_id:{self_id}):{}...",
-                        out_str.unwrap()
+                        out_str
                     )
                     .as_str(),
                 )
@@ -889,18 +885,18 @@ impl Satoriv1Connect {
 
         let user = read_json_obj_or_null(&ret, "user");
         let mut nickname = read_json_str(&user, "name");
-        if nickname == "" {
+        if nickname.is_empty() {
             nickname = read_json_str(&user, "nick");
         }
 
-        return Ok(serde_json::json!({
+        Ok(serde_json::json!({
             "retcode":0,
             "status":"ok",
             "data":{
                 "user_id":self_id,
                 "nickname":nickname
             }
-        }));
+        }))
     }
 
     async fn get_group_list(
@@ -936,7 +932,7 @@ impl Satoriv1Connect {
             cl.push(channel.to_owned());
         }
         let mut next = read_json_str(&ret, "next");
-        while next != "" {
+        while !next.is_empty() {
             let to_send = serde_json::json!({
                 "guild_id":groups_id,
                 "next":next
@@ -979,11 +975,11 @@ impl Satoriv1Connect {
             }));
         }
 
-        return Ok(serde_json::json!({
+        Ok(serde_json::json!({
             "retcode":0,
             "status":"ok",
             "data":ret_group
-        }));
+        }))
     }
 
     async fn get_group_member_info(
@@ -996,7 +992,7 @@ impl Satoriv1Connect {
 
         let mut groups_id = read_json_str(&params, "groups_id");
         let group_id = read_json_str(&params, "group_id");
-        if groups_id == "" {
+        if groups_id.is_empty() {
             let key = format!("{platform} {self_id} {group_id}");
             groups_id = self_t
                 .group_groups_map
@@ -1025,18 +1021,18 @@ impl Satoriv1Connect {
         let user = read_json_obj_or_null(&ret, "user");
         let join_time_str = read_json_str(&ret, "joined_at");
         let mut join_time = None;
-        if join_time_str != "" {
+        if !join_time_str.is_empty() {
             join_time = Some(join_time_str.parse::<u64>()? / 1000);
         }
         let mut nickname = read_json_str(&user, "name");
-        if nickname == "" {
+        if nickname.is_empty() {
             nickname = read_json_str(&user, "nick");
         }
         let mut avatar = read_json_str(&ret, "avatar");
-        if avatar == "" {
+        if avatar.is_empty() {
             avatar = read_json_str(&user, "avatar");
         }
-        return Ok(serde_json::json!({
+        Ok(serde_json::json!({
             "retcode":0,
             "status":"ok",
             "data":{
@@ -1049,7 +1045,7 @@ impl Satoriv1Connect {
                 "avatar":avatar,
                 "role":"member"
             }
-        }));
+        }))
     }
 
     async fn get_stranger_info(
@@ -1084,14 +1080,14 @@ impl Satoriv1Connect {
         .await?;
 
         let mut nickname = read_json_str(&user, "name");
-        if nickname == "" {
+        if nickname.is_empty() {
             nickname = read_json_str(&user, "nick");
         }
         let mut avatar = read_json_str(&user, "avatar");
-        if avatar == "" {
+        if avatar.is_empty() {
             avatar = read_json_str(&user, "avatar");
         }
-        return Ok(serde_json::json!({
+        Ok(serde_json::json!({
             "retcode":0,
             "status":"ok",
             "data":{
@@ -1099,7 +1095,7 @@ impl Satoriv1Connect {
                 "nickname":nickname,
                 "avatar":avatar,
             }
-        }));
+        }))
     }
     async fn delete_msg(
         self_t: &Satoriv1Connect,
@@ -1114,7 +1110,7 @@ impl Satoriv1Connect {
         let t = new_message_id
             .split("b73d7536-d8fa-4dda-b194-4acc51898a91")
             .collect::<Vec<&str>>();
-        let message_id = t.get(0).ok_or("can't get message_id")?;
+        let message_id = t.first().ok_or("can't get message_id")?;
         let channel_id = t.get(1).ok_or("can't get channel_id")?;
 
         let to_send = serde_json::json!({
@@ -1140,12 +1136,12 @@ impl Satoriv1Connect {
         )
         .await?;
 
-        return Ok(serde_json::json!({
+        Ok(serde_json::json!({
             "retcode":0,
             "status":"ok",
             "data":{
             }
-        }));
+        }))
     }
     async fn get_msg(
         self_t: &Satoriv1Connect,
@@ -1160,7 +1156,7 @@ impl Satoriv1Connect {
         let t = new_message_id
             .split("b73d7536-d8fa-4dda-b194-4acc51898a91")
             .collect::<Vec<&str>>();
-        let message_id = t.get(0).ok_or("can't get message_id")?;
+        let message_id = t.first().ok_or("can't get message_id")?;
         let channel_id = t.get(1).ok_or("can't get channel_id")?;
 
         let to_send = serde_json::json!({
@@ -1184,7 +1180,7 @@ impl Satoriv1Connect {
         let cq_message = Self::satori_msg_to_cq_msg(content, channel_id, platform)?;
         let created_at_str = read_json_str(&satori_msg, "created_at");
         let mut created_at = 0;
-        if created_at_str != "" {
+        if !created_at_str.is_empty() {
             created_at = created_at_str.parse::<u64>()? / 1000;
         }
         let guild = &satori_msg["guild"];
@@ -1198,9 +1194,9 @@ impl Satoriv1Connect {
         if user.is_object() && !user.as_object().unwrap().is_empty() {
             if message_type == "group" {
                 sender = serde_json::json!({
-                    "user_id":read_json_str(&user, "id"),
-                    "nickname":read_json_str(&user, "name"),
-                    "card":read_json_str(&user, "nick"),
+                    "user_id":read_json_str(user, "id"),
+                    "nickname":read_json_str(user, "name"),
+                    "card":read_json_str(user, "nick"),
                     "sex":"unknown",
                     "age":0,
                     "area":"",
@@ -1209,16 +1205,15 @@ impl Satoriv1Connect {
                     "title":""
                 });
             } else {
-                let nick = read_json_str(&user, "nick");
-                let name = read_json_str(&user, "name");
-                let nickname;
-                if nick != "" {
-                    nickname = nick;
+                let nick = read_json_str(user, "nick");
+                let name = read_json_str(user, "name");
+                let nickname = if !nick.is_empty() {
+                    nick
                 } else {
-                    nickname = name;
-                }
+                    name
+                };
                 sender = serde_json::json!({
-                    "user_id":read_json_str(&user, "id"),
+                    "user_id":read_json_str(user, "id"),
                     "nickname":nickname,
                     "sex":"unknown",
                     "age":0,
@@ -1227,7 +1222,7 @@ impl Satoriv1Connect {
         } else {
             sender = serde_json::Value::Null;
         }
-        return Ok(serde_json::json!({
+        Ok(serde_json::json!({
             "retcode":0,
             "status":"ok",
             "data":{
@@ -1237,7 +1232,7 @@ impl Satoriv1Connect {
                 "sender":sender,
                 "message":cq_message
             }
-        }));
+        }))
     }
 }
 
@@ -1252,7 +1247,7 @@ impl BotConnectTrait for Satoriv1Connect {
     }
 
     fn get_alive(&self) -> bool {
-        return !self.is_stop.load(std::sync::atomic::Ordering::Relaxed);
+        !self.is_stop.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -1286,13 +1281,11 @@ impl BotConnectTrait for Satoriv1Connect {
         let request = tungstenite::client::IntoClientRequest::into_client_request(&ws_url)?;
         let ws_rst;
         if is_ssl {
-            let port_opt = request.uri().port();
-            let port;
-            if port_opt.is_none() {
-                port = 443;
-            } else {
-                port = port_opt.unwrap().into();
-            }
+            let port = request
+                .uri()
+                .port()
+                .map(Into::into)
+                .unwrap_or(443);
             let addr = format!("{}:{}", request.uri().host().unwrap(), port);
             let socket = TcpStream::connect(addr).await?;
             ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
@@ -1325,12 +1318,8 @@ impl BotConnectTrait for Satoriv1Connect {
         let group_groups_map =
             Arc::<std::sync::RwLock<HashMap<String, String>>>::downgrade(&self.group_groups_map);
         tokio::spawn(async move {
-            loop {
-                if let Some(val) = is_stop.upgrade() {
-                    if val.load(std::sync::atomic::Ordering::Relaxed) {
-                        break;
-                    }
-                } else {
+            while let Some(val) = is_stop.upgrade() {
+                if val.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
                 }
                 tokio::select! {
@@ -1422,15 +1411,14 @@ impl BotConnectTrait for Satoriv1Connect {
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let action = read_json_str(json, "action");
 
-        let passive_id2;
-        if passive_id != "" {
+        let passive_id2 = if !passive_id.is_empty() {
             let t = passive_id
                 .split("b73d7536-d8fa-4dda-b194-4acc51898a91")
                 .collect::<Vec<&str>>();
-            passive_id2 = t.get(0).ok_or("can't get passive_id")?.to_owned();
+            t.first().ok_or("can't get passive_id")?.to_owned()
         } else {
-            passive_id2 = "";
-        }
+            ""
+        };
 
         if action == "send_group_msg" {
             return Self::send_group_msg(self, json, platform, self_id, passive_id2).await;
@@ -1457,7 +1445,6 @@ impl BotConnectTrait for Satoriv1Connect {
 
     fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
         let lk = self.platforms.read().unwrap();
-        let platforms = (*lk).clone();
-        return platforms;
+        (*lk).clone()
     }
 }

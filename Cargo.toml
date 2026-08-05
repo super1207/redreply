@@ -29,7 +29,6 @@ html-escape = "0.2.13"
 hyper = { version = "1.7.0", features = ["full"] }
 hyper-tungstenite = "0.20.0"
 imap = { git = "https://github.com/jonhoo/rust-imap", default-features = false }
-lazy_static = "1.5.0"
 lettre = { version = "0.11.18", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1-rustls", "ring", "webpki-roots"] }
 mail-parser = "0.11.1"
 regex = "1.11.2"
@@ -55,7 +54,6 @@ serde_json = { workspace = true }
 serde = { workspace = true }
 uuid = { workspace = true }
 brotli = "8.0.2"
-lazy_static = { workspace = true }
 chrono = { workspace = true }
 md-5 = "0.10.6"
 rcnb-rs = "0.1.0"

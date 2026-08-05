@@ -22,21 +22,7 @@ pub struct TeleTramConnect {
     pub proxy: Arc<RwLock<String>>,
     pub is_stop: Arc<AtomicBool>,
     msg_ids: Arc<RwLock<VecDeque<MsgIdPair>>>,
-}
-
-lazy_static! {
-    static ref G_USERNAME2USERID: std::sync::RwLock<HashMap<String, i64>> =
-        std::sync::RwLock::new(HashMap::new());
-}
-
-fn add_username2userid(username: &str, user_id: i64) {
-    let mut lk = G_USERNAME2USERID.write().unwrap();
-    lk.insert(username.to_owned(), user_id);
-}
-
-fn get_username2userid(username: &str) -> Option<i64> {
-    let lk = G_USERNAME2USERID.read().unwrap();
-    return lk.get(username).cloned();
+    username2userid: Arc<RwLock<HashMap<String, i64>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -53,14 +39,26 @@ struct MsgIdPair {
 
 impl TeleTramConnect {
     pub fn build(url: &str) -> Self {
-        return Self {
+        Self {
             self_id: Arc::new(RwLock::new("".to_owned())),
             token: Arc::new(RwLock::new("".to_owned())),
             url: url.to_owned(),
             proxy: Arc::new(RwLock::new("".to_owned())),
             is_stop: Arc::new(AtomicBool::new(false)),
             msg_ids: Arc::new(RwLock::new(VecDeque::new())),
-        };
+            username2userid: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    fn add_username2userid(&self, username: &str, user_id: i64) {
+        self.username2userid
+            .write()
+            .unwrap()
+            .insert(username.to_owned(), user_id);
+    }
+
+    fn get_username2userid(&self, username: &str) -> Option<i64> {
+        self.username2userid.read().unwrap().get(username).cloned()
     }
 
     fn get_req_client(&self) -> Result<reqwest::Client, Box<dyn std::error::Error + Send + Sync>> {
@@ -69,7 +67,7 @@ impl TeleTramConnect {
             let lk = self.proxy.read().unwrap();
             proxy = lk.to_owned();
         }
-        if proxy == "" {
+        if proxy.is_empty() {
             Ok(reqwest::Client::builder().no_proxy().build()?)
         } else {
             Ok(reqwest::Client::builder()
@@ -114,6 +112,7 @@ impl TeleTramConnect {
     }
 
     fn make_msg_with_at(
+        &self,
         text_message: &str,
         entities: &serde_json::Value,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
@@ -139,7 +138,7 @@ impl TeleTramConnect {
                 let text_before = Self::utf16_slice(text_message, last_end, start)?;
                 ret_cq_msg.push_str(&cq_text_encode(&text_before));
                 let mention = Self::utf16_slice(text_message, start, end)?;
-                if let Some(userid) = get_username2userid(&mention) {
+                if let Some(userid) = self.get_username2userid(&mention) {
                     ret_cq_msg.push_str(&format!("[CQ:at,qq={}]", userid));
                 } else {
                     ret_cq_msg.push_str(&cq_text_encode(&mention));
@@ -153,7 +152,7 @@ impl TeleTramConnect {
             )?;
             ret_cq_msg.push_str(&cq_text_encode(&text_end));
         } else {
-            ret_cq_msg.push_str(&cq_text_encode(&text_message));
+            ret_cq_msg.push_str(&cq_text_encode(text_message));
         }
         Ok(ret_cq_msg)
     }
@@ -178,13 +177,13 @@ impl TeleTramConnect {
             }
         }
 
-        let text_message = read_json_str(&message_obj, "text");
+        let text_message = read_json_str(message_obj, "text");
         let entities = &message_obj["entities"];
-        ret_cq_msg.push_str(&Self::make_msg_with_at(&text_message, entities)?);
+        ret_cq_msg.push_str(&self.make_msg_with_at(&text_message, entities)?);
 
-        let caption_message = read_json_str(&message_obj, "caption");
+        let caption_message = read_json_str(message_obj, "caption");
         let caption_entities = &message_obj["caption_entities"];
-        ret_cq_msg.push_str(&Self::make_msg_with_at(&caption_message, caption_entities)?);
+        ret_cq_msg.push_str(&self.make_msg_with_at(&caption_message, caption_entities)?);
 
         if message_obj.get("photo").is_some() {
             let photo = message_obj["photo"].as_array().ok_or("photo not array")?;
@@ -215,7 +214,7 @@ impl TeleTramConnect {
                 ret_cq_msg.push_str(&format!("[CQ:image,file={}]", &cq_params_encode(&file_url)));
             }
         }
-        if reply_id != "" {
+        if !reply_id.is_empty() {
             ret_cq_msg = format!("[CQ:reply,id={}]{}", reply_id, ret_cq_msg);
         }
         Ok(ret_cq_msg)
@@ -234,7 +233,7 @@ impl TeleTramConnect {
         let message_obj = &event["message"];
 
         if !username.is_empty() {
-            add_username2userid(&format!("@{username}"), user_id.parse()?);
+            self.add_username2userid(&format!("@{username}"), user_id.parse()?);
         }
 
         let message_id = message_obj["message_id"]
@@ -274,7 +273,7 @@ impl TeleTramConnect {
                 crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
             }
         });
-        return Ok(());
+        Ok(())
     }
 
     async fn deal_group_msg(
@@ -287,8 +286,8 @@ impl TeleTramConnect {
 
         let mut username = read_json_str(from, "username");
         let user_id = from["id"].as_i64().ok_or("id not i64")?;
-        if username != "" {
-            add_username2userid(&format!("@{username}"), user_id);
+        if !username.is_empty() {
+            self.add_username2userid(&format!("@{username}"), user_id);
         } else {
             // 如果是频道消息，username为空
             username = read_json_str(from, "first_name");
@@ -339,7 +338,7 @@ impl TeleTramConnect {
                 crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
             }
         });
-        return Ok(());
+        Ok(())
     }
 
     async fn deal_event(
@@ -360,7 +359,7 @@ impl TeleTramConnect {
                 self.deal_group_msg(event).await?;
             }
         }
-        return Ok(());
+        Ok(())
     }
     async fn do_recv_loop(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut last_update_id = None;
@@ -392,7 +391,7 @@ impl TeleTramConnect {
                 Vec::new()
             }
         };
-        if result.len() != 0 {
+        if !result.is_empty() {
             last_update_id = Some(
                 result[result.len() - 1]
                     .get("update_id")
@@ -407,16 +406,16 @@ impl TeleTramConnect {
             if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
-            if last_update_id.is_none() {
-                url = format!(
-                    "https://api.telegram.org/bot{}/getUpdates?timeout=8",
-                    self.token.read().unwrap()
-                );
-            } else {
+            if let Some(last_update_id) = last_update_id {
                 url = format!(
                     "https://api.telegram.org/bot{}/getUpdates?offset={}&timeout=8",
                     self.token.read().unwrap(),
-                    last_update_id.unwrap()
+                    last_update_id
+                );
+            } else {
+                url = format!(
+                    "https://api.telegram.org/bot{}/getUpdates?timeout=8",
+                    self.token.read().unwrap()
                 );
             }
             let ret = match self.proxyrequest(&url).await {
@@ -448,7 +447,7 @@ impl TeleTramConnect {
                     continue;
                 }
             };
-            if result.len() != 0 {
+            if !result.is_empty() {
                 last_update_id = Some(
                     result[result.len() - 1]
                         .get("update_id")
@@ -481,30 +480,25 @@ impl TeleTramConnect {
                 });
             }
         }
-        return Ok(());
+        Ok(())
     }
 
     fn get_json_bool(js: &serde_json::Value, key: &str) -> bool {
         if let Some(j) = js.get(key) {
             if j.is_boolean() {
-                return j.as_bool().unwrap();
+                j.as_bool().unwrap()
             } else if j.is_string() {
-                if j.as_str().unwrap() == "true" {
-                    return true;
-                } else {
-                    return false;
-                }
+                j.as_str().unwrap() == "true"
             } else {
-                return false;
+                false
             }
         } else {
-            return false;
+            false
         }
     }
 
     fn get_auto_escape_from_params(&self, params: &serde_json::Value) -> bool {
-        let is_auto_escape = Self::get_json_bool(params, "auto_escape");
-        return is_auto_escape;
+        Self::get_json_bool(params, "auto_escape")
     }
     pub fn to_json_str(val: &serde_json::Value) -> String {
         if val.is_i64() {
@@ -516,7 +510,7 @@ impl TeleTramConnect {
         if val.is_string() {
             return val.as_str().unwrap().to_string();
         }
-        return "".to_owned();
+        "".to_owned()
     }
 
     fn get_msg_id(&self, msg_id: &str) -> Vec<RawMsgId> {
@@ -526,7 +520,7 @@ impl TeleTramConnect {
                 return msg_id_pair.raw_msg_ids.to_owned();
             }
         }
-        return vec![];
+        vec![]
     }
 
     async fn make_telegram_msg(
@@ -537,7 +531,7 @@ impl TeleTramConnect {
         let mut to_send_data: Vec<(&str, String)> = vec![];
         let mut quote = String::new();
         let mut last_type = "text";
-        let is_group = group_id != "";
+        let is_group = !group_id.is_empty();
         for it in message_arr.as_array().ok_or("message not arr")? {
             let tp = it.get("type").ok_or("type not found")?;
             if tp == "text" {
@@ -550,7 +544,7 @@ impl TeleTramConnect {
                     .ok_or("text not str")?
                     .to_owned();
                 let s = t;
-                if last_type == "text" && to_send_data.len() != 0 {
+                if last_type == "text" && !to_send_data.is_empty() {
                     let l = to_send_data.len();
                     to_send_data.get_mut(l - 1).unwrap().1.push_str(&s);
                 } else {
@@ -576,7 +570,7 @@ impl TeleTramConnect {
                     }
                 }
             } else if tp == "reply" {
-                if quote != "" {
+                if !quote.is_empty() {
                     continue;
                 }
                 let cq_id = Self::to_json_str(
@@ -586,8 +580,7 @@ impl TeleTramConnect {
                         .ok_or("reply not found")?,
                 );
                 let telegram_id = self.get_msg_id(&cq_id);
-                quote = telegram_id
-                    .get(0)
+                quote = telegram_id.first()
                     .ok_or("get telegram msg_id err")?
                     .msg_id
                     .to_owned();
@@ -603,7 +596,7 @@ impl TeleTramConnect {
                 );
                 let ret = self
                     .proxyrequest(
-                        &format!(
+                        format!(
                             "https://api.telegram.org/bot{}/getChatMember?chat_id={}&user_id={}",
                             self.token.read().unwrap(),
                             group_id,
@@ -617,7 +610,7 @@ impl TeleTramConnect {
                     .as_str()
                     .ok_or("username not found")?;
                 let at_str = &format!(" @{} ", username);
-                if last_type == "text" && to_send_data.len() != 0 {
+                if last_type == "text" && !to_send_data.is_empty() {
                     let l = to_send_data.len();
                     to_send_data.get_mut(l - 1).unwrap().1.push_str(at_str);
                 } else {
@@ -648,7 +641,7 @@ impl TeleTramConnect {
                 if music_type == "custom" {
                     let data = it.get("data").ok_or("data not found")?;
                     let mut audio = read_json_str(data, "audio");
-                    if audio == "" {
+                    if audio.is_empty() {
                         audio = read_json_str(data, "voice");
                     }
                     let title = read_json_str(data, "title");
@@ -681,7 +674,7 @@ impl TeleTramConnect {
         while lk.len() > 9999 {
             lk.pop_front();
         }
-        return new_id;
+        new_id
     }
 
     fn telegram_message_id(ret_json: &serde_json::Value) -> Result<String, String> {
@@ -714,7 +707,7 @@ impl TeleTramConnect {
                     "chat_id":chat_id.parse::<i64>()?,
                     "text":msg,
                 });
-                if quote != "" {
+                if !quote.is_empty() {
                     data_json["reply_parameters"] = serde_json::json!({
                         "message_id":quote.parse::<i64>()?
                     });
@@ -747,7 +740,7 @@ impl TeleTramConnect {
                     "chat_id":chat_id.parse::<i64>()?,
                     "photo":msg,
                 });
-                if quote != "" {
+                if !quote.is_empty() {
                     data_json["reply_parameters"] = serde_json::json!({
                         "message_id":quote.parse::<i64>()?
                     });
@@ -793,7 +786,7 @@ impl TeleTramConnect {
                         "chat_id",
                         reqwest::multipart::Part::text(chat_id.to_owned()),
                     );
-                if quote != "" {
+                if !quote.is_empty() {
                     form = form.part(
                         "reply_parameters",
                         reqwest::multipart::Part::text(
@@ -828,7 +821,7 @@ impl TeleTramConnect {
                     "chat_id":chat_id.parse::<i64>()?,
                     "audio":msg,
                 });
-                if quote != "" {
+                if !quote.is_empty() {
                     data_json["reply_parameters"] = serde_json::json!({
                         "message_id":quote.parse::<i64>()?
                     });
@@ -874,7 +867,7 @@ impl TeleTramConnect {
                         "chat_id",
                         reqwest::multipart::Part::text(chat_id.to_owned()),
                     );
-                if quote != "" {
+                if !quote.is_empty() {
                     form = form.part(
                         "reply_parameters",
                         reqwest::multipart::Part::text(
@@ -923,7 +916,7 @@ impl TeleTramConnect {
 
                 let mut form = reqwest::multipart::Form::new();
 
-                if image != "" {
+                if !image.is_empty() {
                     let cli = self.get_req_client()?;
                     let resp = cli.get(image).send().await?;
                     let image_bin = resp.bytes().await?;
@@ -944,15 +937,15 @@ impl TeleTramConnect {
                     )
                 }
 
-                if title != "" {
+                if !title.is_empty() {
                     form = form.part("title", reqwest::multipart::Part::text(title));
                 }
 
-                if content != "" {
+                if !content.is_empty() {
                     form = form.part("performer", reqwest::multipart::Part::text(content));
                 }
 
-                if url != "" {
+                if !url.is_empty() {
                     form = form.part("caption", reqwest::multipart::Part::text(url));
                 }
 
@@ -995,7 +988,7 @@ impl TeleTramConnect {
         let message_rst = params.get("message").ok_or("message not found")?;
 
         if message_rst.is_string() {
-            if self.get_auto_escape_from_params(&params) {
+            if self.get_auto_escape_from_params(params) {
                 message_arr = serde_json::json!(
                     [{"type":"text","data":{
                         "text": message_rst.as_str()
@@ -1036,7 +1029,7 @@ impl TeleTramConnect {
         let message_rst = params.get("message").ok_or("message not found")?;
 
         if message_rst.is_string() {
-            if self.get_auto_escape_from_params(&params) {
+            if self.get_auto_escape_from_params(params) {
                 message_arr = serde_json::json!(
                     [{"type":"text","data":{
                         "text": message_rst.as_str()
@@ -1074,13 +1067,13 @@ impl TeleTramConnect {
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let msg_id = read_json_str(params, "message_id");
         let msg_ids = self.get_msg_id(&msg_id);
-        if msg_ids.len() == 0 {
+        if msg_ids.is_empty() {
             return Err("msg_id not found")?;
         }
         for it in msg_ids {
             let ret_text = self
                 .proxyrequest(
-                    &format!(
+                    format!(
                         "https://api.telegram.org/bot{}/deleteMessage?chat_id={}&message_id={}",
                         self.token.read().unwrap(),
                         it.chat_id,
@@ -1114,7 +1107,7 @@ impl TeleTramConnect {
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let ret_text = self
             .proxyrequest(
-                &format!(
+                format!(
                     "https://api.telegram.org/bot{}/getMe",
                     self.token.read().unwrap()
                 )
@@ -1144,7 +1137,7 @@ impl BotConnectTrait for TeleTramConnect {
     }
 
     fn get_alive(&self) -> bool {
-        return !self.is_stop.load(std::sync::atomic::Ordering::Relaxed);
+        !self.is_stop.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -1180,7 +1173,7 @@ impl BotConnectTrait for TeleTramConnect {
             .ok_or("username not found")?
             .as_str()
             .ok_or("username not str")?;
-        add_username2userid(&format!("@{username}"), self_id.parse()?);
+        self.add_username2userid(&format!("@{username}"), self_id.parse()?);
         self.self_id.write().unwrap().push_str(self_id.as_str());
         self.token.write().unwrap().push_str(token);
         cq_add_log(&format!("telegram bot {} connect success", self_id)).unwrap();
@@ -1220,18 +1213,18 @@ impl BotConnectTrait for TeleTramConnect {
         let def = serde_json::json!({});
         let params = json.get("params").unwrap_or(&def);
         let send_json = match action {
-            "send_group_msg" => self.deal_ob_send_group_msg(&params, &echo).await?,
-            "send_private_msg" => self.deal_ob_send_private_msg(&params, &echo).await?,
+            "send_group_msg" => self.deal_ob_send_group_msg(params, echo).await?,
+            "send_private_msg" => self.deal_ob_send_private_msg(params, echo).await?,
             "send_msg" => {
                 let group_id = read_json_str(params, "group_id");
-                if group_id != "" {
-                    self.deal_ob_send_group_msg(&params, &echo).await?
+                if !group_id.is_empty() {
+                    self.deal_ob_send_group_msg(params, echo).await?
                 } else {
-                    self.deal_ob_send_private_msg(&params, &echo).await?
+                    self.deal_ob_send_private_msg(params, echo).await?
                 }
             }
-            "delete_msg" => self.deal_ob_delete_msg(&params, &echo).await?,
-            "get_login_info" => self.deal_ob_get_login_info(&params, &echo).await?,
+            "delete_msg" => self.deal_ob_delete_msg(params, echo).await?,
+            "get_login_info" => self.deal_ob_get_login_info(params, echo).await?,
             // "get_stranger_info" => {
             //     self.deal_ob_get_stranger_info(&params,&echo).await?
             // },
@@ -1320,6 +1313,6 @@ impl BotConnectTrait for TeleTramConnect {
         if lk.is_empty() {
             return vec![];
         }
-        return vec![("telegram".to_owned(), lk.to_owned())];
+        vec![("telegram".to_owned(), lk.to_owned())]
     }
 }

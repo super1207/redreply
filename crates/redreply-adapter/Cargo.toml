@@ -17,7 +17,6 @@ html-escape = { workspace = true }
 hyper = { workspace = true }
 hyper-tungstenite = { workspace = true }
 imap = { workspace = true }
-lazy_static = { workspace = true }
 lettre = { workspace = true }
 mail-parser = { workspace = true }
 regex = { workspace = true }

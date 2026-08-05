@@ -115,7 +115,7 @@ impl EmailConnect {
                 crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
             }
         });
-        return Ok(());
+        Ok(())
     }
 
     fn run_imap_loop<T: std::io::Read + std::io::Write + imap::extensions::idle::SetReadTimeout>(
@@ -155,7 +155,7 @@ impl EmailConnect {
                     .timeout(Duration::from_secs(15))
                     .keepalive(false)
                     .wait_while(|_| {
-                        return false;
+                        false
                     });
                 continue;
             } else {
@@ -274,23 +274,18 @@ impl EmailConnect {
     fn get_json_bool(js: &serde_json::Value, key: &str) -> bool {
         if let Some(j) = js.get(key) {
             if j.is_boolean() {
-                return j.as_bool().unwrap();
+                j.as_bool().unwrap()
             } else if j.is_string() {
-                if j.as_str().unwrap() == "true" {
-                    return true;
-                } else {
-                    return false;
-                }
+                j.as_str().unwrap() == "true"
             } else {
-                return false;
+                false
             }
         } else {
-            return false;
+            false
         }
     }
     fn get_auto_escape_from_params(&self, params: &serde_json::Value) -> bool {
-        let is_auto_escape = Self::get_json_bool(params, "auto_escape");
-        return is_auto_escape;
+        Self::get_json_bool(params, "auto_escape")
     }
     async fn make_email_msg(
         &self,
@@ -365,7 +360,7 @@ impl EmailConnect {
         let message_arr: serde_json::Value;
         let message_rst = params.get("message").ok_or("message not found")?;
         if message_rst.is_string() {
-            if self.get_auto_escape_from_params(&params) {
+            if self.get_auto_escape_from_params(params) {
                 message_arr = serde_json::json!(
                     [{"type":"text","data":{
                         "text": message_rst.as_str()
@@ -388,7 +383,7 @@ impl EmailConnect {
 
         let single_part_vec = self.make_email_msg(&message_arr).await?;
         let mut multipart;
-        if single_part_vec.len() != 0 {
+        if !single_part_vec.is_empty() {
             let multipart_builder = MultiPart::alternative();
             multipart = multipart_builder.singlepart(single_part_vec[0].to_owned());
             for it in &single_part_vec[1..] {
@@ -427,7 +422,7 @@ impl EmailConnect {
                 .credentials(creds)
                 .build();
         }
-        cq_add_log(&format!("sending email:{}", message_arr.to_string())).unwrap();
+        cq_add_log(&format!("sending email:{}", message_arr)).unwrap();
         let send_ret = match mailer.send(email).await {
             Ok(_) => "ok".to_owned(),
             Err(e) => format!("{:?}", e),
@@ -435,23 +430,23 @@ impl EmailConnect {
         if send_ret == "ok" {
             let msg_id = Uuid::new_v4().to_string();
             cq_add_log(&format!("send email ok:{msg_id}")).unwrap();
-            return Ok(serde_json::json!({
+            Ok(serde_json::json!({
                 "status": "ok",
                 "retcode": 0,
                 "data": {
                     "message_id": msg_id
                 },
                 "echo": echo.to_owned()
-            }));
+            }))
         } else {
-            return Ok(serde_json::json!({
+            Ok(serde_json::json!({
                 "status": "failed",
                 "retcode": 1404,
                 "data": {
                 },
                 "message":send_ret,
                 "echo": echo.to_owned()
-            }));
+            }))
         }
     }
 }
@@ -464,7 +459,7 @@ impl BotConnectTrait for EmailConnect {
     }
 
     fn get_alive(&self) -> bool {
-        return !self.is_stop.load(std::sync::atomic::Ordering::Relaxed);
+        !self.is_stop.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -499,7 +494,7 @@ impl BotConnectTrait for EmailConnect {
         let send_json = match action {
             "send_private_msg" => {
                 // cq_add_log("send_private_msg触发").unwrap();
-                self.deal_ob_send_private_msg(&params, &echo).await?
+                self.deal_ob_send_private_msg(params, echo).await?
             }
             _ => {
                 serde_json::json!({
@@ -517,6 +512,6 @@ impl BotConnectTrait for EmailConnect {
         if lk.is_empty() {
             return vec![];
         }
-        return vec![("email".to_owned(), lk.to_owned())];
+        vec![("email".to_owned(), lk.to_owned())]
     }
 }

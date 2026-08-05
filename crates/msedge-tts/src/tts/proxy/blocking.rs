@@ -278,7 +278,7 @@ fn http_proxy(
                 let server_name = rustls::pki_types::ServerName::try_from(proxy_host.clone())
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidInput, e))?;
                 let conn = rustls::ClientConnection::new(std::sync::Arc::new(config), server_name)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                    .map_err(std::io::Error::other)?;
                 let mut tls_stream = rustls::StreamOwned::new(conn, stream);
                 tls_stream.flush()?;
                 ProxyStream::TlsStream(Box::new(tls_stream))

@@ -285,7 +285,7 @@ pub fn json_to_cq_str(js: &serde_json::Value) -> crate::AdapterResult<String> {
                 .ok_or("消息中text字段不是str")?;
             ret.push_str(cq_text_encode(temp).as_str());
         } else {
-            let mut cqcode = String::from("[CQ:".to_owned() + tp + ",");
+            let mut cqcode = "[CQ:".to_owned() + tp + "," ;
             if nodes.is_object() {
                 for (k, v) in nodes.as_object().ok_or("msg nodes 不是object")? {
                     cqcode.push_str(k);

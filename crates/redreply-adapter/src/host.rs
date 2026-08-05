@@ -16,6 +16,10 @@ pub fn set_host(host: Arc<dyn AdapterHost>) -> Result<(), Arc<dyn AdapterHost>> 
     HOST.set(host)
 }
 
+pub fn ensure_host(host: impl FnOnce() -> Arc<dyn AdapterHost>) {
+    HOST.get_or_init(host);
+}
+
 fn host() -> Option<&'static Arc<dyn AdapterHost>> {
     HOST.get()
 }

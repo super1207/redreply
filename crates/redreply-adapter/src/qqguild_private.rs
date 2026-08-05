@@ -68,23 +68,23 @@ async fn conv_event(
     let self_id = (*self_t.appid.upgrade().ok_or("No appid")?.read().unwrap()).to_owned();
     if tp == "READY" {
         let d = root.get("d").ok_or("No d")?;
-        let user = read_json_obj_or_null(&d, "user");
+        let user = read_json_obj_or_null(d, "user");
         let bot_id_t = read_json_str(&user, "id");
         (*self_t.bot_id.upgrade().ok_or("No bot_id")?.write().unwrap()) = bot_id_t;
     } else if conv_group_c2c_event(self_t, &root).await? {
     } else if tp == "DIRECT_MESSAGE_CREATE" {
         let event_id = set_event_id(self_t, &root, 60 * 5)?;
         let d = root.get("d").ok_or("No d")?;
-        let tm_str = read_json_str(&d, "timestamp");
+        let tm_str = read_json_str(d, "timestamp");
         let tm = chrono::DateTime::parse_from_rfc3339(&tm_str)?.timestamp();
-        let content = read_json_str(&d, "content");
-        let user = read_json_obj_or_null(&d, "author");
+        let content = read_json_str(d, "content");
+        let user = read_json_obj_or_null(d, "author");
         let user_id = read_json_str(&user, "id");
         let avatar = read_json_str(&user, "avatar");
         let nickname = read_json_str(&user, "username");
         let cq_msg_t = qq_content_to_cqstr(&self_t.bot_id, &self_id, &content)?;
-        let cq_msg = cq_msg_t + &deal_attachments(&d)?;
-        let cq_msg = deal_message_reference(&d, &self_t.id_event_map)? + &cq_msg;
+        let cq_msg = cq_msg_t + &deal_attachments(d)?;
+        let cq_msg = deal_message_reference(d, &self_t.id_event_map)? + &cq_msg;
         let event_json = serde_json::json!({
             "time":tm,
             "self_id":self_id,
@@ -112,16 +112,15 @@ async fn conv_event(
     } else if tp == "GUILD_MEMBER_ADD" {
         let event_id = set_event_id(self_t, &root, 60 * 5)?;
         let d = root.get("d").ok_or("No d")?;
-        let user = read_json_obj_or_null(&d, "user");
+        let user = read_json_obj_or_null(d, "user");
         let user_id = read_json_str(&user, "id");
-        let guild_id = read_json_str(&d, "guild_id");
-        let operator_id = read_json_str(&d, "op_user_id");
-        let sub_type: &str;
-        if user_id == operator_id {
-            sub_type = "approve";
+        let guild_id = read_json_str(d, "guild_id");
+        let operator_id = read_json_str(d, "op_user_id");
+        let sub_type = if user_id == operator_id {
+            "approve"
         } else {
-            sub_type = "invite";
-        }
+            "invite"
+        };
         let event_json = serde_json::json!({
             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
             "self_id":self_id,
@@ -142,16 +141,15 @@ async fn conv_event(
     } else if tp == "GUILD_MEMBER_REMOVE" {
         let event_id = set_event_id(self_t, &root, 60 * 5)?;
         let d = root.get("d").ok_or("No d")?;
-        let user = read_json_obj_or_null(&d, "user");
+        let user = read_json_obj_or_null(d, "user");
         let user_id = read_json_str(&user, "id");
-        let guild_id = read_json_str(&d, "guild_id");
-        let operator_id = read_json_str(&d, "op_user_id");
-        let sub_type: &str;
-        if user_id == operator_id {
-            sub_type = "leave";
+        let guild_id = read_json_str(d, "guild_id");
+        let operator_id = read_json_str(d, "op_user_id");
+        let sub_type = if user_id == operator_id {
+            "leave"
         } else {
-            sub_type = "kick";
-        }
+            "kick"
+        };
         let event_json = serde_json::json!({
             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
             "self_id":self_id,
@@ -182,7 +180,7 @@ async fn send_group_msg(
     let params = read_json_or_default(json, "params", &serde_json::Value::Null);
 
     // 判断消息类型
-    let msg_target_type: MsgTargetType = get_msg_type(&self_t, &params, passive_id)?;
+    let msg_target_type: MsgTargetType = get_msg_type(self_t, params, passive_id)?;
 
     // 获得消息(数组格式)
     let mut message = params
@@ -194,18 +192,18 @@ async fn send_group_msg(
     }
 
     // 获得群id
-    let group_id = read_json_str(&params, "group_id");
+    let group_id = read_json_str(params, "group_id");
 
     if msg_target_type == MsgTargetType::Guild {
         // 频道
         // 获得消息ID
-        let reply_id = get_reply_id(&self_t, passive_id)?;
-        if reply_id.raw_ids.len() > 0 {
+        let reply_id = get_reply_id(self_t, passive_id)?;
+        if !reply_id.raw_ids.is_empty() {
             let to_reply_id = &reply_id.raw_ids[0];
             return send_qqguild_msg(
                 self_t,
                 &group_id,
-                &to_reply_id,
+                to_reply_id,
                 passive_id,
                 &message,
                 reply_id.is_event,
@@ -213,12 +211,12 @@ async fn send_group_msg(
             .await;
         }
     }
-    return Ok(serde_json::json!({
+    Ok(serde_json::json!({
         "retcode":1404,
         "status":"failed",
         "message":"msg_target_type not support",
         "data":{}
-    }));
+    }))
 }
 
 #[async_trait]
@@ -232,7 +230,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
     }
 
     fn get_alive(&self) -> bool {
-        return !self.is_stop.load(std::sync::atomic::Ordering::Relaxed);
+        !self.is_stop.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -266,13 +264,11 @@ impl BotConnectTrait for QQGuildPrivateConnect {
 
         let request = tungstenite::client::IntoClientRequest::into_client_request(&ws_url)?;
         let ws_rst;
-        let port_opt = request.uri().port();
-        let port;
-        if port_opt.is_none() {
-            port = 443;
-        } else {
-            port = port_opt.unwrap().into();
-        }
+        let port = request
+            .uri()
+            .port()
+            .map(Into::into)
+            .unwrap_or(443);
         let addr = format!("{}:{}", request.uri().host().unwrap(), port);
         let socket = TcpStream::connect(addr).await?;
         ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
@@ -327,15 +323,12 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                 std::sync::RwLock<HashMap<std::string::String, (u64, serde_json::Value)>>,
             >::downgrade(&self.id_event_map),
             bot_id: Arc::<std::sync::RwLock<std::string::String>>::downgrade(&self.bot_id),
+            qqgroup_audit_map: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         };
 
         tokio::spawn(async move {
-            loop {
-                if let Some(val) = is_stop.upgrade() {
-                    if val.load(std::sync::atomic::Ordering::Relaxed) {
-                        break;
-                    }
-                } else {
+            while let Some(val) = is_stop.upgrade() {
+                if val.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
                 }
                 tokio::select! {
@@ -344,7 +337,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                         let json_dat;
                         if let Some(val) =  get_json_dat(msg) {
                             json_dat = val;
-                            crate::cqapi::cq_add_log(format!("qqguild_private 收到数据:{}", json_dat.to_string()).as_str()).unwrap();
+                            crate::cqapi::cq_add_log(format!("qqguild_private 收到数据:{}", json_dat).as_str()).unwrap();
                         }else{
                             continue;
                         }
@@ -354,7 +347,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                                 "op":2,
                                 "d":{
                                     "token":format!("QQBot {}",access_token_struct.access_token),
-                                    "intents":0 | (1 << 0) | (1 << 1) | (1 << 10) | (1 << 12) | (1 << 25) | (1 << 26) | (1 << 27) | (1 << 28),
+                                    "intents":(1 << 0) | (1 << 1) | (1 << 10) | (1 << 12) | (1 << 25) | (1 << 26) | (1 << 27) | (1 << 28),
                                     "shard":[0, 1],
                                 }
                             });
@@ -429,7 +422,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                     }
                     let sn_t;
                     if let Some(val) = sn.upgrade() {
-                        sn_t = val.read().unwrap().clone();
+                        sn_t = *val.read().unwrap();
                     } else {
                         break;
                     }
@@ -487,6 +480,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                 std::sync::RwLock<HashMap<std::string::String, (u64, serde_json::Value)>>,
             >::downgrade(&self.id_event_map),
             bot_id: Arc::<std::sync::RwLock<std::string::String>>::downgrade(&self.bot_id),
+            qqgroup_audit_map: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
         };
 
         if action == "send_group_msg" {
@@ -517,9 +511,9 @@ impl BotConnectTrait for QQGuildPrivateConnect {
 
     fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
         let appid = (*self.appid.read().unwrap()).to_owned();
-        return vec![
+        vec![
             ("qqguild_private".to_owned(), appid.clone()),
             ("qqgroup_public".to_owned(), appid),
-        ];
+        ]
     }
 }

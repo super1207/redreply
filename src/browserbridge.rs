@@ -1,5 +1,8 @@
 pub fn execute(request: &serde_json::Value) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    execute_json(&request.to_string())
+    crate::runtime_context()
+        .services
+        .browser()
+        .execute_json(&request.to_string())
 }
 
 #[cfg(not(windows))]
@@ -7,24 +10,44 @@ fn execute_json(request: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     redreply_browser::execute_json(request).map_err(|message| std::io::Error::other(message).into())
 }
 
-#[cfg(windows)]
-fn execute_json(request: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
-    use std::sync::{Arc, Mutex};
+pub struct BrowserService {
+    #[cfg(windows)]
+    library: std::sync::Mutex<Option<std::sync::Arc<BrowserLibrary>>>,
+}
 
-    lazy_static! {
-        static ref BROWSER_LIBRARY: Mutex<Option<Arc<BrowserLibrary>>> = Mutex::new(None);
+impl BrowserService {
+    pub fn new() -> Self {
+        Self {
+            #[cfg(windows)]
+            library: std::sync::Mutex::new(None),
+        }
     }
 
-    let library = {
-        let mut library = BROWSER_LIBRARY
-            .lock()
-            .map_err(|_| std::io::Error::other("browser DLL lock poisoned"))?;
-        if library.is_none() {
-            *library = Some(Arc::new(BrowserLibrary::load()?));
+    pub fn execute_json(&self, request: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+        #[cfg(not(windows))]
+        return execute_json(request);
+
+        #[cfg(windows)]
+        {
+            let library = {
+                let mut library = self
+                    .library
+                    .lock()
+                    .map_err(|_| std::io::Error::other("browser DLL lock poisoned"))?;
+                if library.is_none() {
+                    *library = Some(std::sync::Arc::new(BrowserLibrary::load()?));
+                }
+                library.as_ref().unwrap().clone()
+            };
+            library.execute(request)
         }
-        library.as_ref().unwrap().clone()
-    };
-    library.execute(request)
+    }
+}
+
+impl Default for BrowserService {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(windows)]

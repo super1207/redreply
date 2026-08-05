@@ -2,7 +2,7 @@ use super::all_to_silk::PCMStruct;
 
 const SILK_SAMPLE_RATE: usize = 24_000;
 const SILK_FRAME_SAMPLES: usize = SILK_SAMPLE_RATE / 50; // 20ms per frame
-// QQ-compatible profile: 24 kHz wideband PCM encoded at 24 kbps.
+                                                         // QQ-compatible profile: 24 kHz wideband PCM encoded at 24 kbps.
 const SILK_BITRATE: i32 = 24_000;
 
 // 97 taps total. Keeps the passband flat while giving enough transition width
@@ -97,7 +97,7 @@ pub fn downmix_to_mono(pcm: &PCMStruct) -> Result<Vec<f64>, String> {
     if pcm.data.is_empty() {
         return Err("audio contains no samples".into());
     }
-    if pcm.data.len() % pcm.channel_num != 0 {
+    if !pcm.data.len().is_multiple_of(pcm.channel_num) {
         return Err("PCM sample count is not channel-aligned".into());
     }
 

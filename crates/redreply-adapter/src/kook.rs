@@ -55,6 +55,7 @@ pub struct KookConnect {
     pub sn: Arc<AtomicI64>,
     msg_ids: Arc<RwLock<VecDeque<MsgIdPair>>>,
     recieve_pong: Arc<AtomicBool>,
+    http_cache: Arc<RwLock<VecDeque<(String, serde_json::Value, u64)>>>,
 }
 
 impl KookConnect {
@@ -68,6 +69,7 @@ impl KookConnect {
             sn: Arc::new(AtomicI64::new(0)),
             msg_ids: Arc::new(RwLock::new(VecDeque::new())),
             recieve_pong: Arc::new(AtomicBool::new(false)),
+            http_cache: Arc::new(RwLock::new(VecDeque::new())),
         }
     }
     async fn http_get_json(
@@ -110,16 +112,12 @@ impl KookConnect {
         uri: &str,
         use_cache: bool,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        lazy_static! {
-            static ref CACHE: std::sync::RwLock<VecDeque<(String, serde_json::Value, u64)>> =
-                std::sync::RwLock::new(VecDeque::from([]));
-        }
         let tm = SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_secs();
         // 清除久远的记录
         {
-            let mut lk = CACHE.write().unwrap();
+            let mut lk = self.http_cache.write().unwrap();
             loop {
                 let mut remove_index = 0;
                 for it in &*lk {
@@ -136,7 +134,7 @@ impl KookConnect {
         }
         // 从缓存中返回数据
         if use_cache {
-            let lk = CACHE.read().unwrap();
+            let lk = self.http_cache.read().unwrap();
             for it in &*lk {
                 if it.0 == uri {
                     return Ok(it.1.clone());
@@ -147,15 +145,15 @@ impl KookConnect {
         let ret_val = self.http_get_json(uri).await?;
         // 更新缓存
         {
-            let mut lk = CACHE.write().unwrap();
+            let mut lk = self.http_cache.write().unwrap();
             lk.push_back((uri.to_string(), ret_val.clone(), tm));
         }
-        return Ok(ret_val);
+        Ok(ret_val)
     }
 
     async fn get_gateway(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let ret_json = self
-            .http_get_json(&format!("/gateway/index?compress=1"))
+            .http_get_json("/gateway/index?compress=1")
             .await?;
         Ok(ret_json
             .get("url")
@@ -175,7 +173,7 @@ impl KookConnect {
         json["content"] = message.into();
         json["target_id"] = user_id.into();
         json["type"] = tp.into();
-        if quote != "" {
+        if !quote.is_empty() {
             json["quote"] = quote.into();
         }
         let ret_json = self.http_post_json("/direct-message/create", &json).await?;
@@ -196,7 +194,7 @@ impl KookConnect {
         let message_rst = params.get("message").ok_or("message not found")?;
 
         if message_rst.is_string() {
-            if self.get_auto_escape_from_params(&params) {
+            if self.get_auto_escape_from_params(params) {
                 message_arr = serde_json::json!(
                     [{"type":"text","data":{
                         "text": message_rst.as_str()
@@ -263,7 +261,7 @@ impl KookConnect {
                 .ok_or("get roles err")?
                 .as_array()
                 .ok_or("roles not arr")?;
-            if roles.len() != 0 {
+            if !roles.is_empty() {
                 role = "admin";
             } else {
                 role = "member";
@@ -329,13 +327,12 @@ impl KookConnect {
                     ret.push(ch);
                 }
             }
-            return ret;
+            ret
         }
 
         let mut ret = String::new();
         let sp = before.split("(met)");
-        let mut index = 0;
-        for it in sp {
+        for (index, it) in sp.enumerate() {
             if index % 2 == 0 {
                 ret.push_str(&cq_text_encode(&kook_msg_f(it)));
             } else {
@@ -345,7 +342,6 @@ impl KookConnect {
                     ret.push_str(&format!("[CQ:at,qq={}]", it));
                 }
             }
-            index += 1;
         }
         ret
     }
@@ -354,17 +350,16 @@ impl KookConnect {
         msg_type: i64,
         message: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let ret_msg;
-        if msg_type == 2 {
+        let ret_msg = if msg_type == 2 {
             // 图片消息
-            ret_msg = format!(
+            format!(
                 "[CQ:image,file={},url={}]",
-                cq_params_encode(&message),
-                cq_params_encode(&message)
-            );
+                cq_params_encode(message),
+                cq_params_encode(message)
+            )
         } else {
-            ret_msg = Self::reformat_dates(message);
-        }
+            Self::reformat_dates(message)
+        };
 
         Ok(ret_msg)
     }
@@ -380,7 +375,7 @@ impl KookConnect {
         while lk.len() > 9999 {
             lk.pop_front();
         }
-        return new_id;
+        new_id
     }
 
     fn get_msg_id(&self, msg_id: &str) -> Vec<RawMsgId> {
@@ -390,7 +385,7 @@ impl KookConnect {
                 return msg_id_pair.raw_msg_ids.to_owned();
             }
         }
-        return vec![];
+        vec![]
     }
 
     pub fn get_cq_msg_id(&self, raw_msg_id: &str) -> (String, String) {
@@ -402,7 +397,7 @@ impl KookConnect {
                 }
             }
         }
-        return ("".to_owned(), "".to_owned());
+        ("".to_owned(), "".to_owned())
     }
     async fn deal_private_message_event(
         &self,
@@ -462,7 +457,7 @@ impl KookConnect {
             msg.push_str(&Self::kook_msg_to_cq(msg_type, &message)?);
         }
 
-        if msg == "" {
+        if msg.is_empty() {
             return Ok(());
         }
 
@@ -551,7 +546,7 @@ impl KookConnect {
                         let tp = accessory["type"].as_str().ok_or(err)?;
                         if tp == "image" {
                             let url = accessory["src"].as_str().ok_or(err)?;
-                            let url_t = cq_params_encode(&url);
+                            let url_t = cq_params_encode(url);
                             accessory_cq.push_str(&format!("[CQ:image,file={url_t},url={url_t}]"));
                         }
                     }
@@ -562,18 +557,11 @@ impl KookConnect {
                         msg.push_str(&text_cq);
                         msg.push_str(&accessory_cq);
                     }
-                } else if tp == "image-group" {
+                } else if tp == "image-group" || tp == "container" {
                     let images = md["elements"].as_array().ok_or(err)?;
                     for image in images {
                         let url = image["src"].as_str().ok_or(err)?;
-                        let url_t = cq_params_encode(&url);
-                        msg.push_str(&format!("[CQ:image,file={url_t},url={url_t}]"));
-                    }
-                } else if tp == "container" {
-                    let elements = md["elements"].as_array().ok_or(err)?;
-                    for element in elements {
-                        let url = element["src"].as_str().ok_or(err)?;
-                        let url_t = cq_params_encode(&url);
+                        let url_t = cq_params_encode(url);
                         msg.push_str(&format!("[CQ:image,file={url_t},url={url_t}]"));
                     }
                 } else if tp == "context" {
@@ -589,7 +577,7 @@ impl KookConnect {
                             msg.push_str(&txt);
                         } else if tp == "image" {
                             let url = element["src"].as_str().ok_or(err)?;
-                            let url_t = cq_params_encode(&url);
+                            let url_t = cq_params_encode(url);
                             msg.push_str(&format!("[CQ:image,file={url_t},url={url_t}]"));
                         }
                     }
@@ -629,7 +617,7 @@ impl KookConnect {
                 } else if tp == "audio" {
                     let title = read_json_str(md, "title");
                     let cover = read_json_str(md, "cover");
-                    if title == "" && cover == "" {
+                    if title.is_empty() && cover.is_empty() {
                         // 说明是语音
                         let url = md["src"].as_str().ok_or(err)?;
                         let url_t = cq_params_encode(url);
@@ -642,7 +630,7 @@ impl KookConnect {
                 }
             }
         }
-        return Ok(true);
+        Ok(true)
     }
     async fn deal_group_message_event(
         &self,
@@ -701,7 +689,7 @@ impl KookConnect {
             msg.push_str(&Self::kook_msg_to_cq(msg_type, &message)?);
         }
 
-        if msg == "" {
+        if msg.is_empty() {
             return Ok(());
         }
 
@@ -928,7 +916,7 @@ impl KookConnect {
             }
         } else {
             let self_id = self.self_id.read().unwrap().to_owned();
-            if user_id != &self_id {
+            if user_id != self_id {
                 self.deal_group_message_event(data, user_id).await?;
             }
         }
@@ -1029,7 +1017,7 @@ impl KookConnect {
             cq_add_log_w("要求重连").unwrap();
             return Ok(5);
         } else if s == 1 {
-            cq_add_log_w(&format!("收到KOOK HELLO包：{}", js.to_string())).unwrap();
+            cq_add_log_w(&format!("收到KOOK HELLO包：{}", js)).unwrap();
             if js["d"]["code"].as_i64().ok_or("HELLO包错误")? != 0 {
                 return Ok(1);
             } else {
@@ -1041,7 +1029,7 @@ impl KookConnect {
             self.recieve_pong
                 .store(true, std::sync::atomic::Ordering::Relaxed);
         } else if s == 0 {
-            cq_add_log(&format!("收到KOOK事件:{}", js.to_string())).unwrap();
+            cq_add_log(&format!("收到KOOK事件:{}", js)).unwrap();
             let d = js.get("d").ok_or("d not found")?;
             let new_sn = js
                 .get("sn")
@@ -1054,7 +1042,7 @@ impl KookConnect {
                 cq_add_log_w(&format!("处理KOOK事件出错:{}", rst.err().unwrap())).unwrap();
             }
         } else {
-            cq_add_log_w(&format!("KOOK收到未知数据：{}", js.to_string())).unwrap();
+            cq_add_log_w(&format!("KOOK收到未知数据：{}", js)).unwrap();
         }
         Ok(0)
     }
@@ -1068,7 +1056,7 @@ impl KookConnect {
         if val.is_string() {
             return val.as_str().unwrap().to_string();
         }
-        return "".to_owned();
+        "".to_owned()
     }
     pub fn make_kook_text(text: &str) -> String {
         let mut s = String::new();
@@ -1096,16 +1084,15 @@ impl KookConnect {
         headers: &HashMap<String, String>,
         is_post: bool,
     ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-        let client;
         let uri = reqwest::Url::from_str(url)?;
-        if uri.scheme() == "http" {
-            client = reqwest::Client::builder().no_proxy().build()?;
+        let client = if uri.scheme() == "http" {
+            reqwest::Client::builder().no_proxy().build()?
         } else {
-            client = reqwest::Client::builder()
+            reqwest::Client::builder()
                 .danger_accept_invalid_certs(true)
                 .no_proxy()
-                .build()?;
-        }
+                .build()?
+        };
         let mut req;
         if is_post {
             req = client.post(uri).body(reqwest::Body::from(data)).build()?;
@@ -1116,10 +1103,9 @@ impl KookConnect {
             req.headers_mut()
                 .append(HeaderName::from_str(key)?, HeaderValue::from_str(val)?);
         }
-        let retbin;
         let ret = client.execute(req).await?;
-        retbin = ret.bytes().await?.to_vec();
-        return Ok(retbin);
+        let retbin = ret.bytes().await?.to_vec();
+        Ok(retbin)
     }
     async fn upload_asset(
         &self,
@@ -1138,17 +1124,16 @@ impl KookConnect {
                 b64_str,
             )?;
         } else {
-            let file_path;
-            if cfg!(target_os = "windows") {
-                file_path = uri.get(8..).ok_or("can't get file_path")?;
+            let file_path = if cfg!(target_os = "windows") {
+                uri.get(8..).ok_or("can't get file_path")?
             } else {
-                file_path = uri.get(7..).ok_or("can't get file_path")?;
-            }
+                uri.get(7..).ok_or("can't get file_path")?
+            };
             let path = Path::new(&file_path);
             file_bin = tokio::fs::read(path).await?;
         }
 
-        let uri = reqwest::Url::from_str(&format!("https://www.kookapp.cn/api/v3/asset/create"))?;
+        let uri = reqwest::Url::from_str("https://www.kookapp.cn/api/v3/asset/create")?;
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
             .no_proxy()
@@ -1196,7 +1181,7 @@ impl KookConnect {
                     .ok_or("text not str")?
                     .to_owned();
                 let s = Self::make_kook_text(&t);
-                if last_type == 1 && to_send_data.len() != 0 {
+                if last_type == 1 && !to_send_data.is_empty() {
                     let l = to_send_data.len();
                     to_send_data.get_mut(l - 1).unwrap().1.push_str(&s);
                 } else {
@@ -1225,7 +1210,7 @@ impl KookConnect {
                         .ok_or("qq not found")?,
                 );
                 let at_str = &format!("(met){}(met)", qq);
-                if last_type == 1 && to_send_data.len() != 0 {
+                if last_type == 1 && !to_send_data.is_empty() {
                     let l = to_send_data.len();
                     to_send_data.get_mut(l - 1).unwrap().1.push_str(at_str);
                 } else {
@@ -1233,7 +1218,7 @@ impl KookConnect {
                     last_type = 1;
                 }
             } else if tp == "reply" {
-                if quote != "" {
+                if !quote.is_empty() {
                     continue;
                 }
                 let cq_id = Self::to_json_str(
@@ -1243,8 +1228,7 @@ impl KookConnect {
                         .ok_or("reply not found")?,
                 );
                 let kook_id = self.get_msg_id(&cq_id);
-                quote = kook_id
-                    .get(0)
+                quote = kook_id.first()
                     .ok_or("get kook msg_id err")?
                     .msg_id
                     .to_owned();
@@ -1259,7 +1243,7 @@ impl KookConnect {
                 if music_type == "custom" {
                     let data = it.get("data").ok_or("data not found")?;
                     let mut audio = read_json_str(data, "audio");
-                    if audio == "" {
+                    if audio.is_empty() {
                         audio = read_json_str(data, "voice");
                     }
                     let title = read_json_str(data, "title");
@@ -1322,10 +1306,8 @@ impl KookConnect {
                         serde_json::from_str(&String::from_utf8(ret)?)?;
                     let music_data = ret_json.get("data").ok_or("data not found")?;
                     let mut audio = read_json_str(music_data, "url");
-                    lazy_static! {
-                        static ref AT_REGEX: Regex = Regex::new(r"://(.+)/amobile").unwrap();
-                    }
-                    audio = AT_REGEX
+                    let at_regex = Regex::new(r"://(.+)/amobile")?;
+                    audio = at_regex
                         .replace_all(&audio, "://aqqmusic.tc.qq.com/amobile")
                         .to_string();
                     let title = read_json_str(music_data, "title");
@@ -1365,7 +1347,7 @@ impl KookConnect {
                 let j = serde_json::json!([it]);
                 let s = json_to_cq_str(&j).map_err(|x| format!("json_to_cq_str err:{:?}", x))?;
                 let s2 = Self::make_kook_text(&s);
-                if last_type == 1 && to_send_data.len() != 0 {
+                if last_type == 1 && !to_send_data.is_empty() {
                     let l = to_send_data.len();
                     to_send_data.get_mut(l - 1).unwrap().1.push_str(&s2);
                 } else {
@@ -1379,23 +1361,18 @@ impl KookConnect {
     fn get_json_bool(js: &serde_json::Value, key: &str) -> bool {
         if let Some(j) = js.get(key) {
             if j.is_boolean() {
-                return j.as_bool().unwrap();
+                j.as_bool().unwrap()
             } else if j.is_string() {
-                if j.as_str().unwrap() == "true" {
-                    return true;
-                } else {
-                    return false;
-                }
+                j.as_str().unwrap() == "true"
             } else {
-                return false;
+                false
             }
         } else {
-            return false;
+            false
         }
     }
     fn get_auto_escape_from_params(&self, params: &serde_json::Value) -> bool {
-        let is_auto_escape = Self::get_json_bool(params, "auto_escape");
-        return is_auto_escape;
+        Self::get_json_bool(params, "auto_escape")
     }
     async fn http_post_json(
         &self,
@@ -1441,7 +1418,7 @@ impl KookConnect {
         json["content"] = message.into();
         json["target_id"] = group_id.into();
         json["type"] = tp.into();
-        if quote != "" {
+        if !quote.is_empty() {
             json["quote"] = quote.into();
         }
         let ret_json = self.http_post_json("/message/create", &json).await?;
@@ -1462,7 +1439,7 @@ impl KookConnect {
         let message_rst = params.get("message").ok_or("message not found")?;
 
         if message_rst.is_string() {
-            if self.get_auto_escape_from_params(&params) {
+            if self.get_auto_escape_from_params(params) {
                 message_arr = serde_json::json!(
                     [{"type":"text","data":{
                         "text": message_rst.as_str()
@@ -1724,7 +1701,7 @@ impl KookConnect {
                 .ok_or("get roles err")?
                 .as_array()
                 .ok_or("roles not arr")?;
-            if roles.len() != 0 {
+            if !roles.is_empty() {
                 role = "admin";
             } else {
                 role = "member";
@@ -1931,7 +1908,7 @@ impl KookConnect {
     ) -> Result<Vec<FriendInfo>, Box<dyn std::error::Error + Send + Sync>> {
         let mut ret_vec = vec![];
         let friend_list = self
-            .http_get_json_t(&format!("/user-chat/list"), false)
+            .http_get_json_t("/user-chat/list", false)
             .await?;
         for it in friend_list
             .get("items")
@@ -2050,7 +2027,7 @@ impl KookConnect {
                     .ok_or("get roles err")?
                     .as_array()
                     .ok_or("roles not arr")?;
-                if roles.len() != 0 {
+                if !roles.is_empty() {
                     role = "admin";
                 } else {
                     role = "member";
@@ -2132,7 +2109,7 @@ impl KookConnect {
                         .ok_or("get roles err")?
                         .as_array()
                         .ok_or("roles not arr")?;
-                    if roles.len() != 0 {
+                    if !roles.is_empty() {
                         role = "admin";
                     } else {
                         role = "member";
@@ -2240,7 +2217,7 @@ impl BotConnectTrait for KookConnect {
     }
 
     fn get_alive(&self) -> bool {
-        return !self.is_stop.load(std::sync::atomic::Ordering::Relaxed);
+        !self.is_stop.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -2297,10 +2274,10 @@ impl BotConnectTrait for KookConnect {
                     })
                     .to_string();
                     // cq_add_log(&format!("发送KOOK心跳:{json_str}")).unwrap();
-                    let foo = write_halt
+                    let heartbeat_result = write_halt
                         .send(tungstenite::Message::Text(json_str.into()))
                         .await;
-                    if foo.is_err() {
+                    if heartbeat_result.is_err() {
                         cq_add_log_w("发送KOOK心跳发送失败").unwrap();
                         break;
                     } else {
@@ -2341,16 +2318,18 @@ impl BotConnectTrait for KookConnect {
                             let bin = raw_msg.into_data();
                             let mut d = ZlibDecoder::new(std::io::Cursor::new(bin));
                             let mut s = String::new();
-                            if let Ok(_) = d.read_to_string(&mut s) {
+                            if d.read_to_string(&mut s).is_ok() {
                                 tokio::spawn(async move {
                                     let is_stop = is_stop.clone();
                                     let stop_tx = stop_tx.clone();
                                     let kobj = kobj.clone();
                                     let rst = KookConnect::conv_event(&kobj,s).await;
-                                    if rst.is_err() {
-                                        crate::cqapi::cq_add_log(format!("KOOK抛出错误:{:?}", rst.err().unwrap()).as_str()).unwrap();
-                                    } else {
-                                        let code = rst.unwrap();
+                                    if let Err(err) = rst {
+                                        crate::cqapi::cq_add_log(
+                                            format!("KOOK抛出错误:{err:?}").as_str(),
+                                        )
+                                        .unwrap();
+                                    } else if let Ok(code) = rst {
                                         // 断开连接
                                         if code != 0 {
                                             is_stop.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -2359,11 +2338,11 @@ impl BotConnectTrait for KookConnect {
                                     }
                                 });
                             }else {
-                                cq_add_log_w(&format!("kook ws获取数据错误2")).unwrap();
+                                cq_add_log_w("kook ws获取数据错误2").unwrap();
                                 break;
                             }
                         }else {
-                            cq_add_log_w(&format!("kook ws获取数据错误1")).unwrap();
+                            cq_add_log_w("kook ws获取数据错误1").unwrap();
                             break;
                         }
                     },
@@ -2395,29 +2374,29 @@ impl BotConnectTrait for KookConnect {
         let def = serde_json::json!({});
         let params = json.get("params").unwrap_or(&def);
         let send_json = match action {
-            "send_group_msg" => self.deal_ob_send_group_msg(&params, &echo).await?,
-            "send_private_msg" => self.deal_ob_send_private_msg(&params, &echo).await?,
+            "send_group_msg" => self.deal_ob_send_group_msg(params, echo).await?,
+            "send_private_msg" => self.deal_ob_send_private_msg(params, echo).await?,
             "send_msg" => {
                 let group_id = read_json_str(params, "group_id");
-                if group_id != "" {
-                    self.deal_ob_send_group_msg(&params, &echo).await?
+                if !group_id.is_empty() {
+                    self.deal_ob_send_group_msg(params, echo).await?
                 } else {
-                    self.deal_ob_send_private_msg(&params, &echo).await?
+                    self.deal_ob_send_private_msg(params, echo).await?
                 }
             }
-            "delete_msg" => self.deal_ob_delete_msg(&params, &echo).await?,
-            "get_login_info" => self.deal_ob_get_login_info(&params, &echo).await?,
-            "get_stranger_info" => self.deal_ob_get_stranger_info(&params, &echo).await?,
-            "get_group_info" => self.deal_ob_get_group_info(&params, &echo).await?,
-            "get_group_list" => self.deal_ob_get_group_list(&params, &echo).await?,
-            "get_group_member_info" => self.deal_ob_get_group_member_info(&params, &echo).await?,
-            "set_group_kick" => self.deal_ob_set_group_kick(&params, &echo).await?,
-            "set_group_leave" => self.deal_ob_set_group_leave(&params, &echo).await?,
-            "set_group_name" => self.deal_ob_set_group_name(&params, &echo).await?,
-            "set_group_card" => self.deal_ob_set_group_card(&params, &echo).await?,
-            "get_friend_list" => self.deal_ob_get_friend_list(&params, &echo).await?,
-            "get_group_member_list" => self.deal_ob_get_group_member_list(&params, &echo).await?,
-            "get_cookies" => self.deal_ob_get_cookies(&params, &echo).await?,
+            "delete_msg" => self.deal_ob_delete_msg(params, echo).await?,
+            "get_login_info" => self.deal_ob_get_login_info(params, echo).await?,
+            "get_stranger_info" => self.deal_ob_get_stranger_info(params, echo).await?,
+            "get_group_info" => self.deal_ob_get_group_info(params, echo).await?,
+            "get_group_list" => self.deal_ob_get_group_list(params, echo).await?,
+            "get_group_member_info" => self.deal_ob_get_group_member_info(params, echo).await?,
+            "set_group_kick" => self.deal_ob_set_group_kick(params, echo).await?,
+            "set_group_leave" => self.deal_ob_set_group_leave(params, echo).await?,
+            "set_group_name" => self.deal_ob_set_group_name(params, echo).await?,
+            "set_group_card" => self.deal_ob_set_group_card(params, echo).await?,
+            "get_friend_list" => self.deal_ob_get_friend_list(params, echo).await?,
+            "get_group_member_list" => self.deal_ob_get_group_member_list(params, echo).await?,
+            "get_cookies" => self.deal_ob_get_cookies(params, echo).await?,
             "can_send_image" => {
                 serde_json::json!({
                     "status":"ok",
@@ -2473,7 +2452,7 @@ impl BotConnectTrait for KookConnect {
         if lk.is_empty() {
             return vec![];
         }
-        return vec![("kook".to_owned(), lk.to_owned())];
+        vec![("kook".to_owned(), lk.to_owned())]
     }
 }
 

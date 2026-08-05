@@ -24,9 +24,8 @@ async fn http_post(
     url: &str,
     json_data: &serde_json::Value,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-    let client;
     let uri = reqwest::Url::from_str(url)?;
-    client = reqwest::Client::builder().no_proxy().build()?;
+    let client = reqwest::Client::builder().no_proxy().build()?;
     let req = client
         .post(uri)
         .body(reqwest::Body::from(json_data.to_string()))
@@ -35,22 +34,22 @@ async fn http_post(
     let ret_str = ret.text().await?;
     crate::cqapi::cq_add_log(&format!("接收数据:{ret_str}")).unwrap();
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
-    return Ok(json_val);
+    Ok(json_val)
 }
 
 fn get_json_from_msg(msg: hyper_tungstenite::tungstenite::Message) -> Option<serde_json::Value> {
     if let Ok(msg_text) = msg.to_text() {
-        if let Ok(json_dat_t) = serde_json::from_str::<serde_json::Value>(&msg_text) {
+        if let Ok(json_dat_t) = serde_json::from_str::<serde_json::Value>(msg_text) {
             if json_dat_t.is_object() {
-                return Some(json_dat_t);
+                Some(json_dat_t)
             } else {
-                return None;
+                None
             }
         } else {
-            return None;
+            None
         }
     } else {
-        return None;
+        None
     }
 }
 
@@ -70,7 +69,7 @@ fn get_json_dat(
     } else {
         return None;
     }
-    return Some(json_dat);
+    Some(json_dat)
 }
 
 impl OneBot115Connect {
@@ -96,7 +95,7 @@ impl BotConnectTrait for OneBot115Connect {
     }
 
     fn get_alive(&self) -> bool {
-        return !self.is_stop.load(std::sync::atomic::Ordering::Relaxed);
+        !self.is_stop.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -107,7 +106,7 @@ impl BotConnectTrait for OneBot115Connect {
                 "action":"get_bot_list"
             });
             let myself = self.call_api("", "", "", &mut to_send).await?;
-            cq_add_log_w(&format!("收到数据：{}", myself.to_string())).unwrap();
+            cq_add_log_w(&format!("收到数据：{}", myself)).unwrap();
             let bot_arr = myself
                 .get("data")
                 .ok_or("data not found")?
@@ -154,12 +153,8 @@ impl BotConnectTrait for OneBot115Connect {
         // 这里使用弱引用，防止可能的循环依赖
         let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
         tokio::spawn(async move {
-            loop {
-                if let Some(val) = is_stop.upgrade() {
-                    if val.load(std::sync::atomic::Ordering::Relaxed) {
-                        break;
-                    }
-                } else {
+            while let Some(val) = is_stop.upgrade() {
+                if val.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
                 }
                 tokio::select! {
@@ -176,10 +171,10 @@ impl BotConnectTrait for OneBot115Connect {
                         let post_type = read_json_str(&json_dat, "post_type").to_owned();
                         let meta_event_type = read_json_str(&json_dat, "meta_event_type");
                         if meta_event_type != "heartbeat"{
-                            crate::cqapi::cq_add_log(format!("OVO收到数据:{}", json_dat.to_string()).as_str()).unwrap();
+                            crate::cqapi::cq_add_log(format!("OVO收到数据:{}", json_dat).as_str()).unwrap();
                         }
                         tokio::spawn(async move {
-                            if post_type == "" { // 是api回复
+                            if post_type.is_empty() { // 是api回复
                                 // 只可能是心跳，do nothing
                             }else { // 是事件
                                 tokio::task::spawn_blocking(move ||{
@@ -261,11 +256,11 @@ impl BotConnectTrait for OneBot115Connect {
         json: &mut serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let json_obj = json.as_object_mut().ok_or("json is not object")?;
-        json_obj.insert("self_id".to_string(), serde_json::to_value(&self_id)?);
-        json_obj.insert("platform".to_string(), serde_json::to_value(&platform)?);
+        json_obj.insert("self_id".to_string(), serde_json::to_value(self_id)?);
+        json_obj.insert("platform".to_string(), serde_json::to_value(platform)?);
 
         // 处理日志
-        crate::cqapi::cq_add_log(format!("发送数据:{}", json.to_string()).as_str()).unwrap();
+        crate::cqapi::cq_add_log(format!("发送数据:{}", json).as_str()).unwrap();
 
         let mut http_url = self.url.to_owned();
         http_url = http_url.replacen("ovo://", "http://", 1);
@@ -275,7 +270,6 @@ impl BotConnectTrait for OneBot115Connect {
 
     fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
         let lk = self.platforms.read().unwrap();
-        let platforms = (*lk).clone();
-        return platforms;
+        (*lk).clone()
     }
 }
