@@ -1,4 +1,5 @@
 pub mod all_to_silk;
+mod deal_m4a;
 mod deal_flac;
 mod deal_ogg;
 mod deal_silk;

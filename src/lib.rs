@@ -5,6 +5,10 @@ use std::thread;
 use cqapi::cq_add_log;
 use rust_embed::RustEmbed;
 
+
+
+mod ai_client;
+mod embedded_source;
 mod botconn;
 mod browserbridge;
 pub mod config_manager;

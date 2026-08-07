@@ -32,7 +32,7 @@ imap = { git = "https://github.com/jonhoo/rust-imap", default-features = false }
 lettre = { version = "0.11.18", default-features = false, features = ["builder", "hostname", "smtp-transport", "tokio1-rustls", "ring", "webpki-roots"] }
 mail-parser = "0.11.1"
 regex = "1.11.2"
-reqwest = { version = "0.12.23", default-features = false, features = ["rustls-tls", "multipart"] }
+reqwest = { version = "0.12.23", default-features = false, features = ["rustls-tls", "multipart", "stream"] }
 rustls = { version = "0.23", default-features = false, features = ["ring"] }
 webpki-roots = "1.0"
 scopeguard = "1.2.0"
@@ -91,7 +91,7 @@ zhconv = {version  = "0.3.3", features = ["opencc","compress"]}
 async-trait = { workspace = true }
 html5gum = { workspace = true }
 html-escape = { workspace = true }
-tokio-util = { version = "0.7.16", default-features = false, features = [ "io" ] }
+tokio-util = { version = "0.7.16", default-features = false, features = [ "io", "rt" ] }
 http-body-util = "0.1.3"
 hyper-util = { version = "0.1.17", features = ["full"] }
 bytes = "1.10.1"
@@ -105,6 +105,7 @@ claxon = "0.4.3"
 minimp3_fixed ="0.5.4"
 silk-rs-no-llvm = {git = "https://github.com/super1207/silk-rs-no-llvm"}
 lewton = "0.10.2"
+symphonia={version="0.5",default-features=false,features=["aac","isomp4"]}
 
 msedge-tts = { path = "crates/msedge-tts", features = ["proxy"] }
 

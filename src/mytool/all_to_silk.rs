@@ -1,6 +1,6 @@
 use std::io::BufReader;
 
-use super::{deal_flac, deal_ogg, deal_silk, mp3_deal, wav_deal};
+use super::{deal_flac, deal_m4a, deal_ogg, deal_silk, mp3_deal, wav_deal};
 
 #[derive(Debug)]
 pub struct PCMStruct {
@@ -23,6 +23,8 @@ pub fn get_media_type(input: &[u8]) -> &str {
         "silk"
     } else if input.starts_with(&[0x4F, 0x67, 0x67, 0x53]) {
         "ogg"
+    } else if input.get(4..8) == Some(b"ftyp") {
+        "m4a"
     } else {
         ""
     }
@@ -39,6 +41,8 @@ pub fn all_to_silk(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> 
         pcm = deal_flac::deal_flac(BufReader::new(input))?;
     } else if tp == "ogg" {
         pcm = deal_ogg::deal_ogg(BufReader::new(input))?;
+    } else if tp == "m4a" {
+        pcm = deal_m4a::deal_m4a(BufReader::new(input))?;
     } else if tp == "silk" {
         return Ok(input.to_owned());
     } else {

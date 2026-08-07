@@ -24,18 +24,27 @@ use http_body_util::BodyExt;
 use hyper::body::Incoming;
 use hyper::http::HeaderValue;
 use hyper::service::service_fn;
-use hyper::Response;
+use hyper::{Method, Response, StatusCode};
+use serde::de::DeserializeOwned;
+
 use serde_json::json;
 use std::io::Read;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::thread;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
+use tokio_util::sync::CancellationToken;
 use tokio_util::bytes::Buf;
 
-type GenericError = Box<dyn std::error::Error + Send + Sync>;
-type BoxBody = http_body_util::combinators::BoxBody<Bytes, GenericError>;
-type Result<T> = std::result::Result<T, GenericError>;
+pub(crate) type GenericError = Box<dyn std::error::Error + Send + Sync>;
+pub(crate) type BoxBody = http_body_util::combinators::BoxBody<Bytes, GenericError>;
+pub(crate) type Result<T> = std::result::Result<T, GenericError>;
+
+mod live2d;
+mod proxy;
+mod fsapi;
+use live2d::*;
 
 pub fn add_ws_log(log_msg: String) {
     runtime().spawn(async move {
@@ -49,7 +58,392 @@ async fn deal_api(
     can_read: bool,
 ) -> Result<hyper::Response<BoxBody>> {
     let url_path = request.uri().path();
-    if url_path == "/get_code" {
+
+    if url_path == "/source_code" {
+        if !can_read {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let mut path = String::new();
+        if let Some(query) = request.uri().query() {
+            for (k, v) in url::form_urlencoded::parse(query.as_bytes()) {
+                if k == "path" {
+                    path = v.into_owned();
+                }
+            }
+        }
+        let ret = match crate::embedded_source::get_source(&path) {
+            Some(content) => json!({"retcode": 0, "data": content}),
+            None => json!({"retcode": -1, "data": "文件不存在或未嵌入"}),
+        };
+        let mut res = hyper::Response::new(full(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        return Ok(res);
+    } else if url_path == "/source_code_list" {
+        if !can_read {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        let ret = json!({"retcode": 0, "data": crate::embedded_source::source_list()});
+        let mut res = hyper::Response::new(full(ret.to_string()));
+        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        return Ok(res);
+    }
+
+    if url_path == "/proxy" {
+        if !can_write {
+            let res = hyper::Response::new(full("api not found"));
+            return Ok(res);
+        }
+        return proxy::handle(request).await;
+    }
+    if url_path == "/live2d_chat_config" {
+        if request.method() == Method::GET {
+            if !can_write {
+                return Ok(hyper::Response::new(full("api not found")));
+            }
+            match crate::config_manager::live2d_chat_config() {
+                Ok(config) => {
+                    let context_used = live2d_agent_context_used().await;
+                    Ok(live2d_chat_config_response(&config, can_write, context_used))
+                }
+                Err(error) => Ok(json_api_error(&format!("读取对话设置失败: {error}"))),
+            }
+        } else if request.method() == Method::POST {
+            if !can_write {
+                return Ok(hyper::Response::new(full("api not found")));
+            }
+            let update: Live2dChatConfigUpdate =
+                match read_json_body(request, LIVE2D_CHAT_BODY_LIMIT).await {
+                    Ok(update) => update,
+                    Err(error) => return Ok(json_api_error(&format!("对话设置格式错误: {error}"))),
+                };
+            let _config_guard = live2d_agent_flow_lock().lock().await;
+            match live2d_agent_has_pending_tools().await {
+                Ok(true) => {
+                    return Ok(json_api_error("工具执行期间不能修改对话设置，请稍后重试"));
+                }
+                Ok(false) => {}
+                Err(error) => return Ok(json_api_error(&format!("读取对话状态失败: {error}"))),
+            }
+            let mut config = match crate::config_manager::live2d_chat_config() {
+                Ok(config) => config,
+                Err(error) => return Ok(json_api_error(&format!("读取对话设置失败: {error}"))),
+            };
+            config.enabled = update.enabled;
+            config.base_url = update.base_url.trim().to_owned();
+            config.model = update.model.trim().to_owned();
+            config.system_prompt = update.system_prompt.trim().to_owned();
+            if let Some(thinking_level) = update.thinking_level {
+                config.thinking_level = thinking_level;
+            }
+            if let Some(context_length) = update.context_length {
+                config.context_length = context_length;
+            }
+            config.timeout_seconds = update.timeout_seconds;
+            if update.clear_api_key {
+                config.api_key.clear();
+            } else if let Some(api_key) = update.api_key.filter(|key| !key.trim().is_empty()) {
+                config.api_key = api_key.trim().to_owned();
+            }
+
+            let config_to_save = config.clone();
+            match tokio::task::spawn_blocking(move || {
+                crate::config_manager::save_live2d_chat_config(&config_to_save)
+            })
+            .await?
+            {
+                Ok(()) => {
+                    if let Some(messages) = match get_live2d_agent_conversation().await {
+                        Ok(messages) => messages,
+                        Err(error) => {
+                            return Ok(json_api_error(&format!("读取对话状态失败: {error}")));
+                        }
+                    } {
+                        let used = crate::ai_client::estimate_context_tokens(&messages);
+                        if used > config.context_length {
+                            if let Err(error) = clear_live2d_agent_conversation().await {
+                                return Ok(json_api_error(&format!("清除超限对话失败: {error}")));
+                            }
+                        }
+                    }
+                    let context_used = live2d_agent_context_used().await;
+                    Ok(live2d_chat_config_response(&config, true, context_used))
+                }
+                Err(error) => Ok(json_api_error(&format!("保存对话设置失败: {error}"))),
+            }
+        } else {
+            Ok(method_not_allowed())
+        }
+    } else if url_path == "/live2d_chat_compress" {
+        if !can_write {
+            return Ok(hyper::Response::new(full("api not found")));
+        }
+        if request.method() != Method::POST {
+            return Ok(method_not_allowed());
+        }
+        let _compress_guard = live2d_agent_flow_lock().lock().await;
+        match live2d_agent_has_pending_tools().await {
+            Ok(true) => return Ok(json_api_error("工具执行期间不能压缩对话，请稍后重试")),
+            Ok(false) => {}
+            Err(error) => return Ok(json_api_error(&format!("读取对话状态失败: {error}"))),
+        }
+        let config = match crate::config_manager::live2d_chat_config() {
+            Ok(config) => config,
+            Err(error) => return Ok(json_api_error(&format!("读取对话设置失败: {error}"))),
+        };
+        let diaries = tokio::task::spawn_blocking(crate::resource_manager::list_live2d_diaries)
+            .await
+            .ok()
+            .and_then(|result| result.ok())
+            .unwrap_or_default();
+        match crate::httpserver::live2d::compress_live2d_conversation(&config, &diaries).await {
+            Some(compressed) => {
+                let context_tokens = crate::ai_client::estimate_context_tokens(&compressed);
+                Ok(json_api_response(json!({
+                    "retcode": 0,
+                    "data": {
+                        "compressed": true,
+                        "message_count": compressed.len(),
+                        "context_tokens": context_tokens,
+                        "context_length": config.context_length
+                    }
+                })))
+            }
+            None => Ok(json_api_error("压缩失败：对话为空或压缩助手出错")),
+        }
+    } else if url_path == "/live2d_chat" {
+        if !can_write {
+            return Ok(hyper::Response::new(full("api not found")));
+        }
+        if request.method() != Method::POST {
+            return Ok(method_not_allowed());
+        }
+
+        let chat_request: Live2dChatRequest =
+            match read_json_body(request, LIVE2D_CHAT_BODY_LIMIT).await {
+                Ok(chat_request) => chat_request,
+                Err(error) => return Ok(json_api_error(&format!("消息格式错误: {error}"))),
+            };
+        let flow_guard = live2d_agent_flow_lock().lock().await;
+        let config = match crate::config_manager::live2d_chat_config() {
+            Ok(config) => config,
+            Err(error) => return Ok(json_api_error(&format!("读取对话设置失败: {error}"))),
+        };
+        let diaries = tokio::task::spawn_blocking(crate::resource_manager::list_live2d_diaries)
+            .await
+            .ok()
+            .and_then(|result| result.ok())
+            .unwrap_or_default();
+
+        let (call, ctx) = match prepare_live2d_agent_call(
+            &config,
+            chat_request,
+            &diaries,
+            flow_guard,
+            None,
+        )
+        .await
+        {
+            Ok(prepared) => prepared,
+            Err(error) => return Ok(json_api_error(&error)),
+        };
+        let step_result = execute_live2d_agent_call(&config, &call, &diaries).await;
+        let step = match step_result {
+            Ok(step) => step,
+            Err(error) => {
+                cq_add_log_w(&format!("Live2D对话失败: {error}")).unwrap();
+                return Ok(json_api_error(&error.to_string()));
+            }
+        };
+        match live2d_agent_step_response(
+            step,
+            ctx.completed_steps,
+            config.context_length,
+        )
+        .await
+        {
+            Ok(response) => Ok(response),
+            Err(error) => {
+                cq_add_log_w(&format!("Live2D Agent失败: {error}")).unwrap();
+                Ok(json_api_error(&error.to_string()))
+            }
+        }
+    } else if url_path == "/live2d_chat_stream" {
+        if !can_write {
+            return Ok(hyper::Response::new(full("api not found")));
+        }
+        if request.method() != Method::POST {
+            return Ok(method_not_allowed());
+        }
+        return deal_live2d_chat_stream(request).await;
+    } else if url_path == "/live2d_chat_cancel" {
+        if !can_write {
+            return Ok(hyper::Response::new(full("api not found")));
+        }
+        if request.method() != Method::POST {
+            return Ok(method_not_allowed());
+        }
+        let cancel_request: Live2dCancelRequest =
+            match read_json_body(request, LIVE2D_CHAT_BODY_LIMIT).await {
+                Ok(cancel_request) => cancel_request,
+                Err(error) => return Ok(json_api_error(&format!("取消请求格式错误: {error}"))),
+            };
+        let _cancel_guard = live2d_agent_flow_lock().lock().await;
+        return match cancel_live2d_pending_tools(&cancel_request.generation).await {
+            Ok(()) => Ok(json_api_response(json!({"retcode": 0, "data": true}))),
+            Err(error) => Ok(json_api_error(&error)),
+        };
+    } else if url_path == "/fs" {
+        if !can_write {
+            return Ok(hyper::Response::new(full("api not found")));
+        }
+        return fsapi::handle(request).await;
+    } else if url_path == "/live2d_conversation" {
+        if !can_write {
+            return Ok(hyper::Response::new(full("api not found")));
+        }
+        if request.method() == Method::POST {
+            let mutation: Live2dConversationMutation =
+                match read_json_body(request, LIVE2D_CONVERSATION_BODY_LIMIT).await {
+                    Ok(mutation) => mutation,
+                    Err(error) => {
+                        return Ok(json_api_error(&format!("修改对话格式错误: {error}")))
+                    }
+                };
+            let _mutate_guard = live2d_agent_flow_lock().lock().await;
+            match live2d_agent_has_pending_tools().await {
+                Ok(true) => return Ok(json_api_error("工具执行期间不能编辑对话，请稍后重试")),
+                Ok(false) => {}
+                Err(error) => return Ok(json_api_error(&format!("读取对话状态失败: {error}"))),
+            }
+            return match mutate_live2d_agent_conversation(mutation).await {
+                Ok(messages) => Ok(json_api_response(json!({
+                    "retcode": 0,
+                    "data": {"count": messages.len()}
+                }))),
+                Err(error) => Ok(json_api_error(&error)),
+            };
+        }
+        if request.method() != Method::GET {
+            return Ok(method_not_allowed());
+        }
+        let messages = match get_live2d_agent_conversation().await {
+            Ok(messages) => messages.unwrap_or_default(),
+            Err(error) => return Ok(json_api_error(&format!("读取对话状态失败: {error}"))),
+        };
+        let count = messages.len();
+        let config = match crate::config_manager::live2d_chat_config() {
+            Ok(config) => config,
+            Err(error) => return Ok(json_api_error(&format!("读取对话设置失败: {error}"))),
+        };
+        let diaries = tokio::task::spawn_blocking(crate::resource_manager::list_live2d_diaries)
+            .await
+            .ok()
+            .and_then(|result| result.ok())
+            .unwrap_or_default();
+        let next_payload =
+            crate::ai_client::build_next_request_payload(&config, &messages, &diaries)
+                .unwrap_or_else(|error| {
+                    serde_json::json!({"error": error.to_string()})
+                });
+        let payload = json!({
+            "retcode": 0,
+            "data": {
+                "messages": messages,
+                "count": count,
+                "next_payload": next_payload
+            }
+        });
+        let mut res = hyper::Response::new(full(payload.to_string()));
+        res.headers_mut().insert(
+            "Content-Type",
+            HeaderValue::from_static("application/json"),
+        );
+        Ok(res)
+    } else if url_path == "/live2d_diary" {
+        if !can_write {
+            return Ok(hyper::Response::new(full("api not found")));
+        }
+        if request.method() != Method::GET {
+            return Ok(method_not_allowed());
+        }
+        let items = match tokio::task::spawn_blocking(crate::resource_manager::list_live2d_diaries)
+            .await
+        {
+            Ok(Ok(items)) => items,
+            Ok(Err(error)) => return Ok(json_api_error(&format!("读取日记本失败: {error}"))),
+            Err(error) => return Ok(json_api_error(&format!("读取日记本失败: {error}"))),
+        };
+        let payload = json!({
+            "retcode": 0,
+            "data": {
+                "items": items
+                    .into_iter()
+                    .map(|entry| json!({
+                        "key": entry.key,
+                        "title": entry.title,
+                        "content": entry.content,
+                        "create_time": entry.create_time,
+                        "update_time": entry.update_time
+                    }))
+                    .collect::<Vec<_>>(),
+                "total": crate::resource_manager::LIVE2D_DIARY_LIMIT
+            }
+        });
+        let mut res = hyper::Response::new(full(payload.to_string()));
+        res.headers_mut().insert(
+            "Content-Type",
+            HeaderValue::from_static("application/json"),
+        );
+        Ok(res)
+    } else if url_path == "/live2d_diary_query" {
+        if !can_write {
+            return Ok(hyper::Response::new(full("api not found")));
+        }
+        if request.method() != Method::POST {
+            return Ok(method_not_allowed());
+        }
+        let body = match read_json_body::<serde_json::Value>(request, LIVE2D_CHAT_BODY_LIMIT).await
+        {
+            Ok(body) => body,
+            Err(error) => return Ok(json_api_error(&format!("查询格式错误: {error}"))),
+        };
+        let sql = match body.get("sql").and_then(serde_json::Value::as_str) {
+            Some(sql) => sql.trim(),
+            None => return Ok(json_api_error("缺少 sql 字段")),
+        };
+        if sql.is_empty() {
+            return Ok(json_api_error("sql 不能为空"));
+        }
+        if sql.chars().count() > 2000 {
+            return Ok(json_api_error("sql 过长"));
+        }
+        let sql = sql.to_owned();
+        let query_result = tokio::task::spawn_blocking(move || {
+            crate::resource_manager::query_live2d_db(&sql)
+        })
+        .await;
+        let (columns, rows) = match query_result {
+            Ok(Ok(result)) => result,
+            Ok(Err(error)) => {
+                return Ok(json_api_error(&format!("查询失败: {error}")));
+            }
+            Err(error) => {
+                return Ok(json_api_error(&format!("查询失败: {error}")));
+            }
+        };
+        let payload = json!({
+            "retcode": 0,
+            "data": {"columns": columns, "rows": rows}
+        });
+        let mut res = hyper::Response::new(full(payload.to_string()));
+        res.headers_mut().insert(
+            "Content-Type",
+            HeaderValue::from_static("application/json"),
+        );
+        Ok(res)
+    } else if url_path == "/get_code" {
         if !can_read {
             let res = hyper::Response::new(full("api not found"));
             return Ok(res);
@@ -1116,32 +1510,42 @@ async fn deal_file(
         .boxed();
     let mut res = hyper::Response::new(kk);
     *res.status_mut() = hyper::StatusCode::OK;
-    if url_path.ends_with(".html") {
+    let file_name = url_path.rsplit('/').next().unwrap_or("");
+    if matches!(
+        file_name,
+        "vue.js"
+            | "vue3-sfc-loader.min.js"
+            | "favicon.ico"
+            | "l2d.js"
+            | "model.moc"
+            | "default-costume.png"
+            | "pajamas-costume.png"
+            | "school-costume.png"
+    ) {
         res.headers_mut()
             .insert("Cache-Control", HeaderValue::from_static("max-age=300"));
+    }
+    if url_path.ends_with(".html") {
         res.headers_mut().insert(
             "Content-Type",
             HeaderValue::from_static("text/html; charset=utf-8"),
         );
     } else if url_path.ends_with(".js") {
-        res.headers_mut()
-            .insert("Cache-Control", HeaderValue::from_static("max-age=300"));
         res.headers_mut().insert(
             "Content-Type",
             HeaderValue::from_static("text/javascript; charset=utf-8"),
         );
     } else if url_path.ends_with(".css") {
-        res.headers_mut()
-            .insert("Cache-Control", HeaderValue::from_static("max-age=300"));
         res.headers_mut().insert(
             "Content-Type",
             HeaderValue::from_static("text/css; charset=utf-8"),
         );
     } else if url_path.ends_with(".png") {
         res.headers_mut()
-            .insert("Cache-Control", HeaderValue::from_static("max-age=300"));
-        res.headers_mut()
             .insert("Content-Type", HeaderValue::from_static("image/png"));
+    } else if url_path.ends_with(".ico") {
+        res.headers_mut()
+            .insert("Content-Type", HeaderValue::from_static("image/x-icon"));
     } else if url_path.ends_with(".txt") {
         res.headers_mut()
             .insert("Content-Type", HeaderValue::from_static("text/plain"));
@@ -1153,19 +1557,13 @@ async fn deal_file(
             .insert("Content-Type", HeaderValue::from_static("font/woff2"));
     } else if url_path.ends_with(".json") {
         res.headers_mut()
-            .insert("Cache-Control", HeaderValue::from_static("max-age=300"));
-        res.headers_mut()
             .insert("Content-Type", HeaderValue::from_static("application/json"));
     } else if url_path.ends_with(".moc") || url_path.ends_with(".mtn") {
-        res.headers_mut()
-            .insert("Cache-Control", HeaderValue::from_static("max-age=300"));
         res.headers_mut().insert(
             "Content-Type",
             HeaderValue::from_static("application/octet-stream"),
         );
     } else if url_path.ends_with(".vue") {
-        res.headers_mut()
-            .insert("Cache-Control", HeaderValue::from_static("max-age=300"));
         res.headers_mut().insert(
             "Content-Type",
             HeaderValue::from_static("text/plain; charset=utf-8"),
@@ -1473,6 +1871,57 @@ pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody {
         .map_err(|never| match never {})
         .boxed()
 }
+
+async fn read_json_body<T: DeserializeOwned>(
+    request: hyper::Request<Incoming>,
+    limit: usize,
+) -> Result<T> {
+    if request
+        .headers()
+        .get(hyper::header::CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some_and(|length| length > limit)
+    {
+        return Err("请求内容过大".into());
+    }
+
+    let mut body = request.into_body();
+    let mut data = Vec::new();
+    while let Some(frame) = body.frame().await {
+        let frame = frame?;
+        if let Some(chunk) = frame.data_ref() {
+            if data.len() + chunk.len() > limit {
+                return Err("请求内容过大".into());
+            }
+            data.extend_from_slice(chunk);
+        }
+    }
+    Ok(serde_json::from_slice(&data)?)
+}
+
+pub(crate) fn json_api_response(value: serde_json::Value) -> hyper::Response<BoxBody> {
+    let mut response = hyper::Response::new(full(value.to_string()));
+    response.headers_mut().insert(
+        hyper::header::CONTENT_TYPE,
+        HeaderValue::from_static("application/json; charset=utf-8"),
+    );
+    response
+}
+
+pub(crate) fn json_api_error(message: &str) -> hyper::Response<BoxBody> {
+    json_api_response(json!({
+        "retcode": -1,
+        "data": {"message": message}
+    }))
+}
+
+fn method_not_allowed() -> hyper::Response<BoxBody> {
+    let mut response = json_api_error("请求方法不支持");
+    *response.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
+    response
+}
+
 async fn connect_handle(
     request: hyper::Request<hyper::body::Incoming>,
     is_local: bool,
@@ -1773,4 +2222,526 @@ pub fn init_http_server() -> Result<()> {
     }
 
     Ok(())
+}
+/// 流式对话接口：返回 text/event-stream 的 SSE 响应。
+/// 事件：
+///   event: reasoning  data: {"delta":"..."}
+///   event: content    data: {"delta":"..."}
+///   event: done       data: {"type":"final"|"tool_calls", ...}
+///   event: error      data: {"message":"..."}
+const LIVE2D_STREAM_SEND_TIMEOUT: Duration = Duration::from_secs(30);
+
+struct Live2dResponseStreamState {
+    rx: tokio::sync::mpsc::Receiver<Bytes>,
+    cancellation: CancellationToken,
+    cleanup_generation: Arc<StdMutex<Option<String>>>,
+    done_delivered: bool,
+}
+
+impl Drop for Live2dResponseStreamState {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+        if !self.done_delivered {
+            let generation = self
+                .cleanup_generation
+                .lock()
+                .ok()
+                .and_then(|generation| generation.clone());
+            runtime().spawn(async move {
+                let Some(generation) = generation else {
+                    return;
+                };
+                let _guard = live2d_agent_flow_lock().lock().await;
+                let _ = cancel_live2d_pending_tools(&generation).await;
+            });
+        }
+    }
+}
+
+async fn deal_live2d_chat_stream(
+    request: hyper::Request<hyper::body::Incoming>,
+) -> Result<hyper::Response<BoxBody>> {
+    let chat_request: Live2dChatRequest =
+        match read_json_body(request, LIVE2D_CHAT_BODY_LIMIT).await {
+            Ok(chat_request) => chat_request,
+            Err(error) => return Ok(json_api_error(&format!("消息格式错误: {error}"))),
+        };
+    let (tx, rx) = tokio::sync::mpsc::channel::<Bytes>(64);
+    let cancellation = CancellationToken::new();
+    let agent_cancellation = cancellation.clone();
+    let cleanup_generation = Arc::new(StdMutex::new(None));
+    let agent_cleanup_generation = cleanup_generation.clone();
+    runtime().spawn(async move {
+        run_live2d_chat_stream(
+            chat_request,
+            tx,
+            agent_cancellation,
+            agent_cleanup_generation,
+        )
+        .await;
+    });
+    let state = Live2dResponseStreamState {
+        rx,
+        cancellation,
+        cleanup_generation,
+        done_delivered: false,
+    };
+    let stream = futures_util::stream::unfold(state, |mut state| async move {
+        match state.rx.recv().await {
+            Some(bytes) => {
+                if bytes.starts_with(b"event: done\n") {
+                    state.done_delivered = true;
+                }
+                Some((Ok::<_, GenericError>(hyper::body::Frame::data(bytes)), state))
+            }
+            None => None,
+        }
+    });
+    let body: BoxBody = http_body_util::BodyExt::boxed(http_body_util::StreamBody::new(stream));
+    let mut res = hyper::Response::new(body);
+    res.headers_mut().insert(
+        hyper::header::CONTENT_TYPE,
+        HeaderValue::from_static("text/event-stream; charset=utf-8"),
+    );
+    res.headers_mut()
+        .insert(hyper::header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    Ok(res)
+}
+
+/// 发送一条 SSE error 事件。
+fn live2d_stream_send_error(tx: &tokio::sync::mpsc::Sender<Bytes>, text: String) {
+    let _ = tx.try_send(live2d_sse_event("error", &json!({ "message": text })));
+}
+
+/// 一次看板娘 Agent 调用（三种入口：首次提问 / 带历史继续提问 / 继续工具调用）。
+enum Live2dAgentCall {
+    Start {
+        history: Vec<crate::ai_client::ChatMessage>,
+        message: String,
+    },
+    ContinueConversation {
+        messages: Vec<serde_json::Value>,
+        message: String,
+    },
+    ContinueAgent {
+        messages: Vec<serde_json::Value>,
+        tool_results: Vec<(String, String)>,
+        generation: String,
+    },
+}
+
+/// 一次 Agent 调用的流程上下文：已完成步数 + 全局流程锁。
+struct Live2dAgentContext {
+    completed_steps: u64,
+    _flow_guard: tokio::sync::MutexGuard<'static, ()>,
+}
+
+/// 校验并准备一次看板娘 Agent 调用。
+/// 单用户场景：不维护会话表，每次从数据库读取对话消息；
+/// 以「是否携带工具结果」区分继续工具调用与初始提问。
+/// 非流式与流式接口共用，消除两套入口的重复逻辑。
+async fn prepare_live2d_agent_call(
+    config: &crate::config_manager::Live2dChatConfig,
+    chat_request: Live2dChatRequest,
+    diaries: &[crate::resource_manager::Live2dDiaryEntry],
+    flow_guard: tokio::sync::MutexGuard<'static, ()>,
+    cancellation: Option<&CancellationToken>,
+) -> std::result::Result<(Live2dAgentCall, Live2dAgentContext), String> {
+    let Live2dChatRequest {
+        message,
+        history,
+        tool_results,
+        generation,
+    } = chat_request;
+
+    // 继续工具调用：携带工具结果提交，从数据库恢复待校验的调用 ID
+    if !tool_results.is_empty() {
+        if message.is_some() || !history.is_empty() {
+            return Err("提交工具结果时不能同时携带消息、历史或会话标识".to_owned());
+        }
+        let generation = generation
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty() && value.len() <= 100)
+            .ok_or_else(|| "提交工具结果时缺少有效的对话代次".to_owned())?;
+        let messages = get_live2d_agent_conversation()
+            .await?
+            .ok_or_else(|| "没有待继续的对话，请重新提问".to_owned())?;
+        let pending_call_ids = live2d_agent_pending_call_ids(&messages)
+            .ok_or_else(|| "没有待执行的工具调用，请重新提问".to_owned())?;
+        let stored_generation = get_live2d_agent_generation()
+            .await?
+            .ok_or_else(|| "待执行工具调用已经失效，请重新提问".to_owned())?;
+        if stored_generation != generation {
+            return Err("工具结果所属对话已失效，请刷新后重新提问".to_owned());
+        }
+        let results = validate_live2d_tool_results(&pending_call_ids, tool_results)
+            .map_err(|error| error.to_string())?;
+        let completed_steps = live2d_agent_completed_steps(&messages);
+        return Ok((
+            Live2dAgentCall::ContinueAgent {
+                messages,
+                tool_results: results,
+                generation: generation.to_owned(),
+            },
+            Live2dAgentContext {
+                completed_steps,
+                _flow_guard: flow_guard,
+            },
+        ));
+    }
+
+    if generation.is_some() {
+        return Err("新消息不能携带工具调用代次".to_owned());
+    }
+
+    // 初始提问
+    let Some(message) = message else {
+        return Err("消息不能为空".to_owned());
+    };
+    let empty_ctx = Live2dAgentContext {
+        completed_steps: 0,
+        _flow_guard: flow_guard,
+    };
+    match get_live2d_agent_conversation().await? {
+        Some(mut messages) => {
+            if live2d_agent_pending_call_ids(&messages).is_some() {
+                return Err("上一轮工具仍在执行，请等待完成或停止后清除对话".to_owned());
+            }
+            // 上下文用量检查：超过阈值则压缩历史并顺带更新日记
+            let mut usage_messages = messages.clone();
+            usage_messages.push(serde_json::json!({
+                "role": "user",
+                "content": message
+            }));
+            let used_tokens = crate::ai_client::estimate_context_tokens(&usage_messages);
+            let limit = config.context_length;
+            if limit > 0
+                && used_tokens as f64
+                    > limit as f64 * crate::ai_client::CONTEXT_COMPRESS_THRESHOLD
+            {
+                match crate::ai_client::compress_conversation(
+                    config,
+                    &messages,
+                    diaries,
+                    cancellation,
+                )
+                .await
+                {
+                    Ok(outcome) => {
+                        if cancellation.is_some_and(CancellationToken::is_cancelled) {
+                            return Err("客户端已断开，对话已取消，未保存任何内容".to_owned());
+                        }
+                        messages = vec![serde_json::json!({
+                            "role": "system",
+                            "content": format!(
+                                "{}{}",
+                                crate::ai_client::COMPRESSED_SUMMARY_PREFIX,
+                                outcome.summary
+                            ),
+                            "timestamp": crate::ai_client::now_timestamp()
+                        })];
+                        save_live2d_agent_conversation(messages.clone()).await?;
+                        if cancellation.is_some_and(CancellationToken::is_cancelled) {
+                            return Err("客户端已断开，对话已取消".to_owned());
+                        }
+                        if !outcome.diary.is_empty() {
+                            let add = outcome
+                                .diary
+                                .add
+                                .into_iter()
+                                .map(|entry| (entry.title, entry.content))
+                                .collect::<Vec<_>>();
+                            let delete = outcome.diary.delete;
+                            match tokio::task::spawn_blocking(move || {
+                                crate::resource_manager::apply_live2d_diary_updates(
+                                    &add, &delete,
+                                )
+                            })
+                            .await
+                            {
+                                Ok(Ok(())) => {
+                                    cq_add_log_w("Live2D日记本已更新").unwrap();
+                                }
+                                Ok(Err(error)) => {
+                                    cq_add_log_w(&format!("更新Live2D日记本失败: {error}"))
+                                        .unwrap();
+                                }
+                                Err(error) => {
+                                    cq_add_log_w(&format!("更新Live2D日记本失败: {error}"))
+                                        .unwrap();
+                                }
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        cq_add_log_w(&format!("Live2D上下文压缩失败: {error}")).unwrap();
+                    }
+                }
+            }
+            Ok((
+                Live2dAgentCall::ContinueConversation { messages, message },
+                empty_ctx,
+            ))
+        }
+        None => Ok((Live2dAgentCall::Start { history, message }, empty_ctx)),
+    }
+}
+
+/// 非流式执行一次 Agent 调用。
+async fn execute_live2d_agent_call(
+    config: &crate::config_manager::Live2dChatConfig,
+    call: &Live2dAgentCall,
+    diaries: &[crate::resource_manager::Live2dDiaryEntry],
+) -> std::result::Result<
+    crate::ai_client::AgentStep,
+    Box<dyn std::error::Error + Send + Sync>,
+> {
+    match call {
+        Live2dAgentCall::Start { history, message } => {
+            crate::ai_client::start_agent(config, history, message, diaries).await
+        }
+        Live2dAgentCall::ContinueConversation { messages, message } => {
+            crate::ai_client::continue_conversation(config, messages, message, diaries).await
+        }
+        Live2dAgentCall::ContinueAgent {
+            messages,
+            tool_results,
+            ..
+        } => {
+            crate::ai_client::continue_agent(config, messages, tool_results).await
+        }
+    }
+}
+
+/// 调用一次流式 Agent 调用，并把推理/回答增量实时转发为 SSE 事件；
+/// 返回完整的 AgentStep，供调用方发送 done 事件。
+async fn run_live2d_stream_agent(
+    config: &crate::config_manager::Live2dChatConfig,
+    call: Live2dAgentCall,
+    diaries: &[crate::resource_manager::Live2dDiaryEntry],
+    tx: &tokio::sync::mpsc::Sender<Bytes>,
+    cancellation: &CancellationToken,
+    cleanup_generation: &Arc<StdMutex<Option<String>>>,
+) -> std::result::Result<crate::ai_client::AgentStep, String> {
+    let (step_tx, mut step_rx) = tokio::sync::mpsc::channel::<crate::ai_client::StreamEvent>(64);
+    let forward_tx = tx.clone();
+    let forward_cancellation = cancellation.clone();
+    let forwarder = runtime().spawn(async move {
+        while let Some(event) = step_rx.recv().await {
+            let (name, data) = match event {
+                crate::ai_client::StreamEvent::Reasoning(delta) => {
+                    ("reasoning", json!({ "delta": delta }))
+                }
+                crate::ai_client::StreamEvent::Content(delta) => {
+                    ("content", json!({ "delta": delta }))
+                }
+                crate::ai_client::StreamEvent::ToolCall {
+                    index,
+                    name,
+                    arguments,
+                } => {
+                    (
+                        "tool_call",
+                        json!({ "index": index, "name": name, "arguments": arguments }),
+                    )
+                }
+
+            };
+            if forward_cancellation.is_cancelled() {
+                return Err("客户端已断开，对话已取消".to_owned());
+            }
+            let send_result = tokio::select! {
+                biased;
+                _ = forward_cancellation.cancelled() => {
+                    return Err("客户端已断开，对话已取消".to_owned());
+                }
+                result = tokio::time::timeout(
+                    LIVE2D_STREAM_SEND_TIMEOUT,
+                    forward_tx.send(live2d_sse_event(name, &data)),
+                ) => result,
+            };
+            match send_result {
+                Ok(Ok(())) => {}
+                Ok(Err(_)) => {
+                    forward_cancellation.cancel();
+                    return Err("客户端已断开，对话已取消".to_owned());
+                }
+                Err(_) => {
+                    forward_cancellation.cancel();
+                    return Err("向客户端发送流式内容超时，对话已取消".to_owned());
+                }
+            }
+        }
+        Ok::<(), String>(())
+    });
+    let result = match call {
+        Live2dAgentCall::Start { history, message } => {
+            crate::ai_client::stream_start_agent(
+                config,
+                &history,
+                &message,
+                diaries,
+                step_tx,
+                cancellation,
+            )
+            .await
+        }
+        Live2dAgentCall::ContinueConversation { messages, message } => {
+            crate::ai_client::stream_continue_conversation(
+                config,
+                &messages,
+                &message,
+                diaries,
+                step_tx,
+                cancellation,
+            )
+            .await
+        }
+        Live2dAgentCall::ContinueAgent {
+            messages,
+            tool_results,
+            generation,
+        } => {
+            if let Ok(mut pending) = cleanup_generation.lock() {
+                *pending = Some(generation);
+            }
+            crate::ai_client::stream_continue_agent(
+                config,
+                &messages,
+                &tool_results,
+                step_tx,
+                cancellation,
+            )
+            .await
+        }
+    };
+    let forward_result = forwarder
+        .await
+        .map_err(|error| format!("流式转发任务失败: {error}"))?;
+    forward_result?;
+    if cancellation.is_cancelled() {
+        return Err("客户端已断开，对话已取消".to_owned());
+    }
+    result.map_err(|error| error.to_string())
+}
+
+/// 把 AgentStep 转成 SSE 的 done 事件，并统一维护会话与对话持久化
+/// （最终逻辑收敛到 live2d_agent_step_data，与非流式接口共用）。
+async fn emit_live2d_stream_step(
+    step: crate::ai_client::AgentStep,
+    completed_steps: u64,
+    context_length: u64,
+    tx: &tokio::sync::mpsc::Sender<Bytes>,
+    cancellation: &CancellationToken,
+    cleanup_generation: &Arc<StdMutex<Option<String>>>,
+) -> std::result::Result<(), String> {
+    if cancellation.is_cancelled() {
+        return Err("客户端已断开，对话已取消".to_owned());
+    }
+    let data = live2d_agent_step_data(step, completed_steps, context_length).await?;
+    let pending_generation = data
+        .get("generation")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_owned);
+    if let Ok(mut generation) = cleanup_generation.lock() {
+        *generation = pending_generation.clone();
+    }
+    if cancellation.is_cancelled() {
+        if let Some(generation) = pending_generation {
+            let _ = cancel_live2d_pending_tools(&generation).await;
+        }
+        return Err("客户端已断开，对话已取消".to_owned());
+    }
+    let send_result = tokio::select! {
+        biased;
+        _ = cancellation.cancelled() => {
+            return Err("客户端已断开，对话已取消".to_owned());
+        }
+        result = tokio::time::timeout(
+            LIVE2D_STREAM_SEND_TIMEOUT,
+            tx.send(live2d_sse_event("done", &data)),
+        ) => result,
+    };
+    let result = match send_result {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(_)) => Err("客户端已断开，对话已取消".to_owned()),
+        Err(_) => Err("向客户端发送完成事件超时".to_owned()),
+    };
+    if result.is_err() {
+        if let Some(generation) = pending_generation {
+            let _ = cancel_live2d_pending_tools(&generation).await;
+        }
+    }
+    result
+}
+
+/// 在后台执行一次流式 Agent 流程（初始对话或继续工具调用），
+/// 把增量事件与最终结果通过 `tx` 以 SSE 形式发送。
+async fn run_live2d_chat_stream(
+    chat_request: Live2dChatRequest,
+    tx: tokio::sync::mpsc::Sender<Bytes>,
+    cancellation: CancellationToken,
+    cleanup_generation: Arc<StdMutex<Option<String>>>,
+) {
+    let flow_guard = live2d_agent_flow_lock().lock().await;
+    if cancellation.is_cancelled() {
+        return;
+    }
+    let config = match crate::config_manager::live2d_chat_config() {
+        Ok(config) => config,
+        Err(error) => {
+            live2d_stream_send_error(&tx, format!("读取对话设置失败: {error}"));
+            return;
+        }
+    };
+    let diaries = tokio::task::spawn_blocking(crate::resource_manager::list_live2d_diaries)
+        .await
+        .ok()
+        .and_then(|result| result.ok())
+        .unwrap_or_default();
+    let (call, ctx) = match prepare_live2d_agent_call(
+        &config,
+        chat_request,
+        &diaries,
+        flow_guard,
+        Some(&cancellation),
+    )
+    .await
+    {
+        Ok(prepared) => prepared,
+        Err(error) => {
+            live2d_stream_send_error(&tx, error);
+            return;
+        }
+    };
+    let step = match run_live2d_stream_agent(
+        &config,
+        call,
+        &diaries,
+        &tx,
+        &cancellation,
+        &cleanup_generation,
+    )
+    .await
+    {
+        Ok(step) => step,
+        Err(error) => {
+            cq_add_log_w(&format!("Live2D对话失败: {error}")).unwrap();
+            live2d_stream_send_error(&tx, error);
+            return;
+        }
+    };
+    if let Err(error) = emit_live2d_stream_step(
+        step,
+        ctx.completed_steps,
+        config.context_length,
+        &tx,
+        &cancellation,
+        &cleanup_generation,
+    )
+    .await
+    {
+        cq_add_log_w(&format!("Live2D完成事件发送失败: {error}")).unwrap();
+    }
 }

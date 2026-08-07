@@ -22,6 +22,7 @@ var Paul_Pio = function (prop) {
     const current = {
         idol: 0,
         timeout: undefined,
+        messageLocked: false,
         menu: document.querySelector(".pio-container .pio-action"),
         canvas: document.getElementById("pio"),
         body: document.querySelector(".pio-container"),
@@ -72,26 +73,56 @@ var Paul_Pio = function (prop) {
 
             return current.idol;
         },
+        clearMessage: () => {
+            clearTimeout(current.timeout);
+            current.timeout = undefined;
+            current.messageLocked = false;
+            elements.dialog.classList.remove("active", "pio-dialog-closeable");
+        },
         // 创建对话框方法
         message: (text, options = {}) => {
             const { dialog } = elements;
+            if (current.messageLocked && !options.force) return;
+
+            dialog.innerText = "";
+            const content = tools.create("div", { class: "pio-dialog-content" });
 
             if (text.constructor === Array) {
-                dialog.innerText = tools.rand(text);
+                content.innerText = tools.rand(text);
             }
             else if (text.constructor === String) {
-                dialog[options.html ? "innerHTML" : "innerText"] = text;
+                content[options.html ? "innerHTML" : "innerText"] = text;
             }
             else {
-                dialog.innerText = "输入内容出现问题了 X_X";
+                content.innerText = "输入内容出现问题了 X_X";
+            }
+            dialog.appendChild(content);
+
+            dialog.classList.remove("pio-dialog-closeable");
+            if (options.closeable) {
+                const close = tools.create("button", { class: "pio-dialog-close" });
+                close.type = "button";
+                close.innerText = "×";
+                close.title = "关闭回答";
+                close.setAttribute("aria-label", "关闭回答");
+                close.onclick = (event) => {
+                    event.stopPropagation();
+                    modules.clearMessage();
+                };
+                dialog.appendChild(close);
+                dialog.classList.add("pio-dialog-closeable");
             }
 
             dialog.classList.add("active");
 
-            current.timeout = clearTimeout(current.timeout) || undefined;
-            current.timeout = setTimeout(() => {
-                dialog.classList.remove("active");
-            }, options.time || 3000);
+            clearTimeout(current.timeout);
+            current.timeout = undefined;
+            current.messageLocked = Boolean(options.persist);
+            if (!options.persist) {
+                current.timeout = setTimeout(() => {
+                    dialog.classList.remove("active");
+                }, options.time || 3000);
+            }
         },
         // 移除方法
         destroy: () => {
@@ -102,6 +133,7 @@ var Paul_Pio = function (prop) {
 
     this.destroy = modules.destroy;
     this.message = modules.message;
+    this.clearMessage = modules.clearMessage;
 
     /* - 提示操作 */
     const action = {

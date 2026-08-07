@@ -12,10 +12,15 @@
 
 .pio-container{
     bottom: 0;
+    width: 200px;
     z-index: 52;
     color: #666;
     position: fixed;
     user-select: none;
+}
+.pio-container .pio-dialog,
+.pio-chat{
+    user-select: text;
 }
 .pio-container.left{ left: 0 }
 .pio-container.right{ right: 0 }
@@ -60,30 +65,425 @@
     background-image: url(data:image/svg+xml;base64,PHN2ZyB2aWV3Qm94PSIwIDAgMTAyNCAxMDI0IiB2ZXJzaW9uPSIxLjEiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHBhdGggZD0iTTUxMiAyMDkuNDAzMjQxYy0yMDEuNzMxNTE0IDAtMzc0LjAwOTIwNiAxMjUuNDc2NzgzLTQ0My44MDg5MjIgMzAyLjU5Njc1OSA2OS43OTg2OTIgMTc3LjExOTk3NyAyNDIuMDc3NDA4IDMwMi41OTY3NTkgNDQzLjgwODkyMiAzMDIuNTk2NzU5IDIwMS45MzMxMDUgMCAzNzQuMDEwMjI5LTEyNS40NzY3ODMgNDQzLjgwODkyMi0zMDIuNTk2NzU5Qzg4Ni4wMDkyMDYgMzM0Ljg4MDAyMyA3MTMuOTMzMTA1IDIwOS40MDMyNDEgNTEyIDIwOS40MDMyNDF6TTUxMiA3MTMuNzMxNTE0Yy0xMTEuMzU1MTU3IDAtMjAxLjczMTUxNC05MC4zNzUzMzQtMjAxLjczMTUxNC0yMDEuNzMxNTE0czkwLjM3NTMzNC0yMDEuNzMxNTE0IDIwMS43MzE1MTQtMjAxLjczMTUxNCAyMDEuNzMxNTE0IDkwLjM3NTMzNCAyMDEuNzMxNTE0IDIwMS43MzE1MTRTNjIzLjM1NTE1NyA3MTMuNzMxNTE0IDUxMiA3MTMuNzMxNTE0ek01MTIgMzkwLjk2MTI5NmMtNjYuNzcyNzc2IDAtMTIxLjAzODcwNCA1NC4yNjU5MjgtMTIxLjAzODcwNCAxMjEuMDM4NzA0czU0LjI2NTkyOCAxMjEuMDM4NzA0IDEyMS4wMzg3MDQgMTIxLjAzODcwNCAxMjEuMDM4NzA0LTU0LjI2NTkyOCAxMjEuMDM4NzA0LTEyMS4wMzg3MDRTNTc4Ljc3Mjc3NiAzOTAuOTYxMjk2IDUxMiAzOTAuOTYxMjk2eiI+PC9wYXRoPjwvc3ZnPg==);
 }
 .pio-container .pio-dialog{
-    top: -2em;
-    left: 1em;
-    right: 1em;
+    bottom: calc(100% - 1.2em);
+    left: 0;
+    right: 0;
+    width: auto;
     opacity: 0;
     z-index: -1;
     font-size: .8em;
-    background: #fff;
-    padding: .75em 1em;
+    background: transparent;
+    padding: .75em 1em 0;
     border-radius: 1em;
     visibility: hidden;
     position: absolute;
+    box-sizing: border-box;
     word-break: break-all;
-    border: 1px solid #eee;
+    border: none;
     transition: opacity .3s, visibility .3s;
+}
+[data-theme="dark"] .pio-container .pio-dialog{
+    color: #e0e0e0;
 }
 .pio-container .pio-dialog.active{
     opacity: 1;
+    z-index: 3;
     visibility: visible;
 }
+.pio-container .pio-dialog.pio-dialog-closeable{
+    padding-right: 2.2em;
+}
+.pio-dialog-content{
+    max-height: min(180px, 35vh);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    white-space: pre-wrap;
+    scrollbar-width: thin;
+    scrollbar-gutter: stable;
+}
+.pio-dialog-content::-webkit-scrollbar{
+    width: 6px;
+}
+.pio-dialog-content::-webkit-scrollbar-thumb{
+    background: var(--border-primary, #999);
+    border-radius: 3px;
+}
+.pio-dialog-close{
+    top: 2px;
+    right: 3px;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    cursor: pointer;
+    position: absolute;
+    color: inherit !important;
+    font-size: 18px;
+    line-height: 1;
+    border: 0 !important;
+    border-radius: 50%;
+    background: transparent !important;
+}
+.pio-dialog-close:hover,
+.pio-dialog-close:focus-visible{
+    color: var(--text-secondary, #b43f31) !important;
+    background: var(--bg-highlight, rgba(0, 0, 0, .08)) !important;
+}
 
-#pio{ vertical-align: middle }
+#pio{
+    width: 100%;
+    height: auto;
+    display: block;
+}
+
+.pio-sr-only{
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+    position: absolute;
+}
+.pio-chat-launcher{
+    right: 10px;
+    bottom: 10px;
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    z-index: 4;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    position: absolute;
+    border: 1px solid var(--border-primary, #999) !important;
+    border-radius: 50%;
+    color: var(--text-primary, #333) !important;
+    background: var(--bg-button, #e1ebe7) !important;
+    box-shadow: 0 3px 12px rgba(0, 0, 0, .24);
+    transition: transform .15s;
+}
+.pio-chat-launcher:hover,
+.pio-chat-launcher:focus-visible{
+    color: var(--text-button-hover, red) !important;
+    background: var(--bg-button-hover, aqua) !important;
+    transform: scale(1.08);
+}
+.pio-chat-launcher:disabled{
+    cursor: wait;
+    opacity: .55;
+    transform: none;
+}
+.pio-chat-launcher-icon{
+    font-size: 20px;
+    line-height: 1;
+    display: block;
+}
+.pio-chat{
+    width: min(480px, calc(100vw - 24px));
+    max-height: calc(100vh - 24px);
+    z-index: 55;
+    display: flex;
+    overflow: hidden;
+    position: fixed;
+    box-sizing: border-box;
+    flex-direction: column;
+    background: rgba(255, 255, 255, .78);
+    border: 1px solid var(--border-primary, #999);
+    border-radius: 8px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 8px 24px rgba(20, 28, 27, .22);
+}
+.pio-chat[hidden],
+.pio-chat-form[hidden],
+.pio-chat-settings[hidden],
+.pio-agent-status[hidden],
+#pio-chat-clear-key-row[hidden]{
+    display: none;
+}
+.pio-chat-header{
+    min-height: 42px;
+    padding: 0 7px 0 12px;
+    gap: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-primary, #d2d8d6);
+}
+.pio-chat-header strong{
+    font-size: 13px;
+    line-height: 1.2;
+}
+.pio-chat-header-actions{
+    gap: 3px;
+    display: flex;
+    align-items: center;
+}
+.pio-context-usage{
+    font-size: 11px;
+    white-space: nowrap;
+    color: var(--text-secondary, #555);
+}
+.pio-chat-header button{
+    min-width: 32px;
+    height: 30px;
+    padding: 0 7px;
+    cursor: pointer;
+    font-size: 13pxpx;
+    border: 1px solid transparent !important;
+    border-radius: 4px;
+    background: transparent !important;
+}
+.pio-chat-header button:hover,
+.pio-chat-header button:focus-visible{
+    color: var(--text-secondary, #b43f31) !important;
+    background: var(--bg-highlight, rgba(0, 0, 0, .08)) !important;
+}
+.pio-chat-header .pio-chat-close{
+    width: 30px;
+    padding: 0;
+    font-size: 20px;
+    line-height: 1;
+}
+.pio-agent-status{
+    flex: 1 1 auto; min-height: 0;;
+    overflow-y: auto;
+    border-bottom: 1px solid var(--border-primary, #d2d8d6);
+    scrollbar-width: thin;
+}
+.pio-agent-phase{
+    display:none;top: 0;
+    z-index: 1;
+    padding: 6px 10px;
+    position: sticky;
+    font-size: 13px;
+    font-weight: 600;
+    background: rgba(255, 255, 255, .72);
+    border-bottom: 1px solid var(--border-primary, #d2d8d6);
+}
+.pio-agent-log{
+    padding: 4px 10px 8px;
+}
+.pio-agent-entry{
+    padding: 5px 0;
+    font-size: 13px;
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    border-bottom: 1px solid var(--bg-highlight, rgba(0, 0, 0, .08));
+}
+.pio-agent-entry:last-child{
+    border-bottom: 0;
+}
+.pio-agent-entry::before{
+    color: var(--text-secondary, #b43f31);
+    content: attr(data-label) " · ";
+    font-weight: 600;
+}
+.pio-agent-entry.user::before{
+    color: #285f91;
+}
+.pio-agent-entry.answer::before{
+    color: #9b352c;
+}
+.pio-agent-entry.tool::before{
+    color: #267567;
+}
+.pio-agent-entry.result{
+    opacity: .78;
+}
+.pio-chat-form{
+    margin-top:auto;padding: 7px;
+    gap: 6px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 36px;
+}
+.pio-chat-form input{
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    padding: 0 10px;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 15pxx;
+    border: 1px solid var(--border-primary, #999) !important;
+    border-radius: 5px;
+    background: rgba(255, 255, 255, .68) !important;
+    outline: none;
+    transition: border-color .2s, box-shadow .2s;
+}
+.pio-chat-form input:focus{
+    border-color: var(--border-secondary, #e55743) !important;
+    box-shadow: 0 0 15px var(--shadow-focus, rgba(255,105,180,.3));
+}
+.pio-chat-send{
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    cursor: pointer;
+    font-size: 18px;
+    border: 1px solid var(--border-primary, #999) !important;
+    border-radius: 5px;
+    color: var(--text-primary, #333) !important;
+    background: var(--bg-button, #e1ebe7) !important;
+    transition: background .15s;
+}
+.pio-chat-send:hover,
+.pio-chat-send:focus-visible{
+    color: var(--text-button-hover, red) !important;
+    background: var(--bg-button-hover, aqua) !important;
+}
+.pio-chat-send.is-stopping{
+    font-size: 13px;
+    color: var(--text-secondary, #b43f31) !important;
+}
+.pio-chat-settings{
+    min-height: 0;
+    padding: 10px;
+    gap: 9px;
+    display: flex;
+    overflow-y: auto;
+    flex-direction: column;
+}
+.pio-chat-settings > label:not(.pio-chat-switch){
+    gap: 4px;
+    display: grid;
+    font-size: 12px;
+}
+.pio-chat-settings input[type="text"],
+.pio-chat-settings input[type="url"],
+.pio-chat-settings input[type="password"],
+.pio-chat-settings input[type="number"],
+.pio-chat-settings select,
+.pio-chat-settings textarea{
+    width: 100%;
+    padding: 7px 8px;
+    box-sizing: border-box;
+    font: inherit;
+    font-size: 12px;
+    line-height: 1.4;
+    border: 1px solid var(--border-primary, #9aa4a1) !important;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, .68) !important;
+}
+.pio-chat-settings textarea{
+    min-height: 72px;
+    resize: vertical;
+}
+.pio-input-eye{
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.pio-input-eye input{
+    flex: 1;
+    padding-right: 32px !important;
+}
+.pio-eye-toggle{
+    position: absolute;
+    right: 2px;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    border: none !important;
+    border-radius: 3px;
+    background: transparent !important;
+    opacity: .55;
+}
+.pio-eye-toggle:hover{
+    opacity: 1;
+    background: var(--bg-highlight, rgba(0,0,0,.08)) !important;
+}
+.pio-chat-switch{
+    gap: 7px;
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+}
+.pio-chat-switch input{
+    width: 16px;
+    height: 16px;
+    margin: 0;
+}
+.pio-chat-settings-actions{
+    gap: 7px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+}
+.pio-chat-settings-actions button{
+    min-height: 34px;
+    cursor: pointer;
+    border: 1px solid var(--border-primary, #9aa4a1) !important;
+    border-radius: 4px;
+}
+.pio-chat-settings-actions .pio-chat-save{
+    color: var(--text-primary, #333) !important;
+    border-color: var(--border-primary, #999) !important;
+    background: var(--bg-button, #e1ebe7) !important;
+}
+.pio-chat-settings-actions .pio-chat-save:hover,
+.pio-chat-settings-actions .pio-chat-save:focus-visible{
+    color: var(--text-button-hover, red) !important;
+    background: var(--bg-button-hover, aqua) !important;
+}
+
+[data-theme="dark"] .pio-chat{
+    background: rgba(35, 38, 37, .82);
+    color: var(--text-primary, #e0e0e0);
+}
+[data-theme="dark"] .pio-agent-phase{
+    background: rgba(35, 38, 37, .86);
+    color: var(--text-primary, #e0e0e0);
+}
+[data-theme="dark"] .pio-chat-header strong,
+[data-theme="dark"] .pio-chat-header button,
+[data-theme="dark"] .pio-agent-entry,
+[data-theme="dark"] .pio-context-usage{
+    color: var(--text-primary, #e0e0e0);
+}
+[data-theme="dark"] .pio-chat-settings{
+    color: var(--text-primary, #e0e0e0);
+}
+[data-theme="dark"] .pio-chat-form input,
+[data-theme="dark"] .pio-chat-settings input,
+[data-theme="dark"] .pio-chat-settings select,
+[data-theme="dark"] .pio-chat-settings textarea{
+    background: rgba(24, 27, 26, .68) !important;
+    color: var(--text-primary, #e0e0e0) !important;
+}
 
 @media screen and (max-width: 768px){
-    #pio{ width: 8em }
-    .pio-container{ pointer-events: none }
-    .pio-container.hidden, .pio-action, .pio-dialog{ display: none }
+    .pio-container{
+        width: 8em;
+        pointer-events: auto;
+    }
+    .pio-container.hidden, .pio-action{ display: none }
+    .pio-chat-launcher{
+        right: 6px;
+        bottom: 6px;
+    }
 }
+
+/* 手动调整对话框大小的拖拽手柄 */
+.pio-resize-handle{
+    width: 18px;
+    height: 18px;
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    z-index: 60;
+    cursor: nwse-resize;
+    opacity: .35;
+    border-radius: 0 0 8px 0;
+    background: linear-gradient(135deg, transparent 45%, var(--border-primary, #999) 45%, var(--border-primary, #999) 58%, transparent 58%);
+}
+.pio-resize-handle:hover{
+    opacity: .85;
+}@

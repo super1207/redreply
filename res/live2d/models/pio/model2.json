@@ -44,6 +44,12 @@
             {"file":"motions/Touch5.mtn"},
             {"file":"motions/Touch6.mtn"}
         ],
+        "happy":[
+            {"file":"motions/Success.mtn"}
+        ],
+        "sad":[
+            {"file":"motions/Fail.mtn"}
+        ],
         "":[
             {"file":"motions/Breath1.mtn"},
             {"file":"motions/Breath2.mtn"},

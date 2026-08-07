@@ -2504,7 +2504,6 @@ impl RedLang {
                             String::new()
                         };
                         let cqout_r = self.parse_r_with_black(&cqout)?;
-                        cq_add_log_w(&format!("cqout:{cqout} cqout_r:{cqout_r}")).unwrap();
                         out.push_str(&cqout_r);
                     } else if is_2_params {
                         if cmd_jt == "二类参数" {

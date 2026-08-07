@@ -108,6 +108,237 @@ fn get_apath(filename: &str) -> Option<String> {
     Some(absolute.to_string_lossy().into_owned())
 }
 
+const LIVE2D_CHAT_DB_KEY: &str = "LIVE2D_CHAT_CONVERSATION";
+const LIVE2D_CHAT_GENERATION_DB_KEY: &str = "LIVE2D_CHAT_PENDING_GENERATION";
+
+/// 看板娘日记本最大条数。
+pub const LIVE2D_DIARY_LIMIT: usize = 100;
+
+/// 看板娘日记本条目，CREATE_TIME/UPDATE_TIME 为 "YYYY-MM-DD HH:MM:SS" 格式的本地时间。
+#[derive(Clone, Debug)]
+pub struct Live2dDiaryEntry {
+    pub key: String,
+    pub title: String,
+    pub content: String,
+    pub create_time: String,
+    pub update_time: String,
+}
+
+fn live2d_db_path() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    Ok(crate::mytool::path_to_os_str(&(cq_get_app_directory1()? + "reddat.db")))
+}
+
+fn open_live2d_db() -> Result<rusqlite::Connection, Box<dyn std::error::Error + Send + Sync>> {
+    let sql_file = live2d_db_path()?;
+    add_file_lock(&sql_file);
+    let _guard = scopeguard::guard(sql_file.clone(), |path| del_file_lock(&path));
+    let conn = rusqlite::Connection::open(sql_file)?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS LIVE2D_CHAT_TABLE (KEY TEXT PRIMARY KEY,VALUE TEXT);",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS LIVE2D_DIARY_TABLE (KEY TEXT PRIMARY KEY,TITLE TEXT,CONTENT TEXT,CREATE_TIME TEXT,UPDATE_TIME TEXT);",
+        [],
+    )?;
+    Ok(conn)
+}
+
+/// 从 reddat.db 读取看板娘对话内容，没有则返回 None。
+pub fn load_live2d_chat_conversation(
+) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let conn = open_live2d_db()?;
+    let ret_rst: Result<String, rusqlite::Error> = conn.query_row(
+        "SELECT VALUE FROM LIVE2D_CHAT_TABLE WHERE KEY = ?",
+        [LIVE2D_CHAT_DB_KEY],
+        |row| row.get(0),
+    );
+    match ret_rst {
+        Ok(value) => Ok(Some(value)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// 返回当前等待工具结果的对话代次；没有待处理工具调用时返回 None。
+pub fn load_live2d_chat_generation(
+) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+    let conn = open_live2d_db()?;
+    let result = conn.query_row(
+        "SELECT VALUE FROM LIVE2D_CHAT_TABLE WHERE KEY = ?",
+        [LIVE2D_CHAT_GENERATION_DB_KEY],
+        |row| row.get(0),
+    );
+    match result {
+        Ok(value) => Ok(Some(value)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// 原子保存对话，并同步设置或清除等待工具结果的代次。
+pub fn save_live2d_chat_state(
+    value: &str,
+    generation: Option<&str>,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut conn = open_live2d_db()?;
+    let transaction = conn.transaction()?;
+    transaction.execute(
+        "REPLACE INTO LIVE2D_CHAT_TABLE (KEY,VALUE) VALUES (?,?)",
+        rusqlite::params![LIVE2D_CHAT_DB_KEY, value],
+    )?;
+    if let Some(generation) = generation {
+        transaction.execute(
+            "REPLACE INTO LIVE2D_CHAT_TABLE (KEY,VALUE) VALUES (?,?)",
+            rusqlite::params![LIVE2D_CHAT_GENERATION_DB_KEY, generation],
+        )?;
+    } else {
+        transaction.execute(
+            "DELETE FROM LIVE2D_CHAT_TABLE WHERE KEY = ?",
+            [LIVE2D_CHAT_GENERATION_DB_KEY],
+        )?;
+    }
+    transaction.commit()?;
+    Ok(())
+}
+
+/// 把看板娘对话内容写入 reddat.db。
+pub fn save_live2d_chat_conversation(
+    value: &str,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    save_live2d_chat_state(value, None)
+}
+
+/// 删除 reddat.db 中的看板娘对话。
+pub fn clear_live2d_chat_conversation(
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut conn = open_live2d_db()?;
+    let transaction = conn.transaction()?;
+    transaction.execute(
+        "DELETE FROM LIVE2D_CHAT_TABLE WHERE KEY IN (?, ?)",
+        rusqlite::params![LIVE2D_CHAT_DB_KEY, LIVE2D_CHAT_GENERATION_DB_KEY],
+    )?;
+    transaction.commit()?;
+    Ok(())
+}
+
+fn live2d_diary_key() -> String {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_nanos())
+        .unwrap_or(0);
+    let counter = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    format!("d{nanos:x}{counter:x}")
+}
+
+fn trim_live2d_diaries(conn: &rusqlite::Connection) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM LIVE2D_DIARY_TABLE WHERE KEY IN (SELECT KEY FROM LIVE2D_DIARY_TABLE ORDER BY ROWID DESC LIMIT -1 OFFSET ?)",
+        [LIVE2D_DIARY_LIMIT as i64],
+    )?;
+    Ok(())
+}
+
+/// 返回看板娘日记本全部条目，按写入顺序排列。
+pub fn list_live2d_diaries(
+) -> Result<Vec<Live2dDiaryEntry>, Box<dyn std::error::Error + Send + Sync>> {
+    let conn = open_live2d_db()?;
+    let mut stmt = conn.prepare(
+        "SELECT KEY,TITLE,CONTENT,CREATE_TIME,UPDATE_TIME FROM LIVE2D_DIARY_TABLE ORDER BY ROWID",
+    )?;
+    let rows = stmt.query_map([], |row| {
+        Ok(Live2dDiaryEntry {
+            key: row.get(0)?,
+            title: row.get(1)?,
+            content: row.get(2)?,
+            create_time: row.get(3)?,
+            update_time: row.get(4)?,
+        })
+    })?;
+    let mut items = Vec::new();
+    for row in rows {
+        items.push(row?);
+    }
+    Ok(items)
+}
+
+/// 对 reddat.db 执行只读查询（仅允许 SELECT/PRAGMA 单条语句），
+/// 返回 (列名, 行数据)。单条查询最多返回 MAX_ROWS 行，单元格最长 MAX_CELL_CHARS。
+pub fn query_live2d_db(
+    sql: &str,
+) -> Result<(Vec<String>, Vec<Vec<serde_json::Value>>), Box<dyn std::error::Error + Send + Sync>> {
+    const MAX_ROWS: usize = 100;
+    const MAX_CELL_CHARS: usize = 10_000;
+
+    let trimmed = sql.trim_start();
+    let upper = trimmed.to_ascii_uppercase();
+    if !upper.starts_with("SELECT") && !upper.starts_with("PRAGMA") {
+        return Err("仅允许 SELECT/PRAGMA 只读查询".into());
+    }
+    let conn = open_live2d_db()?;
+    let mut stmt = conn.prepare(trimmed)?;
+    let columns = stmt
+        .column_names()
+        .iter()
+        .map(|name| (*name).to_owned())
+        .collect::<Vec<_>>();
+    let mut rows = stmt.query([])?;
+    let mut data = Vec::new();
+    while let Some(row) = rows.next()? {
+        if data.len() >= MAX_ROWS {
+            break;
+        }
+        let mut cells = Vec::with_capacity(columns.len());
+        for index in 0..columns.len() {
+            let cell = match row.get_ref(index)? {
+                rusqlite::types::ValueRef::Null => serde_json::Value::Null,
+                rusqlite::types::ValueRef::Integer(value) => serde_json::Value::from(value),
+                rusqlite::types::ValueRef::Real(value) => serde_json::Value::from(value),
+                rusqlite::types::ValueRef::Text(value) => {
+                    serde_json::Value::String(String::from_utf8_lossy(value).into_owned())
+                }
+                rusqlite::types::ValueRef::Blob(value) => serde_json::Value::String(format!(
+                    "<blob {}B>",
+                    value.len()
+                )),
+            };
+            if let serde_json::Value::String(text) = &cell {
+                if text.chars().count() > MAX_CELL_CHARS {
+                    cells.push(serde_json::Value::String(
+                        text.chars().take(MAX_CELL_CHARS).collect::<String>() + "...(截断)",
+                    ));
+                    continue;
+                }
+            }
+            cells.push(cell);
+        }
+        data.push(cells);
+    }
+    Ok((columns, data))
+}
+
+/// 批量应用压缩助手产生的日记更新：先按 KEY 删除，再新增条目，
+/// 最后保证总数不超过 LIVE2D_DIARY_LIMIT（超出时删除最旧的）。
+/// 新增条目的创建/更新时间取当前本地时间。
+pub fn apply_live2d_diary_updates(
+    add: &[(String, String)],
+    delete: &[String],
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let conn = open_live2d_db()?;
+    for key in delete {
+        conn.execute("DELETE FROM LIVE2D_DIARY_TABLE WHERE KEY = ?", [key])?;
+    }
+    for (title, content) in add {
+        conn.execute(
+            "INSERT INTO LIVE2D_DIARY_TABLE (KEY,TITLE,CONTENT,CREATE_TIME,UPDATE_TIME) VALUES (?,?,?,datetime('now','localtime'),datetime('now','localtime'))",
+            rusqlite::params![live2d_diary_key(), title, content],
+        )?;
+    }
+    trim_live2d_diaries(&conn)?;
+    Ok(())
+}
+
 pub fn add_file_lock(filename: &str) {
     let Some(filename) = get_apath(filename) else {
         return;

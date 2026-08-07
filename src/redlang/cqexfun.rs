@@ -835,6 +835,9 @@ pub fn init_cq_ex_fun_map() {
         let mut dict_obj: BTreeMap<String, Rc<RedValue>> = BTreeMap::new();
         let err = format!("词库文件格式错误:`{}`", &path_t);
         for words in words_list {
+            if words.trim().is_empty() {
+                continue;
+            }
             let word_list = words.split('\n').collect::<Vec<&str>>();
             let key: &str = word_list.first().ok_or(err.clone())?;
             let word_list_t = word_list.get(1..).ok_or(err.clone())?;
