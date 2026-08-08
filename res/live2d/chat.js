@@ -18,6 +18,10 @@
     const settingsBack = document.getElementById("pio-chat-settings-back");
     const clearContextButton = document.getElementById("pio-chat-clear-context");
     const baseUrlInput = document.getElementById("pio-chat-base-url");
+    const configInput = document.getElementById("pio-chat-config");
+    const configAddInput = document.getElementById("pio-chat-config-add");
+    const configAddButton = document.getElementById("pio-chat-config-add-btn");
+    const configDelButton = document.getElementById("pio-chat-config-del-btn");
     const modelInput = document.getElementById("pio-chat-model");
     const apiKeyInput = document.getElementById("pio-chat-api-key");
     const systemPromptInput = document.getElementById("pio-chat-system-prompt");
@@ -31,7 +35,31 @@
     const dialog = container && container.querySelector(".pio-dialog");
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
     const JAVASCRIPT_TOOL_NAME = "execute_javascript";
+    const C_TOOL_NAME = "execute_c";
     const MAX_TOOL_RESULT_CHARS = 10000;
+
+    function renderMarkdown(text) {
+        const source = String(text == null ? "" : text);
+        if (!window.marked || !window.DOMPurify) return null;
+        const html = window.marked.parse(source, { breaks: true, gfm: true });
+        return window.DOMPurify.sanitize(html, {
+            USE_PROFILES: { html: true },
+            FORBID_TAGS: ["style", "form", "iframe", "object", "embed"],
+            FORBID_ATTR: ["style"]
+        });
+    }
+
+    function setEntryContent(entry, text, markdown) {
+        if (!entry) return;
+        const rendered = markdown ? renderMarkdown(text) : null;
+        if (rendered !== null) {
+            entry.classList.add("pio-markdown");
+            entry.innerHTML = rendered;
+        } else {
+            entry.classList.remove("pio-markdown");
+            entry.textContent = String(text == null ? "" : text);
+        }
+    }
 
     if (!container || !launcher || !panel || !chatForm || !settingsForm) return;
 
@@ -94,7 +122,9 @@ const state = {
         phase: "就绪",
         pendingCompress: false,
         pendingMessage: null,
-        skipAutoCompress: false
+        skipAutoCompress: false,
+        configs: [],
+        currentConfigName: ""
     };
 
     function stoppedError() {
@@ -129,8 +159,21 @@ const state = {
         if (window.pio && typeof window.pio.message === "function") {
             const messageOptions = typeof options === "number"
                 ? { time: options }
-                : (options || { time: 5000 });
-            window.pio.message(message, messageOptions);
+                : Object.assign({}, options || { time: 5000 });
+            let content = message;
+            if (messageOptions.markdown) {
+                const rendered = renderMarkdown(message);
+                if (rendered !== null) {
+                    content = rendered;
+                    messageOptions.html = true;
+                }
+                delete messageOptions.markdown;
+            }
+            window.pio.message(content, messageOptions);
+            if (messageOptions.html) {
+                const dialogContent = container.querySelector(".pio-dialog-content");
+                if (dialogContent) dialogContent.classList.add("pio-markdown");
+            }
         }
     }
 
@@ -313,9 +356,56 @@ const state = {
         return limitToolResult(JSON.stringify({ ok: false, error: message }));
     }
 
+    let picocModulePromise = null;
+    function loadPicocModule() {
+        if (window.PicocModule) return Promise.resolve(window.PicocModule);
+        if (picocModulePromise) return picocModulePromise;
+        picocModulePromise = new Promise(function (resolve, reject) {
+            const script = document.createElement("script");
+            script.src = "live2d/picoc.js";
+            script.onload = function () { resolve(window.PicocModule); };
+            script.onerror = function () { picocModulePromise = null; reject(new Error("picoc.js 加载失败")); };
+            document.head.appendChild(script);
+        });
+        return picocModulePromise;
+    }
+
+    let picocInstance = null;
+    async function executeCTool(call) {
+        if (!call || !call.id) {
+            throw new Error("AI 返回了无效的工具调用");
+        }
+        if (call.name !== C_TOOL_NAME || typeof call.source_code !== "string") {
+            return {
+                id: call.id,
+                result: serializeToolError(new Error("未知工具: " + (call.name || "无名称")))
+            };
+        }
+        try {
+            const factory = await loadPicocModule();
+            if (!picocInstance) picocInstance = await factory();
+            const outputs = [];
+            const timer = setTimeout(function () {
+                throw new Error("C 代码执行超时（60 秒）");
+            }, 60000);
+            try {
+                await picocInstance.runc(call.source_code, function (text) { outputs.push(text); });
+            } finally {
+                clearTimeout(timer);
+            }
+            return { id: call.id, result: serializeToolValue(outputs.join("")) };
+        } catch (error) {
+            console.error("AI C tool failed:", error);
+            return { id: call.id, result: serializeToolError(error) };
+        }
+    }
+
     async function executeJavascriptTool(call) {
         if (!call || !call.id) {
             throw new Error("AI 返回了无效的工具调用");
+        }
+        if (call.name === C_TOOL_NAME) {
+            return executeCTool(call);
         }
         if (call.name !== JAVASCRIPT_TOOL_NAME || typeof call.javascript !== "string") {
             // 未知工具：与后端 AgentToolCall::Unknown 的容忍策略一致，
@@ -391,15 +481,15 @@ const state = {
         const entry = document.createElement("div");
         entry.className = "pio-agent-entry";
         entry.dataset.label = label;
-        entry.textContent = text;
+        setEntryContent(entry, text, false);
         agentLog.appendChild(entry);
         scrollAgentLog();
         return entry;
     }
 
-    function updateAgentEntry(entry, text) {
+    function updateAgentEntry(entry, text, markdown) {
         if (!entry) return;
-        entry.textContent = text;
+        setEntryContent(entry, text, Boolean(markdown));
         scrollAgentLog();
         requestAnimationFrame(positionPanel);
     }
@@ -512,6 +602,10 @@ const state = {
                     if (!reply) throw new Error("看板娘没有返回内容");
                     state.generation = null;
                     setAgentPhase("已完成");
+                    if (!contentEntry) {
+                        contentEntry = appendAgentEntryLive(usedTool ? "看板娘大彻大悟" : "看板娘碎碎念", "");
+                    }
+                    updateAgentEntry(contentEntry, reply, true);
                     return reply;
                 }
                 if (outcome.type !== "tool_calls"
@@ -529,7 +623,7 @@ const state = {
                 for (let callIndex = 0; callIndex < outcome.calls.length; callIndex += 1) {
                     if (state.stopRequested) throw stoppedError();
                     const call = outcome.calls[callIndex];
-                    const codeText = call.javascript || "";
+                    const codeText = call.javascript || call.source_code || "";
                     appendAgentStatus("看板娘搓搓小手", call.name + "\n" + codeText, "tool");
                     const toolResult = await executeJavascriptTool(call);
                     if (state.stopRequested) throw stoppedError();
@@ -597,20 +691,51 @@ const state = {
         else input.focus();
     }
 
+    function fillConfigOptions(configs, selected) {
+        if (!configInput) return;
+        const list = Array.isArray(configs) ? configs : [];
+        const source = list.length ? list : [selected];
+        const seen = new Set();
+        configInput.innerHTML = "";
+        for (let i = 0; i < source.length; i += 1) {
+            const value = String(source[i] == null ? "" : (typeof source[i] === "string" ? source[i] : (source[i].name || ""))).trim();
+            if (!value || seen.has(value)) continue;
+            seen.add(value);
+            const option = document.createElement("option");
+            option.value = value;
+            option.textContent = value;
+            configInput.appendChild(option);
+        }
+        const current = String(selected == null ? "" : selected).trim();
+        if (current && seen.has(current)) {
+            configInput.value = current;
+        } else if (configInput.options.length) {
+            configInput.options[0].selected = true;
+        }
+    }
+
+    function applyCurrentConfigToInputs() {
+        const current = state.configs.find(function (item) { return item.name === configInput.value; });
+        baseUrlInput.value = (current && current.base_url) || "";
+        apiKeyInput.value = (current && current.api_key) || "";
+        modelInput.value = (current && current.model) || "";
+        thinkingLevelInput.value = (current && current.thinking_level) || "high";
+        const length = Number((current && current.context_length) || 131072);
+        if (contextLengthInput) contextLengthInput.value = String(length);
+        state.contextLimit = length;
+        state.currentConfigName = configInput.value;
+        updateContextUsage();
+    }
+
     function applyConfig(config) {
         state.configLoaded = true;
-        baseUrlInput.value = config.base_url || "";
-        modelInput.value = config.model || "";
+        state.configs = Array.isArray(config.configs) ? config.configs : [];
+        fillConfigOptions(state.configs, config.config);
+        applyCurrentConfigToInputs();
         systemPromptInput.value = config.system_prompt || "";
-        thinkingLevelInput.value = config.thinking_level || "high";
-        if (contextLengthInput) {
-            contextLengthInput.value = String(config.context_length || 131072);
-        }
-        state.contextLimit = Number(config.context_length) || 131072;
         if (Number.isFinite(config.context_used)) state.contextUsed = config.context_used;
         state.contextEstimated = config.context_used_estimated !== false;
         updateContextUsage();
-        apiKeyInput.value = config.api_key || "";
         apiKeyInput.type = "password";
         if (apiKeyToggle) apiKeyToggle.textContent = "👁";
     }
@@ -763,7 +888,7 @@ const state = {
 
         try {
             const reply = await runAgent(message);
-            bubble(reply, { persist: true, closeable: true });
+            bubble(reply, { persist: true, closeable: true, markdown: true });
         } catch (error) {
             if (error && error.stopped) {
                 stopped = true;
@@ -824,23 +949,86 @@ const state = {
         });
     }
 
+    function syncCurrentConfigFromInputs(name) {
+        const targetName = name || state.currentConfigName || configInput.value;
+        const current = state.configs.find(function (item) { return item.name === targetName; });
+        if (!current) return;
+        current.base_url = baseUrlInput.value.trim();
+        current.api_key = apiKeyInput.value.trim();
+        current.model = modelInput.value.trim();
+        current.context_length = Number(contextLengthInput.value) || 131072;
+        current.thinking_level = thinkingLevelInput.value;
+    }
+
+    if (configInput) {
+        configInput.addEventListener("change", function () {
+            syncCurrentConfigFromInputs(state.currentConfigName);
+            applyCurrentConfigToInputs();
+        });
+    }
+
+    if (configAddButton && configAddInput && configInput) {
+        configAddButton.addEventListener("click", function () {
+            const name = configAddInput.value.trim();
+            if (!name) {
+                bubble("请输入要添加的配置名称", 3000);
+                return;
+            }
+            if (state.configs.some(function (item) { return item.name === name; })) {
+                bubble("配置名称已存在", 3000);
+                return;
+            }
+            syncCurrentConfigFromInputs(state.currentConfigName);
+            state.configs.push({
+                name: name,
+                base_url: "",
+                api_key: "",
+                model: "",
+                context_length: 131072,
+                thinking_level: "high"
+            });
+            const option = document.createElement("option");
+            option.value = name;
+            option.textContent = name;
+            configInput.appendChild(option);
+            configInput.value = name;
+            applyCurrentConfigToInputs();
+            configAddInput.value = "";
+            configAddInput.focus();
+        });
+        configAddInput.addEventListener("keydown", function (event) {
+            if (event.key === "Enter") {
+                event.preventDefault();
+                configAddButton.click();
+            }
+        });
+        if (configDelButton) {
+            configDelButton.addEventListener("click", function () {
+                if (configInput.options.length <= 1) {
+                    bubble("至少需要保留一个配置", 3000);
+                    return;
+                }
+                const name = configInput.value;
+                const index = configInput.selectedIndex;
+                if (index >= 0) {
+                    state.configs = state.configs.filter(function (item) { return item.name !== name; });
+                    configInput.remove(index);
+                    applyCurrentConfigToInputs();
+                }
+            });
+        }
+    }
+
     settingsForm.addEventListener("submit", async function (event) {
         event.preventDefault();
         const submitButton = settingsForm.querySelector("button[type='submit']");
         submitButton.disabled = true;
+        syncCurrentConfigFromInputs(state.currentConfigName);
         const payload = {
-            base_url: baseUrlInput.value.trim(),
-            model: modelInput.value.trim(),
-            system_prompt: systemPromptInput.value.trim(),
-            thinking_level: thinkingLevelInput.value,
-            context_length: contextLengthInput
-                ? Number(contextLengthInput.value)
-                : 131072
+            config: configInput.value.trim(),
+            configs: state.configs,
+            system_prompt: systemPromptInput.value.trim()
         };
-        // 仅当用户输入了新 Key（非占位符）时才提交
-        const keyVal = apiKeyInput.value.trim();
-        if (keyVal) payload.api_key = keyVal;
-        else payload.clear_api_key = true;
 
         try {
             applyConfig(apiResult(await axios.post("/live2d_chat_config", payload)));

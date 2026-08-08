@@ -291,6 +291,51 @@
 .pio-agent-entry.tool::before{
     color: #267567;
 }
+.pio-agent-entry.pio-markdown,
+.pio-dialog-content.pio-markdown {
+    white-space: normal;
+    overflow-wrap: anywhere;
+}
+.pio-agent-entry.pio-markdown > :first-child,
+.pio-dialog-content.pio-markdown > :first-child {
+    margin-top: 0;
+}
+.pio-agent-entry.pio-markdown > :last-child,
+.pio-dialog-content.pio-markdown > :last-child {
+    margin-bottom: 0;
+}
+.pio-agent-entry.pio-markdown p, .pio-agent-entry.pio-markdown ul, .pio-agent-entry.pio-markdown ol, .pio-agent-entry.pio-markdown blockquote, .pio-agent-entry.pio-markdown pre,
+.pio-dialog-content.pio-markdown p, .pio-dialog-content.pio-markdown ul, .pio-dialog-content.pio-markdown ol, .pio-dialog-content.pio-markdown blockquote, .pio-dialog-content.pio-markdown pre {
+    margin: .45em 0;
+}
+.pio-agent-entry.pio-markdown ul, .pio-agent-entry.pio-markdown ol, .pio-dialog-content.pio-markdown ul, .pio-dialog-content.pio-markdown ol {
+    padding-left: 1.5em;
+}
+.pio-agent-entry.pio-markdown code, .pio-dialog-content.pio-markdown code {
+    padding: .1em .3em;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, .08);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.pio-agent-entry.pio-markdown pre, .pio-dialog-content.pio-markdown pre {
+    padding: 8px;
+    overflow-x: auto;
+    border-radius: 5px;
+    background: rgba(0, 0, 0, .08);
+}
+.pio-agent-entry.pio-markdown pre code, .pio-dialog-content.pio-markdown pre code {
+    padding: 0;
+    background: transparent;
+}
+.pio-agent-entry.pio-markdown blockquote, .pio-dialog-content.pio-markdown blockquote {
+    padding-left: 10px;
+    border-left: 3px solid var(--border-secondary, #e55743);
+    opacity: .85;
+}
+.pio-agent-entry.pio-markdown a, .pio-dialog-content.pio-markdown a {
+    color: var(--text-secondary, #b43f31);
+    overflow-wrap: anywhere;
+}
 .pio-agent-entry.result{
     opacity: .78;
 }
@@ -424,6 +469,20 @@
     height: 16px;
     margin: 0;
 }
+.pio-config-edit{
+    display: flex;
+    gap: 4px;
+    margin-top: 4px;
+}
+.pio-config-edit input{
+    flex: 1 1 auto;
+    min-width: 0;
+}
+.pio-config-edit button{
+    flex: 0 0 auto;
+    padding: 0 8px;
+}
+
 .pio-chat-settings-actions{
     gap: 7px;
     display: grid;

@@ -199,17 +199,9 @@ pub(crate) async fn live2d_agent_context_usage() -> (u64, bool) {
 
 #[derive(Deserialize)]
 pub(crate) struct Live2dChatConfigUpdate {
-    pub(crate) base_url: String,
-    pub(crate) model: String,
+    pub(crate) config: String,
+    pub(crate) configs: Vec<crate::config_manager::Live2dProviderConfig>,
     pub(crate) system_prompt: String,
-    #[serde(default)]
-    pub(crate) thinking_level: Option<String>,
-    #[serde(default)]
-    pub(crate) context_length: Option<u64>,
-    #[serde(default)]
-    pub(crate) api_key: Option<String>,
-    #[serde(default)]
-    pub(crate) clear_api_key: bool,
 }
 
 pub(crate) fn live2d_chat_config_response(
@@ -221,14 +213,11 @@ pub(crate) fn live2d_chat_config_response(
     json_api_response(json!({
         "retcode": 0,
         "data": {
-            "base_url": config.base_url,
-            "model": config.model,
+            "config": config.config,
+            "configs": config.configs,
             "system_prompt": config.system_prompt,
-            "thinking_level": config.thinking_level,
-            "context_length": config.context_length,
             "context_used": context_used,
             "context_used_estimated": context_used_estimated,
-            "api_key": config.api_key,
             "has_api_key": !config.api_key.is_empty(),
             "can_write": can_write
         }

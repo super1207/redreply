@@ -129,21 +129,29 @@ async fn deal_api(
                 Ok(config) => config,
                 Err(error) => return Ok(json_api_error(&format!("读取对话设置失败: {error}"))),
             };
-            config.base_url = update.base_url.trim().to_owned();
-            config.model = update.model.trim().to_owned();
+            config.config = update.config.trim().to_owned();
+            config.configs = update.configs;
+            {
+                let mut seen = std::collections::HashSet::new();
+                config.configs.retain(|item| seen.insert(item.name.clone()));
+            }
+            if config.configs.is_empty() {
+                return Ok(json_api_error("配置列表不能为空"));
+            }
+            if !config.configs.iter().any(|item| item.name == config.config) {
+                return Ok(json_api_error("当前选中的配置必须存在于配置列表中"));
+            }
+            let current = config
+                .configs
+                .iter()
+                .find(|item| item.name == config.config)
+                .expect("当前选中配置已确认存在");
+            config.base_url = current.base_url.clone();
+            config.api_key = current.api_key.clone();
+            config.model = current.model.clone();
+            config.thinking_level = current.thinking_level.clone();
+            config.context_length = current.context_length;
             config.system_prompt = update.system_prompt.trim().to_owned();
-            if let Some(thinking_level) = update.thinking_level {
-                config.thinking_level = thinking_level;
-            }
-            if let Some(context_length) = update.context_length {
-                config.context_length = context_length;
-            }
-            if update.clear_api_key {
-                config.api_key.clear();
-            } else if let Some(api_key) = update.api_key.filter(|key| !key.trim().is_empty()) {
-                config.api_key = api_key.trim().to_owned();
-            }
-
             let config_to_save = config.clone();
             match tokio::task::spawn_blocking(move || {
                 crate::config_manager::save_live2d_chat_config(&config_to_save)

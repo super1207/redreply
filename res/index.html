@@ -184,6 +184,15 @@
                 </form>
                 <form id="pio-chat-settings" class="pio-chat-settings" hidden>
                     <label>
+                        <span>配置</span>
+                        <select id="pio-chat-config" required></select>
+                        <div class="pio-config-edit">
+                            <input id="pio-chat-config-add" type="text" maxlength="200" placeholder="添加配置名称" autocomplete="off">
+                            <button type="button" id="pio-chat-config-add-btn" title="添加配置">添加</button>
+                            <button type="button" id="pio-chat-config-del-btn" title="删除当前选中的配置">删除</button>
+                        </div>
+                    </label>
+                    <label>
                         <span>接口地址</span>
                         <input id="pio-chat-base-url" type="url" maxlength="2048" required>
                     </label>
@@ -801,6 +810,8 @@
         <script src='live2d/l2d.js'></script>
         <script src='live2d/motion-controller.js'></script>
         <script src='live2d/pio.js'></script>
+        <script src="live2d/marked.min.js"></script>
+        <script src="live2d/purify.min.js"></script>
         <script>
             var pio = new Paul_Pio({
                 "mode": "draggable",

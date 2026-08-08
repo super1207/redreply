@@ -13,6 +13,7 @@ use crate::config_manager::Live2dChatConfig;
 type ChatResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 pub const JAVASCRIPT_TOOL_NAME: &str = "execute_javascript";
+pub const C_TOOL_NAME: &str = "execute_c";
 pub const MAX_TOOL_RESULT_CHARS: usize = 10_000;
 const STREAM_TIMEOUT_SECONDS: u64 = 300;
 /// 压缩摘要 system 消息的前缀，用于识别历史中已有的压缩摘要并注入对话。
@@ -35,12 +36,22 @@ struct JavascriptToolArguments {
     javascript: String,
 }
 
+#[derive(Deserialize)]
+struct CToolArguments {
+    source_code: String,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub enum AgentToolCall {
     Javascript {
         id: String,
         name: String,
         javascript: String,
+    },
+    ExecuteC {
+        id: String,
+        name: String,
+        source_code: String,
     },
     Unknown {
         id: String,
@@ -64,6 +75,15 @@ impl Serialize for AgentToolCall {
                 map.serialize_entry("id", id)?;
                 map.serialize_entry("name", name)?;
                 map.serialize_entry("javascript", javascript)?;
+            }
+            AgentToolCall::ExecuteC {
+                id,
+                name,
+                source_code,
+            } => {
+                map.serialize_entry("id", id)?;
+                map.serialize_entry("name", name)?;
+                map.serialize_entry("source_code", source_code)?;
             }
             AgentToolCall::Unknown { id, name } => {
                 map.serialize_entry("id", id)?;
@@ -837,6 +857,27 @@ fn javascript_tool_definition() -> Value {
     })
 }
 
+fn execute_c_tool_definition() -> Value {
+    serde_json::json!({
+        "type": "function",
+        "function": {
+            "name": C_TOOL_NAME,
+            "description": "在浏览器中解释运行 C 语言源码（PicoC 解释器）。支持 printf 输出；可 #include \"myapi.h\" 并使用 exec_cmd(\"命令\") 调用本地命令行（在本地 Rust 侧执行，stdout 作为字符串返回 C 程序）。适合算法、字符串处理、命令调用等场景。",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "source_code": {
+                        "type": "string",
+                        "description": "完整的 C 语言源码，需包含 main 函数。"
+                    }
+                },
+                "required": ["source_code"],
+                "additionalProperties": false
+            }
+        }
+    })
+}
+
 fn build_request_payload(config: &Live2dChatConfig, messages: &[Value], stream: bool) -> Value {
     let thinking_enabled = config.thinking_level != "none";
     let mut messages = messages.to_vec();
@@ -849,7 +890,7 @@ fn build_request_payload(config: &Live2dChatConfig, messages: &[Value], stream: 
     let mut payload = serde_json::json!({
         "model": config.model,
         "messages": messages,
-        "tools": [javascript_tool_definition()],
+        "tools": [javascript_tool_definition(), execute_c_tool_definition()],
         "tool_choice": "auto",
         "thinking": {
             "type": if thinking_enabled { "enabled" } else { "disabled" }
@@ -1036,6 +1077,14 @@ fn parse_tool_calls(message: &Value) -> ChatResult<Vec<AgentToolCall>> {
                 name: name.to_owned(),
                 javascript: arguments.javascript,
             });
+        } else if name == C_TOOL_NAME {
+            let arguments: CToolArguments = serde_json::from_str(arguments)
+                .map_err(|error| format!("AI C 工具参数不是有效 JSON: {error}"))?;
+            calls.push(AgentToolCall::ExecuteC {
+                id: id.to_owned(),
+                name: name.to_owned(),
+                source_code: arguments.source_code,
+            });
         } else {
             calls.push(AgentToolCall::Unknown {
                 id: id.to_owned(),
@@ -1053,7 +1102,7 @@ mod tests {
         drain_sse_lines, estimate_context_tokens, finish_reason_error_message, format_error_chain,
         merge_stream_tool_name, parse_tool_calls, sanitize_tool_call_sequences, send_stream_event,
         validate_stream_completion, AgentStep, AgentToolCall, StreamEvent, AGENT_INSTRUCTION,
-        JAVASCRIPT_TOOL_NAME,
+        JAVASCRIPT_TOOL_NAME, C_TOOL_NAME,
     };
     use crate::config_manager::Live2dChatConfig;
     use tokio_util::sync::CancellationToken;
@@ -1397,6 +1446,62 @@ mod tests {
             }
             AgentStep::Final { .. } => panic!("expected tool calls"),
         }
+    }
+
+    #[test]
+    fn build_step_reads_execute_c_tool_call() {
+        let message = serde_json::json!({
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [{
+                "id": "call_c1",
+                "type": "function",
+                "function": {
+                    "name": C_TOOL_NAME,
+                    "arguments": "{\"source_code\":\"int main(){return 0;}\"}"
+                }
+            }]
+        });
+        let step = build_step(
+            message,
+            Some("tool_calls".to_owned()),
+            Vec::new(),
+            "",
+            0,
+            None,
+        )
+        .unwrap();
+        match step {
+            AgentStep::ToolCalls {
+                calls, messages, ..
+            } => {
+                assert_eq!(messages.len(), 1);
+                assert_eq!(calls.len(), 1);
+                assert!(matches!(
+                    &calls[0],
+                    AgentToolCall::ExecuteC { id, source_code, .. }
+                        if id == "call_c1" && source_code == "int main(){return 0;}"
+                ));
+            }
+            AgentStep::Final { .. } => panic!("expected tool calls"),
+        }
+    }
+
+    #[test]
+    fn rejects_non_json_execute_c_tool_arguments() {
+        let message = serde_json::json!({
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [{
+                "id": "call_c2",
+                "type": "function",
+                "function": {
+                    "name": C_TOOL_NAME,
+                    "arguments": "int main(){}"
+                }
+            }]
+        });
+        assert!(parse_tool_calls(&message).is_err());
     }
 
     #[test]
