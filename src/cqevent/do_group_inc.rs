@@ -32,11 +32,7 @@ fn do_redlang(
                 rl.script_name = script_name_t;
                 if let Err(e) = super::do_script(&mut rl, &code_t, "normal", false) {
                     cq_add_log_w(
-                        format!(
-                            "err in do_group_increase:do_group_increase:{}",
-                            e
-                        )
-                        .as_str(),
+                        format!("err in do_group_increase:do_group_increase:{}", e).as_str(),
                     )
                     .unwrap();
                 }
@@ -49,13 +45,6 @@ fn do_redlang(
 // 处理群成员增加事件
 pub fn do_group_inc(root: &serde_json::Value, ban_pkgs: &HashSet<String>) {
     if let Err(e) = do_redlang(root, ban_pkgs) {
-        cq_add_log_w(
-            format!(
-                "err in do_group_increase:do_group_increase:{}",
-                e
-            )
-            .as_str(),
-        )
-        .unwrap();
+        cq_add_log_w(format!("err in do_group_increase:do_group_increase:{}", e).as_str()).unwrap();
     }
 }

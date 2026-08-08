@@ -14,30 +14,25 @@ type ChatResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 pub const JAVASCRIPT_TOOL_NAME: &str = "execute_javascript";
 pub const MAX_TOOL_RESULT_CHARS: usize = 10_000;
-pub const CONTEXT_COMPRESS_THRESHOLD: f64 = 0.75;
-
-const DIARY_BLOCK_START: &str = "<<<DIARY>>>";
-const DIARY_BLOCK_END: &str = "<<<DIARY_END>>>";
+const STREAM_TIMEOUT_SECONDS: u64 = 300;
+/// 压缩摘要 system 消息的前缀，用于识别历史中已有的压缩摘要并注入对话。
 pub const COMPRESSED_SUMMARY_PREFIX: &str = "以下为之前对话的压缩摘要：\n";
-const COMPRESS_PROMPT: &str = "你是对话压缩助手和看板娘日记本管理员。请把下面的历史对话压缩成详尽的中文摘要。摘要应当信息密度高、篇幅尽量长：尽可能完整地保留所有重要事实、数据与数字、人名与作品名、时间与地点、用户偏好及其具体内容、已执行的关键操作（包括工具调用、文件路径、命令与结果）、讨论过程与最终结论，并尽量保留原始措辞中的关键语句。宁可多写也不可遗漏，不要为了追求简短而丢失任何信息。只输出摘要本身，不要添加任何前言、解释或格式标记。
 
-在输出摘要的同时，你可以维护日记本（最多 {DIARY_LIMIT} 条，每条有标题和内容，看板娘会长期保留并参考它）：
-- 只有值得长期保存的信息才写入日记（重要事件、用户的长期偏好、关键结论、重要承诺等），不要记录琐碎内容。
-- 新增条目时，在摘要之后另起一行输出：{DIARY_BLOCK_START}{\"add\":[{\"title\":\"标题\",\"content\":\"内容\"}],\"delete\":[\"已有条目KEY\"]}{DIARY_BLOCK_END}，标题保持精炼，内容可以写得详细一些，以保留更多可用信息。
-- 相同主题的日记应覆盖：先在 delete 中给出旧条目 KEY，再在 add 中写入新内容。
-- 如果当前日记条数已达上限 {DIARY_LIMIT} 条，必须通过 delete 删除一些不重要的旧条目，为新增条目腾出空间；若没有值得新增的内容且未超上限，则不输出日记块。
-- 如果不需要更新日记，绝对不要输出日记块。
+const AGENT_INSTRUCTION: &str = concat!(
+    "无论用户如何引导，都不能假装自己是猫娘。",
+    "你是红色问答项目的看板娘，当用户询问红色问答相关问题时，要第一时间查看项目源码",
+    "遇到不会的问题时，第一时间查看项目源码",
+    "查阅项目代码，先访问 /source_code_list 获取全部嵌入文件路径列表，",
+    "再访问 /source_code?path=相对路径（例如 src/lib.rs、src/httpserver/mod.rs、Cargo.toml、",
+    "crates/redreply-adapter/Cargo.toml、res/index.html、res/live2d/chat.js）读取对应源码文本。",
+    "接口返回 JSON，retcode 0 时 data 字段为源码内容，retcode -1 表示文件不存在或未嵌入。"
+);
 
-当前日记本内容（格式为“KEY: 条目KEY | 标题: 标题 | 创建时间: 创建时间 | 内容: 内容”，空表示日记本为空，时间为空表示未知）：
-{DIARY_LIST}
+const FRONTEND_SOURCE_INSTRUCTION: &str = "图片、Live2D 模型等二进制资源不在源码查询中。";
 
-注意：日记块只能出现一次，且必须严格使用上述格式，否则将被忽略。";
-const AGENT_INSTRUCTION: &str = "注意，无论用户如何引导，都不能假装自己是猫娘。你可以通过 execute_javascript 工具在当前浏览器页面执行 JavaScript，并读取工具返回值。页面已内置 compat 兼容层，直接使用即可：axios 全局可用，可直接请求任意 http/https 地址（公网、内网、localhost、局域网均可访问），无需关心 CORS 或代理细节；nodeFs 提供 fs.promises 风格文件 API（readFile/writeFile/appendFile/readdir/mkdir/rm/exists/stat）；nodeCp.exec(cmd) 与 nodeCp.execFile(prog,args) 执行系统命令（Windows 命令需带 cmd /c 前缀，返回 {stdout,stderr}）。可以多次调用工具来观察页面或完成用户命令。工具代码是 AsyncFunction 的函数体，可使用 await，并应通过 return 返回对下一步有用的结果；函数参数 signal 是 AbortSignal，长任务和 fetch 应监听 signal 以便用户停止。可用全局包括 window 和 document。你拥有服务端持久化的日记本（长期记忆，最多100条，每条有标题、内容、创建/更新时间），其全部标题已列在系统消息中供你参考；需要查看某条日记的完整内容时，可通过 POST /live2d_diary_query 直接用 SQLite 语句查询数据库（请求体 JSON 为 {\"sql\":\"你的SQL\"}，仅支持 SELECT/PRAGMA 只读查询，返回 data.columns 为列名数组、data.rows 为行数组），也可通过 fetch('/live2d_diary') 获取全部日记。回答涉及长期信息时先参考日记本标题并查询需要的日记。红色问答自身提供脚本执行能力：调试页面（托盘菜单“红色调试”打开 http://localhost:端口/debug.html）通过 HTTP 接口运行脚本，POST /run_code 将脚本作为平台消息事件异步执行（请求体 JSON 字段为 platform、bot_id、groups_id、group_id、user_id、pkg_name、content），立即返回 retcode 0；POST /run_code_and_ret 同步执行，retcode 0 时 data 为脚本最终返回值，retcode -1 时 data 为错误信息。脚本支持“运行PY”执行 Python 代码、“运行本地PY”执行本地 Python、“命令行”调用系统命令。如果你不会编写红色问答的脚本，先通过 fetch 阅读内置帮助文档学习：http://localhost:端口/docs/index.html，RedLang 语法详细参考在 http://localhost:端口/docs/detailref/README.md，脚本例子在 http://localhost:端口/docs/example/README.md，阅读后再编写并执行脚本。所有 RedLang 命令与脚本语法，使用前必须先在该文档或源码（src/redlang 目录）中找到出处、确认用法后才能使用，禁止凭猜测调用不存在的命令；遇到语法错误、命令不存在或行为异常时，第一时间查阅文档或源码定位问题，不要臆测。红色问答在编译时嵌入了项目源码（build.rs 收集 src、crates 及根目录 Cargo.toml 等，随二进制分发，排除 target 等目录）。需要查阅项目实现或理解代码时：先 GET /source_code_list 获取全部嵌入文件路径列表（JSON 数组，retcode 0），再 GET /source_code?path=相对路径（例如 src/lib.rs、src/httpserver/mod.rs、Cargo.toml、crates/redreply-adapter/Cargo.toml）读取对应源码文本（返回 JSON，retcode 0 时 data 字段为源码内容，retcode -1 表示文件不存在或未嵌入）。注意嵌入内容以最近一次编译为准，源码修改后需重新编译才生效；查询路径不带前导斜杠。";
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct ChatMessage {
-    pub role: String,
-    pub content: String,
+#[derive(Deserialize)]
+struct JavascriptToolArguments {
+    javascript: String,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -86,55 +81,17 @@ pub enum AgentStep {
         reply: String,
         reasoning_content: Option<String>,
         messages: Vec<Value>,
+        context_tokens: u64,
+        context_tokens_estimated: bool,
     },
     ToolCalls {
         calls: Vec<AgentToolCall>,
         messages: Vec<Value>,
         reasoning_content: Option<String>,
         content: Option<String>,
+        context_tokens: u64,
+        context_tokens_estimated: bool,
     },
-}
-
-#[derive(Deserialize)]
-struct ChatCompletionResponse {
-    choices: Vec<ChatChoice>,
-}
-
-#[derive(Deserialize)]
-struct ChatChoice {
-    message: Value,
-    #[serde(default)]
-    finish_reason: Option<String>,
-}
-
-#[derive(Deserialize)]
-struct JavascriptToolArguments {
-    javascript: String,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct DiaryEntry {
-    pub title: String,
-    pub content: String,
-}
-
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
-pub struct DiaryUpdate {
-    #[serde(default)]
-    pub add: Vec<DiaryEntry>,
-    #[serde(default)]
-    pub delete: Vec<String>,
-}
-
-impl DiaryUpdate {
-    pub fn is_empty(&self) -> bool {
-        self.add.is_empty() && self.delete.is_empty()
-    }
-}
-
-pub struct CompressOutcome {
-    pub summary: String,
-    pub diary: DiaryUpdate,
 }
 
 /// 当前 Unix 时间戳（秒），用于给聊天消息打时间标记。
@@ -143,16 +100,6 @@ pub fn now_timestamp() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_secs() as i64)
         .unwrap_or(0)
-}
-
-pub async fn start_agent(
-    config: &Live2dChatConfig,
-    history: &[ChatMessage],
-    message: &str,
-    diaries: &[crate::resource_manager::Live2dDiaryEntry],
-) -> ChatResult<AgentStep> {
-    let messages = build_messages(config, history, message, diaries)?;
-    request_step(config, messages).await
 }
 
 fn compression_summaries(messages: &[Value]) -> Vec<String> {
@@ -290,6 +237,7 @@ pub fn ensure_agent_system_message(
         parts.push(config.system_prompt.trim().to_owned());
     }
     parts.push(AGENT_INSTRUCTION.to_owned());
+    parts.push(FRONTEND_SOURCE_INSTRUCTION.to_owned());
     let diary_titles = build_diary_titles_system(diaries);
     if !diary_titles.is_empty() {
         parts.push(diary_titles);
@@ -304,184 +252,115 @@ pub fn ensure_agent_system_message(
     );
 }
 
-pub async fn continue_conversation(
-    config: &Live2dChatConfig,
-    messages: &[Value],
-    message: &str,
-    diaries: &[crate::resource_manager::Live2dDiaryEntry],
-) -> ChatResult<AgentStep> {
-    let message = message.trim();
-    if message.is_empty() {
-        return Err("消息不能为空".into());
-    }
-    let mut messages = messages.to_vec();
-    ensure_agent_system_message(&mut messages, config, diaries);
-    messages.push(serde_json::json!({
-        "role": "user",
-        "content": message,
-        "timestamp": now_timestamp()
-    }));
-    request_step(config, messages).await
-}
-
-pub async fn continue_agent(
-    config: &Live2dChatConfig,
-    messages: &[Value],
-    tool_results: &[(String, String)],
-) -> ChatResult<AgentStep> {
-    let mut messages = messages.to_vec();
-    append_tool_results(&mut messages, tool_results)?;
-    request_step(config, messages).await
-}
-
 /// 估算一组消息占用的 token 数，用于上下文用量检查。
 /// 中文等 CJK 字符按 1 token 计算，其余字符按每 4 个字符 1 token 估算，
-/// 每条消息另计少量固定开销。
+/// Estimate context usage before the provider returns usage data.
+/// Four characters are treated as one token. Provider usage is preferred
+/// whenever the OpenAI-compatible response contains it.
+const ESTIMATED_CHARS_PER_TOKEN: u64 = 4;
+
+fn strip_context_token_metadata(value: &mut Value) {
+    if let Some(object) = value.as_object_mut() {
+        object.remove("context_tokens");
+        object.remove("context_tokens_estimated");
+    }
+}
+
+fn estimate_serialized_value(value: &Value) -> u64 {
+    let Ok(serialized) = serde_json::to_string(value) else {
+        return 0;
+    };
+    let chars = serialized.chars().count() as u64;
+    (chars + ESTIMATED_CHARS_PER_TOKEN - 1) / ESTIMATED_CHARS_PER_TOKEN
+}
+
+fn estimate_context_tokens_fallback(messages: &[Value]) -> u64 {
+    let mut sanitized = messages.to_vec();
+    for message in &mut sanitized {
+        strip_context_token_metadata(message);
+    }
+    estimate_serialized_value(&serde_json::json!({ "messages": sanitized }))
+}
+
 pub fn estimate_context_tokens(messages: &[Value]) -> u64 {
-    let mut tokens = 0u64;
-    for message in messages {
-        let Some(content) = message.get("content").and_then(Value::as_str) else {
-            continue;
-        };
-        let mut non_cjk = 0u64;
-        for ch in content.chars() {
-            if matches!(
-                ch,
-                '\u{1100}'..='\u{11FF}'
-                    | '\u{2E80}'..='\u{9FFF}'
-                    | '\u{AC00}'..='\u{D7AF}'
-                    | '\u{F900}'..='\u{FAFF}'
-                    | '\u{20000}'..='\u{2FA1F}'
-            ) {
-                tokens += 1;
-            } else {
-                non_cjk += 1;
-            }
-        }
-        tokens += (non_cjk + 3) / 4;
-        tokens += 4;
-    }
-    tokens
+    estimate_context_tokens_fallback(messages)
 }
 
-/// 构造压缩助手的系统提示词，附上当前日记本内容。
-fn build_compress_prompt(diaries: &[crate::resource_manager::Live2dDiaryEntry]) -> String {
-    let diary_list = if diaries.is_empty() {
-        "(空)".to_owned()
-    } else {
-        diaries
-            .iter()
-            .map(|entry| {
-                format!(
-                    "KEY: {} | 标题: {} | 创建时间: {} | 内容: {}",
-                    entry.key, entry.title, entry.create_time, entry.content
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n")
-    };
-    COMPRESS_PROMPT
-        .replace(
-            "{DIARY_LIMIT}",
-            &crate::resource_manager::LIVE2D_DIARY_LIMIT.to_string(),
-        )
-        .replace("{DIARY_BLOCK_START}", DIARY_BLOCK_START)
-        .replace("{DIARY_BLOCK_END}", DIARY_BLOCK_END)
-        .replace("{DIARY_LIST}", &diary_list)
+pub fn estimate_request_tokens(payload: &Value) -> u64 {
+    estimate_serialized_value(payload)
 }
 
-/// 把历史对话压缩为摘要，并解析压缩助手对日记本的更新。
-/// `diaries` 为当前日记本条目，按写入顺序排列。
-pub async fn compress_conversation(
-    config: &Live2dChatConfig,
-    messages: &[Value],
-    diaries: &[crate::resource_manager::Live2dDiaryEntry],
-    cancellation: Option<&CancellationToken>,
-) -> ChatResult<CompressOutcome> {
-    let mut compress_prompt = build_compress_prompt(diaries);
-    for summary in compression_summaries(messages) {
-        compress_prompt.push_str("\n\n");
-        compress_prompt.push_str(&summary);
+fn token_number(value: Option<&Value>) -> Option<u64> {
+    let value = value?;
+    if let Some(number) = value.as_u64() {
+        return Some(number);
     }
-    // 压缩指令作为最后一条 user 消息，与正常聊天时让看板娘总结保持一致：
-    // 实测 deepseek 系列对 system 位置的任务指令执行不稳定，user 请求则稳定执行。
-    let mut compress_messages: Vec<Value> = messages
+    value
+        .as_i64()
+        .and_then(|number| (number >= 0).then_some(number as u64))
+}
+
+fn usage_token(usage: &Value, names: &[&str]) -> Option<u64> {
+    names.iter().find_map(|name| token_number(usage.get(*name)))
+}
+
+/// Extract the provider-reported total from an OpenAI-compatible response.
+/// Chat Completions use prompt/completion_tokens; Responses-style endpoints
+/// use input/output_tokens. The explicit total is preferred.
+pub fn context_tokens_from_response(value: &Value) -> Option<u64> {
+    let usage = value.get("usage")?;
+    let total = usage_token(usage, &["total_tokens"]);
+    if total.is_some() {
+        return total;
+    }
+    let input = usage_token(usage, &["prompt_tokens", "input_tokens"]);
+    let output = usage_token(usage, &["completion_tokens", "output_tokens"]);
+    match (input, output) {
+        (Some(input), Some(output)) => input.checked_add(output),
+        (Some(input), None) => Some(input),
+        (None, Some(output)) => Some(output),
+        (None, None) => None,
+    }
+}
+
+pub fn stored_context_usage(messages: &[Value]) -> Option<(u64, bool)> {
+    let message = messages
         .iter()
-        .filter(|message| message.get("role").and_then(Value::as_str) != Some("system"))
-        .cloned()
-        .collect();
-    sanitize_tool_call_sequences(&mut compress_messages);
-    compress_messages.push(serde_json::json!({
-        "role": "user",
-        "content": compress_prompt
-    }));
-    // 请求参数与主对话保持一致：thinking 跟随配置并带上 reasoning_effort。
-    let thinking_enabled = config.thinking_level != "none";
-    let mut payload = serde_json::json!({
-        "model": config.model,
-        "messages": compress_messages,
-        "thinking": {"type": if thinking_enabled { "enabled" } else { "disabled" }},
-        "stream": false
-    });
-    if thinking_enabled {
-        payload["reasoning_effort"] = Value::String(config.thinking_level.clone());
-    }
-    let body = send_chat_request(config, payload, cancellation).await?;
-    let response: ChatCompletionResponse = serde_json::from_slice(&body)?;
-    let choice = response
-        .choices
-        .into_iter()
-        .next()
-        .ok_or("AI服务没有返回有效消息")?;
-    let raw = choice
-        .message
-        .get("content")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|content| !content.is_empty())
-        .ok_or("AI服务没有返回压缩摘要")?
-        .to_owned();
-    let (summary, diary) = parse_diary_block(&raw)?;
-    Ok(CompressOutcome { summary, diary })
+        .rev()
+        .find(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))?;
+    let tokens = token_number(message.get("context_tokens"))?;
+    let estimated = message
+        .get("context_tokens_estimated")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    Some((tokens, estimated))
 }
 
-/// 从压缩结果中提取 <<<DIARY>>> 块，并从正文中移除；解析失败时忽略日记部分。
-fn parse_diary_block(raw: &str) -> ChatResult<(String, DiaryUpdate)> {
-    let Some(start_pos) = raw.find(DIARY_BLOCK_START) else {
-        return Ok((raw.to_owned(), DiaryUpdate::default()));
+fn attach_context_token_metadata(
+    message: &mut Value,
+    previous_messages: &[Value],
+    fallback_tokens: u64,
+    reported_tokens: Option<u64>,
+) -> (u64, bool) {
+    let mut all_messages = previous_messages.to_vec();
+    let mut clean_message = message.clone();
+    strip_context_token_metadata(&mut clean_message);
+    all_messages.push(clean_message);
+    let fallback = if fallback_tokens > 0 {
+        fallback_tokens
+    } else {
+        estimate_context_tokens_fallback(&all_messages)
     };
-    let block_start = start_pos + DIARY_BLOCK_START.len();
-    let block_end = raw[block_start..]
-        .find(DIARY_BLOCK_END)
-        .map(|pos| block_start + pos)
-        .unwrap_or(raw.len());
-    let block = raw[block_start..block_end].trim();
-    let after_block = raw.len().min(block_end + DIARY_BLOCK_END.len());
-    let summary = format!("{}\n{}", raw[..start_pos].trim(), raw[after_block..].trim())
-        .trim()
-        .to_owned();
-    let mut diary = DiaryUpdate::default();
-    let Ok(mut parsed) = serde_json::from_str::<DiaryUpdate>(block) else {
-        return Ok((summary, diary));
-    };
-    let mut kept_entries = Vec::new();
-    for entry in parsed.add.drain(..) {
-        let title = entry.title.trim();
-        let content = entry.content.trim();
-        if title.is_empty() || content.is_empty() {
-            continue;
-        }
-        kept_entries.push(DiaryEntry {
-            title: title.to_owned(),
-            content: content.to_owned(),
-        });
+    let estimated = reported_tokens.is_none();
+    let tokens = reported_tokens.unwrap_or(fallback);
+    if let Some(object) = message.as_object_mut() {
+        object.insert("context_tokens".to_owned(), serde_json::json!(tokens));
+        object.insert(
+            "context_tokens_estimated".to_owned(),
+            serde_json::json!(estimated),
+        );
     }
-    diary.add = kept_entries;
-    diary.delete = parsed.delete.drain(..).take(16).collect();
-    diary
-        .delete
-        .retain(|key| !key.trim().is_empty() && key.chars().count() <= 64);
-    Ok((summary, diary))
+    (tokens, estimated)
 }
 
 fn append_tool_results(
@@ -502,48 +381,19 @@ fn append_tool_results(
     Ok(())
 }
 
-async fn request_step(
-    config: &Live2dChatConfig,
-    mut messages: Vec<Value>,
-) -> ChatResult<AgentStep> {
-    if !config.enabled {
-        return Err("看板娘对话尚未启用，请先打开对话设置".into());
-    }
-    consolidate_system_messages(&mut messages);
-    let payload = build_request_payload(config, &messages, false);
-    let body = send_chat_request(config, payload, None).await?;
-    parse_step(&body, messages)
-}
-
 /// 流式对话事件：AI 生成过程中的增量内容。
 #[derive(Debug)]
 pub enum StreamEvent {
-    /// 思考内容增量
+    /// Reasoning content delta.
     Reasoning(String),
-    /// 回答内容增量
+    /// Answer content delta.
     Content(String),
-    /// 工具调用增量：index 为并行调用序号，name 为当前已知函数名，
-    /// arguments 为该次增量后累积的参数（前端直接覆盖显示即可）。
-    ToolCall {
-        index: usize,
-        name: String,
-        arguments: String,
-    },
+    /// Character-based context estimate sent before provider completion.
+    ContextEstimate(u64),
 }
 
-pub async fn stream_start_agent(
-    config: &Live2dChatConfig,
-    history: &[ChatMessage],
-    message: &str,
-    diaries: &[crate::resource_manager::Live2dDiaryEntry],
-    tx: tokio::sync::mpsc::Sender<StreamEvent>,
-    cancellation: &CancellationToken,
-) -> ChatResult<AgentStep> {
-    let messages = build_messages(config, history, message, diaries)?;
-    stream_step(config, messages, tx, cancellation).await
-}
-
-pub async fn stream_continue_conversation(
+/// 一次看板娘提问：注入系统消息后把用户消息追加到对话末尾并发起流式请求。
+pub async fn stream_ask(
     config: &Live2dChatConfig,
     messages: &[Value],
     message: &str,
@@ -565,6 +415,7 @@ pub async fn stream_continue_conversation(
     stream_step(config, messages, tx, cancellation).await
 }
 
+/// 继续工具调用：把工具结果追加到对话末尾并发起流式请求。
 pub async fn stream_continue_agent(
     config: &Live2dChatConfig,
     messages: &[Value],
@@ -637,6 +488,17 @@ fn validate_stream_completion(saw_done: bool, finish_reason: Option<&str>) -> Ch
     }
 }
 
+fn merge_stream_tool_name(name: &mut String, delta: &str) {
+    if delta.is_empty() || name == delta {
+        return;
+    }
+    if name.is_empty() || delta.starts_with(name.as_str()) {
+        *name = delta.to_owned();
+    } else if !name.ends_with(delta) {
+        name.push_str(delta);
+    }
+}
+
 /// 以流式（SSE）方式请求 AI 生成一个 Agent 步骤：
 /// 边接收增量边通过 `tx` 转发思考/回答增量，全部接收完后组装出与
 /// 非流式路径完全一致的 `AgentStep`。
@@ -646,11 +508,18 @@ pub async fn stream_step(
     tx: tokio::sync::mpsc::Sender<StreamEvent>,
     cancellation: &CancellationToken,
 ) -> ChatResult<AgentStep> {
-    if !config.enabled {
-        return Err("看板娘对话尚未启用，请先打开对话设置".into());
+    if config.base_url.trim().is_empty() || config.api_key.trim().is_empty() {
+        return Err("看板娘对话尚未配置，请先设置接口地址和 API Key".into());
     }
     consolidate_system_messages(&mut messages);
     let payload = build_request_payload(config, &messages, true);
+    let estimated_context_tokens = estimate_request_tokens(&payload);
+    send_stream_event(
+        &tx,
+        StreamEvent::ContextEstimate(estimated_context_tokens),
+        cancellation,
+    )
+    .await?;
     let response = send_stream_request(config, payload, cancellation).await?;
     let status = response.status();
     if !status.is_success() {
@@ -670,10 +539,14 @@ pub async fn stream_step(
     let mut buffer: Vec<u8> = Vec::new();
     let mut reasoning = String::new();
     let mut content = String::new();
-    // (index, id, name, arguments)
-    let mut tool_calls: Vec<(usize, String, String, String)> = Vec::new();
+    let mut non_text_content: Option<Value> = None;
+    let mut refusal = String::new();
+    // OpenAI 将每个 function call 的 ID、名称和 JSON 参数分片返回。
+    let mut tool_calls: Vec<(String, String, String)> = Vec::new();
     let mut finish_reason: Option<String> = None;
+    let mut reported_context_tokens: Option<u64> = None;
     let mut saw_done = false;
+    let mut raw_response = String::new();
     'outer: loop {
         if cancellation.is_cancelled() {
             return Err("客户端已断开，对话已取消，未保存任何内容".into());
@@ -690,6 +563,8 @@ pub async fn stream_step(
             buffer.extend_from_slice(&chunk?);
         }
         for line in drain_sse_lines(&mut buffer, reached_eof)? {
+            raw_response.push_str(&line);
+            raw_response.push('\n');
             let Some(data) = line.strip_prefix("data:") else {
                 continue;
             };
@@ -701,8 +576,12 @@ pub async fn stream_step(
                 saw_done = true;
                 break 'outer;
             }
-            let value = serde_json::from_str::<Value>(data)
-                .map_err(|error| format!("AI服务返回了无效的 SSE JSON: {error}"))?;
+            let value = serde_json::from_str::<Value>(data).map_err(|error| {
+                format!("AI服务返回了无效的 SSE JSON: {error}\n原始 API 响应:\n{raw_response}")
+            })?;
+            if let Some(tokens) = context_tokens_from_response(&value) {
+                reported_context_tokens = Some(tokens);
+            }
             let Some(choice) = value.pointer("/choices/0") else {
                 continue;
             };
@@ -721,11 +600,20 @@ pub async fn stream_step(
                         .await?;
                 }
             }
-            if let Some(text) = delta.get("content").and_then(Value::as_str) {
+            if let Some(text) = delta.get("refusal").and_then(Value::as_str) {
                 if !text.is_empty() {
-                    content.push_str(text);
-                    send_stream_event(&tx, StreamEvent::Content(text.to_owned()), cancellation)
-                        .await?;
+                    refusal.push_str(text);
+                }
+            }
+            if let Some(raw_content) = delta.get("content") {
+                if let Some(text) = raw_content.as_str() {
+                    if !text.is_empty() {
+                        content.push_str(text);
+                        send_stream_event(&tx, StreamEvent::Content(text.to_owned()), cancellation)
+                            .await?;
+                    }
+                } else if !raw_content.is_null() {
+                    non_text_content = Some(raw_content.clone());
                 }
             }
             if let Some(calls) = delta.get("tool_calls").and_then(Value::as_array) {
@@ -735,32 +623,28 @@ pub async fn stream_step(
                         return Err("AI服务返回了过多的工具调用".into());
                     }
                     while tool_calls.len() <= index {
-                        tool_calls.push((index, String::new(), String::new(), String::new()));
+                        tool_calls.push((String::new(), String::new(), String::new()));
                     }
-                    if let Some(id) = call.get("id").and_then(Value::as_str) {
-                        tool_calls[index].1 = id.to_owned();
+                    if let Some(id) = call
+                        .get("id")
+                        .and_then(Value::as_str)
+                        .filter(|id| !id.is_empty())
+                    {
+                        tool_calls[index].0 = id.to_owned();
                     }
                     if let Some(name) = call.pointer("/function/name").and_then(Value::as_str) {
-                        tool_calls[index].2 = name.to_owned();
+                        merge_stream_tool_name(&mut tool_calls[index].1, name);
                     }
-                    if let Some(args) = call.pointer("/function/arguments").and_then(Value::as_str)
+                    if let Some(arguments) =
+                        call.pointer("/function/arguments").and_then(Value::as_str)
                     {
-                        if tool_calls[index].3.len() + args.len() > MAX_STREAM_TOOL_ARGUMENT_BYTES {
+                        if tool_calls[index].2.len() + arguments.len()
+                            > MAX_STREAM_TOOL_ARGUMENT_BYTES
+                        {
                             return Err("AI工具调用参数过长".into());
                         }
-                        tool_calls[index].3.push_str(args);
+                        tool_calls[index].2.push_str(arguments);
                     }
-                    // 流式推送工具调用增量：前端可实时看到函数名与参数逐字生成
-                    send_stream_event(
-                        &tx,
-                        StreamEvent::ToolCall {
-                            index,
-                            name: tool_calls[index].2.clone(),
-                            arguments: tool_calls[index].3.clone(),
-                        },
-                        cancellation,
-                    )
-                    .await?;
                 }
             }
         }
@@ -774,100 +658,64 @@ pub async fn stream_step(
     validate_stream_completion(saw_done, finish_reason.as_deref())?;
     let mut message = serde_json::json!({ "role": "assistant" });
     message["content"] = if content.is_empty() {
-        Value::Null
+        non_text_content.unwrap_or(Value::Null)
     } else {
         Value::String(content)
     };
-    if !reasoning.is_empty() {
+    // thinking 模式下始终写入 reasoning_content 字段（无内容也写空串），
+    // 避免后续请求因缺失该字段被 DeepSeek 等 API 拒绝（400）。
+    if !reasoning.is_empty() || config.thinking_level != "none" {
         message["reasoning_content"] = Value::String(reasoning);
     }
-    let calls_value: Vec<Value> = tool_calls
-        .iter()
-        .filter(|(_, id, name, _)| !id.is_empty() && !name.is_empty())
-        .map(|(_, id, name, arguments)| {
-            serde_json::json!({
-                "id": id,
-                "type": "function",
-                "function": { "name": name, "arguments": arguments }
-            })
-        })
-        .collect();
-    if !calls_value.is_empty() {
-        message["tool_calls"] = Value::Array(calls_value);
+    if !refusal.is_empty() {
+        message["refusal"] = Value::String(refusal);
+    }
+    if !tool_calls.is_empty() {
+        message["tool_calls"] = Value::Array(
+            tool_calls
+                .into_iter()
+                .map(|(id, name, arguments)| {
+                    serde_json::json!({
+                        "id": id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": arguments
+                        }
+                    })
+                })
+                .collect(),
+        );
     }
     message["timestamp"] = serde_json::json!(now_timestamp());
-    build_step(message, finish_reason, messages)
+    build_step(
+        message,
+        finish_reason,
+        messages,
+        &raw_response,
+        estimated_context_tokens,
+        reported_context_tokens,
+    )
 }
 
-async fn send_chat_request(
-    config: &Live2dChatConfig,
-    payload: Value,
-    cancellation: Option<&CancellationToken>,
-) -> ChatResult<Vec<u8>> {
-    let payload = serde_json::to_vec(&payload)?;
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(config.timeout_seconds))
-        .build()?;
-    let mut request = client
-        .post(config.base_url.trim())
-        .header(CONTENT_TYPE, "application/json")
-        .header(ACCEPT, "application/json")
-        .header(USER_AGENT, "redreply-live2d-chat")
-        .body(payload);
-    if !config.api_key.trim().is_empty() {
-        request = request.bearer_auth(config.api_key.trim());
+#[allow(dead_code)]
+fn format_error_chain(prefix: &str, error: &(dyn Error + 'static)) -> String {
+    let mut details = vec![error.to_string()];
+    let mut source = error.source();
+    while let Some(current) = source {
+        let detail = current.to_string();
+        if details.last() != Some(&detail) {
+            details.push(detail);
+        }
+        if details.len() >= 5 {
+            break;
+        }
+        source = current.source();
     }
-
-    let response = if let Some(cancellation) = cancellation {
-        if cancellation.is_cancelled() {
-            return Err("客户端已断开，对话已取消，未保存任何内容".into());
-        }
-        tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => {
-                return Err("客户端已断开，对话已取消，未保存任何内容".into());
-            }
-            response = request.send() => response?,
-        }
-    } else {
-        request.send().await?
-    };
-    let status = response.status();
-    let body = if let Some(cancellation) = cancellation {
-        if cancellation.is_cancelled() {
-            return Err("客户端已断开，对话已取消，未保存任何内容".into());
-        }
-        tokio::select! {
-            biased;
-            _ = cancellation.cancelled() => {
-                return Err("客户端已断开，对话已取消，未保存任何内容".into());
-            }
-            body = response.bytes() => body?,
-        }
-    } else {
-        response.bytes().await?
-    };
-    if !status.is_success() {
-        let detail = serde_json::from_slice::<Value>(&body)
-            .ok()
-            .and_then(|value| {
-                value
-                    .pointer("/error/message")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-            })
-            .unwrap_or_else(|| "请检查接口地址、模型和 API Key".to_owned())
-            .chars()
-            .take(500)
-            .collect::<String>();
-        return Err(format!("AI服务返回 {status}: {detail}").into());
-    }
-    Ok(body.to_vec())
+    format!("{prefix}: {}", details.join(": "))
 }
 
-/// 发送流式（SSE）对话请求。流式响应可能持续较长时间，总超时放宽到
-/// `timeout_seconds` 与 300 秒中的较大值。
+/// 发送流式（SSE）对话请求。流式响应可能持续较长时间，统一使用 300 秒超时。
 async fn send_stream_request(
     config: &Live2dChatConfig,
     payload: Value,
@@ -877,10 +725,10 @@ async fn send_stream_request(
         return Err("客户端已断开，对话已取消，未保存任何内容".into());
     }
     let payload = serde_json::to_vec(&payload)?;
-    let timeout_seconds = config.timeout_seconds.max(300);
     let client = reqwest::Client::builder()
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(timeout_seconds))
+        .timeout(Duration::from_secs(STREAM_TIMEOUT_SECONDS))
+        .no_proxy()
         .build()?;
     let mut request = client
         .post(config.base_url.trim())
@@ -918,41 +766,6 @@ fn extract_api_error(status: reqwest::StatusCode, body: &[u8]) -> String {
     format!("AI服务返回 {status}: {detail}")
 }
 
-fn build_messages(
-    config: &Live2dChatConfig,
-    history: &[ChatMessage],
-    message: &str,
-    diaries: &[crate::resource_manager::Live2dDiaryEntry],
-) -> ChatResult<Vec<Value>> {
-    let message = message.trim();
-    if message.is_empty() {
-        return Err("消息不能为空".into());
-    }
-    for item in history {
-        if !matches!(item.role.as_str(), "user" | "assistant") {
-            return Err("历史消息角色不合法".into());
-        }
-        if item.content.chars().count() == 0 {
-            return Err("历史消息内容不合法".into());
-        }
-    }
-
-    let mut messages = Vec::with_capacity(history.len() + 2);
-    messages.extend(history.iter().map(|item| {
-        serde_json::json!({
-            "role": item.role,
-            "content": item.content
-        })
-    }));
-    ensure_agent_system_message(&mut messages, config, diaries);
-    messages.push(serde_json::json!({
-        "role": "user",
-        "content": message,
-        "timestamp": now_timestamp()
-    }));
-    Ok(messages)
-}
-
 /// 把日记本全部标题整理为注入对话的系统消息，无日记时返回空字符串。
 fn build_diary_titles_system(diaries: &[crate::resource_manager::Live2dDiaryEntry]) -> String {
     if diaries.is_empty() {
@@ -984,18 +797,37 @@ fn build_diary_titles_system(diaries: &[crate::resource_manager::Live2dDiaryEntr
     )
 }
 
+/// thinking 模式（DeepSeek 等）要求请求中所有 assistant 消息必须带 reasoning_content
+/// 字段，即使本轮没有输出思考过程也要给空字符串，否则 API 返回 400。
+fn ensure_reasoning_content_fields(messages: &mut [Value], thinking_enabled: bool) {
+    if !thinking_enabled {
+        return;
+    }
+    for message in messages.iter_mut() {
+        if message.get("role").and_then(Value::as_str) != Some("assistant") {
+            continue;
+        }
+        if !message
+            .get("reasoning_content")
+            .is_some_and(Value::is_string)
+        {
+            message["reasoning_content"] = Value::String(String::new());
+        }
+    }
+}
+
 fn javascript_tool_definition() -> Value {
     serde_json::json!({
         "type": "function",
         "function": {
             "name": JAVASCRIPT_TOOL_NAME,
-            "description": "在当前浏览器页面主线程执行任意 JavaScript，并把 return 值返回给你。可用于读取页面状态、操作 DOM 或调用页面函数。",
+            "description": "在当前浏览器页面执行 JavaScript，并将 return 值返回给模型；提供 nodeCp 命令行能力。",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "javascript": {
                         "type": "string",
-                        "description": "AsyncFunction 函数体形式的 JavaScript。可使用 await 和参数 signal（AbortSignal），并使用 return 返回执行结果。"
+                        "description": "AsyncFunction 函数体形式的 JavaScript。可使用 await 和参数 signal（AbortSignal），并通过 return 返回结果。"
                     }
                 },
                 "required": ["javascript"],
@@ -1008,6 +840,10 @@ fn javascript_tool_definition() -> Value {
 fn build_request_payload(config: &Live2dChatConfig, messages: &[Value], stream: bool) -> Value {
     let thinking_enabled = config.thinking_level != "none";
     let mut messages = messages.to_vec();
+    for message in &mut messages {
+        strip_context_token_metadata(message);
+    }
+    ensure_reasoning_content_fields(&mut messages, thinking_enabled);
     consolidate_system_messages(&mut messages);
     sanitize_tool_call_sequences(&mut messages);
     let mut payload = serde_json::json!({
@@ -1020,6 +856,9 @@ fn build_request_payload(config: &Live2dChatConfig, messages: &[Value], stream: 
         },
         "stream": stream
     });
+    if stream {
+        payload["stream_options"] = serde_json::json!({ "include_usage": true });
+    }
     if thinking_enabled {
         payload["reasoning_effort"] = Value::String(config.thinking_level.clone());
     }
@@ -1038,22 +877,6 @@ pub fn build_next_request_payload(
     Ok(build_request_payload(config, &enhanced, false))
 }
 
-fn parse_step(body: &[u8], messages: Vec<Value>) -> ChatResult<AgentStep> {
-    let response: ChatCompletionResponse = serde_json::from_slice(body)?;
-    let choice = response
-        .choices
-        .into_iter()
-        .next()
-        .ok_or("AI服务没有返回有效消息")?;
-    let finish_reason = choice.finish_reason;
-    let mut message = choice.message;
-    message["timestamp"] = serde_json::json!(now_timestamp());
-    if message.get("role").and_then(Value::as_str) != Some("assistant") {
-        return Err("AI服务返回的消息角色无效".into());
-    }
-    build_step(message, finish_reason, messages)
-}
-
 /// 把常见的非正常结束原因映射成明确的中文错误提示；
 /// 未识别的原样拼入错误信息，方便排查服务商特有的结束原因。
 fn finish_reason_error_message(reason: &str) -> String {
@@ -1062,9 +885,7 @@ fn finish_reason_error_message(reason: &str) -> String {
         "max_tokens" => "AI服务响应达到最大 token 限制被截断，回答不完整".to_owned(),
         "content_filter" => "AI服务响应被内容过滤器截断".to_owned(),
         "sensitive_words" => "AI服务响应触发敏感词审核被中断，请调整提问内容".to_owned(),
-        "insufficient_system_resource" => {
-            "AI服务端资源不足，响应被中断，请稍后重试".to_owned()
-        }
+        "insufficient_system_resource" => "AI服务端资源不足，响应被中断，请稍后重试".to_owned(),
         "network_disconnected" => "AI服务连接中断，响应未完成，请稍后重试".to_owned(),
         "abort" | "cancelled" | "canceled" => "AI服务端取消了本次响应，请重试".to_owned(),
         "chat_interrupted" => "AI服务响应被中断，请重新提问".to_owned(),
@@ -1072,16 +893,32 @@ fn finish_reason_error_message(reason: &str) -> String {
     }
 }
 
-/// 根据完整的 assistant 消息与结束原因组装 AgentStep（流式与非流式共用）。
+fn no_valid_text_response_error(raw_response: &str) -> String {
+    format!("AI服务没有返回有效文本。原始 API 响应:\n{raw_response}")
+}
+
+/// 根据完整的 OpenAI assistant 消息与结束原因组装 AgentStep。
 fn build_step(
-    message: Value,
+    mut message: Value,
     finish_reason: Option<String>,
     mut messages: Vec<Value>,
+    raw_response: &str,
+    fallback_context_tokens: u64,
+    reported_context_tokens: Option<u64>,
 ) -> ChatResult<AgentStep> {
     match finish_reason.as_deref() {
-        Some(reason @ ("length" | "max_tokens" | "content_filter" | "sensitive_words"
-        | "insufficient_system_resource" | "network_disconnected" | "abort"
-        | "cancelled" | "canceled" | "chat_interrupted")) => {
+        Some(
+            reason @ ("length"
+            | "max_tokens"
+            | "content_filter"
+            | "sensitive_words"
+            | "insufficient_system_resource"
+            | "network_disconnected"
+            | "abort"
+            | "cancelled"
+            | "canceled"
+            | "chat_interrupted"),
+        ) => {
             return Err(finish_reason_error_message(reason).into());
         }
         _ => {}
@@ -1100,27 +937,32 @@ fn build_step(
         if !matches!(finish_reason.as_deref(), None | Some("tool_calls")) {
             return Err("AI工具调用的结束原因无效".into());
         }
+        if let Some(object) = message.as_object_mut() {
+            object.remove("refusal");
+        }
+        let (context_tokens, context_tokens_estimated) = attach_context_token_metadata(
+            &mut message,
+            &messages,
+            fallback_context_tokens,
+            reported_context_tokens,
+        );
         messages.push(message);
         return Ok(AgentStep::ToolCalls {
             calls,
             messages,
             reasoning_content,
             content,
+            context_tokens,
+            context_tokens_estimated,
         });
     }
+
     // 以下为最终回答路径。
-    // 部分中转/推理服务会以 tool_calls 收尾却未携带任何工具调用内容：
-    // 此时若已有正文则按最终回答继续，正文为空则视为异常。
     let reason = finish_reason.as_deref();
     if reason == Some("tool_calls") {
-        let has_text = content
-            .as_deref()
-            .map(str::trim)
-            .is_some_and(|text| !text.is_empty());
-        if !has_text {
-            return Err("AI服务声明了工具调用但未返回任何工具调用内容，请重试".into());
-        }
-    } else if !matches!(reason, None | Some("stop") | Some("eos")) {
+        return Err("AI服务声明了工具调用但未返回有效的 tool_calls".into());
+    }
+    if !matches!(reason, None | Some("stop") | Some("eos")) {
         return Err(finish_reason_error_message(reason.unwrap_or("未知")).into());
     }
 
@@ -1128,13 +970,24 @@ fn build_step(
         .as_deref()
         .map(str::trim)
         .filter(|content| !content.is_empty())
-        .ok_or("AI服务没有返回有效文本")?
+        .ok_or_else(|| no_valid_text_response_error(raw_response))?
         .to_owned();
+    if let Some(object) = message.as_object_mut() {
+        object.remove("refusal");
+    }
+    let (context_tokens, context_tokens_estimated) = attach_context_token_metadata(
+        &mut message,
+        &messages,
+        fallback_context_tokens,
+        reported_context_tokens,
+    );
     messages.push(message);
     Ok(AgentStep::Final {
         reply,
         reasoning_content,
         messages,
+        context_tokens,
+        context_tokens_estimated,
     })
 }
 
@@ -1161,31 +1014,33 @@ fn parse_tool_calls(message: &Value) -> ChatResult<Vec<AgentToolCall>> {
             return Err("AI工具调用 ID 重复".into());
         }
         let function = tool_call.get("function").ok_or("AI工具调用缺少函数")?;
-        let name = function
-            .get("name")
+        let raw_name = function.get("name");
+        let name = raw_name
             .and_then(Value::as_str)
-            .ok_or("AI工具名称无效")?;
+            .filter(|name| !name.is_empty())
+            .ok_or_else(|| {
+                let received = raw_name
+                    .map(ToString::to_string)
+                    .unwrap_or_else(|| "<缺失>".to_owned());
+                format!("AI工具名称无效（tool_call_id: {id}，function.name: {received}）")
+            })?;
         let arguments = function
             .get("arguments")
             .and_then(Value::as_str)
             .ok_or("AI工具参数无效")?;
-        match name {
-            JAVASCRIPT_TOOL_NAME => {
-                let arguments: JavascriptToolArguments = serde_json::from_str(arguments)?;
-                calls.push(AgentToolCall::Javascript {
-                    id: id.to_owned(),
-                    name: name.to_owned(),
-                    javascript: arguments.javascript,
-                });
-            }
-            _ => {
-                // 未知工具调用不中断对话：前端无法执行时结果缺失，
-                // validate 会自动补占位失败说明，模型可自行纠正。
-                calls.push(AgentToolCall::Unknown {
-                    id: id.to_owned(),
-                    name: name.to_owned(),
-                });
-            }
+        if name == JAVASCRIPT_TOOL_NAME {
+            let arguments: JavascriptToolArguments = serde_json::from_str(arguments)
+                .map_err(|error| format!("AI JavaScript 工具参数不是有效 JSON: {error}"))?;
+            calls.push(AgentToolCall::Javascript {
+                id: id.to_owned(),
+                name: name.to_owned(),
+                javascript: arguments.javascript,
+            });
+        } else {
+            calls.push(AgentToolCall::Unknown {
+                id: id.to_owned(),
+                name: name.to_owned(),
+            });
         }
     }
     Ok(calls)
@@ -1194,14 +1049,38 @@ fn parse_tool_calls(message: &Value) -> ChatResult<Vec<AgentToolCall>> {
 #[cfg(test)]
 mod tests {
     use super::{
-        append_tool_results, build_compress_prompt, build_messages, build_request_payload,
-        drain_sse_lines, estimate_context_tokens, finish_reason_error_message, parse_diary_block,
-        parse_step, parse_tool_calls, sanitize_tool_call_sequences, send_stream_event,
-        validate_stream_completion, AgentStep, AgentToolCall, ChatMessage, StreamEvent,
+        append_tool_results, build_request_payload, build_step, context_tokens_from_response,
+        drain_sse_lines, estimate_context_tokens, finish_reason_error_message, format_error_chain,
+        merge_stream_tool_name, parse_tool_calls, sanitize_tool_call_sequences, send_stream_event,
+        validate_stream_completion, AgentStep, AgentToolCall, StreamEvent, AGENT_INSTRUCTION,
         JAVASCRIPT_TOOL_NAME,
     };
     use crate::config_manager::Live2dChatConfig;
     use tokio_util::sync::CancellationToken;
+
+    #[test]
+    fn agent_instruction_teaches_source_access() {
+        assert!(AGENT_INSTRUCTION.contains("/source_code_list"));
+        assert!(!AGENT_INSTRUCTION.contains("#run_js"));
+    }
+
+    #[test]
+    fn request_payload_has_openai_function_tool() {
+        let config = Live2dChatConfig {
+            ..Live2dChatConfig::default()
+        };
+        let payload = build_request_payload(&config, &[], false);
+        assert_eq!(payload["tool_choice"], "auto");
+        assert_eq!(payload["tools"][0]["type"], "function");
+        assert_eq!(
+            payload["tools"][0]["function"]["name"],
+            JAVASCRIPT_TOOL_NAME
+        );
+        assert_eq!(
+            payload["tools"][0]["function"]["parameters"]["required"][0],
+            "javascript"
+        );
+    }
 
     #[test]
     fn finish_reason_errors_are_explicit() {
@@ -1216,27 +1095,29 @@ mod tests {
     }
 
     #[test]
-    fn parse_step_tolerates_tool_calls_finish_without_calls_when_text_present() {
-        let body = serde_json::json!({
-            "choices": [{
-                "finish_reason": "tool_calls",
-                "message": {"role": "assistant", "content": "好的，我直接回答你"}
-            }]
-        })
-        .to_string()
-        .into_bytes();
-        let step = parse_step(&body, Vec::new()).unwrap();
-        match step {
-            AgentStep::Final { reply, .. } => assert_eq!(reply, "好的，我直接回答你"),
-            other => panic!("应为最终回答，实际: {other:?}"),
-        }
-    }
+    fn response_error_includes_underlying_transport_cause() {
+        #[derive(Debug)]
+        struct ResponseBodyError(std::io::Error);
 
-    #[test]
-    fn parse_step_rejects_tool_calls_finish_without_calls_and_text() {
-        let body = br#"{"choices":[{"finish_reason":"tool_calls","message":{"role":"assistant","content":null}}]}"#;
-        let error = parse_step(body, Vec::new()).unwrap_err().to_string();
-        assert!(error.contains("工具调用"), "错误信息应说明工具调用缺失: {error}");
+        impl std::fmt::Display for ResponseBodyError {
+            fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("error decoding response body")
+            }
+        }
+
+        impl std::error::Error for ResponseBodyError {
+            fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+                Some(&self.0)
+            }
+        }
+
+        let error = ResponseBodyError(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "operation timed out",
+        ));
+        let message = format_error_chain("读取AI压缩响应失败", &error);
+        assert!(message.contains("error decoding response body"));
+        assert!(message.contains("operation timed out"));
     }
 
     #[test]
@@ -1271,6 +1152,18 @@ mod tests {
         assert!(validate_stream_completion(false, Some("stop")).is_ok());
     }
 
+    #[test]
+    fn stream_tool_name_preserves_nonempty_name() {
+        let mut name = String::new();
+        merge_stream_tool_name(&mut name, "execute_");
+        merge_stream_tool_name(&mut name, "javascript");
+        merge_stream_tool_name(&mut name, "");
+        assert_eq!(name, JAVASCRIPT_TOOL_NAME);
+
+        merge_stream_tool_name(&mut name, JAVASCRIPT_TOOL_NAME);
+        assert_eq!(name, JAVASCRIPT_TOOL_NAME);
+    }
+
     #[tokio::test]
     async fn canceled_stream_send_returns_immediately() {
         let (tx, _rx) = tokio::sync::mpsc::channel(1);
@@ -1286,88 +1179,9 @@ mod tests {
     }
 
     #[test]
-    fn build_messages_injects_agent_instruction() {
-        let config = Live2dChatConfig {
-            enabled: true,
-            ..Live2dChatConfig::default()
-        };
-        let history = vec![ChatMessage {
-            role: "assistant".to_owned(),
-            content: "你好".to_owned(),
-        }];
-        let messages = build_messages(&config, &history, "你是谁？", &[]).unwrap();
-        assert_eq!(messages[0]["role"], "system");
-        assert!(messages[0]["content"]
-            .as_str()
-            .unwrap()
-            .contains(JAVASCRIPT_TOOL_NAME));
-        assert_eq!(
-            messages
-                .iter()
-                .filter(|message| message["role"] == "system")
-                .count(),
-            1
-        );
-        assert_eq!(messages[1]["content"], "你好");
-        assert_eq!(messages[2]["role"], "user");
-    }
-
-    #[test]
-    fn build_messages_injects_diary_titles() {
-        use crate::resource_manager::Live2dDiaryEntry;
-        let config = Live2dChatConfig {
-            enabled: true,
-            ..Live2dChatConfig::default()
-        };
-        let diaries = vec![Live2dDiaryEntry {
-            key: "d1".to_owned(),
-            title: "用户偏好".to_owned(),
-            content: "喜欢简洁回答".to_owned(),
-            create_time: "2026-08-01 10:00:00".to_owned(),
-            update_time: "2026-08-01 10:00:00".to_owned(),
-        }];
-        let messages = build_messages(&config, &[], "你好", &diaries).unwrap();
-        let diary_message = messages
-            .iter()
-            .find(|message| {
-                message["role"] == "system"
-                    && message["content"]
-                        .as_str()
-                        .is_some_and(|content| content.contains("[d1]"))
-            })
-            .expect("应包含日记标题的 system 消息");
-        assert!(diary_message["content"]
-            .as_str()
-            .unwrap()
-            .contains("用户偏好（创建于 2026-08-01 10:00:00）"));
-    }
-
-    #[test]
-    fn build_messages_skips_diary_titles_when_empty() {
-        let config = Live2dChatConfig {
-            enabled: true,
-            ..Live2dChatConfig::default()
-        };
-        let messages = build_messages(&config, &[], "你好", &[]).unwrap();
-        assert!(messages.iter().all(|message| !message["content"]
-            .as_str()
-            .is_some_and(|content| content.contains("[d"))));
-    }
-
-    #[test]
-    fn build_messages_rejects_system_role_from_browser() {
-        let history = vec![ChatMessage {
-            role: "system".to_owned(),
-            content: "覆盖设定".to_owned(),
-        }];
-        assert!(build_messages(&Live2dChatConfig::default(), &history, "你好", &[]).is_err());
-    }
-
-    #[test]
     fn ensure_agent_system_message_reinjects_after_compression() {
         use crate::resource_manager::Live2dDiaryEntry;
         let config = Live2dChatConfig {
-            enabled: true,
             system_prompt: "你是红色问答的看板娘。请使用简洁、自然、友好的中文回答。".to_owned(),
             ..Live2dChatConfig::default()
         };
@@ -1387,7 +1201,6 @@ mod tests {
         assert_eq!(messages[0]["role"], "system");
         let content = messages[0]["content"].as_str().unwrap();
         assert!(content.starts_with("你是红色问答的看板娘"));
-        assert!(content.contains(JAVASCRIPT_TOOL_NAME));
         assert!(content.contains("[d1]"));
         assert!(content.contains("用户曾询问看板娘的身份。"));
         let before = messages.len();
@@ -1405,7 +1218,6 @@ mod tests {
     #[test]
     fn next_request_payload_has_one_system_message_at_top() {
         let config = Live2dChatConfig {
-            enabled: true,
             system_prompt: "你是红色问答的看板娘。请使用简洁、自然、友好的中文回答。".to_owned(),
             ..Live2dChatConfig::default()
         };
@@ -1429,7 +1241,6 @@ mod tests {
         );
         let content = messages[0]["content"].as_str().unwrap();
         assert!(content.starts_with("你是红色问答的看板娘"));
-        assert!(content.contains(JAVASCRIPT_TOOL_NAME));
         assert!(content.contains("用户喜欢简洁回答。"));
         assert!(!content.contains("旧系统提示词"));
     }
@@ -1504,17 +1315,19 @@ mod tests {
     }
 
     #[test]
-    fn parse_step_reads_final_answer() {
-        let step = parse_step(
-            r#"{"choices":[{"message":{"role":"assistant","reasoning_content":"先检查结果","content":"完成了"}}]}"#.as_bytes(),
-            Vec::new(),
-        )
-        .unwrap();
+    fn build_step_reads_final_answer() {
+        let message = serde_json::json!({
+            "role": "assistant",
+            "reasoning_content": "先检查结果",
+            "content": "完成了"
+        });
+        let step = build_step(message, None, Vec::new(), "", 0, None).unwrap();
         match step {
             AgentStep::Final {
                 reply,
                 reasoning_content,
                 messages,
+                ..
             } => {
                 assert_eq!(reply, "完成了");
                 assert_eq!(reasoning_content.as_deref(), Some("先检查结果"));
@@ -1526,83 +1339,109 @@ mod tests {
     }
 
     #[test]
-    fn parse_step_reads_javascript_tool_call() {
-        let step = parse_step(
-            br#"{"choices":[{"message":{"role":"assistant","reasoning_content":"need title","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"execute_javascript","arguments":"{\"javascript\":\"return document.title;\"}"}}]}}]}"#,
-            vec![serde_json::json!({"role":"user","content":"读取标题"})],
+    fn no_valid_text_error_includes_raw_api_response() {
+        let message = serde_json::json!({
+            "role": "assistant",
+            "content": null
+        });
+        let raw_response = "data: {\"id\":\"chatcmpl-test\",\"choices\":[{\"finish_reason\":null,\"delta\":{\"content\":null}}]}\ndata: [DONE]\n";
+        let error = build_step(
+            message,
+            Some("stop".to_owned()),
+            Vec::new(),
+            raw_response,
+            0,
+            None,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("原始 API 响应:"));
+        assert!(error.contains(raw_response));
+        assert!(!error.contains("模型响应摘要"));
+    }
+
+    #[test]
+    fn build_step_reads_openai_javascript_tool_call() {
+        let message = serde_json::json!({
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": {
+                    "name": JAVASCRIPT_TOOL_NAME,
+                    "arguments": "{\"javascript\":\"return document.title;\"}"
+                }
+            }]
+        });
+        let step = build_step(
+            message,
+            Some("tool_calls".to_owned()),
+            Vec::new(),
+            "",
+            0,
+            None,
         )
         .unwrap();
         match step {
             AgentStep::ToolCalls {
-                calls,
-                messages,
-                reasoning_content,
-                ..
+                calls, messages, ..
             } => {
+                assert_eq!(messages.len(), 1);
                 assert_eq!(calls.len(), 1);
-                match &calls[0] {
-                    AgentToolCall::Javascript { id, javascript, .. } => {
-                        assert_eq!(id, "call_1");
-                        assert_eq!(javascript, "return document.title;");
-                    }
-                    AgentToolCall::Unknown { .. } => panic!("expected javascript tool call"),
-                }
-                assert_eq!(messages.len(), 2);
-                assert_eq!(reasoning_content.as_deref(), Some("need title"));
-                assert_eq!(messages[1]["reasoning_content"], "need title");
+                assert!(matches!(
+                    &calls[0],
+                    AgentToolCall::Javascript { id, javascript, .. }
+                        if id == "call_1" && javascript == "return document.title;"
+                ));
             }
-            AgentStep::Final { .. } => panic!("expected tool call"),
+            AgentStep::Final { .. } => panic!("expected tool calls"),
         }
     }
 
     #[test]
-    fn parse_step_tolerates_unknown_tool() {
-        let result = parse_step(
-            br#"{"choices":[{"message":{"role":"assistant","content":null,"tool_calls":[{"id":"call_1","type":"function","function":{"name":"shell","arguments":"{}"}}]}}]}"#,
-            Vec::new(),
-        );
-        let step = result.unwrap();
-        match step {
-            AgentStep::ToolCalls { calls, .. } => {
-                assert_eq!(calls.len(), 1);
-                match &calls[0] {
-                    AgentToolCall::Unknown { name, .. } => assert_eq!(name, "shell"),
-                    _ => panic!("expected unknown tool call"),
-                }
-            }
-            _ => panic!("expected tool calls step"),
-        }
-    }
-
-    #[test]
-    fn parse_unknown_tool_call_is_tolerated() {
+    fn rejects_non_json_javascript_tool_arguments() {
         let message = serde_json::json!({
             "role": "assistant",
-            "content": "",
+            "content": null,
             "tool_calls": [{
-                "id": "call_x",
+                "id": "call_1",
                 "type": "function",
                 "function": {
-                    "name": "run_lua",
-                    "arguments": "{\"code\":\"return 1\"}"
+                    "name": JAVASCRIPT_TOOL_NAME,
+                    "arguments": "return document.title;"
                 }
             }]
         });
-        let calls = parse_tool_calls(&message).unwrap();
-        assert_eq!(calls.len(), 1);
-        match &calls[0] {
-            AgentToolCall::Unknown { name, .. } => assert_eq!(name, "run_lua"),
-            _ => panic!("expected unknown tool call"),
-        }
+        assert!(parse_tool_calls(&message).is_err());
     }
 
     #[test]
-    fn parse_step_rejects_truncated_response() {
-        let result = parse_step(
-            br#"{"choices":[{"finish_reason":"length","message":{"role":"assistant","content":"partial"}}]}"#,
-            Vec::new(),
-        );
-        assert!(result.is_err());
+    fn invalid_tool_name_error_includes_received_value() {
+        let message = serde_json::json!({
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [{
+                "id": "call_weather",
+                "type": "function",
+                "function": {
+                    "name": "",
+                    "arguments": "{}"
+                }
+            }]
+        });
+        let error = parse_tool_calls(&message).unwrap_err().to_string();
+        assert!(error.contains("call_weather"));
+        assert!(error.contains("function.name: \"\""));
+    }
+
+    #[test]
+    fn build_step_rejects_truncated_response() {
+        let message = serde_json::json!({
+            "role": "assistant",
+            "content": "partial"
+        });
+        assert!(build_step(message, Some("length".to_owned()), Vec::new(), "", 0, None).is_err());
     }
 
     #[test]
@@ -1625,99 +1464,66 @@ mod tests {
     #[test]
     fn request_payload_controls_thinking_level() {
         let mut config = Live2dChatConfig {
-            enabled: true,
             thinking_level: "max".to_owned(),
             ..Live2dChatConfig::default()
         };
-        let payload = build_request_payload(&config, &[], false);
+        let messages = vec![
+            serde_json::json!({"role": "assistant", "content": "a", "reasoning_content": null}),
+            serde_json::json!({"role": "assistant", "content": "b", "reasoning_content": 42}),
+            serde_json::json!({"role": "assistant", "content": "c"}),
+            serde_json::json!({"role": "assistant", "content": "d", "reasoning_content": "kept"}),
+        ];
+        let payload = build_request_payload(&config, &messages, false);
         assert_eq!(payload["thinking"]["type"], "enabled");
         assert_eq!(payload["reasoning_effort"], "max");
+        assert!(payload.get("stream_options").is_none());
+
+        let stream_payload = build_request_payload(&config, &messages, true);
+        assert_eq!(stream_payload["stream_options"]["include_usage"], true);
+        let payload_messages = payload["messages"].as_array().unwrap();
+        assert_eq!(payload_messages[0]["reasoning_content"], "");
+        assert_eq!(payload_messages[1]["reasoning_content"], "");
+        assert_eq!(payload_messages[2]["reasoning_content"], "");
+        assert_eq!(payload_messages[3]["reasoning_content"], "kept");
 
         config.thinking_level = "none".to_owned();
-        let payload = build_request_payload(&config, &[], false);
+        let payload = build_request_payload(&config, &messages, false);
         assert_eq!(payload["thinking"]["type"], "disabled");
         assert!(payload.get("reasoning_effort").is_none());
     }
 
     #[test]
-    fn estimates_cjk_and_ascii_tokens() {
+    fn estimates_context_tokens_by_serialized_characters() {
         let messages = vec![
             serde_json::json!({"role": "user", "content": "你好世界"}),
             serde_json::json!({"role": "assistant", "content": "hello world!"}),
         ];
+        let serialized =
+            serde_json::to_string(&serde_json::json!({"messages": &messages})).unwrap();
         let tokens = estimate_context_tokens(&messages);
-        assert_eq!(tokens, (4 + 4) + ((12 + 3) / 4 + 4));
+        assert_eq!(tokens, (serialized.chars().count() as u64 + 3) / 4);
     }
 
     #[test]
-    fn compression_prompt_contains_diary_rules_and_list() {
-        use crate::resource_manager::Live2dDiaryEntry;
-        let diaries = vec![
-            Live2dDiaryEntry {
-                key: "d1".to_owned(),
-                title: "用户偏好".to_owned(),
-                content: "喜欢简洁回答".to_owned(),
-                create_time: "2026-08-01 10:00:00".to_owned(),
-                update_time: "2026-08-01 10:00:00".to_owned(),
-            },
-            Live2dDiaryEntry {
-                key: "d2".to_owned(),
-                title: "重大事件".to_owned(),
-                content: "某日完成了部署".to_owned(),
-                create_time: "2026-08-02 09:00:00".to_owned(),
-                update_time: String::new(),
-            },
-        ];
-        let prompt = build_compress_prompt(&diaries);
-        assert!(prompt.contains("压缩"));
-        assert!(prompt.contains("日记本"));
-        assert!(prompt.contains("<<<DIARY>>>"));
-        assert!(prompt.contains(
-            "KEY: d1 | 标题: 用户偏好 | 创建时间: 2026-08-01 10:00:00 | 内容: 喜欢简洁回答"
-        ));
-        assert!(prompt.contains(
-            "KEY: d2 | 标题: 重大事件 | 创建时间: 2026-08-02 09:00:00 | 内容: 某日完成了部署"
-        ));
-
-        let empty_prompt = build_compress_prompt(&[]);
-        assert!(empty_prompt.contains("(空)"));
+    fn reads_openai_compatible_usage_total() {
+        let response = serde_json::json!({
+            "usage": {
+                "prompt_tokens": 120,
+                "completion_tokens": 30,
+                "total_tokens": 150
+            }
+        });
+        assert_eq!(context_tokens_from_response(&response), Some(150));
     }
 
     #[test]
-    fn parse_diary_block_extracts_and_removes_block() {
-        let raw = "这是摘要内容。\n<<<DIARY>>>{\"add\":[{\"title\":\"偏好\",\"content\":\"喜欢中文\"}],\"delete\":[\"d1\"]}<<<DIARY_END>>>\n结束。";
-        let (summary, diary) = parse_diary_block(raw).unwrap();
-        assert_eq!(summary, "这是摘要内容。\n结束。");
-        assert_eq!(diary.add.len(), 1);
-        assert_eq!(diary.add[0].title, "偏好");
-        assert_eq!(diary.add[0].content, "喜欢中文");
-        assert_eq!(diary.delete, vec!["d1".to_owned()]);
-    }
-
-    #[test]
-    fn parse_diary_block_ignores_invalid_json() {
-        let raw = "摘要内容\n<<<DIARY>>>不是JSON<<<DIARY_END>>>";
-        let (summary, diary) = parse_diary_block(raw).unwrap();
-        assert_eq!(summary, "摘要内容");
-        assert!(diary.is_empty());
-    }
-
-    #[test]
-    fn parse_diary_block_rejects_empty_entries() {
-        let long_title = "长".repeat(101);
-        let raw = format!(
-            "摘要\n<<<DIARY>>>{{\"add\":[{{\"title\":\"{long_title}\",\"content\":\"x\"}},{{\"title\":\"\",\"content\":\"y\"}},{{\"title\":\"正常\",\"content\":\"内容\"}}]}}<<<DIARY_END>>>"
-        );
-        let (_summary, diary) = parse_diary_block(&raw).unwrap();
-        assert_eq!(diary.add.len(), 2);
-        assert_eq!(diary.add[0].title, long_title);
-        assert_eq!(diary.add[1].title, "正常");
-    }
-
-    #[test]
-    fn parse_diary_block_returns_plain_summary_without_block() {
-        let (summary, diary) = parse_diary_block("只有摘要").unwrap();
-        assert_eq!(summary, "只有摘要");
-        assert!(diary.is_empty());
+    fn falls_back_to_prompt_and_completion_tokens() {
+        let response = serde_json::json!({
+            "usage": {
+                "input_tokens": 120,
+                "output_tokens": 30
+            }
+        });
+        assert_eq!(context_tokens_from_response(&response), Some(150));
     }
 }

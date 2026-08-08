@@ -5,6 +5,7 @@ use std::str::FromStr;
 use encoding::Encoding;
 use md5::{Digest, Md5};
 use path_clean::PathClean;
+use rusqlite::OptionalExtension;
 
 use crate::{cqapi::cq_get_app_directory1, runtime_context};
 
@@ -125,7 +126,9 @@ pub struct Live2dDiaryEntry {
 }
 
 fn live2d_db_path() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    Ok(crate::mytool::path_to_os_str(&(cq_get_app_directory1()? + "reddat.db")))
+    Ok(crate::mytool::path_to_os_str(
+        &(cq_get_app_directory1()? + "reddat.db"),
+    ))
 }
 
 fn open_live2d_db() -> Result<rusqlite::Connection, Box<dyn std::error::Error + Send + Sync>> {
@@ -210,8 +213,7 @@ pub fn save_live2d_chat_conversation(
 }
 
 /// 删除 reddat.db 中的看板娘对话。
-pub fn clear_live2d_chat_conversation(
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+pub fn clear_live2d_chat_conversation() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut conn = open_live2d_db()?;
     let transaction = conn.transaction()?;
     transaction.execute(
@@ -220,6 +222,58 @@ pub fn clear_live2d_chat_conversation(
     )?;
     transaction.commit()?;
     Ok(())
+}
+
+fn drop_pending_live2d_tool_message(messages: &mut Vec<serde_json::Value>) -> bool {
+    let pending = messages.last().is_some_and(|message| {
+        message.get("role").and_then(serde_json::Value::as_str) == Some("assistant")
+            && message
+                .get("tool_calls")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|calls| !calls.is_empty())
+    });
+    if pending {
+        messages.pop();
+    }
+    pending
+}
+
+/// 进程重启后清理上一次未完成的浏览器工具步骤。
+/// 工具调用消息不再可由旧页面继续提交，因此保留历史消息但移除尾部的悬挂 assistant 消息。
+pub fn recover_live2d_chat_after_restart() -> Result<bool, Box<dyn std::error::Error + Send + Sync>>
+{
+    let mut conn = open_live2d_db()?;
+    let raw = conn
+        .query_row(
+            "SELECT VALUE FROM LIVE2D_CHAT_TABLE WHERE KEY = ?",
+            [LIVE2D_CHAT_DB_KEY],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+    let mut messages = raw
+        .as_deref()
+        .map(serde_json::from_str::<Vec<serde_json::Value>>)
+        .transpose()?;
+    let removed = messages
+        .as_mut()
+        .is_some_and(|messages| drop_pending_live2d_tool_message(messages));
+
+    let transaction = conn.transaction()?;
+    if let Some(messages) = messages {
+        if removed {
+            let value = serde_json::to_string(&messages)?;
+            transaction.execute(
+                "REPLACE INTO LIVE2D_CHAT_TABLE (KEY,VALUE) VALUES (?,?)",
+                rusqlite::params![LIVE2D_CHAT_DB_KEY, value],
+            )?;
+        }
+    }
+    transaction.execute(
+        "DELETE FROM LIVE2D_CHAT_TABLE WHERE KEY = ?",
+        [LIVE2D_CHAT_GENERATION_DB_KEY],
+    )?;
+    transaction.commit()?;
+    Ok(removed)
 }
 
 fn live2d_diary_key() -> String {
@@ -298,10 +352,9 @@ pub fn query_live2d_db(
                 rusqlite::types::ValueRef::Text(value) => {
                     serde_json::Value::String(String::from_utf8_lossy(value).into_owned())
                 }
-                rusqlite::types::ValueRef::Blob(value) => serde_json::Value::String(format!(
-                    "<blob {}B>",
-                    value.len()
-                )),
+                rusqlite::types::ValueRef::Blob(value) => {
+                    serde_json::Value::String(format!("<blob {}B>", value.len()))
+                }
             };
             if let serde_json::Value::String(text) = &cell {
                 if text.chars().count() > MAX_CELL_CHARS {
@@ -584,4 +637,35 @@ conn_fun()
         }
     });
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::drop_pending_live2d_tool_message;
+
+    #[test]
+    fn restart_recovery_removes_only_trailing_pending_tool_message() {
+        let mut messages = vec![
+            serde_json::json!({"role": "user", "content": "读取标题"}),
+            serde_json::json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [{
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {"name": "execute_javascript", "arguments": "{}"}
+                }]
+            }),
+        ];
+        assert!(drop_pending_live2d_tool_message(&mut messages));
+        assert_eq!(messages.len(), 1);
+        assert_eq!(messages[0]["role"], "user");
+
+        let mut completed = vec![
+            serde_json::json!({"role": "assistant", "content": null, "tool_calls": []}),
+            serde_json::json!({"role": "assistant", "content": "完成"}),
+        ];
+        assert!(!drop_pending_live2d_tool_message(&mut completed));
+        assert_eq!(completed.len(), 2);
+    }
 }

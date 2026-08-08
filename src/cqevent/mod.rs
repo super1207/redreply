@@ -230,8 +230,7 @@ pub fn do_script(
             let _foo = std::thread::spawn(move || {
                 fn get_script_info(
                     script_json: &serde_json::Value,
-                ) -> Result<(&str, &str, &str), Box<dyn std::error::Error>>
-                {
+                ) -> Result<(&str, &str, &str), Box<dyn std::error::Error>> {
                     let pkg_name_opt = script_json.get("pkg_name");
                     let mut pkg_name = "";
                     if let Some(val) = pkg_name_opt {

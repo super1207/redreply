@@ -35,7 +35,10 @@ impl std::io::Write for RustlsImapStream {
 
 impl imap::extensions::idle::SetReadTimeout for RustlsImapStream {
     fn set_read_timeout(&mut self, dur: Option<Duration>) -> Result<(), imap::Error> {
-        self.0.get_ref().set_read_timeout(dur).map_err(imap::Error::Io)
+        self.0
+            .get_ref()
+            .set_read_timeout(dur)
+            .map_err(imap::Error::Io)
     }
 }
 
@@ -154,9 +157,7 @@ impl EmailConnect {
                 let _ = handle
                     .timeout(Duration::from_secs(15))
                     .keepalive(false)
-                    .wait_while(|_| {
-                        false
-                    });
+                    .wait_while(|_| false);
                 continue;
             } else {
                 for uid in uids {
@@ -247,7 +248,9 @@ impl EmailConnect {
                 .map_err(|e| format!("TLS连接创建失败: {}", e))?;
             let mut tls_stream = rustls::StreamOwned::new(conn, tcp_stream);
             use std::io::Write;
-            tls_stream.flush().map_err(|e| format!("TLS握手失败: {}", e))?;
+            tls_stream
+                .flush()
+                .map_err(|e| format!("TLS握手失败: {}", e))?;
             let client = imap::Client::new(RustlsImapStream(tls_stream));
             let mut imap_session = client.login(username, password).map_err(|e| e.0)?;
             let caps = imap_session.capabilities()?;

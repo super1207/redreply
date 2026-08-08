@@ -6,11 +6,17 @@
     const panel = document.getElementById("pio-chat");
     const closeButton = document.getElementById("pio-chat-close");
     const settingsButton = document.getElementById("pio-chat-settings-button");
+    const compressHeaderButton = document.getElementById("pio-chat-compress-header");
     const chatForm = document.getElementById("pio-chat-form");
     const input = document.getElementById("pio-chat-input");
+    function autoResizeInput() {
+        input.style.height = "auto";
+        input.style.height = input.scrollHeight + "px";
+    }
     const sendButton = document.getElementById("pio-chat-send");
     const settingsForm = document.getElementById("pio-chat-settings");
     const settingsBack = document.getElementById("pio-chat-settings-back");
+    const clearContextButton = document.getElementById("pio-chat-clear-context");
     const baseUrlInput = document.getElementById("pio-chat-base-url");
     const modelInput = document.getElementById("pio-chat-model");
     const apiKeyInput = document.getElementById("pio-chat-api-key");
@@ -78,13 +84,17 @@ const state = {
         sending: false,
         configLoaded: false,
         contextUsed: 0,
+        contextEstimated: true,
         contextLimit: 131072,
         stopRequested: false,
         controller: null,
         generation: null,
         cancelPromise: null,
         cancelRetryTimer: null,
-        phase: "就绪"
+        phase: "就绪",
+        pendingCompress: false,
+        pendingMessage: null,
+        skipAutoCompress: false
     };
 
     function stoppedError() {
@@ -107,8 +117,12 @@ const state = {
 
     function updateContextUsage() {
         if (!contextUsage) return;
-        contextUsage.textContent = formatTokens(state.contextUsed)
+        contextUsage.textContent = (state.contextEstimated ? "≈" : "")
+            + formatTokens(state.contextUsed)
             + "/" + formatTokens(state.contextLimit);
+        contextUsage.title = state.contextEstimated
+            ? "当前为按字符数/4计算的估算值"
+            : "当前为大模型接口返回的 token 用量";
     }
 
     function bubble(message, options) {
@@ -155,33 +169,6 @@ const state = {
         agentStatus.addEventListener("scroll", function () {
             userScrolledUp = !shouldAutoScroll();
         });
-    }
-
-    // 流式工具参数渲染：JSON 完整则正常解析美化；不完整则容错提取
-    // code/javascript 字段值（未闭合也渲染），并解码 JSON 转义符
-    function renderStreamingArguments(text) {
-        if (!text) return "";
-        try {
-            const parsed = JSON.parse(text);
-            if (parsed && typeof parsed === "object") {
-                if (typeof parsed.code === "string") return parsed.code;
-                if (typeof parsed.javascript === "string") return parsed.javascript;
-                return JSON.stringify(parsed, null, 2);
-            }
-            return JSON.stringify(parsed, null, 2);
-        } catch (e) { /* 未完整，走容错 */ }
-        const m = text.match(/"code"\s*:\s*"([\s\S]*)$|"javascript"\s*:\s*"([\s\S]*)$/);
-        if (m) {
-            let val = m[1] !== undefined ? m[1] : (m[2] !== undefined ? m[2] : "");
-            const closeIdx = val.search(/"[\s,}]/);
-            if (closeIdx >= 0) val = val.slice(0, closeIdx);
-            return val
-                .replace(/\\n/g, "\n")
-                .replace(/\\t/g, "\t")
-                .replace(/\\"/g, '"')
-                .replace(/\\\\/g, "\\");
-        }
-        return text;
     }
 
     function appendAgentStatus(label, text, className) {
@@ -448,7 +435,8 @@ const state = {
         state.stopRequested = false;
         state.controller = controller;
         try {
-            let payload = { message: message };
+            let payload = { message: message, compress: state.pendingCompress || false };
+            state.pendingCompress = false;
             let requestIndex = 0;
             // 本轮对话是否发生过工具调用（发生过则最终回答显示"大彻大悟"）
             let usedTool = false;
@@ -459,7 +447,6 @@ const state = {
                 let contentEntry = null;
                 let reasoningText = "";
                 let contentText = "";
-                const toolCallEntries = {};
                 let outcome = null;
                 let events;
                 try {
@@ -478,6 +465,11 @@ const state = {
                             const deliveredGeneration = String(outcome.generation || "").trim();
                             if (!deliveredGeneration) throw new Error("工具步骤缺少对话代次");
                             state.generation = deliveredGeneration;
+                            // 工具调用前可能带有说明正文，以服务端汇总后的内容刷新显示。
+                            if (typeof outcome.content === "string" && contentEntry) {
+                                contentText = outcome.content;
+                                updateAgentEntry(contentEntry, contentText);
+                            }
                         }
                         if (state.stopRequested) {
                             try { await cancelPendingGeneration(); } catch (_cancelError) {}
@@ -488,43 +480,31 @@ const state = {
                     if (state.stopRequested) throw stoppedError();
                     if (event === "reasoning") {
                         reasoningText += data.delta || "";
-                        if (!reasoningEntry) reasoningEntry = appendAgentEntryLive("看板娘转圈圈", "");
-                        updateAgentEntry(reasoningEntry, reasoningText);
+                        if (reasoningText.trim()) {
+                            if (!reasoningEntry) reasoningEntry = appendAgentEntryLive("看板娘转圈圈", "");
+                            updateAgentEntry(reasoningEntry, reasoningText);
+                        }
                     } else if (event === "content") {
                         contentText += data.delta || "";
-                        if (!contentEntry) contentEntry = appendAgentEntryLive(usedTool ? "看板娘大彻大悟" : "看板娘碎碎念", "");
-                        updateAgentEntry(contentEntry, contentText);
-                    } else if (event === "tool_call") {
-                        // 工具调用流式生成：实时显示函数名与参数逐字生成过程
-                        // 注意：不能依赖 appendAgentStatus 的返回值（它不 return entry），
-                        // 必须手动创建元素并缓存引用，否则每个事件都会新建一条目
-                        const tIndex = Number(data.index || 0);
-                        const tName = String(data.name || "");
-                        const tArgs = String(data.arguments || "");
-                        // 流式美化：JSON 完整则解析，不完整则容错提取 code/javascript 字段
-                        const prettyArgs = renderStreamingArguments(tArgs);
-                        let tEntry = toolCallEntries[tIndex];
-                        if (!tEntry) {
-                            tEntry = document.createElement("div");
-                            tEntry.className = "pio-agent-entry tool";
-                            tEntry.dataset.label = "看板娘搓搓小手" + (tName ? " · " + tName : "");
-                            tEntry.textContent = (tName ? tName + "\n" : "") + prettyArgs;
-                            agentLog.appendChild(tEntry);
-                            toolCallEntries[tIndex] = tEntry;
-                            scrollAgentLog();
-                            renderStatusInput();
-                            requestAnimationFrame(positionPanel);
-                        } else {
-                            tEntry.dataset.label = "看板娘搓搓小手" + (tName ? " · " + tName : "");
-                            tEntry.textContent = (tName ? tName + "\n" : "") + prettyArgs;
-                            scrollAgentLog();
+                        if (contentText.trim()) {
+                            if (!contentEntry) contentEntry = appendAgentEntryLive(usedTool ? "看板娘大彻大悟" : "看板娘碎碎念", "");
+                            updateAgentEntry(contentEntry, contentText);
+                        }
+                    } else if (event === "context_estimate") {
+                        if (Number.isFinite(data.context_tokens)) {
+                            state.contextUsed = data.context_tokens;
+                            state.contextEstimated = true;
+                            updateContextUsage();
                         }
                     } else if (event === "error") {
                         throw new Error(data.message || "看板娘请求失败");
                     }
                 }
                 if (!outcome) throw new Error("流式响应意外结束");
-                if (Number.isFinite(outcome.context_tokens)) state.contextUsed = outcome.context_tokens;
+                if (Number.isFinite(outcome.context_tokens)) {
+                    state.contextUsed = outcome.context_tokens;
+                    state.contextEstimated = outcome.context_tokens_estimated !== false;
+                }
                 if (Number.isFinite(outcome.context_length)) state.contextLimit = outcome.context_length;
                 updateContextUsage();
                 if (outcome.type === "final") {
@@ -550,15 +530,7 @@ const state = {
                     if (state.stopRequested) throw stoppedError();
                     const call = outcome.calls[callIndex];
                     const codeText = call.javascript || "";
-                    const streamEntry = toolCallEntries[callIndex];
-                    if (streamEntry) {
-                        // 流式条目已存在：更新为完整信息（label 去掉"生成中"）
-                        streamEntry.dataset.label = "看板娘搓搓小手" + (call.name ? " · " + call.name : "");
-                        streamEntry.textContent = codeText;
-                        scrollAgentLog();
-                    } else {
-                        appendAgentStatus("看板娘搓搓小手", call.name + "\n" + codeText, "tool");
-                    }
+                    appendAgentStatus("看板娘搓搓小手", call.name + "\n" + codeText, "tool");
                     const toolResult = await executeJavascriptTool(call);
                     if (state.stopRequested) throw stoppedError();
                     toolResults.push(toolResult);
@@ -617,6 +589,7 @@ const state = {
     function showSettings(show) {
         settingsForm.hidden = !show;
         chatForm.hidden = show;
+        if (compressHeaderButton) compressHeaderButton.hidden = show;
         agentStatus.hidden = show || (!state.sending && agentLog.childElementCount === 0);
         settingsButton.textContent = show ? "对话" : "设置";
         requestAnimationFrame(positionPanel);
@@ -635,6 +608,7 @@ const state = {
         }
         state.contextLimit = Number(config.context_length) || 131072;
         if (Number.isFinite(config.context_used)) state.contextUsed = config.context_used;
+        state.contextEstimated = config.context_used_estimated !== false;
         updateContextUsage();
         apiKeyInput.value = config.api_key || "";
         apiKeyInput.type = "password";
@@ -670,6 +644,24 @@ const state = {
         panel.hidden ? openPanel() : closePanel();
     });
     closeButton.addEventListener("click", closePanel);
+    if (compressHeaderButton) {
+        compressHeaderButton.addEventListener("click", function () {
+            if (state.sending || input.readOnly) {
+                bubble("正在对话中，请稍后再压缩", 4000);
+                return;
+            }
+            // 压缩就是一次完全可见的普通对话：
+            // 看板娘直接读取完整历史，在对话面板中压缩并汇报。
+            state.pendingMessage = null;
+            state.skipAutoCompress = false;
+            state.pendingCompress = true;
+            input.value = "请压缩我们之前的对话。压缩完成后，请基于压缩摘要向用户汇报压缩情况："
+                + "说明压缩前/后的状态，概括之前的对话要点（重要事实、用户偏好、关键结论等），"
+                + "并告诉用户对话可以继续了。";
+            chatForm.requestSubmit();
+        });
+    }
+
     settingsButton.addEventListener("click", function () {
         const openingSettings = settingsForm.hidden;
         showSettings(openingSettings);
@@ -678,28 +670,6 @@ const state = {
     settingsBack.addEventListener("click", function () {
         showSettings(false);
     });
-    if (document.getElementById("pio-chat-compress")) {
-        document.getElementById("pio-chat-compress").addEventListener("click", async function () {
-            if (state.sending) { bubble("正在对话中，请稍后再压缩", 4000); return; }
-            const btn = this;
-            btn.disabled = true;
-            btn.textContent = "压缩中…";
-            try {
-                const data = apiResult(await axios.post("/live2d_chat_compress", {}));
-                const count = Number.isFinite(data && data.message_count) ? data.message_count : 0;
-                bubble("对话已压缩 ✓（剩余 " + count + " 条消息）", 5000);
-                if (Number.isFinite(data && data.context_tokens)) state.contextUsed = data.context_tokens;
-                if (Number.isFinite(data && data.context_length)) state.contextLimit = data.context_length;
-                updateContextUsage();
-            } catch (error) {
-                bubble(error && error.message ? error.message : "压缩失败", 8000);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = "压缩对话";
-            }
-        });
-    }
-
     if (apiKeyToggle) {
         apiKeyToggle.addEventListener("click", function () {
             const isPassword = apiKeyInput.type === "password";
@@ -718,14 +688,20 @@ const state = {
         }, { passive: true });
     });
 
-    document.addEventListener("mousedown", function () {
-        if (!panel.hidden) closePanel();
-    });
+    // [已修改] 移除了"点击外部自动关闭"逻辑，点击其它地方不会关闭对话框（2026-08-08）
     document.addEventListener("keydown", function (event) {
         if (event.key === "Escape" && !panel.hidden) closePanel();
     });
     input.addEventListener("input", function () {
         if (input.value.trim()) clearBubble();
+        autoResizeInput();
+    });
+
+    input.addEventListener("keydown", function (event) {
+        if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+            event.preventDefault();
+            chatForm.requestSubmit();
+        }
     });
     window.addEventListener("resize", positionPanel);
     window.addEventListener("pagehide", function () {
@@ -740,11 +716,42 @@ const state = {
             return;
         }
 
+        // 跳过自动压缩标记：压缩完成后续发的原消息不能再触发压缩（否则死循环）
+        const skipAutoCompress = state.skipAutoCompress;
+        if (skipAutoCompress) state.skipAutoCompress = false;
+
         const message = input.value.trim();
         if (!message) {
             input.focus();
             return;
         }
+
+        if (!skipAutoCompress) {
+            // 上下文使用率超过 75% 且当前不是压缩请求时：先可见地压缩，再发送原消息
+            const threshold = Math.floor(state.contextLimit * 0.75);
+            const shouldAutoCompress =
+                !state.pendingCompress
+                && state.contextLimit > 0
+                && state.contextUsed > threshold
+                && state.contextUsed > 0;
+
+            if (shouldAutoCompress) {
+                state.pendingMessage = message;
+                state.pendingCompress = true;
+                input.value = "请压缩我们之前的对话。压缩完成后，请基于压缩摘要向用户汇报压缩情况："
+                    + "说明压缩前/后的状态，概括之前的对话要点（重要事实、用户偏好、关键结论等），"
+                    + "并告诉用户对话可以继续了。";
+                // 用 setTimeout 避免在 submit 事件中递归 requestSubmit
+                setTimeout(function () {
+                    if (input.value) chatForm.requestSubmit();
+                }, 0);
+                return;
+            }
+        }
+
+        // 本次请求是否为压缩请求（runAgent 内部会清掉 pendingCompress）
+        const isCompressRequest = state.pendingCompress;
+        let stopped = false;
 
         clearBubble();
         input.value = "";
@@ -759,6 +766,7 @@ const state = {
             bubble(reply, { persist: true, closeable: true });
         } catch (error) {
             if (error && error.stopped) {
+                stopped = true;
                 setAgentPhase("已停止");
                 appendAgentStatus("提示", "本次对话已停止", "result");
                 bubble("已停止", 3000);
@@ -770,24 +778,64 @@ const state = {
         } finally {
             leaveStatusMode();
             input.value = "";
+            autoResizeInput();
             settingsButton.disabled = false;
+            // 压缩请求完成（未被停止）后：若有暂存的原消息，自动续发
+            if (isCompressRequest && state.pendingMessage && !stopped) {
+                const originalMessage = state.pendingMessage;
+                state.pendingMessage = null;
+                state.skipAutoCompress = true;
+                input.value = originalMessage;
+                setTimeout(function () {
+                    if (input.value) chatForm.requestSubmit();
+                }, 0);
+            } else {
+                if (isCompressRequest) state.pendingMessage = null;
+            }
         }
     });
+
+    if (clearContextButton) {
+        clearContextButton.addEventListener("click", async function () {
+            if (state.sending) {
+                bubble("请先停止当前对话，再清除上下文。", 5000);
+                return;
+            }
+            if (!window.confirm("确定清除全部对话上下文吗？此操作无法撤销。")) return;
+
+            const originalText = clearContextButton.textContent;
+            clearContextButton.disabled = true;
+            clearContextButton.textContent = "清除中…";
+            try {
+                const data = apiResult(await axios.post("/live2d_chat_clear", {}));
+                state.contextUsed = data && Number.isFinite(data.context_tokens)
+                    ? data.context_tokens
+                    : 0;
+                state.contextEstimated = true;
+                updateContextUsage();
+                clearBubble();
+                bubble("上下文已清除。", 3000);
+            } catch (error) {
+                bubble(error && error.message ? error.message : "清除上下文失败", 8000);
+            } finally {
+                clearContextButton.disabled = false;
+                clearContextButton.textContent = originalText;
+            }
+        });
+    }
 
     settingsForm.addEventListener("submit", async function (event) {
         event.preventDefault();
         const submitButton = settingsForm.querySelector("button[type='submit']");
         submitButton.disabled = true;
         const payload = {
-            enabled: true,
             base_url: baseUrlInput.value.trim(),
             model: modelInput.value.trim(),
             system_prompt: systemPromptInput.value.trim(),
             thinking_level: thinkingLevelInput.value,
             context_length: contextLengthInput
                 ? Number(contextLengthInput.value)
-                : 131072,
-            timeout_seconds: 60
+                : 131072
         };
         // 仅当用户输入了新 Key（非占位符）时才提交
         const keyVal = apiKeyInput.value.trim();

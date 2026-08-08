@@ -20,7 +20,10 @@ fn main() {
         for entry in entries.flatten() {
             let path = entry.path();
             let name = entry.file_name().to_string_lossy().to_string();
-            if matches!(name.as_str(), "target" | ".git" | "node_modules" | "__pycache__" | "crash") {
+            if matches!(
+                name.as_str(),
+                "target" | ".git" | "node_modules" | "__pycache__" | "crash"
+            ) {
                 continue;
             }
             let rel = format!("{prefix}/{name}");
@@ -36,6 +39,8 @@ fn main() {
 
     collect_dir(&root.join("src"), "src", &mut files);
     collect_dir(&root.join("crates"), "crates", &mut files);
+    collect_dir(&root.join("res"), "res", &mut files);
+    collect_dir(&root.join("docs"), "docs", &mut files);
     for single in ["Cargo.toml", "readme.md", "build.rs", "buildrc/redreply.rc"] {
         let p = root.join(single);
         if let Ok(data) = fs::read(&p) {
@@ -63,6 +68,8 @@ fn main() {
 
     println!("cargo:rerun-if-changed=src");
     println!("cargo:rerun-if-changed=crates");
+    println!("cargo:rerun-if-changed=res");
+    println!("cargo:rerun-if-changed=docs");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=readme.md");
     println!("cargo:rerun-if-changed=build.rs");

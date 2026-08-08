@@ -206,15 +206,14 @@ impl Satoriv1Connect {
                 let text_str = child.content;
                 let text = html_escape::decode_html_entities(&text_str);
                 out += &cq_text_encode(&text);
-            } else if child.tag_name == "face"
-                && platform == "llonebot" {
-                    let face_id = child
-                        .attr_map
-                        .get("id")
-                        .ok_or("No id at llonebot face element")?;
-                    let face_id_t = cq_params_encode(face_id);
-                    out += &format!("[CQ:face,id={face_id_t}]");
-                }
+            } else if child.tag_name == "face" && platform == "llonebot" {
+                let face_id = child
+                    .attr_map
+                    .get("id")
+                    .ok_or("No id at llonebot face element")?;
+                let face_id_t = cq_params_encode(face_id);
+                out += &format!("[CQ:face,id={face_id_t}]");
+            }
         }
         Ok(out)
     }
@@ -308,17 +307,16 @@ impl Satoriv1Connect {
                         .ok_or("id not a string")?;
                     out += &format!("<chronocat:poke user-id={} />", serde_json::json!(id));
                 }
-            } else if tp == "face"
-                && platform == "llonebot" {
-                    let id: &str = it
-                        .get("data")
-                        .ok_or("data not found")?
-                        .get("id")
-                        .ok_or("id not found")?
-                        .as_str()
-                        .ok_or("id not a string")?;
-                    out += &format!("<face id={} />", serde_json::json!(id));
-                }
+            } else if tp == "face" && platform == "llonebot" {
+                let id: &str = it
+                    .get("data")
+                    .ok_or("data not found")?
+                    .get("id")
+                    .ok_or("id not found")?
+                    .as_str()
+                    .ok_or("id not a string")?;
+                out += &format!("<face id={} />", serde_json::json!(id));
+            }
         }
         Ok(out)
     }
@@ -335,8 +333,7 @@ impl Satoriv1Connect {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let op = read_json_str(&json_data, "op");
         if op != "2" {
-            crate::cqapi::cq_add_log(format!("SATORI收到数据:{}", json_data).as_str())
-                .unwrap();
+            crate::cqapi::cq_add_log(format!("SATORI收到数据:{}", json_data).as_str()).unwrap();
         }
         if op == "2" {
             // 心跳回复
@@ -1207,11 +1204,7 @@ impl Satoriv1Connect {
             } else {
                 let nick = read_json_str(user, "nick");
                 let name = read_json_str(user, "name");
-                let nickname = if !nick.is_empty() {
-                    nick
-                } else {
-                    name
-                };
+                let nickname = if !nick.is_empty() { nick } else { name };
                 sender = serde_json::json!({
                     "user_id":read_json_str(user, "id"),
                     "nickname":nickname,
@@ -1281,11 +1274,7 @@ impl BotConnectTrait for Satoriv1Connect {
         let request = tungstenite::client::IntoClientRequest::into_client_request(&ws_url)?;
         let ws_rst;
         if is_ssl {
-            let port = request
-                .uri()
-                .port()
-                .map(Into::into)
-                .unwrap_or(443);
+            let port = request.uri().port().map(Into::into).unwrap_or(443);
             let addr = format!("{}:{}", request.uri().host().unwrap(), port);
             let socket = TcpStream::connect(addr).await?;
             ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;

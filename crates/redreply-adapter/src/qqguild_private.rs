@@ -264,11 +264,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
 
         let request = tungstenite::client::IntoClientRequest::into_client_request(&ws_url)?;
         let ws_rst;
-        let port = request
-            .uri()
-            .port()
-            .map(Into::into)
-            .unwrap_or(443);
+        let port = request.uri().port().map(Into::into).unwrap_or(443);
         let addr = format!("{}:{}", request.uri().host().unwrap(), port);
         let socket = TcpStream::connect(addr).await?;
         ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;

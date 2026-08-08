@@ -38,8 +38,7 @@ impl AdapterHost for RedReplyAdapterHost {
     }
 
     fn all_to_silk(&self, input: &[u8]) -> AdapterResult<Vec<u8>> {
-        crate::mytool::all_to_silk::all_to_silk(input)
-            .map_err(|err| err.to_string().into())
+        crate::mytool::all_to_silk::all_to_silk(input).map_err(|err| err.to_string().into())
     }
 }
 

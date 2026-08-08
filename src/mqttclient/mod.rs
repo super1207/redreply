@@ -350,26 +350,21 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
                             format!("bot/{mqtt_client_id}/+/+/api"),
                             QoS::ExactlyOnce,
                         ) {
-                            cq_add_log_w(&format!("MQTT Client subscribe error: {}", err))
-                                .unwrap();
+                            cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
                         }
                         if let Err(err) = client.try_subscribe(
                             format!("plus/{mqtt_client_id}/response"),
                             QoS::ExactlyOnce,
                         ) {
-                            cq_add_log_w(&format!("MQTT Client subscribe error: {}", err))
-                                .unwrap();
+                            cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
                         }
-                        let remote_clients =
-                            { runtime_context().services.mqtt_remote_clients() };
+                        let remote_clients = { runtime_context().services.mqtt_remote_clients() };
                         for remote_client in remote_clients {
                             let topic = format!("bot/{remote_client}/+/+/event");
                             let mut filter = Filter::new(topic, QoS::ExactlyOnce);
                             filter.nolocal = true;
                             let subscribe = Subscribe::new(filter, None);
-                            if let Err(err) =
-                                client.client.request_tx.try_send(subscribe.into())
-                            {
+                            if let Err(err) = client.client.request_tx.try_send(subscribe.into()) {
                                 cq_add_log_w(&format!("MQTT Client subscribe error: {}", err))
                                     .unwrap();
                             }

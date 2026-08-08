@@ -1,6 +1,6 @@
 pub mod all_to_silk;
-mod deal_m4a;
 mod deal_flac;
+mod deal_m4a;
 mod deal_ogg;
 mod deal_silk;
 mod mp3_deal;
@@ -273,7 +273,7 @@ pub fn json_to_cq_str(js: &serde_json::Value) -> Result<String, Box<dyn std::err
                 .ok_or("消息中text字段不是str")?;
             ret.push_str(cq_text_encode(temp).as_str());
         } else {
-            let mut cqcode = "[CQ:".to_owned() + tp + "," ;
+            let mut cqcode = "[CQ:".to_owned() + tp + ",";
             if nodes.is_object() {
                 for j in nodes.as_object().ok_or("msg nodes 不是object")? {
                     let k = j.0;

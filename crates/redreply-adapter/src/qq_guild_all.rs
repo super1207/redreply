@@ -1,4 +1,4 @@
-﻿// 函数调用判定：
+// 函数调用判定：
 // 有群ID   ->  send_group_msg
 // 无群ID但有user_id   ->  send_private_msg
 // 否则  ->  不处理
@@ -41,7 +41,12 @@
 //             不能查到：
 //                 Q单聊，仅支持被动回复
 
-use std::{collections::HashMap, str::FromStr, sync::{Arc, Weak}, time::SystemTime};
+use std::{
+    collections::HashMap,
+    str::FromStr,
+    sync::{Arc, Weak},
+    time::SystemTime,
+};
 
 use base64::{
     alphabet,
@@ -413,10 +418,8 @@ pub async fn cq_msg_to_qq(
                 if msg_type == MsgSrcType::QQGroup {
                     json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
                 }
-                crate::cqapi::cq_add_log(
-                    format!("接收qq group API数据:{}", json_val).as_str(),
-                )
-                .unwrap();
+                crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str())
+                    .unwrap();
                 if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                     let id = read_json_str(&json_val, "id");
                     if !id.is_empty() {
@@ -570,10 +573,8 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            crate::cqapi::cq_add_log(
-                format!("接收qq group API数据:{}", json_val).as_str(),
-            )
-            .unwrap();
+            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str())
+                .unwrap();
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -677,10 +678,8 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            crate::cqapi::cq_add_log(
-                format!("接收qq group API数据:{}", json_val).as_str(),
-            )
-            .unwrap();
+            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str())
+                .unwrap();
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -792,10 +791,8 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            crate::cqapi::cq_add_log(
-                format!("接收qq group API数据:{}", json_val).as_str(),
-            )
-            .unwrap();
+            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str())
+                .unwrap();
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -1413,10 +1410,10 @@ async fn send_guild_msg_node(
         qq_msg_node.content = "".to_owned();
         if !context.to_reply_id.is_empty() {
             if context.is_event {
-                json_data
-                    .as_object_mut()
-                    .unwrap()
-                    .insert("event_id".to_owned(), serde_json::json!(context.to_reply_id));
+                json_data.as_object_mut().unwrap().insert(
+                    "event_id".to_owned(),
+                    serde_json::json!(context.to_reply_id),
+                );
             } else {
                 json_data
                     .as_object_mut()
@@ -1436,18 +1433,14 @@ async fn send_guild_msg_node(
         crate::cqapi::cq_add_log(
             format!(
                 "发送{} API数据(`{}`):{}",
-                context.log_name,
-                context.target_id,
-                json_data
+                context.log_name, context.target_id, json_data
             )
             .as_str(),
         )
         .unwrap();
         let api_ret = do_qq_json_post(self_t, context.path, json_data).await?;
-        crate::cqapi::cq_add_log(
-            format!("接收{} API数据:{}", context.log_name, api_ret).as_str(),
-        )
-        .unwrap();
+        crate::cqapi::cq_add_log(format!("接收{} API数据:{}", context.log_name, api_ret).as_str())
+            .unwrap();
         append_api_msg_id(id, &api_ret)?;
     } else {
         for img in &qq_msg_node.imgs {
@@ -1475,9 +1468,7 @@ async fn send_guild_msg_node(
             crate::cqapi::cq_add_log(
                 format!(
                     "发送{} API数据(`{}`):{:?}",
-                    context.log_name,
-                    context.target_id,
-                    form
+                    context.log_name, context.target_id, form
                 )
                 .as_str(),
             )
@@ -1522,13 +1513,7 @@ async fn send_guildpri_msg_chunk(
         to_reply_id,
         is_event,
     };
-    send_guild_msg_node(
-        self_t,
-        &context,
-        qq_msg_node,
-        id,
-    )
-    .await
+    send_guild_msg_node(self_t, &context, qq_msg_node, id).await
 }
 
 async fn send_guildpri_msg_ordered(
@@ -1615,13 +1600,7 @@ async fn send_qqguild_msg_chunk(
         to_reply_id,
         is_event,
     };
-    send_guild_msg_node(
-        self_t,
-        &context,
-        qq_msg_node,
-        id,
-    )
-    .await
+    send_guild_msg_node(self_t, &context, qq_msg_node, id).await
 }
 
 async fn send_qqguild_msg_ordered(

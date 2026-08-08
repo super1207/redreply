@@ -37,11 +37,13 @@ pub(crate) struct Live2dChatRequest {
     #[serde(default)]
     pub(crate) message: Option<String>,
     #[serde(default)]
-    pub(crate) history: Vec<crate::ai_client::ChatMessage>,
-    #[serde(default)]
     pub(crate) tool_results: Vec<Live2dToolResult>,
     #[serde(default)]
     pub(crate) generation: Option<String>,
+    /// 前端「压缩」按钮显式携带的压缩意图标志：不预先压缩，
+    /// 而是让看板娘在对话中可见地汇报压缩结果，完成后由后端用汇报替换旧历史。
+    #[serde(default)]
+    pub(crate) compress: bool,
 }
 
 #[derive(Deserialize)]
@@ -122,57 +124,6 @@ pub(crate) async fn clear_live2d_agent_conversation() -> std::result::Result<(),
     .await
 }
 
-/// 手动压缩看板娘对话（无论上下文用量多少）：历史压缩为摘要 system 消息并应用日记更新。
-/// 返回压缩后的消息，失败（对话为空或压缩出错）返回 None。
-pub(crate) async fn compress_live2d_conversation(
-    config: &crate::config_manager::Live2dChatConfig,
-    diaries: &[crate::resource_manager::Live2dDiaryEntry],
-) -> Option<Vec<serde_json::Value>> {
-    let messages = get_live2d_agent_conversation().await.ok().flatten()?;
-    let outcome =
-        match crate::ai_client::compress_conversation(config, &messages, diaries, None).await {
-            Ok(outcome) => outcome,
-            Err(error) => {
-                cq_add_log_w(&format!("Live2D上下文压缩失败: {error}")).unwrap();
-                return None;
-            }
-        };
-    let compressed = vec![serde_json::json!({
-        "role": "system",
-        "content": format!(
-            "{}{}",
-            crate::ai_client::COMPRESSED_SUMMARY_PREFIX,
-            outcome.summary
-        ),
-        "timestamp": crate::ai_client::now_timestamp()
-    })];
-    if let Err(error) = save_live2d_agent_conversation(compressed.clone()).await {
-        cq_add_log_w(&format!("保存Live2D压缩结果失败: {error}")).unwrap();
-        return None;
-    }
-    if !outcome.diary.is_empty() {
-        let add = outcome
-            .diary
-            .add
-            .into_iter()
-            .map(|entry| (entry.title, entry.content))
-            .collect::<Vec<_>>();
-        let delete = outcome.diary.delete;
-        match spawn_blocking_io("更新Live2D日记本", move || {
-            crate::resource_manager::apply_live2d_diary_updates(&add, &delete)
-        })
-        .await
-        {
-            Ok(()) => {
-                cq_add_log_w("Live2D日记本已更新").unwrap();
-            }
-            Err(error) => {
-                cq_add_log_w(&format!("更新Live2D日记本失败: {error}")).unwrap();
-            }
-        }
-    }
-    Some(compressed)
-}
 pub(crate) fn validate_live2d_conversation_message(
     message: &serde_json::Value,
 ) -> std::result::Result<(), String> {
@@ -238,16 +189,16 @@ pub(crate) async fn mutate_live2d_agent_conversation(
     .await?;
     Ok(messages)
 }
-pub(crate) async fn live2d_agent_context_used() -> u64 {
+pub(crate) async fn live2d_agent_context_usage() -> (u64, bool) {
     match get_live2d_agent_conversation().await {
-        Ok(Some(messages)) => crate::ai_client::estimate_context_tokens(&messages),
-        _ => 0,
+        Ok(Some(messages)) => crate::ai_client::stored_context_usage(&messages)
+            .unwrap_or_else(|| (crate::ai_client::estimate_context_tokens(&messages), true)),
+        _ => (0, true),
     }
 }
 
 #[derive(Deserialize)]
 pub(crate) struct Live2dChatConfigUpdate {
-    pub(crate) enabled: bool,
     pub(crate) base_url: String,
     pub(crate) model: String,
     pub(crate) system_prompt: String,
@@ -255,7 +206,6 @@ pub(crate) struct Live2dChatConfigUpdate {
     pub(crate) thinking_level: Option<String>,
     #[serde(default)]
     pub(crate) context_length: Option<u64>,
-    pub(crate) timeout_seconds: u64,
     #[serde(default)]
     pub(crate) api_key: Option<String>,
     #[serde(default)]
@@ -266,18 +216,18 @@ pub(crate) fn live2d_chat_config_response(
     config: &crate::config_manager::Live2dChatConfig,
     can_write: bool,
     context_used: u64,
+    context_used_estimated: bool,
 ) -> hyper::Response<BoxBody> {
     json_api_response(json!({
         "retcode": 0,
         "data": {
-            "enabled": config.enabled,
             "base_url": config.base_url,
             "model": config.model,
             "system_prompt": config.system_prompt,
             "thinking_level": config.thinking_level,
             "context_length": config.context_length,
             "context_used": context_used,
-            "timeout_seconds": config.timeout_seconds,
+            "context_used_estimated": context_used_estimated,
             "api_key": config.api_key,
             "has_api_key": !config.api_key.is_empty(),
             "can_write": can_write
@@ -377,20 +327,48 @@ pub(crate) async fn live2d_agent_step_data(
     step: crate::ai_client::AgentStep,
     completed_steps: u64,
     context_length: u64,
+    compress: bool,
 ) -> std::result::Result<serde_json::Value, String> {
     match step {
         crate::ai_client::AgentStep::Final {
             reply,
             reasoning_content,
             messages,
+            context_tokens,
+            context_tokens_estimated,
         } => {
-            let context_tokens = crate::ai_client::estimate_context_tokens(&messages);
+            // 压缩请求：AI 已在对话中可见地汇报压缩结果。
+            // 用该汇报替换旧历史（只保留一个 system 摘要消息），让上下文真正变小。
+            if compress {
+                let summary = reply.trim();
+                let compressed_messages = vec![serde_json::json!({
+                    "role": "system",
+                    "content": format!(
+                        "{}{}",
+                        crate::ai_client::COMPRESSED_SUMMARY_PREFIX,
+                        summary
+                    ),
+                    "timestamp": crate::ai_client::now_timestamp()
+                })];
+                save_live2d_agent_conversation(compressed_messages.clone()).await?;
+                let context_tokens =
+                    crate::ai_client::estimate_context_tokens(&compressed_messages);
+                return Ok(json!({
+                    "type": "final",
+                    "reply": reply,
+                    "reasoning_content": reasoning_content,
+                    "context_tokens": context_tokens,
+                    "context_tokens_estimated": true,
+                    "context_length": context_length
+                }));
+            }
             save_live2d_agent_conversation(messages).await?;
             Ok(json!({
                 "type": "final",
                 "reply": reply,
                 "reasoning_content": reasoning_content,
                 "context_tokens": context_tokens,
+                "context_tokens_estimated": context_tokens_estimated,
                 "context_length": context_length
             }))
         }
@@ -399,8 +377,9 @@ pub(crate) async fn live2d_agent_step_data(
             messages,
             reasoning_content,
             content,
+            context_tokens,
+            context_tokens_estimated,
         } => {
-            let context_tokens = crate::ai_client::estimate_context_tokens(&messages);
             let next_step = completed_steps + 1;
             let generation = uuid::Uuid::new_v4().to_string();
             // 完整消息（含 assistant 的 tool_calls）已持久化，前端下次提交时
@@ -414,19 +393,11 @@ pub(crate) async fn live2d_agent_step_data(
                 "content": content,
                 "calls": calls,
                 "context_tokens": context_tokens,
+                "context_tokens_estimated": context_tokens_estimated,
                 "context_length": context_length
             }))
         }
     }
-}
-
-pub(crate) async fn live2d_agent_step_response(
-    step: crate::ai_client::AgentStep,
-    completed_steps: u64,
-    context_length: u64,
-) -> Result<hyper::Response<BoxBody>> {
-    let data = live2d_agent_step_data(step, completed_steps, context_length).await?;
-    Ok(json_api_response(json!({ "retcode": 0, "data": data })))
 }
 
 #[cfg(test)]

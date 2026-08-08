@@ -5,10 +5,7 @@ use std::thread;
 use cqapi::cq_add_log;
 use rust_embed::RustEmbed;
 
-
-
 mod ai_client;
-mod embedded_source;
 mod botconn;
 mod browserbridge;
 pub mod config_manager;
@@ -16,6 +13,7 @@ mod control_plane;
 mod cqapi;
 mod cqevent;
 mod cronevent;
+mod embedded_source;
 mod httpevent;
 mod httpserver;
 mod initevent;
@@ -148,6 +146,10 @@ pub fn initialize() -> i32 {
     config_manager::init_config();
     let _ = runtime_context();
     config_manager::init_global_var();
+
+    if let Err(error) = resource_manager::recover_live2d_chat_after_restart() {
+        cq_add_log_w(&format!("恢复看板娘对话状态失败: {error}")).unwrap();
+    }
 
     redlang::webexfun::init_web_ex_fun_map();
     redlang::cqexfun::init_cq_ex_fun_map();

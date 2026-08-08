@@ -166,6 +166,7 @@
                     <strong>和看板娘贴贴</strong>
                     <div class="pio-chat-header-actions">
                         <span id="pio-context-usage" class="pio-context-usage" title="已用上下文/上限" aria-label="已用上下文">0/128K</span>
+                        <button id="pio-chat-compress-header" type="button" title="压缩对话上下文，并像普通对话一样查看压缩摘要">压缩</button>
                         <button id="pio-chat-settings-button" type="button">设置</button>
                         <button id="pio-chat-close" class="pio-chat-close" type="button" title="关闭对话" aria-label="关闭对话">×</button>
                     </div>
@@ -178,7 +179,7 @@
                 </div>
                 <form id="pio-chat-form" class="pio-chat-form" aria-label="向看板娘发送消息">
                     <label class="pio-sr-only" for="pio-chat-input">消息</label>
-                    <input id="pio-chat-input" type="text" maxlength="2000" autocomplete="off" aria-label="消息">
+                    <textarea id="pio-chat-input" maxlength="2000" rows="1" autocomplete="off" aria-label="消息" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
                     <button id="pio-chat-send" class="pio-chat-send" type="submit" title="发送消息" aria-label="发送消息">↑</button>
                 </form>
                 <form id="pio-chat-settings" class="pio-chat-settings" hidden>
@@ -224,7 +225,8 @@
                     </label>
                     <div class="pio-chat-settings-actions">
                         <button id="pio-chat-settings-back" type="button">返回</button>
-                        <button id="pio-chat-compress" type="button" title="立即压缩对话历史">压缩对话</button><button class="pio-chat-save" type="submit">保存</button>
+                        <button id="pio-chat-clear-context" type="button" title="永久清除当前对话上下文" aria-label="清除上下文">清除上下文</button>
+                        <button class="pio-chat-save" type="submit">保存</button>
                     </div>
                 </form>
             </section>

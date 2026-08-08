@@ -1866,7 +1866,8 @@ pub fn init_ex_fun_map() {
             let text_size = self_t.get_param_text(params, 2)?.parse::<f32>()?;
             let text_color = get_param_text_array(self_t, params, 3)?;
             let mut color = Rgba::<u8>([0, 0, 0, 255]);
-            color.0[0] = text_color.first()
+            color.0[0] = text_color
+                .first()
                 .map(|s| s.as_str())
                 .unwrap_or("0")
                 .parse::<u8>()?;
@@ -2006,7 +2007,8 @@ pub fn init_ex_fun_map() {
             let text_size = self_t.get_param_text(params, 2)?.parse::<f32>()?;
             let text_color = get_param_text_array(self_t, params, 3)?;
             let mut color = Rgba::<u8>([0, 0, 0, 255]);
-            color.0[0] = text_color.first()
+            color.0[0] = text_color
+                .first()
                 .map(|s| s.as_str())
                 .unwrap_or("0")
                 .parse::<u8>()?;
@@ -2146,7 +2148,8 @@ pub fn init_ex_fun_map() {
         let text_size = self_t.get_param_text(params, 4)?.parse::<f32>()?;
         let text_color = get_param_text_array(self_t, params, 5)?;
         let mut color = Rgba::<u8>([0, 0, 0, 255]);
-        color.0[0] = text_color.first()
+        color.0[0] = text_color
+            .first()
             .map(|s| s.as_str())
             .unwrap_or("0")
             .parse::<u8>()?;
@@ -2248,7 +2251,8 @@ pub fn init_ex_fun_map() {
         let image_height = self_t.get_param_text(params, 1)?.parse::<u32>()?;
         let text_color = get_param_text_array(self_t, params, 2)?;
         let mut color = Rgba::<u8>([0, 0, 0, 0]);
-        color.0[0] = text_color.first()
+        color.0[0] = text_color
+            .first()
             .map(|s| s.as_str())
             .unwrap_or("0")
             .parse::<u8>()?;
@@ -2267,8 +2271,7 @@ pub fn init_ex_fun_map() {
             .map(|s| s.as_str())
             .unwrap_or("255")
             .parse::<u8>()?;
-        let mut img: ImageBuffer<Rgba<u8>, Vec<u8>> =
-            ImageBuffer::new(image_width, image_height);
+        let mut img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(image_width, image_height);
         for x in 0..image_width {
             for y in 0..image_height {
                 let pix = img
@@ -2333,8 +2336,8 @@ pub fn init_ex_fun_map() {
                 rotate_about_center(&img_big, theta, Interpolation::Bilinear, Rgba([0, 0, 0, 0]));
             let img_out = image::imageops::crop(
                 &mut img_out_t,
-                (max_wh - max_width * 2) / 2 ,
-                (max_wh - max_height * 2) / 2 ,
+                (max_wh - max_width * 2) / 2,
+                (max_wh - max_height * 2) / 2,
                 max_width * 2,
                 max_height * 2,
             )
@@ -3164,12 +3167,11 @@ pub fn init_ex_fun_map() {
                 for ch in input.chars() {
                     if ch.is_ascii_digit() {
                         tmp.push(ch);
-                    } else if ch.is_ascii_lowercase()
-                        && !tmp.is_empty() {
-                            ret_vec.push(tmp.clone());
-                            tmp.clear();
-                            ret_vec.push(ch.to_string());
-                        }
+                    } else if ch.is_ascii_lowercase() && !tmp.is_empty() {
+                        ret_vec.push(tmp.clone());
+                        tmp.clear();
+                        ret_vec.push(ch.to_string());
+                    }
                 }
                 if !tmp.is_empty() {
                     ret_vec.push(tmp);
@@ -3178,7 +3180,7 @@ pub fn init_ex_fun_map() {
             }
 
             // 取参数
-                fn get_params(tokens: &[String]) -> HashMap<String, (Option<i64>, Option<i64>)> {
+            fn get_params(tokens: &[String]) -> HashMap<String, (Option<i64>, Option<i64>)> {
                 let mut ret_map = HashMap::new();
                 fn get_left(index: usize, tokens: &[String]) -> Option<i64> {
                     if index == 0 {
@@ -3794,13 +3796,13 @@ def red_out(sw):
                     return Err(RedLang::make_err(&format!("python环境创建失败:{err:?}")));
                 }
                 Ok(f) => {
-                let is_ok = f.clone().success();
-                if !is_ok {
-                    return Err(format!("python环境创建异常:{:?}", f).into());
-                } else {
-                    let mut f = fs::File::create(Path::new(&python_dir).join("redpymainok"))?;
-                    std::io::Write::write_all(&mut f, &[])?;
-                }
+                    let is_ok = f.clone().success();
+                    if !is_ok {
+                        return Err(format!("python环境创建异常:{:?}", f).into());
+                    } else {
+                        let mut f = fs::File::create(Path::new(&python_dir).join("redpymainok"))?;
+                        std::io::Write::write_all(&mut f, &[])?;
+                    }
                 }
             }
         }

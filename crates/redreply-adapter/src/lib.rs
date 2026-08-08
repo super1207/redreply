@@ -7,7 +7,11 @@
 //! Concrete adapters can implement [`BotConnectTrait`] in any application and
 //! register themselves in [`BotRegistry`].
 
-use std::{collections::{HashMap, HashSet}, error::Error, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    error::Error,
+    sync::Arc,
+};
 
 pub use async_trait::async_trait;
 use tokio::sync::RwLock;

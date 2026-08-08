@@ -1,19 +1,14 @@
 // 简单的fetch工具函数，用于替换axios
-// v4.2：新增 User-Agent 覆盖（浏览器 forbidden header → 经 /proxy 服务端代理）
+// v4.2：保留请求配置与超时处理
 // v4.1：修复 body 读取阶段 AbortError 未捕获
 // v4.0：全面修复兼容层问题
 //   [修复1] 支持 responseType: 'arraybuffer' | 'blob' | 'json' | 'text'（默认自动 JSON）
 //   [修复2] 支持 config.headers 合并、config.params 拼接、字符串 body 透传
-//   [修复3] nodeFs.writeFile/appendFile 支持 Uint8Array/ArrayBuffer 二进制（走 content_base64）
-//   [修复4] 大文件自动分块写入（兼容服务端 1MB 上限，每块 < 768KB）
-//   [修复5] 识别 /proxy、/fs 返回的 {retcode:-1} 错误并抛出；网络错误包装为可读信息
+//   [修复3] 识别命令接口返回的 {retcode:-1} 错误并抛出；网络错误包装为可读信息
 // v3.1：修复 __doFetch 无条件 response.json() 导致 HTML/文本/二进制响应解析报错的问题
-// v3.0：相对路径（同源 API）直接请求；绝对 URL 自动走 /proxy 跨域（公网/内网/localhost/局域网）
-//       + 内联 nodeFs（fs.promises 风格）+ nodeCp（child_process 风格），页面加载即自动可用
+// v3.0：相对路径和绝对 URL 均由浏览器直接请求
+//       + 内联 nodeCp（child_process 风格），页面加载即自动可用
 function __resolveUrl(url) {
-    if (/^https?:\/\//i.test(url)) {
-        return '/proxy?url=' + encodeURIComponent(url);
-    }
     return url;
 }
 function __toQuery(params) {
@@ -34,17 +29,12 @@ async function __doFetch(url, method, data, config) {
         if (qs) url = url + (url.indexOf('?') >= 0 ? '&' : '?') + qs;
     }
     // [修复2b] headers 合并（用户配置优先）
-    // [修复6] User-Agent 是浏览器 forbidden header（JS 无法设置），
-    //         检测到后转成 X-Redreply-UA 由 /proxy 服务端代理覆盖（v4.2）
     var headers = {};
-    var proxyUA = null;
     for (var h in (config.headers || {})) {
         if (Object.prototype.hasOwnProperty.call(config.headers, h)) {
-            if (h.toLowerCase() === 'user-agent') { proxyUA = config.headers[h]; continue; }
             headers[h] = config.headers[h];
         }
     }
-    if (proxyUA) headers['X-Redreply-UA'] = proxyUA;
     var opt = { method: method, headers: headers };
     // body：对象默认 JSON 序列化（axios 行为）；字符串/FormData/URLSearchParams 原样透传
     if (data !== undefined && data !== null) {
@@ -103,7 +93,7 @@ async function __doFetch(url, method, data, config) {
         if (timeoutId !== null) clearTimeout(timeoutId);
         if (externalAbort && config.signal) config.signal.removeEventListener('abort', externalAbort);
     }
-    // [修复5a] 识别 retcode 错误（/proxy、/fs 约定）
+    // [修复5a] 识别接口约定的 retcode 错误
     if (dataOut && typeof dataOut === 'object' && dataOut.retcode === -1 && dataOut.data && dataOut.data.message) {
         throw new Error(dataOut.data.message + ' (url: ' + url + ')');
     }
@@ -122,9 +112,9 @@ const fetchUtils = {
 // 为了兼容现有代码，创建一个axios兼容对象
 const axios = fetchUtils;
 
-// ===== nodeFs：fs.promises 风格（底层 /fs）=====
-async function __fsCall(payload) {
-    var r = await fetch('/fs', {
+// ===== nodeCp：child_process 风格（底层命令接口）=====
+async function __commandCall(payload) {
+    var r = await fetch('/run_command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -135,69 +125,11 @@ async function __fsCall(payload) {
     }
     return j.data;
 }
-// [修复3] 二进制 → base64（分块避免调用栈溢出）
-function __toBase64(bytes) {
-    var CHUNK = 0x8000;
-    var binary = '';
-    for (var i = 0; i < bytes.length; i += CHUNK) {
-        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
-    }
-    return btoa(binary);
-}
-// 归一化写入数据：返回 { kind: 'text'|'base64', payload }
-function __normalizeData(data) {
-    if (typeof data === 'string') return { kind: 'text', payload: data };
-    if (data instanceof ArrayBuffer) data = new Uint8Array(data);
-    if (data instanceof Uint8Array) return { kind: 'base64', payload: __toBase64(data) };
-    if (ArrayBuffer.isView(data)) return { kind: 'base64', payload: __toBase64(new Uint8Array(data.buffer, data.byteOffset, data.byteLength)) };
-    return { kind: 'text', payload: String(data) };
-}
-// [修复4] 分块写入：第一块 write，后续 append（块大小 4 的倍数，兼容 base64）
-var __FS_CHUNK = 786432; // 768KB
-async function __writeFileChunked(path, data, mode) {
-    var n = __normalizeData(data);
-    if (n.payload.length <= __FS_CHUNK) {
-        var p1 = { op: mode === 'append' ? 'append' : 'write', path: path };
-        p1[n.kind === 'base64' ? 'content_base64' : 'content'] = n.payload;
-        return __fsCall(p1);
-    }
-    var first = true;
-    for (var i = 0; i < n.payload.length;) {
-        var end = Math.min(i + __FS_CHUNK, n.payload.length);
-        if (n.kind === 'text' && end < n.payload.length) {
-            var lastCodeUnit = n.payload.charCodeAt(end - 1);
-            var nextCodeUnit = n.payload.charCodeAt(end);
-            if (lastCodeUnit >= 0xD800 && lastCodeUnit <= 0xDBFF
-                && nextCodeUnit >= 0xDC00 && nextCodeUnit <= 0xDFFF) {
-                end -= 1;
-            }
-        }
-        var chunk = n.payload.substring(i, end);
-        var p = { op: (mode === 'append' || !first) ? 'append' : 'write', path: path };
-        p[n.kind === 'base64' ? 'content_base64' : 'content'] = chunk;
-        await __fsCall(p);
-        first = false;
-        i = end;
-    }
-    return true;
-}
-window.nodeFs = {
-    readFile: async function (path) { var d = await __fsCall({ op: 'read', path: path }); return d.text !== undefined ? d.text : d.base64; },
-    writeFile: async function (path, data) { return __writeFileChunked(path, data, 'write'); },
-    appendFile: async function (path, data) { return __writeFileChunked(path, data, 'append'); },
-    readdir: async function (path) { var d = await __fsCall({ op: 'list', path: path || '.' }); return d.map(function (x) { return x.name; }); },
-    mkdir: async function (path) { await __fsCall({ op: 'mkdir', path: path }); },
-    rm: async function (path, opts) { await __fsCall({ op: (opts && opts.recursive) ? 'rmtree' : 'delete', path: path }); },
-    exists: async function (path) { var d = await __fsCall({ op: 'exists', path: path }); return d === true; },
-    stat: async function (path) { return await __fsCall({ op: 'stat', path: path }); }
-};
-
-// ===== nodeCp：child_process 风格（底层 /fs op:cmd）=====
 window.nodeCp = {
-    exec: async function (cmd) { var d = await __fsCall({ op: 'cmd', content: cmd }); return { stdout: d.output, stderr: '' }; },
+    exec: async function (cmd) { var d = await __commandCall({ content: cmd }); return { stdout: d.output, stderr: '' }; },
     execFile: async function (program, args) {
         var quoted = (args || []).map(function (a) { return JSON.stringify(a); }).join(" ");
-        var d = await __fsCall({ op: 'cmd', content: program + ' ' + quoted });
+        var d = await __commandCall({ content: program + ' ' + quoted });
         return { stdout: d.output, stderr: '' };
     }
 };

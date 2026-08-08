@@ -57,10 +57,8 @@ fn do_redlang(
                     rl.pkg_name = pkg_name_t.to_owned();
                     rl.script_name = script_name_t.to_owned();
                     if let Err(e) = super::do_script(&mut rl, &code_t, "normal", false) {
-                        cq_add_log_w(
-                            format!("err in do_private_msg:do_redlang:{}", e).as_str(),
-                        )
-                        .unwrap();
+                        cq_add_log_w(format!("err in do_private_msg:do_redlang:{}", e).as_str())
+                            .unwrap();
                     }
                 });
             }
@@ -72,7 +70,6 @@ fn do_redlang(
 // 处理私聊事件
 pub fn do_private_msg(root: &serde_json::Value, ban_pkgs: &HashSet<String>) {
     if let Err(e) = do_redlang(root, ban_pkgs) {
-        cq_add_log_w(format!("err in do_private_msg:do_redlang:{}", e).as_str())
-            .unwrap();
+        cq_add_log_w(format!("err in do_private_msg:do_redlang:{}", e).as_str()).unwrap();
     }
 }

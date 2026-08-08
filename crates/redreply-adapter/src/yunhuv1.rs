@@ -598,7 +598,8 @@ impl Yunhuv1Connect {
                         .ok_or("reply not found")?,
                 );
                 let yunhu_id = self.get_msg_id(&cq_id);
-                quote = yunhu_id.first()
+                quote = yunhu_id
+                    .first()
                     .ok_or("get yunhu msg_id err")?
                     .msg_id
                     .to_owned();

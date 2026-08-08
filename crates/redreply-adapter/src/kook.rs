@@ -152,9 +152,7 @@ impl KookConnect {
     }
 
     async fn get_gateway(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let ret_json = self
-            .http_get_json("/gateway/index?compress=1")
-            .await?;
+        let ret_json = self.http_get_json("/gateway/index?compress=1").await?;
         Ok(ret_json
             .get("url")
             .ok_or("get url err")?
@@ -1228,7 +1226,8 @@ impl KookConnect {
                         .ok_or("reply not found")?,
                 );
                 let kook_id = self.get_msg_id(&cq_id);
-                quote = kook_id.first()
+                quote = kook_id
+                    .first()
                     .ok_or("get kook msg_id err")?
                     .msg_id
                     .to_owned();
@@ -1907,9 +1906,7 @@ impl KookConnect {
         &self,
     ) -> Result<Vec<FriendInfo>, Box<dyn std::error::Error + Send + Sync>> {
         let mut ret_vec = vec![];
-        let friend_list = self
-            .http_get_json_t("/user-chat/list", false)
-            .await?;
+        let friend_list = self.http_get_json_t("/user-chat/list", false).await?;
         for it in friend_list
             .get("items")
             .ok_or("items not found")?

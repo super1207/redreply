@@ -1617,10 +1617,7 @@ pub fn init_cq_ex_fun_map() {
                 rl.pkg_name = pkg_name;
                 rl.script_name = name;
                 if let Err(e) = super::do_script(&mut rl, &code, "normal", false) {
-                    cq_add_log_w(
-                        format!("err in do_group_msg:do_redlang:{}", e).as_str(),
-                    )
-                    .unwrap();
+                    cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e).as_str()).unwrap();
                 }
             });
         }

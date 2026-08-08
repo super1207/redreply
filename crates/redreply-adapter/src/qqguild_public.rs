@@ -523,7 +523,11 @@ async fn send_qqgroup_msg_chunk(
         context.srv_send_msg,
     )
     .await?;
-    set_qqgroup_reply_info(&mut qq_msg_node, context.reply_event_id, context.to_reply_id);
+    set_qqgroup_reply_info(
+        &mut qq_msg_node,
+        context.reply_event_id,
+        context.to_reply_id,
+    );
     if !qq_msg_node_has_output(&qq_msg_node) {
         return Ok(());
     }
@@ -564,32 +568,14 @@ async fn send_qqgroup_msg_ordered(
             continue;
         }
         if tp == "image" || tp == "record" || tp == "video" || tp == "file" || tp == "qmarkdown" {
-            send_qqgroup_msg_chunk(
-                self_t,
-                &context,
-                &chunk,
-                &mut id,
-            )
-            .await?;
+            send_qqgroup_msg_chunk(self_t, &context, &chunk, &mut id).await?;
             chunk.clear();
-            send_qqgroup_msg_chunk(
-                self_t,
-                &context,
-                std::slice::from_ref(it),
-                &mut id,
-            )
-            .await?;
+            send_qqgroup_msg_chunk(self_t, &context, std::slice::from_ref(it), &mut id).await?;
         } else {
             chunk.push(it.clone());
         }
     }
-    send_qqgroup_msg_chunk(
-        self_t,
-        &context,
-        &chunk,
-        &mut id,
-    )
-    .await?;
+    send_qqgroup_msg_chunk(self_t, &context, &chunk, &mut id).await?;
 
     let event_id = set_event_id(
         self_t,
@@ -631,19 +617,11 @@ async fn send_qqgroup_msg(
             });
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
             crate::cqapi::cq_add_log(
-                format!(
-                    "发送qq group API数据(`{}`):{}",
-                    group_id,
-                    json_data
-                )
-                .as_str(),
+                format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             )
             .unwrap();
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            crate::cqapi::cq_add_log(
-                format!("接收qq group API数据:{}", api_ret).as_str(),
-            )
-            .unwrap();
+            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str()).unwrap();
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -665,19 +643,11 @@ async fn send_qqgroup_msg(
             obj.insert("msg_id".to_owned(), serde_json::json!(to_reply_id));
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
             crate::cqapi::cq_add_log(
-                format!(
-                    "发送qq group API数据(`{}`):{}",
-                    group_id,
-                    json_data
-                )
-                .as_str(),
+                format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             )
             .unwrap();
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            crate::cqapi::cq_add_log(
-                format!("接收qq group API数据:{}", api_ret).as_str(),
-            )
-            .unwrap();
+            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str()).unwrap();
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -708,19 +678,11 @@ async fn send_qqgroup_msg(
             });
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
             crate::cqapi::cq_add_log(
-                format!(
-                    "发送qq group API数据(`{}`):{}",
-                    group_id,
-                    json_data
-                )
-                .as_str(),
+                format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             )
             .unwrap();
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            crate::cqapi::cq_add_log(
-                format!("接收qq group API数据:{}", api_ret).as_str(),
-            )
-            .unwrap();
+            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str()).unwrap();
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -755,19 +717,11 @@ async fn send_qqgroup_msg(
             });
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
             crate::cqapi::cq_add_log(
-                format!(
-                    "发送qq group API数据(`{}`):{}",
-                    group_id,
-                    json_data
-                )
-                .as_str(),
+                format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             )
             .unwrap();
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            crate::cqapi::cq_add_log(
-                format!("接收qq group API数据:{}", api_ret).as_str(),
-            )
-            .unwrap();
+            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str()).unwrap();
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -785,19 +739,11 @@ async fn send_qqgroup_msg(
             obj.insert("msg_type".to_owned(), serde_json::json!(2));
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
             crate::cqapi::cq_add_log(
-                format!(
-                    "发送qq group API数据(`{}`):{}",
-                    group_id,
-                    json_data
-                )
-                .as_str(),
+                format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             )
             .unwrap();
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            crate::cqapi::cq_add_log(
-                format!("接收qq group API数据:{}", api_ret).as_str(),
-            )
-            .unwrap();
+            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str()).unwrap();
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -824,19 +770,11 @@ async fn send_qqgroup_msg(
             });
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
             crate::cqapi::cq_add_log(
-                format!(
-                    "发送qq group API数据(`{}`):{}",
-                    group_id,
-                    json_data
-                )
-                .as_str(),
+                format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             )
             .unwrap();
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            crate::cqapi::cq_add_log(
-                format!("接收qq group API数据:{}", api_ret).as_str(),
-            )
-            .unwrap();
+            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str()).unwrap();
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -899,20 +837,12 @@ async fn send_qqpri_msg_chunk(
             "msg_id":to_reply_id
         });
         crate::cqapi::cq_add_log(
-            format!(
-                "发送qq private API数据(`{}`):{}",
-                user_id,
-                json_data
-            )
-            .as_str(),
+            format!("发送qq private API数据(`{}`):{}", user_id, json_data).as_str(),
         )
         .unwrap();
         let api_ret =
             do_qq_json_post(self_t, &format!("/v2/users/{user_id}/messages"), json_data).await?;
-        crate::cqapi::cq_add_log(
-            format!("接收qq private API数据:{}", api_ret).as_str(),
-        )
-        .unwrap();
+        crate::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str()).unwrap();
         // 构造消息id
         append_msg_id(
             id,
@@ -933,20 +863,12 @@ async fn send_qqpri_msg_chunk(
         obj.insert("msg_seq".to_owned(), serde_json::json!(msg_seq));
         obj.insert("msg_id".to_owned(), serde_json::json!(to_reply_id));
         crate::cqapi::cq_add_log(
-            format!(
-                "发送qq private API数据(`{}`):{}",
-                user_id,
-                json_data
-            )
-            .as_str(),
+            format!("发送qq private API数据(`{}`):{}", user_id, json_data).as_str(),
         )
         .unwrap();
         let api_ret =
             do_qq_json_post(self_t, &format!("/v2/users/{user_id}/messages"), json_data).await?;
-        crate::cqapi::cq_add_log(
-            format!("接收qq private API数据:{}", api_ret).as_str(),
-        )
-        .unwrap();
+        crate::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str()).unwrap();
         // 构造消息id
         append_msg_id(
             id,
@@ -973,20 +895,12 @@ async fn send_qqpri_msg_chunk(
             }
         });
         crate::cqapi::cq_add_log(
-            format!(
-                "发送qq private API数据(`{}`):{}",
-                user_id,
-                json_data
-            )
-            .as_str(),
+            format!("发送qq private API数据(`{}`):{}", user_id, json_data).as_str(),
         )
         .unwrap();
         let api_ret =
             do_qq_json_post(self_t, &format!("/v2/users/{user_id}/messages"), json_data).await?;
-        crate::cqapi::cq_add_log(
-            format!("接收qq private API数据:{}", api_ret).as_str(),
-        )
-        .unwrap();
+        crate::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str()).unwrap();
         // 构造消息id
         append_msg_id(
             id,
@@ -1080,11 +994,12 @@ pub async fn send_group_msg(
     let group_id = read_json_str(params, "group_id");
 
     // 判断消息类型
-    let msg_target_type = if passive_id.is_empty() && platform == "qqgroup_public" && !group_id.is_empty() {
-        MsgTargetType::QQGroup
-    } else {
-        get_msg_type(self_t, params, passive_id)?
-    };
+    let msg_target_type =
+        if passive_id.is_empty() && platform == "qqgroup_public" && !group_id.is_empty() {
+            MsgTargetType::QQGroup
+        } else {
+            get_msg_type(self_t, params, passive_id)?
+        };
 
     // 获得消息(数组格式)
     let mut message = params
@@ -1203,11 +1118,7 @@ impl BotConnectTrait for QQGuildPublicConnect {
 
         let request = tungstenite::client::IntoClientRequest::into_client_request(&ws_url)?;
         let ws_rst;
-        let port = request
-            .uri()
-            .port()
-            .map(Into::into)
-            .unwrap_or(443);
+        let port = request.uri().port().map(Into::into).unwrap_or(443);
         let addr = format!("{}:{}", request.uri().host().unwrap(), port);
         let socket = TcpStream::connect(addr).await?;
         ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;

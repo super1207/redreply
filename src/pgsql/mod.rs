@@ -53,7 +53,8 @@ async fn get_client(timeout_secs: u64) -> Option<Arc<tokio_postgres::Client>> {
             tokio::time::sleep(Duration::from_millis(200)).await;
         }
     })
-    .await.ok()
+    .await
+    .ok()
 }
 
 async fn init_postgresql_db_async(

@@ -300,21 +300,33 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr) 36px;
 }
-.pio-chat-form input{
+.pio-chat-form input,
+.pio-chat-form textarea{
     width: 100%;
     min-width: 0;
     height: 36px;
     padding: 0 10px;
     box-sizing: border-box;
     font: inherit;
-    font-size: 15pxx;
+    font-size: 15px;
+    line-height: 1.4;
     border: 1px solid var(--border-primary, #999) !important;
     border-radius: 5px;
     background: rgba(255, 255, 255, .68) !important;
     outline: none;
     transition: border-color .2s, box-shadow .2s;
 }
-.pio-chat-form input:focus{
+.pio-chat-form textarea{
+    height: auto;
+    min-height: 36px;
+    max-height: 150px;
+    padding: 7px 10px;
+    resize: none;
+    overflow-y: auto;
+    scrollbar-width: thin;
+}
+.pio-chat-form input:focus,
+.pio-chat-form textarea:focus{
     border-color: var(--border-secondary, #e55743) !important;
     box-shadow: 0 0 15px var(--shadow-focus, rgba(255,105,180,.3));
 }
@@ -415,7 +427,7 @@
 .pio-chat-settings-actions{
     gap: 7px;
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .pio-chat-settings-actions button{
     min-height: 34px;
@@ -452,6 +464,7 @@
     color: var(--text-primary, #e0e0e0);
 }
 [data-theme="dark"] .pio-chat-form input,
+[data-theme="dark"] .pio-chat-form textarea,
 [data-theme="dark"] .pio-chat-settings input,
 [data-theme="dark"] .pio-chat-settings select,
 [data-theme="dark"] .pio-chat-settings textarea{

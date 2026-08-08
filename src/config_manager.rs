@@ -21,27 +21,23 @@ pub struct StartupConfig {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Live2dChatConfig {
-    pub enabled: bool,
     pub base_url: String,
     pub api_key: String,
     pub model: String,
     pub system_prompt: String,
     pub thinking_level: String,
     pub context_length: u64,
-    pub timeout_seconds: u64,
 }
 
 impl Default for Live2dChatConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
             base_url: "https://api.openai.com/v1/chat/completions".to_owned(),
             api_key: String::new(),
             model: "gpt-4o-mini".to_owned(),
             system_prompt: "你是红色问答的看板娘。请使用简洁、自然、友好的中文回答。".to_owned(),
             thinking_level: "high".to_owned(),
             context_length: 131_072,
-            timeout_seconds: 60,
         }
     }
 }
@@ -59,14 +55,12 @@ fn default_config() -> Value {
         "ws_urls": [],
         "not_open_browser": false,
         "live2d_chat": {
-            "enabled": false,
             "base_url": "https://api.openai.com/v1/chat/completions",
             "api_key": "",
             "model": "gpt-4o-mini",
             "system_prompt": "你是红色问答的看板娘。请使用简洁、自然、友好的中文回答。",
             "thinking_level": "high",
-            "context_length": 131072,
-            "timeout_seconds": 60
+            "context_length": 131072
         }
     })
 }
@@ -184,13 +178,11 @@ pub fn init_config() {
             "ws_urls": [],
             "not_open_browser": false,
             "live2d_chat": {
-                "enabled": false,
                 "base_url": "https://api.openai.com/v1/chat/completions",
                 "api_key": "",
                 "model": "gpt-4o-mini",
-            "system_prompt": "你是红色问答的看板娘。请使用简洁、自然、友好的中文回答。",
-                "thinking_level": "high",
-                "timeout_seconds": 60
+                "system_prompt": "你是红色问答的看板娘。请使用简洁、自然、友好的中文回答。",
+                "thinking_level": "high"
             }
         });
         fs::write(&path, config.to_string()).unwrap();
@@ -249,14 +241,12 @@ pub fn save_live2d_chat_config(chat: &Live2dChatConfig) -> ConfigResult<()> {
     let _write_guard = config_write_lock().lock().unwrap();
     let mut config = read_config()?;
     config["live2d_chat"] = serde_json::json!({
-        "enabled": chat.enabled,
         "base_url": chat.base_url,
         "api_key": chat.api_key,
         "model": chat.model,
         "system_prompt": chat.system_prompt,
         "thinking_level": chat.thinking_level,
         "context_length": chat.context_length,
-        "timeout_seconds": chat.timeout_seconds,
     });
     write_config(&config)
 }
@@ -381,10 +371,6 @@ pub(crate) fn parse_live2d_chat_config(config: &Value) -> Live2dChatConfig {
     };
 
     Live2dChatConfig {
-        enabled: chat
-            .get("enabled")
-            .and_then(Value::as_bool)
-            .unwrap_or(defaults.enabled),
         base_url: chat
             .get("base_url")
             .and_then(Value::as_str)
@@ -414,10 +400,6 @@ pub(crate) fn parse_live2d_chat_config(config: &Value) -> Live2dChatConfig {
             .get("context_length")
             .and_then(Value::as_u64)
             .unwrap_or(defaults.context_length),
-        timeout_seconds: chat
-            .get("timeout_seconds")
-            .and_then(Value::as_u64)
-            .unwrap_or(defaults.timeout_seconds),
     }
 }
 
@@ -449,9 +431,6 @@ fn validate_live2d_chat_config(chat: &Live2dChatConfig) -> ConfigResult<()> {
         32_768 | 65_536 | 131_072 | 262_144 | 524_288 | 1_048_576
     ) {
         return Err("上下文长度必须是 32K、64K、128K、256K、512K 或 1M 之一".into());
-    }
-    if !(5..=120).contains(&chat.timeout_seconds) {
-        return Err("请求超时必须在5到120秒之间".into());
     }
     Ok(())
 }
@@ -500,9 +479,7 @@ mod tests {
     #[test]
     fn parse_live2d_chat_config_uses_defaults_when_missing() {
         let chat = parse_live2d_chat_config(&serde_json::json!({}));
-        assert!(!chat.enabled);
         assert_eq!(chat.model, "gpt-4o-mini");
-        assert_eq!(chat.timeout_seconds, 60);
         assert_eq!(chat.thinking_level, "high");
         assert_eq!(chat.context_length, 131_072);
     }
@@ -511,17 +488,13 @@ mod tests {
     fn parse_live2d_chat_config_reads_overrides() {
         let chat = parse_live2d_chat_config(&serde_json::json!({
             "live2d_chat": {
-                "enabled": true,
                 "base_url": "http://127.0.0.1:11434/v1/chat/completions",
                 "model": "qwen2.5",
                 "thinking_level": "max",
-                "context_length": 1048576,
-                "timeout_seconds": 30
+                "context_length": 1048576
             }
         }));
-        assert!(chat.enabled);
         assert_eq!(chat.model, "qwen2.5");
-        assert_eq!(chat.timeout_seconds, 30);
         assert_eq!(chat.thinking_level, "max");
         assert_eq!(chat.context_length, 1_048_576);
         assert!(chat.api_key.is_empty());

@@ -18,8 +18,7 @@ pub mod exfun;
 pub(crate) mod persistent_value_codec;
 pub(crate) mod webexfun;
 
-pub(crate) type RedCommandResult =
-    Result<Option<Rc<RedValue>>, Box<dyn std::error::Error>>;
+pub(crate) type RedCommandResult = Result<Option<Rc<RedValue>>, Box<dyn std::error::Error>>;
 pub(crate) type RedCommandFunction = fn(&mut RedLang, &[astparser::Ast]) -> RedCommandResult;
 pub(crate) type ParsedImage = (image::ImageFormat, ImageBuffer<Rgba<u8>, Vec<u8>>);
 
@@ -373,20 +372,14 @@ pub fn get_random() -> Result<usize, getrandom::Error> {
     Ok(num)
 }
 
-fn get_core_cmd(
-    cmd: &str,
-    pkg_name: &str,
-) -> Option<RedCommandFunction> {
+fn get_core_cmd(cmd: &str, pkg_name: &str) -> Option<RedCommandFunction> {
     let cmd_t = cmd.to_uppercase();
     crate::runtime_context()
         .scripts
         .get_command_function(pkg_name, &cmd_t)
 }
 
-pub fn add_fun(
-    k_vec: Vec<&str>,
-    fun: RedCommandFunction,
-) {
+pub fn add_fun(k_vec: Vec<&str>, fun: RedCommandFunction) {
     crate::runtime_context()
         .scripts
         .add_command_function(k_vec, fun);
@@ -559,10 +552,7 @@ pub fn init_core_fun_map() {
                     {
                         let var_vec_len = self_t.var_vec.len();
                         let mp = &mut self_t.var_vec[var_vec_len - 1];
-                        mp.insert(
-                            loop_val_var.clone(),
-                            Rc::new(RefCell::new(value.clone())),
-                        );
+                        mp.insert(loop_val_var.clone(), Rc::new(RefCell::new(value.clone())));
                     }
                     let v = self_t.call_fun(&fun_params)?;
                     self_t.connect_rv_with_context(
@@ -1467,39 +1457,31 @@ pub fn init_core_fun_map() {
         // 获得变量类型 - 直接从 RedValue 取元素，无需序列化/反序列化
         let cur_rv = (*data).borrow().clone();
         let ret_rv = match &*cur_rv {
-            RedValue::Array(arr) => {
-                match k_name.parse::<usize>() {
-                    Ok(index) => arr.get(index).cloned().unwrap_or_else(rv_empty),
-                    Err(_) => rv_empty(),
-                }
-            }
-            RedValue::Object(obj) => {
-                match obj.get(&*k_name) {
-                    Some(s) => s.clone(),
-                    None => rv_empty(),
-                }
-            }
-            RedValue::Text(cur_str) => {
-                match k_name.parse::<usize>() {
-                    Ok(index) => {
-                        let chs = cur_str.chars().collect::<Vec<char>>();
-                        match chs.get(index) {
-                            Some(s) => rv_text(s.to_string()),
-                            None => rv_empty(),
-                        }
+            RedValue::Array(arr) => match k_name.parse::<usize>() {
+                Ok(index) => arr.get(index).cloned().unwrap_or_else(rv_empty),
+                Err(_) => rv_empty(),
+            },
+            RedValue::Object(obj) => match obj.get(&*k_name) {
+                Some(s) => s.clone(),
+                None => rv_empty(),
+            },
+            RedValue::Text(cur_str) => match k_name.parse::<usize>() {
+                Ok(index) => {
+                    let chs = cur_str.chars().collect::<Vec<char>>();
+                    match chs.get(index) {
+                        Some(s) => rv_text(s.to_string()),
+                        None => rv_empty(),
                     }
-                    Err(_) => rv_empty(),
                 }
-            }
-            RedValue::Bin(bin) => {
-                match k_name.parse::<usize>() {
-                    Ok(index) => match bin.get(index) {
-                        Some(s) => Rc::new(RedValue::Bin(Rc::new(vec![*s]))),
-                        None => Rc::new(RedValue::Bin(Rc::new(vec![]))),
-                    },
-                    Err(_) => Rc::new(RedValue::Bin(Rc::new(vec![]))),
-                }
-            }
+                Err(_) => rv_empty(),
+            },
+            RedValue::Bin(bin) => match k_name.parse::<usize>() {
+                Ok(index) => match bin.get(index) {
+                    Some(s) => Rc::new(RedValue::Bin(Rc::new(vec![*s]))),
+                    None => Rc::new(RedValue::Bin(Rc::new(vec![]))),
+                },
+                Err(_) => Rc::new(RedValue::Bin(Rc::new(vec![]))),
+            },
             _ => {
                 return Err(RedLang::make_err(
                     &("对应类型不能取元素:".to_owned() + cur_rv.get_type_name()),
@@ -1515,11 +1497,9 @@ pub fn init_core_fun_map() {
                 let arr: Vec<Rc<RedValue>> = obj.keys().map(|k| rv_text(k.clone())).collect();
                 Ok(Some(Rc::new(RedValue::Array(arr))))
             }
-            _ => {
-                Err(RedLang::make_err(
-                    &("对应类型不能取对象key:".to_owned() + param_data.get_type_name()),
-                ))
-            }
+            _ => Err(RedLang::make_err(
+                &("对应类型不能取对象key:".to_owned() + param_data.get_type_name()),
+            )),
         }
     });
     add_fun(vec!["取类型"], |self_t, params| {
@@ -2128,9 +2108,7 @@ impl RedLang {
         Err(RedLang::make_err(&format!("未知的命令:{}", cmd)))
     }
 
-    pub fn parse_bin_to_img_raw(
-        raw: Vec<u8>,
-    ) -> Result<ParsedImage, Box<dyn std::error::Error>> {
+    pub fn parse_bin_to_img_raw(raw: Vec<u8>) -> Result<ParsedImage, Box<dyn std::error::Error>> {
         use image::ImageReader;
         let img_t = ImageReader::new(std::io::Cursor::new(raw)).with_guessed_format()?;
         let img_fmt = img_t.format().ok_or("不能识别的图片格式")?;

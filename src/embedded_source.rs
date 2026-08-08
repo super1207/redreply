@@ -1,5 +1,5 @@
 //! 编译时嵌入的项目源码，可通过 HTTP API 或 RedLang 命令翻阅。
-//! 由 build.rs 在编译时扫描 src/、crates/ 等目录生成，随二进制分发。
+//! 由 build.rs 在编译时扫描项目源码及 res/、docs/ 文本前端资源生成，随二进制分发。
 
 include!(concat!(env!("OUT_DIR"), "/embedded_source.rs"));
 
@@ -22,4 +22,19 @@ pub fn source_list() -> Vec<&'static str> {
     let mut list: Vec<&'static str> = SOURCE_FILES.iter().map(|(k, _)| *k).collect();
     list.sort_unstable();
     list
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{get_source, source_list};
+
+    #[test]
+    fn exposes_embedded_frontend_text_resources() {
+        let list = source_list();
+        assert!(list.contains(&"res/index.html"));
+        assert!(list.contains(&"res/live2d/chat.js"));
+        assert!(list.contains(&"docs/index.html"));
+        assert!(get_source("./res/live2d/chat.js").is_some());
+        assert!(get_source("docs/index.html").is_some());
+    }
 }

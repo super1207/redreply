@@ -35,7 +35,8 @@ pub struct OneBot11Connect {
     pub is_stop: Arc<AtomicBool>,
     pub stop_tx: Option<tokio::sync::mpsc::Sender<bool>>,
     pub real_platform: Arc<std::sync::RwLock<Option<String>>>,
-    echo_map: Arc<tokio::sync::RwLock<HashMap<String, tokio::sync::mpsc::Sender<serde_json::Value>>>>,
+    echo_map:
+        Arc<tokio::sync::RwLock<HashMap<String, tokio::sync::mpsc::Sender<serde_json::Value>>>>,
 }
 
 fn get_json_from_msg(msg: hyper_tungstenite::tungstenite::Message) -> Option<serde_json::Value> {
@@ -236,8 +237,7 @@ impl OneBot11Connect {
                 // Convert error to Box<dyn Error + Send + Sync>
                 // Convert error to a string and wrap it in a std::io::Error
                 let s = format!("{:?}", e);
-                Box::new(std::io::Error::other(s))
-                    as Box<dyn std::error::Error + Send + Sync>
+                Box::new(std::io::Error::other(s)) as Box<dyn std::error::Error + Send + Sync>
             })
         })
         .await??;
@@ -410,7 +410,10 @@ impl OneBot11Connect {
 fn change_id_to_str(root: &mut serde_json::Value) {
     if root.is_object() {
         for (k, v) in root.as_object_mut().unwrap() {
-            if matches!(k.as_str(), "target_id" | "user_id" | "group_id" | "self_id" | "message_id" | "operator_id") {
+            if matches!(
+                k.as_str(),
+                "target_id" | "user_id" | "group_id" | "self_id" | "message_id" | "operator_id"
+            ) {
                 if v.is_i64() {
                     (*v) = serde_json::to_value(v.as_i64().unwrap().to_string()).unwrap();
                 }
@@ -483,11 +486,7 @@ impl BotConnectTrait for OneBot11Connect {
         }
         let ws_rst;
         if self.url.starts_with("wss://") {
-            let port = request
-                .uri()
-                .port()
-                .map(Into::into)
-                .unwrap_or(443);
+            let port = request.uri().port().map(Into::into).unwrap_or(443);
             let addr = format!("{}:{}", request.uri().host().unwrap(), port);
             let socket = TcpStream::connect(addr).await?;
             ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;

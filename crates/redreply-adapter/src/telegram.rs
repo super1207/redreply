@@ -99,7 +99,11 @@ impl TeleTramConnect {
         Ok(result.clone())
     }
 
-    fn utf16_slice(text: &str, start: usize, end: usize) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    fn utf16_slice(
+        text: &str,
+        start: usize,
+        end: usize,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let units: Vec<u16> = text.encode_utf16().collect();
         if start > end || end > units.len() {
             return Err(format!(
@@ -145,11 +149,8 @@ impl TeleTramConnect {
                 }
                 last_end = end;
             }
-            let text_end = Self::utf16_slice(
-                text_message,
-                last_end,
-                text_message.encode_utf16().count(),
-            )?;
+            let text_end =
+                Self::utf16_slice(text_message, last_end, text_message.encode_utf16().count())?;
             ret_cq_msg.push_str(&cq_text_encode(&text_end));
         } else {
             ret_cq_msg.push_str(&cq_text_encode(text_message));
@@ -202,7 +203,8 @@ impl TeleTramConnect {
                         .as_str(),
                     )
                     .await?;
-                let get_file_path_json: serde_json::Value = serde_json::from_str(&get_file_path_ret)?;
+                let get_file_path_json: serde_json::Value =
+                    serde_json::from_str(&get_file_path_ret)?;
                 let file_path = get_file_path_json["result"]["file_path"]
                     .as_str()
                     .ok_or("file_path not str")?;
@@ -527,7 +529,8 @@ impl TeleTramConnect {
         &self,
         message_arr: &serde_json::Value,
         group_id: &str,
-    ) -> Result<(Vec<(&str, String, String)>, String), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(Vec<(&str, String, String)>, String), Box<dyn std::error::Error + Send + Sync>>
+    {
         // 每个元素为 (类型, 内容, caption)；caption 仅对图片类型有意义
         let mut to_send_data: Vec<(&str, String, String)> = vec![];
         let mut quote = String::new();
@@ -585,7 +588,8 @@ impl TeleTramConnect {
                         .ok_or("reply not found")?,
                 );
                 let telegram_id = self.get_msg_id(&cq_id);
-                quote = telegram_id.first()
+                quote = telegram_id
+                    .first()
                     .ok_or("get telegram msg_id err")?
                     .msg_id
                     .to_owned();
@@ -793,10 +797,7 @@ impl TeleTramConnect {
                         reqwest::multipart::Part::text(chat_id.to_owned()),
                     );
                 if !caption.is_empty() {
-                    form = form.part(
-                        "caption",
-                        reqwest::multipart::Part::text(caption.clone()),
-                    );
+                    form = form.part("caption", reqwest::multipart::Part::text(caption.clone()));
                 }
                 if !quote.is_empty() {
                     form = form.part(

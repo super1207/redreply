@@ -34,16 +34,15 @@ use std::str::FromStr;
 use std::sync::{Arc, Mutex as StdMutex};
 use std::thread;
 use std::time::{Duration, SystemTime};
-use tokio_util::sync::CancellationToken;
 use tokio_util::bytes::Buf;
+use tokio_util::sync::CancellationToken;
 
 pub(crate) type GenericError = Box<dyn std::error::Error + Send + Sync>;
 pub(crate) type BoxBody = http_body_util::combinators::BoxBody<Bytes, GenericError>;
 pub(crate) type Result<T> = std::result::Result<T, GenericError>;
 
+mod command;
 mod live2d;
-mod proxy;
-mod fsapi;
 use live2d::*;
 
 pub fn add_ws_log(log_msg: String) {
@@ -77,7 +76,8 @@ async fn deal_api(
             None => json!({"retcode": -1, "data": "文件不存在或未嵌入"}),
         };
         let mut res = hyper::Response::new(full(ret.to_string()));
-        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        res.headers_mut()
+            .insert("Content-Type", HeaderValue::from_static("application/json"));
         return Ok(res);
     } else if url_path == "/source_code_list" {
         if !can_read {
@@ -86,17 +86,11 @@ async fn deal_api(
         }
         let ret = json!({"retcode": 0, "data": crate::embedded_source::source_list()});
         let mut res = hyper::Response::new(full(ret.to_string()));
-        res.headers_mut().insert("Content-Type", HeaderValue::from_static("application/json"));
+        res.headers_mut()
+            .insert("Content-Type", HeaderValue::from_static("application/json"));
         return Ok(res);
     }
 
-    if url_path == "/proxy" {
-        if !can_write {
-            let res = hyper::Response::new(full("api not found"));
-            return Ok(res);
-        }
-        return proxy::handle(request).await;
-    }
     if url_path == "/live2d_chat_config" {
         if request.method() == Method::GET {
             if !can_write {
@@ -104,8 +98,13 @@ async fn deal_api(
             }
             match crate::config_manager::live2d_chat_config() {
                 Ok(config) => {
-                    let context_used = live2d_agent_context_used().await;
-                    Ok(live2d_chat_config_response(&config, can_write, context_used))
+                    let (context_used, context_used_estimated) = live2d_agent_context_usage().await;
+                    Ok(live2d_chat_config_response(
+                        &config,
+                        can_write,
+                        context_used,
+                        context_used_estimated,
+                    ))
                 }
                 Err(error) => Ok(json_api_error(&format!("读取对话设置失败: {error}"))),
             }
@@ -130,7 +129,6 @@ async fn deal_api(
                 Ok(config) => config,
                 Err(error) => return Ok(json_api_error(&format!("读取对话设置失败: {error}"))),
             };
-            config.enabled = update.enabled;
             config.base_url = update.base_url.trim().to_owned();
             config.model = update.model.trim().to_owned();
             config.system_prompt = update.system_prompt.trim().to_owned();
@@ -140,7 +138,6 @@ async fn deal_api(
             if let Some(context_length) = update.context_length {
                 config.context_length = context_length;
             }
-            config.timeout_seconds = update.timeout_seconds;
             if update.clear_api_key {
                 config.api_key.clear();
             } else if let Some(api_key) = update.api_key.filter(|key| !key.trim().is_empty()) {
@@ -167,108 +164,47 @@ async fn deal_api(
                             }
                         }
                     }
-                    let context_used = live2d_agent_context_used().await;
-                    Ok(live2d_chat_config_response(&config, true, context_used))
+                    let (context_used, context_used_estimated) = live2d_agent_context_usage().await;
+                    Ok(live2d_chat_config_response(
+                        &config,
+                        true,
+                        context_used,
+                        context_used_estimated,
+                    ))
                 }
                 Err(error) => Ok(json_api_error(&format!("保存对话设置失败: {error}"))),
             }
         } else {
             Ok(method_not_allowed())
         }
-    } else if url_path == "/live2d_chat_compress" {
+    } else if url_path == "/live2d_chat_clear" {
         if !can_write {
             return Ok(hyper::Response::new(full("api not found")));
         }
         if request.method() != Method::POST {
             return Ok(method_not_allowed());
         }
-        let _compress_guard = live2d_agent_flow_lock().lock().await;
+        let _clear_guard = match live2d_agent_flow_lock().try_lock() {
+            Ok(guard) => guard,
+            Err(_) => {
+                return Ok(json_api_error("当前正在对话中，请先停止对话再清除上下文"));
+            }
+        };
         match live2d_agent_has_pending_tools().await {
-            Ok(true) => return Ok(json_api_error("工具执行期间不能压缩对话，请稍后重试")),
+            Ok(true) => return Ok(json_api_error("工具执行期间不能清除对话，请稍后重试")),
             Ok(false) => {}
             Err(error) => return Ok(json_api_error(&format!("读取对话状态失败: {error}"))),
         }
-        let config = match crate::config_manager::live2d_chat_config() {
-            Ok(config) => config,
-            Err(error) => return Ok(json_api_error(&format!("读取对话设置失败: {error}"))),
+        return match clear_live2d_agent_conversation().await {
+            Ok(()) => Ok(json_api_response(json!({
+                "retcode": 0,
+                "data": {
+                    "cleared": true,
+                    "context_tokens": 0
+                }
+            }))),
+            Err(error) => Ok(json_api_error(&format!("清除对话失败: {error}"))),
         };
-        let diaries = tokio::task::spawn_blocking(crate::resource_manager::list_live2d_diaries)
-            .await
-            .ok()
-            .and_then(|result| result.ok())
-            .unwrap_or_default();
-        match crate::httpserver::live2d::compress_live2d_conversation(&config, &diaries).await {
-            Some(compressed) => {
-                let context_tokens = crate::ai_client::estimate_context_tokens(&compressed);
-                Ok(json_api_response(json!({
-                    "retcode": 0,
-                    "data": {
-                        "compressed": true,
-                        "message_count": compressed.len(),
-                        "context_tokens": context_tokens,
-                        "context_length": config.context_length
-                    }
-                })))
-            }
-            None => Ok(json_api_error("压缩失败：对话为空或压缩助手出错")),
-        }
-    } else if url_path == "/live2d_chat" {
-        if !can_write {
-            return Ok(hyper::Response::new(full("api not found")));
-        }
-        if request.method() != Method::POST {
-            return Ok(method_not_allowed());
-        }
-
-        let chat_request: Live2dChatRequest =
-            match read_json_body(request, LIVE2D_CHAT_BODY_LIMIT).await {
-                Ok(chat_request) => chat_request,
-                Err(error) => return Ok(json_api_error(&format!("消息格式错误: {error}"))),
-            };
-        let flow_guard = live2d_agent_flow_lock().lock().await;
-        let config = match crate::config_manager::live2d_chat_config() {
-            Ok(config) => config,
-            Err(error) => return Ok(json_api_error(&format!("读取对话设置失败: {error}"))),
-        };
-        let diaries = tokio::task::spawn_blocking(crate::resource_manager::list_live2d_diaries)
-            .await
-            .ok()
-            .and_then(|result| result.ok())
-            .unwrap_or_default();
-
-        let (call, ctx) = match prepare_live2d_agent_call(
-            &config,
-            chat_request,
-            &diaries,
-            flow_guard,
-            None,
-        )
-        .await
-        {
-            Ok(prepared) => prepared,
-            Err(error) => return Ok(json_api_error(&error)),
-        };
-        let step_result = execute_live2d_agent_call(&config, &call, &diaries).await;
-        let step = match step_result {
-            Ok(step) => step,
-            Err(error) => {
-                cq_add_log_w(&format!("Live2D对话失败: {error}")).unwrap();
-                return Ok(json_api_error(&error.to_string()));
-            }
-        };
-        match live2d_agent_step_response(
-            step,
-            ctx.completed_steps,
-            config.context_length,
-        )
-        .await
-        {
-            Ok(response) => Ok(response),
-            Err(error) => {
-                cq_add_log_w(&format!("Live2D Agent失败: {error}")).unwrap();
-                Ok(json_api_error(&error.to_string()))
-            }
-        }
     } else if url_path == "/live2d_chat_stream" {
         if !can_write {
             return Ok(hyper::Response::new(full("api not found")));
@@ -294,11 +230,11 @@ async fn deal_api(
             Ok(()) => Ok(json_api_response(json!({"retcode": 0, "data": true}))),
             Err(error) => Ok(json_api_error(&error)),
         };
-    } else if url_path == "/fs" {
+    } else if url_path == "/run_command" {
         if !can_write {
             return Ok(hyper::Response::new(full("api not found")));
         }
-        return fsapi::handle(request).await;
+        return command::handle(request).await;
     } else if url_path == "/live2d_conversation" {
         if !can_write {
             return Ok(hyper::Response::new(full("api not found")));
@@ -307,9 +243,7 @@ async fn deal_api(
             let mutation: Live2dConversationMutation =
                 match read_json_body(request, LIVE2D_CONVERSATION_BODY_LIMIT).await {
                     Ok(mutation) => mutation,
-                    Err(error) => {
-                        return Ok(json_api_error(&format!("修改对话格式错误: {error}")))
-                    }
+                    Err(error) => return Ok(json_api_error(&format!("修改对话格式错误: {error}"))),
                 };
             let _mutate_guard = live2d_agent_flow_lock().lock().await;
             match live2d_agent_has_pending_tools().await {
@@ -344,9 +278,7 @@ async fn deal_api(
             .unwrap_or_default();
         let next_payload =
             crate::ai_client::build_next_request_payload(&config, &messages, &diaries)
-                .unwrap_or_else(|error| {
-                    serde_json::json!({"error": error.to_string()})
-                });
+                .unwrap_or_else(|error| serde_json::json!({"error": error.to_string()}));
         let payload = json!({
             "retcode": 0,
             "data": {
@@ -356,10 +288,8 @@ async fn deal_api(
             }
         });
         let mut res = hyper::Response::new(full(payload.to_string()));
-        res.headers_mut().insert(
-            "Content-Type",
-            HeaderValue::from_static("application/json"),
-        );
+        res.headers_mut()
+            .insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)
     } else if url_path == "/live2d_diary" {
         if !can_write {
@@ -368,13 +298,12 @@ async fn deal_api(
         if request.method() != Method::GET {
             return Ok(method_not_allowed());
         }
-        let items = match tokio::task::spawn_blocking(crate::resource_manager::list_live2d_diaries)
-            .await
-        {
-            Ok(Ok(items)) => items,
-            Ok(Err(error)) => return Ok(json_api_error(&format!("读取日记本失败: {error}"))),
-            Err(error) => return Ok(json_api_error(&format!("读取日记本失败: {error}"))),
-        };
+        let items =
+            match tokio::task::spawn_blocking(crate::resource_manager::list_live2d_diaries).await {
+                Ok(Ok(items)) => items,
+                Ok(Err(error)) => return Ok(json_api_error(&format!("读取日记本失败: {error}"))),
+                Err(error) => return Ok(json_api_error(&format!("读取日记本失败: {error}"))),
+            };
         let payload = json!({
             "retcode": 0,
             "data": {
@@ -392,10 +321,8 @@ async fn deal_api(
             }
         });
         let mut res = hyper::Response::new(full(payload.to_string()));
-        res.headers_mut().insert(
-            "Content-Type",
-            HeaderValue::from_static("application/json"),
-        );
+        res.headers_mut()
+            .insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)
     } else if url_path == "/live2d_diary_query" {
         if !can_write {
@@ -420,10 +347,9 @@ async fn deal_api(
             return Ok(json_api_error("sql 过长"));
         }
         let sql = sql.to_owned();
-        let query_result = tokio::task::spawn_blocking(move || {
-            crate::resource_manager::query_live2d_db(&sql)
-        })
-        .await;
+        let query_result =
+            tokio::task::spawn_blocking(move || crate::resource_manager::query_live2d_db(&sql))
+                .await;
         let (columns, rows) = match query_result {
             Ok(Ok(result)) => result,
             Ok(Err(error)) => {
@@ -438,10 +364,8 @@ async fn deal_api(
             "data": {"columns": columns, "rows": rows}
         });
         let mut res = hyper::Response::new(full(payload.to_string()));
-        res.headers_mut().insert(
-            "Content-Type",
-            HeaderValue::from_static("application/json"),
-        );
+        res.headers_mut()
+            .insert("Content-Type", HeaderValue::from_static("application/json"));
         Ok(res)
     } else if url_path == "/get_code" {
         if !can_read {
@@ -1181,22 +1105,20 @@ async fn deal_api(
         }
     } else if url_path.starts_with("/user") {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        tokio::task::spawn_blocking(move || {
-            match do_http_event(request, can_write, can_read) {
-                Ok(response) => {
-                    if let Err(err) = tx.send(response) {
-                        cq_add_log_w(&format!("Error:{err:?}")).unwrap();
-                    }
+        tokio::task::spawn_blocking(move || match do_http_event(request, can_write, can_read) {
+            Ok(response) => {
+                if let Err(err) = tx.send(response) {
+                    cq_add_log_w(&format!("Error:{err:?}")).unwrap();
                 }
-                Err(err) => {
-                    let mut res = hyper::Response::new(full(err.to_string()));
-                    res.headers_mut().insert(
-                        "Content-Type",
-                        HeaderValue::from_static("text/html; charset=utf-8"),
-                    );
-                    if let Err(send_err) = tx.send(res) {
-                        cq_add_log_w(&format!("Error:{send_err:?}")).unwrap();
-                    }
+            }
+            Err(err) => {
+                let mut res = hyper::Response::new(full(err.to_string()));
+                res.headers_mut().insert(
+                    "Content-Type",
+                    HeaderValue::from_static("text/html; charset=utf-8"),
+                );
+                if let Err(send_err) = tx.send(res) {
+                    cq_add_log_w(&format!("Error:{send_err:?}")).unwrap();
                 }
             }
         })
@@ -1816,8 +1738,7 @@ async fn serve_onebot_websocket(
 
 async fn http_auth(request: &hyper::Request<Incoming>) -> Result<i32> {
     let web_pass_raw =
-        tokio::task::spawn_blocking(move || -> Result<String> { read_web_password() })
-            .await??;
+        tokio::task::spawn_blocking(move || -> Result<String> { read_web_password() }).await??;
 
     if web_pass_raw.is_empty() {
         return Ok(2);
@@ -1834,10 +1755,9 @@ async fn http_auth(request: &hyper::Request<Incoming>) -> Result<i32> {
             return Ok(2);
         }
     }
-    let read_only_web_pass_raw = tokio::task::spawn_blocking(move || -> Result<String> {
-        read_readonly_web_password()
-    })
-    .await??;
+    let read_only_web_pass_raw =
+        tokio::task::spawn_blocking(move || -> Result<String> { read_readonly_web_password() })
+            .await??;
     if read_only_web_pass_raw.is_empty() {
         return Ok(1);
     }
@@ -2025,10 +1945,9 @@ async fn connect_handle(
     };
 
     // 认证失败,且不是用户API,跳转登录页面
-    if !can_read
-        && !is_users_api(url_path) {
-            return Ok(rout_to_login());
-        }
+    if !can_read && !is_users_api(url_path) {
+        return Ok(rout_to_login());
+    }
     // 升级ws协议
     if hyper_tungstenite::is_upgrade_request(&request) {
         if url_path == "/watch_log" {
@@ -2292,7 +2211,10 @@ async fn deal_live2d_chat_stream(
                 if bytes.starts_with(b"event: done\n") {
                     state.done_delivered = true;
                 }
-                Some((Ok::<_, GenericError>(hyper::body::Frame::data(bytes)), state))
+                Some((
+                    Ok::<_, GenericError>(hyper::body::Frame::data(bytes)),
+                    state,
+                ))
             }
             None => None,
         }
@@ -2303,8 +2225,10 @@ async fn deal_live2d_chat_stream(
         hyper::header::CONTENT_TYPE,
         HeaderValue::from_static("text/event-stream; charset=utf-8"),
     );
-    res.headers_mut()
-        .insert(hyper::header::CACHE_CONTROL, HeaderValue::from_static("no-cache"));
+    res.headers_mut().insert(
+        hyper::header::CACHE_CONTROL,
+        HeaderValue::from_static("no-cache"),
+    );
     Ok(res)
 }
 
@@ -2313,15 +2237,12 @@ fn live2d_stream_send_error(tx: &tokio::sync::mpsc::Sender<Bytes>, text: String)
     let _ = tx.try_send(live2d_sse_event("error", &json!({ "message": text })));
 }
 
-/// 一次看板娘 Agent 调用（三种入口：首次提问 / 带历史继续提问 / 继续工具调用）。
+/// 一次看板娘 Agent 调用（两种入口：新提问 / 继续工具调用）。
 enum Live2dAgentCall {
-    Start {
-        history: Vec<crate::ai_client::ChatMessage>,
-        message: String,
-    },
-    ContinueConversation {
+    Ask {
         messages: Vec<serde_json::Value>,
         message: String,
+        compress: bool,
     },
     ContinueAgent {
         messages: Vec<serde_json::Value>,
@@ -2333,31 +2254,29 @@ enum Live2dAgentCall {
 /// 一次 Agent 调用的流程上下文：已完成步数 + 全局流程锁。
 struct Live2dAgentContext {
     completed_steps: u64,
+    compress: bool,
     _flow_guard: tokio::sync::MutexGuard<'static, ()>,
 }
 
-/// 校验并准备一次看板娘 Agent 调用。
+/// 校验并准备一次看板娘 Agent 调用（流式接口专用）。
 /// 单用户场景：不维护会话表，每次从数据库读取对话消息；
 /// 以「是否携带工具结果」区分继续工具调用与初始提问。
-/// 非流式与流式接口共用，消除两套入口的重复逻辑。
 async fn prepare_live2d_agent_call(
     config: &crate::config_manager::Live2dChatConfig,
     chat_request: Live2dChatRequest,
-    diaries: &[crate::resource_manager::Live2dDiaryEntry],
     flow_guard: tokio::sync::MutexGuard<'static, ()>,
-    cancellation: Option<&CancellationToken>,
 ) -> std::result::Result<(Live2dAgentCall, Live2dAgentContext), String> {
     let Live2dChatRequest {
         message,
-        history,
         tool_results,
+        compress,
         generation,
     } = chat_request;
 
     // 继续工具调用：携带工具结果提交，从数据库恢复待校验的调用 ID
     if !tool_results.is_empty() {
-        if message.is_some() || !history.is_empty() {
-            return Err("提交工具结果时不能同时携带消息、历史或会话标识".to_owned());
+        if message.is_some() {
+            return Err("提交工具结果时不能同时携带消息".to_owned());
         }
         let generation = generation
             .as_deref()
@@ -2386,6 +2305,7 @@ async fn prepare_live2d_agent_call(
             },
             Live2dAgentContext {
                 completed_steps,
+                compress: false,
                 _flow_guard: flow_guard,
             },
         ));
@@ -2396,122 +2316,32 @@ async fn prepare_live2d_agent_call(
     }
 
     // 初始提问
-    let Some(message) = message else {
-        return Err("消息不能为空".to_owned());
-    };
+    let message = message
+        .as_deref()
+        .map(str::trim)
+        .filter(|message| !message.is_empty())
+        .ok_or_else(|| "消息不能为空".to_owned())?
+        .to_owned();
+    if config.base_url.trim().is_empty() || config.api_key.trim().is_empty() {
+        return Err("看板娘对话尚未配置，请先设置接口地址和 API Key".to_owned());
+    }
     let empty_ctx = Live2dAgentContext {
+        compress,
         completed_steps: 0,
         _flow_guard: flow_guard,
     };
-    match get_live2d_agent_conversation().await? {
-        Some(mut messages) => {
-            if live2d_agent_pending_call_ids(&messages).is_some() {
-                return Err("上一轮工具仍在执行，请等待完成或停止后清除对话".to_owned());
-            }
-            // 上下文用量检查：超过阈值则压缩历史并顺带更新日记
-            let mut usage_messages = messages.clone();
-            usage_messages.push(serde_json::json!({
-                "role": "user",
-                "content": message
-            }));
-            let used_tokens = crate::ai_client::estimate_context_tokens(&usage_messages);
-            let limit = config.context_length;
-            if limit > 0
-                && used_tokens as f64
-                    > limit as f64 * crate::ai_client::CONTEXT_COMPRESS_THRESHOLD
-            {
-                match crate::ai_client::compress_conversation(
-                    config,
-                    &messages,
-                    diaries,
-                    cancellation,
-                )
-                .await
-                {
-                    Ok(outcome) => {
-                        if cancellation.is_some_and(CancellationToken::is_cancelled) {
-                            return Err("客户端已断开，对话已取消，未保存任何内容".to_owned());
-                        }
-                        messages = vec![serde_json::json!({
-                            "role": "system",
-                            "content": format!(
-                                "{}{}",
-                                crate::ai_client::COMPRESSED_SUMMARY_PREFIX,
-                                outcome.summary
-                            ),
-                            "timestamp": crate::ai_client::now_timestamp()
-                        })];
-                        save_live2d_agent_conversation(messages.clone()).await?;
-                        if cancellation.is_some_and(CancellationToken::is_cancelled) {
-                            return Err("客户端已断开，对话已取消".to_owned());
-                        }
-                        if !outcome.diary.is_empty() {
-                            let add = outcome
-                                .diary
-                                .add
-                                .into_iter()
-                                .map(|entry| (entry.title, entry.content))
-                                .collect::<Vec<_>>();
-                            let delete = outcome.diary.delete;
-                            match tokio::task::spawn_blocking(move || {
-                                crate::resource_manager::apply_live2d_diary_updates(
-                                    &add, &delete,
-                                )
-                            })
-                            .await
-                            {
-                                Ok(Ok(())) => {
-                                    cq_add_log_w("Live2D日记本已更新").unwrap();
-                                }
-                                Ok(Err(error)) => {
-                                    cq_add_log_w(&format!("更新Live2D日记本失败: {error}"))
-                                        .unwrap();
-                                }
-                                Err(error) => {
-                                    cq_add_log_w(&format!("更新Live2D日记本失败: {error}"))
-                                        .unwrap();
-                                }
-                            }
-                        }
-                    }
-                    Err(error) => {
-                        cq_add_log_w(&format!("Live2D上下文压缩失败: {error}")).unwrap();
-                    }
-                }
-            }
-            Ok((
-                Live2dAgentCall::ContinueConversation { messages, message },
-                empty_ctx,
-            ))
-        }
-        None => Ok((Live2dAgentCall::Start { history, message }, empty_ctx)),
+    let messages = get_live2d_agent_conversation().await?.unwrap_or_default();
+    if live2d_agent_pending_call_ids(&messages).is_some() {
+        return Err("上一轮工具仍在执行，请等待完成或停止后清除对话".to_owned());
     }
-}
-
-/// 非流式执行一次 Agent 调用。
-async fn execute_live2d_agent_call(
-    config: &crate::config_manager::Live2dChatConfig,
-    call: &Live2dAgentCall,
-    diaries: &[crate::resource_manager::Live2dDiaryEntry],
-) -> std::result::Result<
-    crate::ai_client::AgentStep,
-    Box<dyn std::error::Error + Send + Sync>,
-> {
-    match call {
-        Live2dAgentCall::Start { history, message } => {
-            crate::ai_client::start_agent(config, history, message, diaries).await
-        }
-        Live2dAgentCall::ContinueConversation { messages, message } => {
-            crate::ai_client::continue_conversation(config, messages, message, diaries).await
-        }
-        Live2dAgentCall::ContinueAgent {
+    Ok((
+        Live2dAgentCall::Ask {
             messages,
-            tool_results,
-            ..
-        } => {
-            crate::ai_client::continue_agent(config, messages, tool_results).await
-        }
-    }
+            message,
+            compress,
+        },
+        empty_ctx,
+    ))
 }
 
 /// 调用一次流式 Agent 调用，并把推理/回答增量实时转发为 SSE 事件；
@@ -2536,17 +2366,13 @@ async fn run_live2d_stream_agent(
                 crate::ai_client::StreamEvent::Content(delta) => {
                     ("content", json!({ "delta": delta }))
                 }
-                crate::ai_client::StreamEvent::ToolCall {
-                    index,
-                    name,
-                    arguments,
-                } => {
-                    (
-                        "tool_call",
-                        json!({ "index": index, "name": name, "arguments": arguments }),
-                    )
-                }
-
+                crate::ai_client::StreamEvent::ContextEstimate(tokens) => (
+                    "context_estimate",
+                    json!({
+                        "context_tokens": tokens,
+                        "context_tokens_estimated": true
+                    }),
+                ),
             };
             if forward_cancellation.is_cancelled() {
                 return Err("客户端已断开，对话已取消".to_owned());
@@ -2576,19 +2402,12 @@ async fn run_live2d_stream_agent(
         Ok::<(), String>(())
     });
     let result = match call {
-        Live2dAgentCall::Start { history, message } => {
-            crate::ai_client::stream_start_agent(
-                config,
-                &history,
-                &message,
-                diaries,
-                step_tx,
-                cancellation,
-            )
-            .await
-        }
-        Live2dAgentCall::ContinueConversation { messages, message } => {
-            crate::ai_client::stream_continue_conversation(
+        Live2dAgentCall::Ask {
+            messages,
+            message,
+            compress: _compress,
+        } => {
+            crate::ai_client::stream_ask(
                 config,
                 &messages,
                 &message,
@@ -2632,6 +2451,7 @@ async fn emit_live2d_stream_step(
     step: crate::ai_client::AgentStep,
     completed_steps: u64,
     context_length: u64,
+    compress: bool,
     tx: &tokio::sync::mpsc::Sender<Bytes>,
     cancellation: &CancellationToken,
     cleanup_generation: &Arc<StdMutex<Option<String>>>,
@@ -2639,7 +2459,7 @@ async fn emit_live2d_stream_step(
     if cancellation.is_cancelled() {
         return Err("客户端已断开，对话已取消".to_owned());
     }
-    let data = live2d_agent_step_data(step, completed_steps, context_length).await?;
+    let data = live2d_agent_step_data(step, completed_steps, context_length, compress).await?;
     let pending_generation = data
         .get("generation")
         .and_then(serde_json::Value::as_str)
@@ -2700,15 +2520,7 @@ async fn run_live2d_chat_stream(
         .ok()
         .and_then(|result| result.ok())
         .unwrap_or_default();
-    let (call, ctx) = match prepare_live2d_agent_call(
-        &config,
-        chat_request,
-        &diaries,
-        flow_guard,
-        Some(&cancellation),
-    )
-    .await
-    {
+    let (call, ctx) = match prepare_live2d_agent_call(&config, chat_request, flow_guard).await {
         Ok(prepared) => prepared,
         Err(error) => {
             live2d_stream_send_error(&tx, error);
@@ -2736,6 +2548,7 @@ async fn run_live2d_chat_stream(
         step,
         ctx.completed_steps,
         config.context_length,
+        ctx.compress,
         &tx,
         &cancellation,
         &cleanup_generation,

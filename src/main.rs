@@ -6,11 +6,11 @@ use time::UtcOffset;
 fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     use std::collections::HashMap;
 
-    fn create_new_window<T> (
+    fn create_new_window<T>(
         webviews: &mut HashMap<WindowId, (Window, wry::WebView)>,
         target: &tao::event_loop::EventLoopWindowTarget<T>,
         proxy: &EventLoopProxy<UserEvent>,
-    )  -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let port = redlang::config_manager::startup_config()?.web_port;
         create_specific_window(webviews, target, proxy, &format!("http://localhost:{port}"))?;
         Ok(())
@@ -63,8 +63,8 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         new_window.set_visible(true);
 
-        new_window.set_focus();              // 请求输入焦点
-        new_window.set_always_on_top(true);  // 瞬间开启置顶，强制覆盖在所有窗口之上
+        new_window.set_focus(); // 请求输入焦点
+        new_window.set_always_on_top(true); // 瞬间开启置顶，强制覆盖在所有窗口之上
         new_window.set_always_on_top(false); // 瞬间关闭置顶，让窗口行为恢复正常
 
         match create_webview(&new_window, url, proxy.clone()) {
@@ -83,17 +83,14 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         url: &str,
         proxy: EventLoopProxy<UserEvent>,
     ) -> Result<wry::WebView, Box<dyn std::error::Error + Send + Sync>> {
-
-        use std::path::Path;
-        use wry::WebContext; 
         use redlang::get_tmp_dir;
+        use std::path::Path;
+        use wry::WebContext;
         let tmp_dir = get_tmp_dir()?;
         let data_directory = Path::new(&tmp_dir);
         let mut web_context = WebContext::new(Some(data_directory.to_path_buf()));
 
         let builder = WebViewBuilder::new_with_web_context(&mut web_context);
-        
-        
 
         let window_id = window.id();
         let proxy_for_title = proxy.clone();
@@ -122,17 +119,18 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 // 显示文件保存对话框
                 if let Some(save_path) = rfd::FileDialog::new()
                     .set_file_name(filename)
-                    .set_directory(dirs::download_dir().unwrap_or_else(|| std::env::current_dir().unwrap_or_default()))
+                    .set_directory(
+                        dirs::download_dir()
+                            .unwrap_or_else(|| std::env::current_dir().unwrap_or_default()),
+                    )
                     .save_file()
                 {
                     *suggested_path = save_path.clone();
-                    
+
                     // 发送下载开始事件
-                    let _ = proxy_for_download_start.send_event(UserEvent::DownloadStarted(
-                        url.to_string(), 
-                        save_path
-                    ));
-                    
+                    let _ = proxy_for_download_start
+                        .send_event(UserEvent::DownloadStarted(url.to_string(), save_path));
+
                     // 返回true表示允许下载
                     true
                 } else {
@@ -145,7 +143,7 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 let _ = proxy_for_download_complete.send_event(UserEvent::DownloadCompleted(
                     url.to_string(),
                     path.clone(),
-                    success
+                    success,
                 ));
             })
             .build(window)
@@ -243,9 +241,15 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         ..
                     } = tray_event
                     {
-                        if let Err(e) =  create_new_window(&mut webviews, event_loop_window_target, &proxy) {
+                        if let Err(e) =
+                            create_new_window(&mut webviews, event_loop_window_target, &proxy)
+                        {
                             use redlang::cq_add_log_w;
-                            cq_add_log_w(&format!("Failed to create window on tray double click: {:?}", e)).unwrap();
+                            cq_add_log_w(&format!(
+                                "Failed to create window on tray double click: {:?}",
+                                e
+                            ))
+                            .unwrap();
                         }
                     }
                 }
@@ -267,9 +271,15 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 }
 
                 UserEvent::NewWindow(url) => {
-                    if let Err(e) = create_specific_window(&mut webviews, event_loop_window_target, &proxy, &url) {
+                    if let Err(e) = create_specific_window(
+                        &mut webviews,
+                        event_loop_window_target,
+                        &proxy,
+                        &url,
+                    ) {
                         use redlang::cq_add_log_w;
-                        cq_add_log_w(&format!("Failed to create specific window: {:?}", e)).unwrap();
+                        cq_add_log_w(&format!("Failed to create specific window: {:?}", e))
+                            .unwrap();
                     }
                 }
 
@@ -286,8 +296,9 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 UserEvent::DownloadCompleted(url, path, success) => {
                     if success {
                         if let Some(path) = path {
-                            let _ = redlang::cq_add_log_w(&format!("下载完成: {} -> {:?}", url, path));
-                            
+                            let _ =
+                                redlang::cq_add_log_w(&format!("下载完成: {} -> {:?}", url, path));
+
                             // 打开文件所在目录并选中刚下载的文件
                             #[cfg(windows)]
                             {
@@ -311,10 +322,14 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 fn main() {
     // 记录程序开始时间
     {
-        let d = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis().to_string();
+        let d = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis()
+            .to_string();
         redlang::lifecycle::set_start_time(d);
     }
-    
+
     // 初始化日志
     let format = "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond digits:3]";
 
@@ -324,26 +339,24 @@ fn main() {
         utc_offset = v;
     } else {
         // 中国是东八区，所以这里写8 hour
-        utc_offset = UtcOffset::from_hms(8,0,0).unwrap();
+        utc_offset = UtcOffset::from_hms(8, 0, 0).unwrap();
     }
 
     tracing_subscriber::fmt()
-    .with_timer(tracing_subscriber::fmt::time::OffsetTime::new(
-        utc_offset,
-        time::format_description::parse(format).unwrap(),
-    )).with_max_level(tracing::Level::INFO)
-    .init();
+        .with_timer(tracing_subscriber::fmt::time::OffsetTime::new(
+            utc_offset,
+            time::format_description::parse(format).unwrap(),
+        ))
+        .with_max_level(tracing::Level::INFO)
+        .init();
 
-    // 初始化资源 
+    // 初始化资源
     redlang::initialize();
 
-    
     #[cfg(windows)]
     if let Err(e) = create_windows() {
         redlang::cq_add_log_w(&format!("load tray err:{:?}", e)).unwrap();
     }
-    
-   
 
     loop {
         let time_struct = core::time::Duration::from_secs(1);

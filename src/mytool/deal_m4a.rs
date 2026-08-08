@@ -31,8 +31,8 @@ pub fn deal_m4a(mut bufr: BufReader<&[u8]>) -> Result<PCMStruct, Box<dyn std::er
         .default_track()
         .ok_or("m4a contains no audio track")?;
     let track_id = track.id;
-    let mut decoder = symphonia::default::get_codecs()
-        .make(&track.codec_params, &DecoderOptions::default())?;
+    let mut decoder =
+        symphonia::default::get_codecs().make(&track.codec_params, &DecoderOptions::default())?;
 
     let mut pcm = PCMStruct {
         channel_num: 1,
