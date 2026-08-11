@@ -7,6 +7,8 @@ use serde_json::Value;
 
 pub type ConfigResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
+const DEFAULT_LIVE2D_SYSTEM_PROMPT: &str = "你是红色问答的看板娘。请使用简洁、自然、友好的中文回答。";
+
 /// Settings consumed while services are started. They are snapshotted once;
 /// changing `config.json` does not rebind an already running service.
 #[derive(Clone, Debug, PartialEq)]
@@ -66,7 +68,7 @@ impl Default for Live2dChatConfig {
             model: provider.model.clone(),
             config: provider.name.clone(),
             configs: vec![provider.clone()],
-            system_prompt: "你是红色问答的看板娘。请使用简洁、自然、友好的中文回答。".to_owned(),
+            system_prompt: DEFAULT_LIVE2D_SYSTEM_PROMPT.to_owned(),
             thinking_level: provider.thinking_level.clone(),
             context_length: provider.context_length,
         }
@@ -97,7 +99,7 @@ fn default_config() -> Value {
                     "thinking_level": "high"
                 }
             ],
-            "system_prompt": "你是红色问答的看板娘。请使用简洁、自然、友好的中文回答。"
+            "system_prompt": DEFAULT_LIVE2D_SYSTEM_PROMPT
         }
     })
 }
@@ -226,7 +228,7 @@ pub fn init_config() {
                         "thinking_level": "high"
                     }
                 ],
-                "system_prompt": "你是红色问答的看板娘。请使用简洁、自然、友好的中文回答。"
+                "system_prompt": DEFAULT_LIVE2D_SYSTEM_PROMPT
             }
         });
         fs::write(&path, config.to_string()).unwrap();

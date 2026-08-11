@@ -113,11 +113,21 @@ const fetchUtils = {
 const axios = fetchUtils;
 
 // ===== nodeCp：child_process 风格（底层命令接口）=====
-async function __commandCall(payload) {
+function __commandOptions(options) {
+    var context = window.nodeCp && window.nodeCp.__live2dContext;
+    return Object.assign({}, options || {}, context || {});
+}
+function __nodeCpArgs(options, callback) {
+    if (typeof options === 'function') return { options: {}, callback: options };
+    if (typeof callback === 'function') return { options: options || {}, callback: callback };
+    return { options: options || {}, callback: null };
+}
+async function __commandCall(payload, options) {
     var r = await fetch('/run_command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: options && options.signal
     });
     var j = await r.json();
     if (j.retcode !== 0) {
@@ -125,11 +135,148 @@ async function __commandCall(payload) {
     }
     return j.data;
 }
-window.nodeCp = {
-    exec: async function (cmd) { var d = await __commandCall({ content: cmd }); return { stdout: d.output, stderr: '' }; },
-    execFile: async function (program, args) {
-        var quoted = (args || []).map(function (a) { return JSON.stringify(a); }).join(" ");
-        var d = await __commandCall({ content: program + ' ' + quoted });
-        return { stdout: d.output, stderr: '' };
+function __commandError(data, command) {
+    if (data && data.exit_code === 0) return null;
+    var stderr = data && typeof data.stderr === 'string' ? data.stderr : '';
+    var error = new Error('Command failed: ' + command + (stderr ? '\n' + stderr : ''));
+    if (data && data.exit_code !== undefined && data.exit_code !== null) error.code = data.exit_code;
+    error.cmd = command;
+    error.killed = false;
+    error.signal = null;
+    error.stdout = data && typeof data.stdout === 'string' ? data.stdout : '';
+    error.stderr = stderr;
+    return error;
+}
+function __nodeCpEmitter(target) {
+    var listeners = Object.create(null);
+    target.on = function (event, listener) {
+        if (typeof listener === 'function') (listeners[event] || (listeners[event] = [])).push(listener);
+        return target;
+    };
+    target.once = function (event, listener) {
+        if (typeof listener !== 'function') return target;
+        function onceListener() {
+            target.removeListener(event, onceListener);
+            listener.apply(target, arguments);
+        }
+        return target.on(event, onceListener);
+    };
+    target.removeListener = function (event, listener) {
+        if (listeners[event]) listeners[event] = listeners[event].filter(function (item) { return item !== listener; });
+        return target;
+    };
+    target.off = target.removeListener;
+    target._emit = function (event) {
+        var args = Array.prototype.slice.call(arguments, 1);
+        (listeners[event] || []).slice().forEach(function (listener) { listener.apply(target, args); });
+    };
+    return target;
+}
+function __nodeCpStream() {
+    var stream = __nodeCpEmitter({ readable: true, readableEnded: false });
+    stream.setEncoding = function () { return stream; };
+    return stream;
+}
+function __commandId() {
+    if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+    return 'nodecp-' + Date.now() + '-' + Math.random().toString(16).slice(2);
+}
+function __runNodeCommand(payload, options, command, callback) {
+    var controller = new AbortController();
+    var child = __nodeCpEmitter({
+        pid: undefined,
+        connected: false,
+        killed: false,
+        exitCode: null,
+        signalCode: null,
+        stdout: __nodeCpStream(),
+        stderr: __nodeCpStream()
+    });
+    payload.command_id = __commandId();
+    var externalSignal = options && options.signal;
+    var externalAbort = null;
+    child.kill = function () {
+        if (child.exitCode !== null || child.killed) return false;
+        child.killed = true;
+        controller.abort();
+        void fetch('/run_command_cancel', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ generation: payload.command_id }),
+            keepalive: true
+        }).catch(function () {});
+        return true;
+    };
+    if (externalSignal) {
+        externalAbort = function () { child.kill(); };
+        if (externalSignal.aborted) externalAbort();
+        else externalSignal.addEventListener('abort', externalAbort, { once: true });
     }
+    function finishStreams(stdout, stderr) {
+        if (stdout) child.stdout._emit('data', stdout);
+        if (stderr) child.stderr._emit('data', stderr);
+        child.stdout.readableEnded = true;
+        child.stderr.readableEnded = true;
+        child.stdout._emit('end');
+        child.stderr._emit('end');
+        child.stdout._emit('close');
+        child.stderr._emit('close');
+    }
+    __commandCall(payload, Object.assign({}, options, { signal: controller.signal })).then(function (data) {
+        var stdout = typeof data.stdout === 'string' ? data.stdout : '';
+        var stderr = typeof data.stderr === 'string' ? data.stderr : '';
+        var error = __commandError(data, command);
+        child.exitCode = data.exit_code === undefined ? null : data.exit_code;
+        finishStreams(stdout, stderr);
+        if (callback) callback(error, stdout, stderr);
+        child._emit('exit', child.exitCode, null);
+        child._emit('close', child.exitCode, null);
+    }, function (error) {
+        finishStreams('', '');
+        if (callback) callback(error, '', '');
+        child._emit('error', error);
+        child._emit('close', child.exitCode, child.signalCode);
+    }).finally(function () {
+        if (externalSignal && externalAbort) externalSignal.removeEventListener('abort', externalAbort);
+    });
+    return child;
+}
+window.nodeCp = {
+    exec: function (cmd, options, callback) {
+        var args = __nodeCpArgs(options, callback);
+        options = __commandOptions(args.options);
+        return __runNodeCommand({
+            kind: 'exec',
+            command: String(cmd),
+            encoding: options.encoding === undefined ? 'utf8' : options.encoding,
+            generation: options.generation,
+            cwd: options.cwd,
+            env: options.env
+        }, options, String(cmd), args.callback);
+    },
+    execFile: function (program, args, options, callback) {
+        if (!Array.isArray(args)) {
+            if (typeof callback !== 'function') {
+                if (typeof options === 'function') callback = options;
+                else if (typeof args === 'function') callback = args;
+            }
+            if (args && typeof args === 'object') options = args;
+            else if (!options || typeof options === 'function') options = {};
+            args = [];
+        }
+        var normalized = __nodeCpArgs(options, callback);
+        options = __commandOptions(normalized.options);
+        var command = String(program) + ' ' + args.map(function (a) { return String(a); }).join(' ');
+        return __runNodeCommand({
+            kind: 'execFile',
+            program: String(program),
+            args: args.map(function (a) { return String(a); }),
+            shell: Boolean(options.shell),
+            encoding: options.encoding === undefined ? 'utf8' : options.encoding,
+            generation: options.generation,
+            cwd: options.cwd,
+            env: options.env
+        }, options, command, normalized.callback);
+    },
+    __live2dContext: null
 };

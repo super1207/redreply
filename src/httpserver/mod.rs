@@ -233,6 +233,9 @@ async fn deal_api(
                 Ok(cancel_request) => cancel_request,
                 Err(error) => return Ok(json_api_error(&format!("取消请求格式错误: {error}"))),
             };
+        if let Err(error) = command::cancel_generation(&cancel_request.generation).await {
+            return Ok(json_api_error(&format!("停止命令行失败: {error}")));
+        }
         let _cancel_guard = live2d_agent_flow_lock().lock().await;
         return match cancel_live2d_pending_tools(&cancel_request.generation).await {
             Ok(()) => Ok(json_api_response(json!({"retcode": 0, "data": true}))),
@@ -243,6 +246,22 @@ async fn deal_api(
             return Ok(hyper::Response::new(full("api not found")));
         }
         return command::handle(request).await;
+    } else if url_path == "/run_command_cancel" {
+        if !can_write {
+            return Ok(hyper::Response::new(full("api not found")));
+        }
+        if request.method() != Method::POST {
+            return Ok(method_not_allowed());
+        }
+        let cancel_request: Live2dCancelRequest =
+            match read_json_body(request, LIVE2D_CHAT_BODY_LIMIT).await {
+                Ok(cancel_request) => cancel_request,
+                Err(error) => return Ok(json_api_error(&format!("取消命令格式错误: {error}"))),
+            };
+        return match command::cancel_generation(&cancel_request.generation).await {
+            Ok(()) => Ok(json_api_response(json!({"retcode": 0, "data": true}))),
+            Err(error) => Ok(json_api_error(&error)),
+        };
     } else if url_path == "/live2d_conversation" {
         if !can_write {
             return Ok(hyper::Response::new(full("api not found")));

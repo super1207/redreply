@@ -35,8 +35,35 @@
     const dialog = container && container.querySelector(".pio-dialog");
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
     const JAVASCRIPT_TOOL_NAME = "execute_javascript";
-    const C_TOOL_NAME = "execute_c";
     const MAX_TOOL_RESULT_CHARS = 10000;
+
+    // 看板娘显式状态机：业务状态与展示文案分离。
+    const AGENT_STATE = Object.freeze({
+        IDLE: "idle",
+        THINKING: "thinking",
+        CONTINUING: "continuing",
+        EXECUTING_TOOL: "executing_tool",
+        STOPPING: "stopping",
+        COMPLETED: "completed",
+        STOPPED: "stopped",
+        FAILED: "failed"
+    });
+    const AGENT_STATE_TRANSITIONS = Object.freeze({
+        idle: [AGENT_STATE.THINKING],
+        thinking: [AGENT_STATE.CONTINUING, AGENT_STATE.EXECUTING_TOOL, AGENT_STATE.STOPPING, AGENT_STATE.COMPLETED, AGENT_STATE.STOPPED, AGENT_STATE.FAILED],
+        continuing: [AGENT_STATE.EXECUTING_TOOL, AGENT_STATE.STOPPING, AGENT_STATE.COMPLETED, AGENT_STATE.STOPPED, AGENT_STATE.FAILED],
+        executing_tool: [AGENT_STATE.CONTINUING, AGENT_STATE.STOPPING, AGENT_STATE.STOPPED, AGENT_STATE.FAILED],
+        stopping: [AGENT_STATE.STOPPED, AGENT_STATE.FAILED],
+        completed: [AGENT_STATE.THINKING, AGENT_STATE.FAILED],
+        stopped: [AGENT_STATE.THINKING],
+        failed: [AGENT_STATE.THINKING]
+    });
+    const BUSY_AGENT_STATES = new Set([
+        AGENT_STATE.THINKING,
+        AGENT_STATE.CONTINUING,
+        AGENT_STATE.EXECUTING_TOOL,
+        AGENT_STATE.STOPPING
+    ]);
 
     function renderMarkdown(text) {
         const source = String(text == null ? "" : text);
@@ -109,7 +136,8 @@
     });
 
 const state = {
-        sending: false,
+        agentState: AGENT_STATE.IDLE,
+        toolStep: 0,
         configLoaded: false,
         contextUsed: 0,
         contextEstimated: true,
@@ -119,7 +147,6 @@ const state = {
         generation: null,
         cancelPromise: null,
         cancelRetryTimer: null,
-        phase: "就绪",
         pendingCompress: false,
         pendingMessage: null,
         skipAutoCompress: false,
@@ -133,10 +160,53 @@ const state = {
         return error;
     }
 
-    function renderStatusInput() {
-        if (!state.sending || !input) return;
-        input.value = state.phase;
+    function getAgentPhaseText() {
+        switch (state.agentState) {
+            case AGENT_STATE.THINKING: return "正在思考";
+            case AGENT_STATE.CONTINUING: return "继续思考";
+            case AGENT_STATE.EXECUTING_TOOL: return "正在执行第 " + state.toolStep + " 步";
+            case AGENT_STATE.STOPPING: return "正在停止";
+            case AGENT_STATE.COMPLETED: return "已完成";
+            case AGENT_STATE.STOPPED: return "已停止";
+            case AGENT_STATE.FAILED: return "执行失败";
+            default: return "就绪";
+        }
     }
+
+    function isAgentBusy() {
+        return BUSY_AGENT_STATES.has(state.agentState);
+    }
+
+    function renderAgentState() {
+        const busy = isAgentBusy();
+        const phase = getAgentPhaseText();
+        agentPhaseText.textContent = phase;
+        agentStatus.hidden = !busy && agentLog.childElementCount === 0;
+        input.readOnly = busy;
+        input.value = busy ? phase : "";
+        sendButton.textContent = busy ? "■" : "↑";
+        sendButton.classList.toggle("is-stopping", busy);
+        sendButton.setAttribute("aria-label", busy ? "停止对话" : "发送消息");
+        sendButton.title = busy ? "停止对话" : "发送消息";
+        requestAnimationFrame(positionPanel);
+    }
+
+    function setAgentState(nextState, options) {
+        const currentState = state.agentState;
+        const knownStates = Object.values(AGENT_STATE);
+        if (!knownStates.includes(nextState)) throw new Error("未知的看板娘状态: " + nextState);
+        if (currentState !== nextState) {
+            const allowed = AGENT_STATE_TRANSITIONS[currentState] || [];
+            if (!allowed.includes(nextState)) throw new Error("非法的看板娘状态转换: " + currentState + " -> " + nextState);
+            state.agentState = nextState;
+        }
+        state.toolStep = nextState === AGENT_STATE.EXECUTING_TOOL
+            ? Math.max(1, Number(options && options.toolStep) || 1)
+            : 0;
+        renderAgentState();
+    }
+
+    renderAgentState();
 
     function formatTokens(tokens) {
         if (!Number.isFinite(tokens)) return "—";
@@ -186,14 +256,6 @@ const state = {
         return payload.data;
     }
 
-    function setAgentPhase(phase) {
-        state.phase = phase;
-        agentPhaseText.textContent = phase;
-        if (!state.sending) agentStatus.hidden = false;
-        renderStatusInput();
-        requestAnimationFrame(positionPanel);
-    }
-
     // ── 智能滚动：用户未主动向上翻阅时，任何新内容（含阶段切换）都自动跟随到底部 ──
     const AUTO_SCROLL_MARGIN = 48;
     let userScrolledUp = false;
@@ -216,47 +278,24 @@ const state = {
 
     function appendAgentStatus(label, text, className) {
         if (typeof text !== "string" || !text.trim()) return;
-        if (!state.sending) agentStatus.hidden = false;
+        if (!isAgentBusy()) agentStatus.hidden = false;
         const entry = document.createElement("div");
         entry.className = "pio-agent-entry" + (className ? " " + className : "");
         entry.dataset.label = label;
         entry.textContent = text.trim();
         agentLog.appendChild(entry);
         scrollAgentLog();
-        renderStatusInput();
         requestAnimationFrame(positionPanel);
     }
 
     function resetAgentStatus() {
-        state.phase = "正在思考";
         agentLog.innerText = "";
-        setAgentPhase("正在思考");
-    }
-
-    function enterStatusMode() {
-        state.sending = true;
-        input.readOnly = true;
-        sendButton.textContent = "■";
-        sendButton.classList.add("is-stopping");
-        sendButton.setAttribute("aria-label", "停止对话");
-        sendButton.title = "停止对话";
-        renderStatusInput();
-    }
-
-    function leaveStatusMode() {
-        state.sending = false;
-        input.readOnly = false;
-        sendButton.textContent = "↑";
-        sendButton.classList.remove("is-stopping");
-        sendButton.setAttribute("aria-label", "发送消息");
-        sendButton.title = "发送消息";
-        agentStatus.hidden = agentLog.childElementCount === 0;
     }
 
     function requestStop() {
-        if (!state.sending) return;
+        if (!isAgentBusy()) return;
         state.stopRequested = true;
-        setAgentPhase("正在停止");
+        setAgentState(AGENT_STATE.STOPPING);
         if (state.controller) state.controller.abort();
         void cancelPendingGeneration().catch(function () {});
         appendAgentStatus("提示", "已请求停止", "result");
@@ -311,17 +350,27 @@ const state = {
 
     function limitToolResult(serialized) {
         if (serialized.length <= MAX_TOOL_RESULT_CHARS) return serialized;
-        return JSON.stringify({
-            truncated: true,
-            preview: serialized.slice(0, MAX_TOOL_RESULT_CHARS / 2)
-        });
+        return serialized.slice(0, MAX_TOOL_RESULT_CHARS) + "...[truncated]";
     }
 
     function serializeToolValue(value) {
-        if (value === undefined) return JSON.stringify({ ok: true, value: "undefined" });
+        if (value === undefined) return "ok:true stdout:undefined stderr:";
+        // plain string: output as-is, no JSON quotes
+        if (typeof value === "string") return limitToolResult("ok:true stdout:" + value + " stderr:");
+        // nodeCp.exec-style {stdout, stderr}: split fields directly, avoid nested JSON in stdout
+        if (
+            value && typeof value === "object" &&
+            !Array.isArray(value) &&
+            !(typeof Node !== "undefined" && value instanceof Node) &&
+            (typeof value.stdout === "string" || typeof value.stderr === "string")
+        ) {
+            const stdout = value.stdout === undefined ? "" : String(value.stdout);
+            const stderr = value.stderr === undefined ? "" : String(value.stderr);
+            return limitToolResult("ok:true stdout:" + stdout + " stderr:" + stderr);
+        }
         const seen = new WeakSet();
         try {
-            let serialized = JSON.stringify({ ok: true, value: value }, function (_key, item) {
+            let serialized = JSON.stringify(value, function (_key, item) {
                 if (["bigint", "function", "symbol"].includes(typeof item)) return String(item);
                 if (item && typeof item === "object") {
                     if (seen.has(item)) return "[Circular]";
@@ -335,7 +384,7 @@ const state = {
                 }
                 return item;
             });
-            return limitToolResult(serialized);
+            return limitToolResult("ok:true stdout:" + serialized + " stderr:");
         } catch (error) {
             let fallback;
             try {
@@ -343,69 +392,18 @@ const state = {
             } catch (_stringError) {
                 fallback = "[Unserializable value]";
             }
-            return limitToolResult(JSON.stringify({
-                ok: true,
-                value: fallback,
-                serialization_error: String(error)
-            }));
+            return limitToolResult("ok:true stdout:" + fallback + " stderr: serialization_error:" + String(error));
         }
     }
 
     function serializeToolError(error) {
         const message = String(error && error.message ? error.message : error);
-        return limitToolResult(JSON.stringify({ ok: false, error: message }));
-    }
-
-    let picocModulePromise = null;
-    function loadPicocModule() {
-        if (window.PicocModule) return Promise.resolve(window.PicocModule);
-        if (picocModulePromise) return picocModulePromise;
-        picocModulePromise = new Promise(function (resolve, reject) {
-            const script = document.createElement("script");
-            script.src = "live2d/picoc.js";
-            script.onload = function () { resolve(window.PicocModule); };
-            script.onerror = function () { picocModulePromise = null; reject(new Error("picoc.js 加载失败")); };
-            document.head.appendChild(script);
-        });
-        return picocModulePromise;
-    }
-
-    let picocInstance = null;
-    async function executeCTool(call) {
-        if (!call || !call.id) {
-            throw new Error("AI 返回了无效的工具调用");
-        }
-        if (call.name !== C_TOOL_NAME || typeof call.source_code !== "string") {
-            return {
-                id: call.id,
-                result: serializeToolError(new Error("未知工具: " + (call.name || "无名称")))
-            };
-        }
-        try {
-            const factory = await loadPicocModule();
-            if (!picocInstance) picocInstance = await factory();
-            const outputs = [];
-            const timer = setTimeout(function () {
-                throw new Error("C 代码执行超时（60 秒）");
-            }, 60000);
-            try {
-                await picocInstance.runc(call.source_code, function (text) { outputs.push(text); });
-            } finally {
-                clearTimeout(timer);
-            }
-            return { id: call.id, result: serializeToolValue(outputs.join("")) };
-        } catch (error) {
-            console.error("AI C tool failed:", error);
-            return { id: call.id, result: serializeToolError(error) };
-        }
+        return limitToolResult("ok:false stdout: stderr:" + message);
     }
 
     async function executeJavascriptTool(call) {
         if (!call || !call.id) {
             throw new Error("AI 返回了无效的工具调用");
-        }
-        if (call.name === C_TOOL_NAME) {
-            return executeCTool(call);
         }
         if (call.name !== JAVASCRIPT_TOOL_NAME || typeof call.javascript !== "string") {
             // 未知工具：与后端 AgentToolCall::Unknown 的容忍策略一致，
@@ -415,8 +413,11 @@ const state = {
                 result: serializeToolError(new Error("未知工具: " + (call.name || "无名称")))
             };
         }
+        const nodeCp = window.nodeCp;
+        const previousCommandContext = nodeCp && nodeCp.__live2dContext;
         try {
             const signal = state.controller ? state.controller.signal : undefined;
+            if (nodeCp) nodeCp.__live2dContext = { generation: state.generation, signal: signal };
             const run = new AsyncFunction("signal", "\"use strict\";\n" + call.javascript);
             const execution = run(signal);
             let abortHandler = null;
@@ -440,6 +441,8 @@ const state = {
         } catch (error) {
             console.error("AI JavaScript tool failed:", error);
             return { id: call.id, result: serializeToolError(error) };
+        } finally {
+            if (nodeCp) nodeCp.__live2dContext = previousCommandContext;
         }
     }
 
@@ -477,7 +480,7 @@ const state = {
 
     // 创建/更新一条实时滚动输出的 Agent 记录
     function appendAgentEntryLive(label, text) {
-        if (!state.sending) agentStatus.hidden = false;
+        if (!isAgentBusy()) agentStatus.hidden = false;
         const entry = document.createElement("div");
         entry.className = "pio-agent-entry";
         entry.dataset.label = label;
@@ -532,7 +535,7 @@ const state = {
             let usedTool = false;
             while (true) {
                 if (state.stopRequested) throw stoppedError();
-                setAgentPhase(requestIndex === 0 ? "正在思考" : "继续思考");
+                setAgentState(requestIndex === 0 ? AGENT_STATE.THINKING : AGENT_STATE.CONTINUING);
                 let reasoningEntry = null;
                 let contentEntry = null;
                 let reasoningText = "";
@@ -601,7 +604,7 @@ const state = {
                     const reply = String(outcome.reply || "").trim();
                     if (!reply) throw new Error("看板娘没有返回内容");
                     state.generation = null;
-                    setAgentPhase("已完成");
+                    setAgentState(AGENT_STATE.COMPLETED);
                     if (!contentEntry) {
                         contentEntry = appendAgentEntryLive(usedTool ? "看板娘大彻大悟" : "看板娘碎碎念", "");
                     }
@@ -615,7 +618,7 @@ const state = {
                 }
 
                 bubble("正在执行第 " + (requestIndex + 1) + " 步…", 120000);
-                setAgentPhase("正在执行第 " + (requestIndex + 1) + " 步");
+                setAgentState(AGENT_STATE.EXECUTING_TOOL, { toolStep: requestIndex + 1 });
                 const generation = String(outcome.generation || "").trim();
                 if (!generation) throw new Error("工具步骤缺少对话代次");
                 state.generation = generation;
@@ -644,6 +647,69 @@ const state = {
             throw error;
         } finally {
             state.controller = null;
+        }
+    }
+
+    // 发送一条对话消息：压缩按钮、自动压缩与用户手动发送共用。
+    // 压缩请求在界面上与用户手动发送提示词完全一致（显示为一条“主人”消息）。
+    async function sendMessage(message) {
+        // 跳过自动压缩标记：压缩完成后续发的原消息不能再触发压缩（否则死循环）
+        const skipAutoCompress = state.skipAutoCompress;
+        if (skipAutoCompress) state.skipAutoCompress = false;
+
+        if (!skipAutoCompress) {
+            // 上下文使用率超过 75% 且当前不是压缩请求时：先可见地压缩，再发送原消息
+            const threshold = Math.floor(state.contextLimit * 0.75);
+            const shouldAutoCompress =
+                !state.pendingCompress
+                && state.contextLimit > 0
+                && state.contextUsed > threshold
+                && state.contextUsed > 0;
+            if (shouldAutoCompress) {
+                state.pendingMessage = message;
+                state.pendingCompress = true;
+                await sendMessage("总结下之前的对话");
+                return; // 原消息续发由内层 finally 处理
+            }
+        }
+
+        // 本次请求是否为压缩请求（runAgent 内部会清掉 pendingCompress）
+        const isCompressRequest = state.pendingCompress;
+        let stopped = false;
+
+        clearBubble();
+        resetAgentStatus();
+        appendAgentStatus("主人", message, "user");
+        setAgentState(AGENT_STATE.THINKING);
+        settingsButton.disabled = true;
+        bubble("正在思考…", 120000);
+
+        try {
+            const reply = await runAgent(message);
+            bubble(reply, { persist: true, closeable: true, markdown: true });
+        } catch (error) {
+            if (error && error.stopped) {
+                stopped = true;
+                setAgentState(AGENT_STATE.STOPPED);
+                appendAgentStatus("提示", "本次对话已停止", "result");
+                bubble("已停止", 3000);
+            } else {
+                setAgentState(AGENT_STATE.FAILED);
+                appendAgentStatus("错误", error && error.message ? error.message : String(error), "error");
+                bubble(error && error.message ? error.message : "请求失败，请稍后重试", 8000);
+            }
+        } finally {
+            autoResizeInput();
+            settingsButton.disabled = false;
+            // 压缩请求完成（未被停止）后：若有暂存的原消息，自动续发
+            if (isCompressRequest && state.pendingMessage && !stopped) {
+                const originalMessage = state.pendingMessage;
+                state.pendingMessage = null;
+                state.skipAutoCompress = true;
+                void sendMessage(originalMessage);
+            } else {
+                if (isCompressRequest) state.pendingMessage = null;
+            }
         }
     }
 
@@ -684,7 +750,7 @@ const state = {
         settingsForm.hidden = !show;
         chatForm.hidden = show;
         if (compressHeaderButton) compressHeaderButton.hidden = show;
-        agentStatus.hidden = show || (!state.sending && agentLog.childElementCount === 0);
+        agentStatus.hidden = show || (!isAgentBusy() && agentLog.childElementCount === 0);
         settingsButton.textContent = show ? "对话" : "设置";
         requestAnimationFrame(positionPanel);
         if (show) baseUrlInput.focus();
@@ -771,19 +837,16 @@ const state = {
     closeButton.addEventListener("click", closePanel);
     if (compressHeaderButton) {
         compressHeaderButton.addEventListener("click", function () {
-            if (state.sending || input.readOnly) {
+            if (isAgentBusy()) {
                 bubble("正在对话中，请稍后再压缩", 4000);
                 return;
             }
-            // 压缩就是一次完全可见的普通对话：
-            // 看板娘直接读取完整历史，在对话面板中压缩并汇报。
+            // 压缩只由按钮触发：不篡改输入框，以与用户手动发送相同的方式
+            // 发送压缩提示词（界面展示为一条“主人”消息）。
             state.pendingMessage = null;
             state.skipAutoCompress = false;
             state.pendingCompress = true;
-            input.value = "请压缩我们之前的对话。压缩完成后，请基于压缩摘要向用户汇报压缩情况："
-                + "说明压缩前/后的状态，概括之前的对话要点（重要事实、用户偏好、关键结论等），"
-                + "并告诉用户对话可以继续了。";
-            chatForm.requestSubmit();
+            void sendMessage("总结下之前的对话");
         });
     }
 
@@ -825,8 +888,14 @@ const state = {
     input.addEventListener("keydown", function (event) {
         if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
             event.preventDefault();
+            if (isAgentBusy()) return;
             chatForm.requestSubmit();
         }
+    });
+    sendButton.addEventListener("click", function (event) {
+        if (!isAgentBusy()) return;
+        event.preventDefault();
+        requestStop();
     });
     window.addEventListener("resize", positionPanel);
     window.addEventListener("pagehide", function () {
@@ -836,93 +905,22 @@ const state = {
 
     chatForm.addEventListener("submit", async function (event) {
         event.preventDefault();
-        if (state.sending) {
-            requestStop();
+        if (isAgentBusy()) {
             return;
         }
-
-        // 跳过自动压缩标记：压缩完成后续发的原消息不能再触发压缩（否则死循环）
-        const skipAutoCompress = state.skipAutoCompress;
-        if (skipAutoCompress) state.skipAutoCompress = false;
-
         const message = input.value.trim();
         if (!message) {
             input.focus();
             return;
         }
-
-        if (!skipAutoCompress) {
-            // 上下文使用率超过 75% 且当前不是压缩请求时：先可见地压缩，再发送原消息
-            const threshold = Math.floor(state.contextLimit * 0.75);
-            const shouldAutoCompress =
-                !state.pendingCompress
-                && state.contextLimit > 0
-                && state.contextUsed > threshold
-                && state.contextUsed > 0;
-
-            if (shouldAutoCompress) {
-                state.pendingMessage = message;
-                state.pendingCompress = true;
-                input.value = "请压缩我们之前的对话。压缩完成后，请基于压缩摘要向用户汇报压缩情况："
-                    + "说明压缩前/后的状态，概括之前的对话要点（重要事实、用户偏好、关键结论等），"
-                    + "并告诉用户对话可以继续了。";
-                // 用 setTimeout 避免在 submit 事件中递归 requestSubmit
-                setTimeout(function () {
-                    if (input.value) chatForm.requestSubmit();
-                }, 0);
-                return;
-            }
-        }
-
-        // 本次请求是否为压缩请求（runAgent 内部会清掉 pendingCompress）
-        const isCompressRequest = state.pendingCompress;
-        let stopped = false;
-
-        clearBubble();
         input.value = "";
-        resetAgentStatus();
-        appendAgentStatus("主人", message, "user");
-        enterStatusMode();
-        settingsButton.disabled = true;
-        bubble("正在思考…", 120000);
-
-        try {
-            const reply = await runAgent(message);
-            bubble(reply, { persist: true, closeable: true, markdown: true });
-        } catch (error) {
-            if (error && error.stopped) {
-                stopped = true;
-                setAgentPhase("已停止");
-                appendAgentStatus("提示", "本次对话已停止", "result");
-                bubble("已停止", 3000);
-            } else {
-                setAgentPhase("执行失败");
-                appendAgentStatus("错误", error && error.message ? error.message : String(error), "error");
-                bubble(error && error.message ? error.message : "请求失败，请稍后重试", 8000);
-            }
-        } finally {
-            leaveStatusMode();
-            input.value = "";
-            autoResizeInput();
-            settingsButton.disabled = false;
-            // 压缩请求完成（未被停止）后：若有暂存的原消息，自动续发
-            if (isCompressRequest && state.pendingMessage && !stopped) {
-                const originalMessage = state.pendingMessage;
-                state.pendingMessage = null;
-                state.skipAutoCompress = true;
-                input.value = originalMessage;
-                setTimeout(function () {
-                    if (input.value) chatForm.requestSubmit();
-                }, 0);
-            } else {
-                if (isCompressRequest) state.pendingMessage = null;
-            }
-        }
+        autoResizeInput();
+        await sendMessage(message);
     });
 
     if (clearContextButton) {
         clearContextButton.addEventListener("click", async function () {
-            if (state.sending) {
+            if (isAgentBusy()) {
                 bubble("请先停止当前对话，再清除上下文。", 5000);
                 return;
             }
