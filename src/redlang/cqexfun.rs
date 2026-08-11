@@ -304,7 +304,31 @@ pub fn init_cq_ex_fun_map() {
         return Ok(Some(json_value_to_red(&to_ret)?));
     });
     add_fun(vec!["取头像"], |self_t, params| {
-        let user_id = self_t.get_param_text(params, 0)?;
+        let user_id = self_t.get_param_text(params, 0).unwrap_or_default();
+        let platform = get_platform(self_t);
+        // 官方QQ平台：头像 CDN 支持用 AppID + OpenID 直接拼 URL
+        if platform == "qqgroup_public"
+            || platform == "qqguild_public"
+            || platform == "qqguild_private"
+        {
+            // 官方QQ头像 CDN：https://q.qlogo.cn/qqapp/{AppID}/{OpenID}/{尺寸}
+            // （honoka-bot 实测：返回 image/jpeg，无需调用任何 API）
+            let appid = self_t.get_exmap("机器人ID").to_string();
+            let openid = if user_id.is_empty() {
+                self_t.get_exmap("发送者ID").to_string()
+            } else {
+                user_id.clone()
+            };
+            if !appid.is_empty() && !openid.is_empty() {
+                return Ok(Some(rv_text(format!(
+                    "https://q.qlogo.cn/qqapp/{}/{}/640",
+                    appid, openid
+                ))));
+            }
+            return Ok(Some(rv_text(
+                "获取头像失败：缺少AppID或用户OpenID".to_string(),
+            )));
+        }
         let data = get_stranger_info(self_t, &user_id).unwrap_or_default();
         let avatar = read_json_str(&data, "avatar");
         Ok(Some(rv_text(avatar)))
