@@ -1,0 +1,10 @@
+[package]
+name = "rv-core"
+version = "0.1.0"
+edition = "2021"
+description = "RV32IMFD 指令执行器核心（汇编解析 + CPU 执行）"
+
+[dependencies]
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

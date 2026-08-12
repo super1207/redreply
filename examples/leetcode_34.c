@@ -1,0 +1,3 @@
+static int lower_bound(int nums[],int size,int target){int left;int right;int mid;left=0;right=size;while(left<right){mid=left+(right-left)/2;if(nums[mid]<target)left=mid+1;else right=mid;}return left;}
+void search_range(int nums[],int size,int target,int result[]){int first;int last;first=lower_bound(nums,size,target);if(first==size||nums[first]!=target){result[0]=-1;result[1]=-1;return;}last=lower_bound(nums,size,target+1)-1;result[0]=first;result[1]=last;}
+int main(void){int a[6]={5,7,7,8,8,10};int r[2];search_range(a,6,8,r);if(r[0]!=3||r[1]!=4)return 1;search_range(a,6,6,r);if(r[0]!=-1||r[1]!=-1)return 2;search_range(a,0,0,r);if(r[0]!=-1||r[1]!=-1)return 3;return 42;}

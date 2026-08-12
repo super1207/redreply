@@ -1,0 +1,3 @@
+static int anagram(char*a,char*b){int count[26];int i;for(i=0;i<26;i=i+1)count[i]=0;i=0;while(a[i]){count[a[i]-'a']=count[a[i]-'a']+1;i=i+1;}i=0;while(b[i]){count[b[i]-'a']=count[b[i]-'a']-1;i=i+1;}for(i=0;i<26;i=i+1)if(count[i]!=0)return 0;return 1;}
+int group_anagrams(char*words[],int size,int groups[]){int group_count;int i;int j;group_count=0;for(i=0;i<size;i=i+1){groups[i]=-1;for(j=0;j<i;j=j+1){if(anagram(words[i],words[j])){groups[i]=groups[j];break;}}if(groups[i]<0){groups[i]=group_count;group_count=group_count+1;}}return group_count;}
+int main(void){char*w[6]={"eat","tea","tan","ate","nat","bat"};int g[6];int c;c=group_anagrams(w,6,g);if(c!=3)return 1;if(g[0]!=g[1]||g[0]!=g[3])return 2;if(g[2]!=g[4]||g[0]==g[2]||g[5]==g[0])return 3;return 42;}

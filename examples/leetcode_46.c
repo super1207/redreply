@@ -1,0 +1,3 @@
+static void build(int nums[],int size,int depth,int used[],int current[],int result[][8],int*count){int i;int j;if(depth==size){for(j=0;j<size;j=j+1)result[*count][j]=current[j];*count=*count+1;return;}for(i=0;i<size;i=i+1){if(!used[i]){used[i]=1;current[depth]=nums[i];build(nums,size,depth+1,used,current,result,count);used[i]=0;}}}
+int permutations(int nums[],int size,int result[][8]){int used[8];int current[8];int count;int i;for(i=0;i<size;i=i+1)used[i]=0;count=0;build(nums,size,0,used,current,result,&count);return count;}
+int main(void){int a[3]={1,2,3};int b[2]={0,1};int r[64][8];int c;c=permutations(a,3,r);if(c!=6)return 1;if(r[0][0]!=1||r[0][1]!=2||r[0][2]!=3)return 2;if(r[5][0]!=3||r[5][1]!=2||r[5][2]!=1)return 3;if(permutations(b,2,r)!=2)return 4;return 42;}

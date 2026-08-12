@@ -1,0 +1,4 @@
+static void sort(int a[],int n){int i;int j;int v;for(i=1;i<n;i=i+1){v=a[i];j=i-1;while(j>=0&&a[j]>v){a[j+1]=a[j];j=j-1;}a[j+1]=v;}}
+static void build(int nums[],int size,int depth,int used[],int current[],int result[][8],int*count){int i;int j;if(depth==size){for(j=0;j<size;j=j+1)result[*count][j]=current[j];*count=*count+1;return;}for(i=0;i<size;i=i+1){if(used[i])continue;if(i>0&&nums[i]==nums[i-1]&&!used[i-1])continue;used[i]=1;current[depth]=nums[i];build(nums,size,depth+1,used,current,result,count);used[i]=0;}}
+int unique_permutations(int nums[],int size,int result[][8]){int used[8];int current[8];int count;int i;sort(nums,size);for(i=0;i<size;i=i+1)used[i]=0;count=0;build(nums,size,0,used,current,result,&count);return count;}
+int main(void){int a[3]={1,1,2};int b[4]={1,2,3,3};int r[64][8];if(unique_permutations(a,3,r)!=3)return 1;if(r[0][0]!=1||r[2][0]!=2)return 2;if(unique_permutations(b,4,r)!=12)return 3;return 42;}

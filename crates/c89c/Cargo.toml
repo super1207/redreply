@@ -1,0 +1,11 @@
+[package]
+name = "c89c"
+version = "0.1.0"
+edition = "2021"
+description = "C89 编译器（预处理 → 词法 → 语法 → RISC-V 汇编）"
+
+[dependencies]
+rv-core = { path = "../rv-core" }
+
+[dev-dependencies]
+rv-core = { path = "../rv-core" }

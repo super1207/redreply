@@ -1,0 +1,4 @@
+static void build(int n,int open,int close,int pos,char current[],char result[][16],int *count){int i;if(pos==2*n){for(i=0;i<pos;i=i+1)result[*count][i]=current[i];result[*count][pos]='\0';*count=*count+1;return;}if(open<n){current[pos]='(';build(n,open+1,close,pos+1,current,result,count);}if(close<open){current[pos]=')';build(n,open,close+1,pos+1,current,result,count);}}
+int generate_parentheses(int n,char result[][16]){char current[16];int count;count=0;build(n,0,0,0,current,result,&count);return count;}
+static int same(char*a,char*b){int i;i=0;while(a[i]&&b[i]){if(a[i]!=b[i])return 0;i=i+1;}return a[i]==b[i];}
+int main(void){char r[64][16];int c;c=generate_parentheses(3,r);if(c!=5)return 1;if(!same(r[0],"((()))")||!same(r[4],"()()()"))return 2;c=generate_parentheses(1,r);if(c!=1||!same(r[0],"()"))return 3;return 42;}

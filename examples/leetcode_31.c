@@ -1,0 +1,3 @@
+static void reverse_range(int nums[],int left,int right){int t;while(left<right){t=nums[left];nums[left]=nums[right];nums[right]=t;left=left+1;right=right-1;}}
+void next_permutation(int nums[],int size){int i;int j;int t;i=size-2;while(i>=0&&nums[i]>=nums[i+1])i=i-1;if(i>=0){j=size-1;while(nums[j]<=nums[i])j=j-1;t=nums[i];nums[i]=nums[j];nums[j]=t;}reverse_range(nums,i+1,size-1);}
+int main(void){int a[3]={1,2,3};int b[3]={3,2,1};int c[3]={1,1,5};next_permutation(a,3);if(a[0]!=1||a[1]!=3||a[2]!=2)return 1;next_permutation(b,3);if(b[0]!=1||b[1]!=2||b[2]!=3)return 2;next_permutation(c,3);if(c[0]!=1||c[1]!=5||c[2]!=1)return 3;return 42;}

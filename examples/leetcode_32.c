@@ -1,0 +1,2 @@
+int longest_valid_parentheses(char *text){int stack[128];int top;int i;int best;int length;top=0;stack[0]=-1;best=0;i=0;while(text[i]!='\0'){if(text[i]=='('){top=top+1;stack[top]=i;}else{top=top-1;if(top<0){top=0;stack[0]=i;}else{length=i-stack[top];if(length>best)best=length;}}i=i+1;}return best;}
+int main(void){if(longest_valid_parentheses("(()")!=2)return 1;if(longest_valid_parentheses(")()())")!=4)return 2;if(longest_valid_parentheses("")!=0)return 3;if(longest_valid_parentheses("()(())")!=6)return 4;return 42;}

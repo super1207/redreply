@@ -1,0 +1,2 @@
+int remove_element(int nums[],int size,int value){int write;int read;write=0;for(read=0;read<size;read=read+1){if(nums[read]!=value){nums[write]=nums[read];write=write+1;}}return write;}
+int main(void){int a[4]={3,2,2,3};int b[8]={0,1,2,2,3,0,4,2};int n;n=remove_element(a,4,3);if(n!=2||a[0]!=2||a[1]!=2)return 1;n=remove_element(b,8,2);if(n!=5||b[0]!=0||b[1]!=1||b[2]!=3||b[3]!=0||b[4]!=4)return 2;return 42;}

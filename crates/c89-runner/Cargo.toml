@@ -1,0 +1,8 @@
+[package]
+name = "c89-runner"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+c89c = { path = "../c89c" }
+rv-core = { path = "../rv-core" }

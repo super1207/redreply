@@ -1,0 +1,3 @@
+struct ListNode{int val;struct ListNode*next;};
+struct ListNode*swap_pairs(struct ListNode*head){struct ListNode dummy;struct ListNode*prev;struct ListNode*first;struct ListNode*second;dummy.next=head;prev=&dummy;while(prev->next!=0&&prev->next->next!=0){first=prev->next;second=first->next;first->next=second->next;second->next=first;prev->next=second;prev=first;}return dummy.next;}
+int main(void){struct ListNode a[5];struct ListNode*r;int e[5]={2,1,4,3,5};int i;for(i=0;i<5;i=i+1){a[i].val=i+1;a[i].next=i<4?&a[i+1]:0;}r=swap_pairs(a);for(i=0;i<5;i=i+1){if(r==0||r->val!=e[i])return 1;r=r->next;}return 42;}

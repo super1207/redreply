@@ -1,0 +1,2 @@
+int valid_parentheses(char *text){char stack[128];int top;int i;char c;top=0;i=0;while(text[i]!='\0'){c=text[i];if(c=='('||c=='['||c=='{'){stack[top]=c;top=top+1;}else{if(top==0)return 0;top=top-1;if((c==')'&&stack[top]!='(')||(c==']'&&stack[top]!='[')||(c=='}'&&stack[top]!='{'))return 0;}i=i+1;}return top==0;}
+int main(void){if(!valid_parentheses("()"))return 1;if(!valid_parentheses("()[]{}"))return 2;if(valid_parentheses("(]"))return 3;if(valid_parentheses("([)]"))return 4;if(!valid_parentheses("{[]}"))return 5;if(valid_parentheses("("))return 6;return 42;}

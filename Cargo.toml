@@ -11,6 +11,9 @@ members = [
     "crates/redreply-adapter",
     "crates/redreply-browser",
     "crates/msedge-tts",
+    "crates/rv-core",
+    "crates/c89c",
+    "crates/c89-runner",
 ]
 default-members = [
     ".",
@@ -46,7 +49,7 @@ uuid = { version = "1.18.1", features = ["v4", "fast-rng"] }
 
 [dependencies]
 redreply-adapter = { path = "crates/redreply-adapter" }
-c89-runner = { path = "../rv/crates/c89-runner" }
+c89-runner = { path = "crates/c89-runner" }
 fancy-regex = { workspace = true }
 encoding = "0.2.33"
 getrandom = "0.3.3"
