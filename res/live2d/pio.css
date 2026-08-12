@@ -273,6 +273,11 @@
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     border-bottom: 1px solid var(--bg-highlight, rgba(0, 0, 0, .08));
+    /* 只渲染可见部分：视口外的条目跳过布局与绘制，滚动到才渲染；
+       大量历史条目时大幅降低渲染与滚动开销，体验与完整渲染一致。
+       contain-intrinsic-size 提供未渲染条目的估算高度，避免滚动条跳动 */
+    content-visibility: auto;
+    contain-intrinsic-size: auto 200px;
 }
 .pio-agent-entry:last-child{
     border-bottom: 0;

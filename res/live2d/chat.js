@@ -1333,6 +1333,9 @@ const state = {
                     return;
                 }
                 const name = configInput.value;
+                if (!window.confirm("确定要删除 AI 配置「" + name + "」吗？")) {
+                    return;
+                }
                 const index = configInput.selectedIndex;
                 if (index >= 0) {
                     state.configs = state.configs.filter(function (item) { return item.name !== name; });
