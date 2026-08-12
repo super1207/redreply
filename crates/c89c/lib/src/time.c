@@ -81,10 +81,26 @@ time_t mktime(struct tm *t) {
         year = yy - 1900; mon = mm - 1; mday = dd;
     }
 
-    /* tm 是本地时间：转 UTC 纪元秒需减去宿主时区偏移 */
-    result = days * 86400L + hour * 3600 + min * 60 + sec;
-    result = result - sys_tz_offset();
-    if (result < 0) return (time_t)-1;
+    /* tm 是本地时间：转 UTC 纪元秒需减去宿主时区偏移。
+       全程无符号运算：time_t 为 u32（有效期到 2106-02-07），
+       有符号 long 在 2038-01-19 之后回绕。 */
+    {
+        unsigned long uresult;
+        long offset = sys_tz_offset();
+        if (days > 49710L) return (time_t)-1; /* 超过 2106-02-07 可表示范围 */
+        uresult = (unsigned long)days * 86400UL + (unsigned long)hour * 3600UL
+                  + (unsigned long)min * 60UL + (unsigned long)sec;
+        if (offset > 0) {
+            unsigned long o = (unsigned long)offset;
+            if (uresult < o) return (time_t)-1; /* 本地时间早于 1970-01-01 UTC */
+            uresult = uresult - o;
+        } else {
+            unsigned long o = (unsigned long)(0L - offset);
+            if (uresult > 4294967295UL - o) return (time_t)-1; /* 超出 2106 */
+            uresult = uresult + o;
+        }
+        result = (long)uresult;
+    }
 
     t->tm_sec = (int)sec;
     t->tm_min = (int)min;
@@ -98,32 +114,50 @@ time_t mktime(struct tm *t) {
     return (time_t)result;
 }
 
-/* epoch 秒 → 分解时间（t 可为负；days 用向下取整） */
-static void c89_break_down(long t, struct tm *tmb, int isdst) {
-    long days = fdiv(t, 86400L);
-    long rem = t - days * 86400L;
+/* epoch 秒 → 分解时间（t 为无符号纪元秒；days 恒 >= 0） */
+static void c89_break_down(unsigned long t, struct tm *tmb, int isdst) {
+    unsigned long days = t / 86400UL;
+    long rem = (long)(t - days * 86400UL);
     int y, m, d;
-    civil_from_days(days, &y, &m, &d);
+    civil_from_days((long)days, &y, &m, &d);
     tmb->tm_sec = (int)(rem % 60L); rem = rem / 60L;
     tmb->tm_min = (int)(rem % 60L); rem = rem / 60L;
     tmb->tm_hour = (int)rem;
     tmb->tm_mday = d;
     tmb->tm_mon = m - 1;
     tmb->tm_year = y - 1900;
-    tmb->tm_wday = (int)(((days % 7L) + 11L) % 7L);   /* 1970-01-01 = Thursday(4) */
-    tmb->tm_yday = (int)(days - days_from_civil(y, 1, 1));
+    tmb->tm_wday = (int)(((long)(days % 7UL) + 11L) % 7L);   /* 1970-01-01 = Thursday(4) */
+    tmb->tm_yday = (int)((long)days - days_from_civil(y, 1, 1));
     tmb->tm_isdst = isdst;
 }
 
 struct tm *gmtime(const time_t *timer) {
     static struct tm tmb;
-    c89_break_down((long)*timer, &tmb, 0);
+    c89_break_down((unsigned long)*timer, &tmb, 0);
     return &tmb;
 }
 
 struct tm *localtime(const time_t *timer) {
     static struct tm tmb;
-    c89_break_down((long)*timer + sys_tz_offset(), &tmb, sys_tz_dst());
+    unsigned long t = *timer;
+    long offset = sys_tz_offset();
+    /* 偏移约定：东为正（+28800 = UTC+8）。local = UTC + offset。 */
+    if (offset > 0) {
+        unsigned long o = (unsigned long)offset;
+        if (t > 4294967295UL - o) {
+            t = 4294967295UL; /* 超出 2106，钳到可表示上限 */
+        } else {
+            t = t + o;
+        }
+    } else {
+        unsigned long o = (unsigned long)(0L - offset);
+        if (t < o) {
+            t = 0; /* 早于 1970-01-01 UTC，钳到 epoch（不可表示区间） */
+        } else {
+            t = t - o;
+        }
+    }
+    c89_break_down(t, &tmb, sys_tz_dst());
     return &tmb;
 }
 

@@ -498,7 +498,8 @@ static void c89_emit_padded(struct c89_format_target *target, const char *core, 
 }
 
 /* 非负整数 d（可为 >= 2^32 的大数）的十进制数字串：按 1e9 分块递归，
-   pad 为最低组的最少位数（其余组固定补足 9 位）。 */
+   pad 为最低组的最少位数（其余组固定补足 9 位）。
+   仅对 d < 2^52 精确（该区间整数可精确表示，递归中的减法无消减误差）。 */
 static int c89_fmt_int_part(char *out, double d, int pad) {
     double chunk = 1000000000.0;
     if (d < chunk) {
@@ -520,6 +521,107 @@ static int c89_fmt_int_part(char *out, double d, int pad) {
         n += c89_fmt_uint(out + n, (unsigned int)low, 10, 0, 9);
         return n;
     }
+}
+
+/* 62 位值 (x1<<32 | x0) 除以 d：要求 x1 < d < 2^30（保证商落在 32 位内）。
+   以 2 位为基（base 4）从高到低做长除法：每步 cur = r·4 + digit < 4·d < 2^32，
+   全程 32 位算术，避免 64 位中间量。 */
+static void c89_div62(unsigned long x1, unsigned long x0, unsigned long d,
+                      unsigned long *q_out, unsigned long *r_out) {
+    unsigned long q = 0;
+    unsigned long r = 0;
+    int i;
+    for (i = 30; i >= 0; i -= 2) {
+        unsigned long cur = (r << 2) + ((x1 >> i) & 3UL);
+        unsigned long qd = cur / d;
+        r = cur - qd * d;
+        q = (q << 2) + qd;
+    }
+    for (i = 30; i >= 0; i -= 2) {
+        unsigned long cur = (r << 2) + ((x0 >> i) & 3UL);
+        unsigned long qd = cur / d;
+        r = cur - qd * d;
+        q = (q << 2) + qd;
+    }
+    *q_out = q;
+    *r_out = r;
+}
+
+/* d >= 2^52 的整数部分：double 已是整数，但 1e9 分块递归会因
+   d - high*1e9 的灾难性消减失真。精确分解 d = (hi·2^32 + lo)·2^e，
+   用 32 位大整数按 1e9 长除法提取十进制分块（双精度可精确表示
+   hi·2^32+lo，左移为 2 的幂，全程精确）。 */
+static int c89_print_big_int(char *out, double d) {
+    double m;
+    int e;
+    unsigned long hi, lo;
+    unsigned long words[36];
+    int nwords;
+    int q32, rbits;
+    int i;
+    unsigned long chunks[40];
+    int nchunks;
+    int len;
+    m = frexp(d, &e);      /* d = m·2^e, m ∈ [0.5,1) */
+    m = ldexp(m, 53);      /* 整数，∈ [2^52, 2^53) */
+    e = e - 53;
+    hi = (unsigned long)(m / 4294967296.0);
+    lo = (unsigned long)fmod(m, 4294967296.0);
+    words[0] = lo;
+    words[1] = hi;
+    nwords = hi != 0 ? 2 : 1;
+    /* 左移 e 位：先整字移位，再按位进位 */
+    q32 = e / 32;
+    rbits = e % 32;
+    if (q32 > 0) {
+        for (i = nwords - 1; i >= 0; i -= 1) {
+            words[i + q32] = words[i];
+        }
+        for (i = 0; i < q32; i += 1) {
+            words[i] = 0;
+        }
+        nwords += q32;
+    }
+    if (rbits > 0) {
+        unsigned long carry = 0;
+        for (i = 0; i < nwords; i += 1) {
+            unsigned long cur = words[i];
+            words[i] = (cur << rbits) | carry;
+            carry = cur >> (32 - rbits);
+        }
+        if (carry != 0) {
+            words[nwords] = carry;
+            nwords += 1;
+        }
+    }
+    /* 逐次除以 1e9，余数即低位分块 */
+    nchunks = 0;
+    while (nwords > 0 && nchunks < 40) {
+        unsigned long rem = 0;
+        for (i = nwords - 1; i >= 0; i -= 1) {
+            unsigned long q, r;
+            c89_div62(rem, words[i], 1000000000UL, &q, &r);
+            words[i] = q;
+            rem = r;
+        }
+        chunks[nchunks] = rem;
+        nchunks += 1;
+        while (nwords > 0 && words[nwords - 1] == 0) {
+            nwords -= 1;
+        }
+    }
+    /* 输出：最高分块不补零，其余 9 位补零 */
+    len = 0;
+    if (nchunks == 0) {
+        out[len] = '0';
+        len += 1;
+    } else {
+        len += c89_fmt_uint(out, (unsigned int)chunks[nchunks - 1], 10, 0, 1);
+        for (i = nchunks - 2; i >= 0; i -= 1) {
+            len += c89_fmt_uint(out + len, (unsigned int)chunks[i], 10, 0, 9);
+        }
+    }
+    return len;
 }
 
 /* 非负 d 按 f 风格 → out（precision 位小数，force 强制小数点），返回长度。
@@ -555,8 +657,12 @@ static int c89_fmt_f(char *out, double d, int precision, int force) {
     }
     if (ipart < 4294967296.0) {
         len = c89_fmt_uint(out, (unsigned int)ipart, 10, 0, 1);
-    } else {
+    } else if (ipart < 4503599627370496.0) {
+        /* [2^32, 2^52)：整数可精确表示，1e9 分块递归精确 */
         len = c89_fmt_int_part(out, ipart, 1);
+    } else {
+        /* >= 2^52：递归分块有消减误差，走精确大整数路径 */
+        len = c89_print_big_int(out, ipart);
     }
     if (precision > 0 || force) {
         out[len] = '.';
@@ -698,11 +804,25 @@ static int c89_fmt_g(char *out, double d, int precision, int upper, int force) {
             }
             len = j + 1 + tail;
         } else {
-            while (len > 0 && out[len - 1] == '0') {
-                len -= 1;
+            /* f 风格：只剥离小数部分的尾零（C89 7.9.6.1）。
+               无小数点（精度恰使小数位数为 0）时整数部分尾零必须保留：
+               %g 打印 100000.0 应为 "100000" 而非 "1" */
+            int dot = -1;
+            for (i = 0; i < len; i += 1) {
+                if (out[i] == '.') {
+                    dot = i;
+                    break;
+                }
             }
-            if (len > 0 && out[len - 1] == '.') {
-                len -= 1;
+            if (dot >= 0) {
+                j = len - 1;
+                while (j > dot && out[j] == '0') {
+                    j -= 1;
+                }
+                if (j == dot) {
+                    j -= 1; /* 孤立小数点一并删除 */
+                }
+                len = j + 1;
             }
         }
     }
@@ -754,6 +874,16 @@ static int c89_fmt_float_case(char *core, struct c89_fmt_spec *spec, int conv,
     double d;
     int core_len;
     d = va_arg(ap, double);
+    if (d != d) {
+        /* NaN：格式化循环（c89_fmt_int_part 递归 / %e 归一化）无法处理，
+           直接输出，防止死循环与无限递归 */
+        core[0] = 'n';
+        core[1] = 'a';
+        core[2] = 'n';
+        *sign_out = 0;
+        *out_ap = ap;
+        return 3;
+    }
     if (d < 0.0) {
         *sign_out = '-';
         d = 0.0 - d;
@@ -763,6 +893,14 @@ static int c89_fmt_float_case(char *core, struct c89_fmt_spec *spec, int conv,
         *sign_out = ' ';
     } else {
         *sign_out = 0;
+    }
+    if (d > 1.7976931348623157e308) {
+        /* +inf（含 -inf 取负后）：%e/%g 归一化循环在 inf 上死循环 */
+        core[0] = 'i';
+        core[1] = 'n';
+        core[2] = 'f';
+        *out_ap = ap;
+        return 3;
     }
     if (conv == 'f') {
         core_len = c89_fmt_f(core, d, spec->precision < 0 ? 6 : spec->precision, spec->hash);
@@ -1078,7 +1216,7 @@ static void c89_scan_restore(struct c89_scan_source *source, const char *token,
    ap 按 va_arg 推进，通过 out_ap 返回（va_arg 只能作用于普通标识符，须传值）。 */
 static int c89_scan_integer(struct c89_scan_source *source, char *token,
                             int token_length, int base, int is_unsigned,
-                            int long_mode, va_list ap, va_list *out_ap) {
+                            int long_mode, int suppress, va_list ap, va_list *out_ap) {
     char *end;
     long integer;
     unsigned long unsigned_integer;
@@ -1093,13 +1231,15 @@ static int c89_scan_integer(struct c89_scan_source *source, char *token,
         }
         consumed = (int)(end - token);
         c89_scan_restore(source, token, consumed, token_length);
-        pointer = va_arg(ap, int);
-        if (long_mode) {
-            unsigned long *ulong_dest = (unsigned long *)pointer;
-            *ulong_dest = unsigned_integer;
-        } else {
-            unsigned int *uint_dest = (unsigned int *)pointer;
-            *uint_dest = (unsigned int)unsigned_integer;
+        if (!suppress) {
+            pointer = va_arg(ap, int);
+            if (long_mode) {
+                unsigned long *ulong_dest = (unsigned long *)pointer;
+                *ulong_dest = unsigned_integer;
+            } else {
+                unsigned int *uint_dest = (unsigned int *)pointer;
+                *uint_dest = (unsigned int)unsigned_integer;
+            }
         }
     } else {
         integer = strtol(token, &end, base);
@@ -1110,13 +1250,15 @@ static int c89_scan_integer(struct c89_scan_source *source, char *token,
         }
         consumed = (int)(end - token);
         c89_scan_restore(source, token, consumed, token_length);
-        pointer = va_arg(ap, int);
-        if (long_mode) {
-            long *long_dest = (long *)pointer;
-            *long_dest = integer;
-        } else {
-            int *int_dest = (int *)pointer;
-            *int_dest = (int)integer;
+        if (!suppress) {
+            pointer = va_arg(ap, int);
+            if (long_mode) {
+                long *long_dest = (long *)pointer;
+                *long_dest = integer;
+            } else {
+                int *int_dest = (int *)pointer;
+                *int_dest = (int)integer;
+            }
         }
     }
     *out_ap = ap;
@@ -1125,7 +1267,8 @@ static int c89_scan_integer(struct c89_scan_source *source, char *token,
 
 /* 浮点转换（%f/%e/%g）公共实现：strtod 解析 token，成功写回并返回 1，失败恢复并返回 0。 */
 static int c89_scan_float(struct c89_scan_source *source, char *token,
-                          int token_length, int long_mode, va_list ap, va_list *out_ap) {
+                          int token_length, int long_mode, int suppress,
+                          va_list ap, va_list *out_ap) {
     char *end;
     double real;
     int consumed;
@@ -1138,13 +1281,15 @@ static int c89_scan_float(struct c89_scan_source *source, char *token,
     }
     consumed = (int)(end - token);
     c89_scan_restore(source, token, consumed, token_length);
-    pointer = va_arg(ap, int);
-    if (long_mode) {
-        double *double_dest = (double *)pointer;
-        *double_dest = real;
-    } else {
-        float *float_dest = (float *)pointer;
-        *float_dest = real;
+    if (!suppress) {
+        pointer = va_arg(ap, int);
+        if (long_mode) {
+            double *double_dest = (double *)pointer;
+            *double_dest = real;
+        } else {
+            float *float_dest = (float *)pointer;
+            *float_dest = real;
+        }
     }
     *out_ap = ap;
     return 1;
@@ -1154,7 +1299,7 @@ static int c89_scan_float(struct c89_scan_source *source, char *token,
    -1=格式串畸形；成功与畸形时 *pp 均越过 ']'。ap 通过 out_ap 返回推进后的值。
    支持 a-z 范围与 ^ 取反；'-' 在首尾时按字面 '-' 处理。 */
 static int c89_scan_scanset(struct c89_scan_source *source, const char **pp,
-                            int width, va_list ap, va_list *out_ap) {
+                            int width, int suppress, va_list ap, va_list *out_ap) {
     const char *p;
     char setmap[256];
     int k;
@@ -1204,13 +1349,17 @@ static int c89_scan_scanset(struct c89_scan_source *source, const char **pp,
         *out_ap = ap;
         return 0;
     }
-    pointer = va_arg(ap, int);
-    text = (char *)pointer;
+    if (!suppress) {
+        pointer = va_arg(ap, int);
+        text = (char *)pointer;
+    } else {
+        text = 0;
+    }
     i = 0;
     for (;;) {
         int ch = c89_scan_peek(source);
         int in_set;
-        if (ch == EOF || c89_scan_space(ch)) {
+        if (ch == EOF) {
             break;
         }
         if (width != 0 && i >= width) {
@@ -1223,15 +1372,21 @@ static int c89_scan_scanset(struct c89_scan_source *source, const char **pp,
         if (!in_set) {
             break;
         }
-        *text = (char)c89_scan_get(source);
-        text += 1;
+        if (text != 0) {
+            *text = (char)c89_scan_get(source);
+            text += 1;
+        } else {
+            c89_scan_get(source);
+        }
         i += 1;
     }
     if (i == 0) {
         *out_ap = ap;
         return 0;
     }
-    *text = 0;
+    if (text != 0) {
+        *text = 0;
+    }
     *out_ap = ap;
     return 1;
 }
@@ -1246,6 +1401,7 @@ static int c89_vscan(struct c89_scan_source *source, const char *fmt, va_list ap
     int token_length;
     int matched;
     int long_mode;
+    int suppress;
     int base;
     int pointer;
     int width;
@@ -1274,7 +1430,13 @@ static int c89_vscan(struct c89_scan_source *source, const char *fmt, va_list ap
 
         p += 1;
         long_mode = 0;
+        suppress = 0;
         width = 0;
+        if (*p == '*') {
+            /* 赋值抑制：完成转换但不赋给对象、不消耗参数 */
+            suppress = 1;
+            p += 1;
+        }
         while (*p >= '0' && *p <= '9') {
             width = width * 10 + (*p - '0');
             p += 1;
@@ -1295,14 +1457,20 @@ static int c89_vscan(struct c89_scan_source *source, const char *fmt, va_list ap
         if (*p == 'c') {
             int nchars = width > 0 ? width : 1;
             char *char_dest;
-            pointer = va_arg(ap, int);
-            char_dest = (char *)pointer;
+            if (suppress) {
+                char_dest = 0;
+            } else {
+                pointer = va_arg(ap, int);
+                char_dest = (char *)pointer;
+            }
             for (i = 0; i < nchars; i += 1) {
                 c = c89_scan_get(source);
                 if (c == EOF) {
                     break;
                 }
-                char_dest[i] = (char)c;
+                if (char_dest != 0) {
+                    char_dest[i] = (char)c;
+                }
             }
             if (i == nchars) {
                 matched += 1;
@@ -1312,21 +1480,23 @@ static int c89_vscan(struct c89_scan_source *source, const char *fmt, va_list ap
         }
         if (*p == 'n') {
             /* %n：不消耗输入、不增加匹配数；写入本次调用已净读字符数
-               （已读字符减去已回推未读字符，C89 4.9.6.2） */
-            pointer = va_arg(ap, int);
-            if (long_mode) {
-                long *long_dest = (long *)pointer;
-                *long_dest = (long)(source->chars_read - source->push_count);
-            } else {
-                int *int_dest = (int *)pointer;
-                *int_dest = source->chars_read - source->push_count;
+               （已读字符减去已回推未读字符，C89 4.9.6.2）。%*n 不消耗参数。 */
+            if (!suppress) {
+                pointer = va_arg(ap, int);
+                if (long_mode) {
+                    long *long_dest = (long *)pointer;
+                    *long_dest = (long)(source->chars_read - source->push_count);
+                } else {
+                    int *int_dest = (int *)pointer;
+                    *int_dest = source->chars_read - source->push_count;
+                }
             }
             p += 1;
             continue;
         }
         if (*p == '[') {
             int r;
-            r = c89_scan_scanset(source, &p, width, ap, &ap);
+            r = c89_scan_scanset(source, &p, width, suppress, ap, &ap);
             if (r == 1) {
                 matched += 1;
             } else {
@@ -1338,20 +1508,22 @@ static int c89_vscan(struct c89_scan_source *source, const char *fmt, va_list ap
         if (*p == 'd' || *p == 'i') {
             base = (*p == 'i') ? 0 : 10;
             token_length = c89_scan_token(source, token, width);
-            if (!c89_scan_integer(source, token, token_length, base, 0, long_mode, ap, &ap)) {
+            if (!c89_scan_integer(source, token, token_length, base, 0, long_mode,
+                                  suppress, ap, &ap)) {
                 break;
             }
             matched += 1;
         } else if (*p == 'u' || *p == 'o' || *p == 'x' || *p == 'X') {
             base = (*p == 'x' || *p == 'X') ? 16 : (*p == 'o' ? 8 : 10);
             token_length = c89_scan_token(source, token, width);
-            if (!c89_scan_integer(source, token, token_length, base, 1, long_mode, ap, &ap)) {
+            if (!c89_scan_integer(source, token, token_length, base, 1, long_mode,
+                                  suppress, ap, &ap)) {
                 break;
             }
             matched += 1;
         } else if (*p == 'f' || *p == 'e' || *p == 'g') {
             token_length = c89_scan_token(source, token, width);
-            if (!c89_scan_float(source, token, token_length, long_mode, ap, &ap)) {
+            if (!c89_scan_float(source, token, token_length, long_mode, suppress, ap, &ap)) {
                 break;
             }
             matched += 1;
@@ -1359,17 +1531,26 @@ static int c89_vscan(struct c89_scan_source *source, const char *fmt, va_list ap
             if (c89_scan_peek(source) == EOF) {
                 break;
             }
-            pointer = va_arg(ap, int);
-            text = (char *)pointer;
+            if (suppress) {
+                text = 0;
+            } else {
+                pointer = va_arg(ap, int);
+                text = (char *)pointer;
+            }
             i = 0;
             while (c89_scan_peek(source) != EOF &&
                    !c89_scan_space(c89_scan_peek(source)) &&
                    (width == 0 || i < width)) {
-                *text = (char)c89_scan_get(source);
-                text += 1;
+                c = c89_scan_get(source);
+                if (text != 0) {
+                    *text = (char)c;
+                    text += 1;
+                }
                 i += 1;
             }
-            *text = 0;
+            if (text != 0) {
+                *text = 0;
+            }
             matched += 1;
         } else {
             break;

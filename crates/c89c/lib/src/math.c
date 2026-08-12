@@ -29,43 +29,35 @@ static double c89_floor_small(double x) {
     return t;
 }
 
-/* x >= 2^31 的 floor：按 2 的幂分块。每轮取 p 满足 p <= r < 2p，
-   此时 r - p 精确（同量级相减）且指数严格下降，降到 r < 2^31 后走 int 路径。
-   全程不依赖 (int) 转换大数，对任意 |x| 都正确。 */
+/* x >= 2^31 的 floor：O(1) 实现。
+   2^31 <= x < 2^52 时加 2^52 再减（该区间浮点间距恰为 1，加法即向最近
+   整数舍入），按 floor 方向修正；x >= 2^52 时双精度已无小数位，恒等。 */
 static double c89_floor_big(double x) {
-    double acc = 0.0;
-    double r = x;
-    double p;
-    while (r >= 2147483648.0) {
-        p = 1.0;
-        while (p * 2.0 <= r) {
-            p *= 2.0;
-        }
-        acc += p;
-        r -= p;
+    double t;
+    if (x >= 4503599627370496.0) {
+        return x;
     }
-    return acc + c89_floor_small(r);
+    t = x + 4503599627370496.0;
+    t = t - 4503599627370496.0;
+    if (t > x) {
+        t -= 1.0;
+    }
+    return t;
 }
 
-/* x <= -2^31 的 floor：floor(x) = -ceil(-x) */
+/* x <= -2^31 的 floor：floor(x) = -ceil(-x)，同样 O(1)。 */
 static double c89_floor_big_neg(double x) {
-    double acc = 0.0;
-    double r = 0.0 - x;
-    double p;
+    double u = 0.0 - x;
     double t;
-    while (r >= 2147483648.0) {
-        p = 1.0;
-        while (p * 2.0 <= r) {
-            p *= 2.0;
-        }
-        acc += p;
-        r -= p;
+    if (u >= 4503599627370496.0) {
+        return x;
     }
-    t = (double)(int)r;
-    if (t < r) {
+    t = u + 4503599627370496.0;
+    t = t - 4503599627370496.0;
+    if (t < u) {
         t += 1.0;
     }
-    return 0.0 - (acc + t);
+    return 0.0 - t;
 }
 
 double floor(double x) {
@@ -101,12 +93,31 @@ static double c89_trunc(double x) {
 
 double fmod(double x, double y) {
     double q;
+    double r;
     if (y == 0.0) {
         errno = EDOM;
         return 0.0;
     }
     q = c89_trunc(x / y);
-    return x - q * y;
+    r = x - q * y;
+    /* x/y 的舍入使 q 可能偏离真值 ±1，r 随之偏差一个 |y|；按 |y| 修正
+       （|x/y| < 2^52 时修正后即正确余数）。y < 0 时对称处理。 */
+    if (y > 0.0) {
+        while (r >= y) {
+            r -= y;
+        }
+        while (r <= 0.0 - y) {
+            r += y;
+        }
+    } else {
+        while (r <= y) {
+            r -= y;
+        }
+        while (r >= 0.0 - y) {
+            r += y;
+        }
+    }
+    return r;
 }
 
 double modf(double x, double *ip) {
@@ -121,6 +132,14 @@ double frexp(double x, int *exp) {
     if (x == 0.0) {
         *exp = 0;
         return 0.0;
+    }
+    if (x != x) {
+        *exp = 0;
+        return x; /* NaN 直通 */
+    }
+    if (x > 1.7976931348623157e308) {
+        *exp = 0;
+        return x; /* +inf 防御：归一化循环在 inf 上死循环 */
     }
     if (x < 0.0) {
         neg = 1;
@@ -154,8 +173,10 @@ double ldexp(double x, int n) {
 }
 
 double sqrt(double x) {
-    double y;
+    double m;
+    int e;
     int i;
+    double y;
     if (x < 0.0) {
         errno = EDOM;
         return 0.0;
@@ -166,11 +187,22 @@ double sqrt(double x) {
     if (x > 1e308) {
         return x; /* +inf 防御：牛顿迭代在 inf 上产出 NaN */
     }
-    y = x / 2.0 + 1.0;
+    /* frexp 归一化：x = m·2^e，m ∈ [0.5, 1)。sqrt(m) ∈ [0.707, 1)，
+       初值 0.7 的相对误差 <= 1.3%，12 次牛顿迭代收敛到双精度。
+       此前直接用 x/2+1 作初值，x ≪ 1 时结果与真值无关。 */
+    m = frexp(x, &e);
+    y = 0.7;
     for (i = 0; i < 12; i += 1) {
-        y = (y + x / y) / 2.0;
+        y = (y + m / y) / 2.0;
     }
-    return y;
+    if (e % 2 != 0) {
+        /* 奇指数：sqrt(m)·√2·2^((e-1)/2) */
+        y = y * 1.41421356237309504880;
+        e = (e - 1) / 2;
+    } else {
+        e = e / 2;
+    }
+    return ldexp(y, e);
 }
 
 double exp(double x) {

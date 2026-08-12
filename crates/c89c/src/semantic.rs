@@ -94,11 +94,59 @@ pub fn validate_with_tokens(items: &[Node], file: &str, tokens: &[Token]) -> Com
     let mut global_types = HashMap::new();
     let mut functions = HashSet::new();
     let mut signatures: HashMap<String, FunctionSignature> = HashMap::new();
+    // 文件作用域对象声明记录：(类型, 是否已定义, 存储类)——用于重复声明/定义/
+    // 链接性冲突检查（C89 §3.1.2.2/§3.5）。函数定义集合用于重复定义检查。
+    let mut object_decls: HashMap<String, (Type, bool, crate::ast::Storage)> = HashMap::new();
+    let mut func_defs: HashSet<String> = HashSet::new();
     for item in items {
         match item.inner() {
-            Node::Decl { specs, name, .. } => {
+            Node::Decl {
+                specs, name, init, ..
+            } => {
+                if functions.contains(name) {
+                    return context.error(
+                        item,
+                        Some(name),
+                        format!("'{name}' 已声明为函数，不能作为对象重新声明"),
+                    );
+                }
                 globals.insert(name.clone());
-                global_types.insert(name.clone(), specs.ty.clone());
+                let has_init = init.is_some();
+                if let Some((prev_ty, prev_init, prev_storage)) = object_decls.get(name) {
+                    if !compatible_types(prev_ty, &specs.ty) {
+                        return context.error(
+                            item,
+                            Some(name),
+                            format!("对象 '{name}' 的重复声明类型不兼容"),
+                        );
+                    }
+                    let prev_is_static = *prev_storage == crate::ast::Storage::Static;
+                    let new_is_static = specs.storage == crate::ast::Storage::Static;
+                    let linkage_conflict = match (prev_is_static, new_is_static) {
+                        (true, false) => specs.storage != crate::ast::Storage::Extern,
+                        (false, true) => true,
+                        _ => false,
+                    };
+                    if linkage_conflict {
+                        return context.error(
+                            item,
+                            Some(name),
+                            format!("对象 '{name}' 的内部/外部链接声明冲突"),
+                        );
+                    }
+                    if *prev_init && has_init {
+                        return context
+                            .error(item, Some(name), format!("对象 '{name}' 被重复定义"));
+                    }
+                    global_types.insert(name.clone(), specs.ty.clone());
+                    object_decls.insert(
+                        name.clone(),
+                        (specs.ty.clone(), *prev_init || has_init, specs.storage),
+                    );
+                } else {
+                    global_types.insert(name.clone(), specs.ty.clone());
+                    object_decls.insert(name.clone(), (specs.ty.clone(), has_init, specs.storage));
+                }
             }
             Node::FuncDecl {
                 ret,
@@ -115,6 +163,20 @@ pub fn validate_with_tokens(items: &[Node], file: &str, tokens: &[Token]) -> Com
                 has_prototype,
                 ..
             } => {
+                if globals.contains(name) {
+                    return context.error(
+                        item,
+                        Some(name),
+                        format!("'{name}' 已声明为对象，不能作为函数重新声明"),
+                    );
+                }
+                if matches!(item.inner(), Node::FuncDef { .. }) {
+                    if func_defs.contains(name) {
+                        return context
+                            .error(item, Some(name), format!("函数 '{name}' 被重复定义"));
+                    }
+                    func_defs.insert(name.clone());
+                }
                 validate_function_signature(ret, params, &context, item)?;
                 functions.insert(name.clone());
                 let next = FunctionSignature {
@@ -169,30 +231,39 @@ pub fn validate_with_tokens(items: &[Node], file: &str, tokens: &[Token]) -> Com
     Ok(())
 }
 
-fn is_constant_initializer(node: &Node) -> bool {
+/// 算术常量表达式（整数/浮点字面量及其算术组合，不含对象引用——
+/// 枚举常量已在解析期折叠为 Num）。用于浮点/整型静态初始化器检查。
+fn is_arithmetic_constant(node: &Node) -> bool {
     match node.inner() {
-        Node::Num(_) | Node::FNum(_) | Node::Str(_) | Node::Ident(_) => true,
-        Node::Unary(UnaryOp::Addr | UnaryOp::Neg | UnaryOp::Not | UnaryOp::BitNot, value)
-        | Node::Cast(_, value) => is_constant_initializer(value),
+        Node::Num(_) | Node::FNum(_) => true,
+        Node::Unary(UnaryOp::Neg | UnaryOp::Not | UnaryOp::BitNot, value)
+        | Node::Cast(_, value) => is_arithmetic_constant(value),
         Node::Binary(_, left, right) | Node::Comma(left, right) => {
-            is_constant_initializer(left) && is_constant_initializer(right)
+            is_arithmetic_constant(left) && is_arithmetic_constant(right)
         }
         Node::Cond(condition, yes, no) => {
-            is_constant_initializer(condition)
-                && is_constant_initializer(yes)
-                && is_constant_initializer(no)
+            is_arithmetic_constant(condition)
+                && is_arithmetic_constant(yes)
+                && is_arithmetic_constant(no)
         }
-        Node::InitList(items) => items.iter().all(is_constant_initializer),
         _ => false,
     }
 }
 
-/// 地址常量的基形式：数组名 / 字符串字面量（含下标链，如 arr[1]、arr[1][2]）。
-fn is_address_constant_base(node: &Node) -> bool {
+/// 静态初始化器检查上下文中的对象符号表：名字 → 类型。
+/// 文件作用域初始化器只能引用文件作用域对象；块内 static 初始化器
+/// 只能引用文件作用域对象（自动对象地址不是常量，C89 §3.4/§3.5.7）。
+type ObjectMap = HashMap<String, Type>;
+
+/// 地址常量的基形式：数组名 / 字符串字面量（含下标链，如 arr[1]、arr[1][2]）、
+/// 静态对象地址 &x、&x 的递归形式。根标识符必须是已知静态对象。
+fn is_address_constant_base(node: &Node, objects: &ObjectMap) -> bool {
     match node.inner() {
-        Node::Ident(_) | Node::Str(_) => true,
+        Node::Str(_) => true,
+        Node::Ident(name) => objects.contains_key(name),
+        Node::Unary(UnaryOp::Addr, value) => is_address_constant_base(value, objects),
         Node::Subscript(base, index) => {
-            is_address_constant_base(base) && eval_integer_constant(index).is_some()
+            is_address_constant_base(base, objects) && eval_integer_constant(index).is_some()
         }
         _ => false,
     }
@@ -200,15 +271,15 @@ fn is_address_constant_base(node: &Node) -> bool {
 
 /// 指针地址常量：&静态对象（含下标形式）、数组名/字符串字面量 ± 整数常量
 /// （C89 §3.4 地址常量）。
-fn is_pointer_address_constant(node: &Node) -> bool {
+fn is_pointer_address_constant(node: &Node, objects: &ObjectMap) -> bool {
     match node.inner() {
-        Node::Unary(UnaryOp::Addr, value) => is_address_constant_base(value),
+        Node::Unary(UnaryOp::Addr, value) => is_address_constant_base(value, objects),
         Node::Binary(BinaryOp::Add, left, right) => {
-            (is_address_constant_base(left) && eval_integer_constant(right).is_some())
-                || (eval_integer_constant(left).is_some() && is_address_constant_base(right))
+            (is_address_constant_base(left, objects) && eval_integer_constant(right).is_some())
+                || (eval_integer_constant(left).is_some() && is_address_constant_base(right, objects))
         }
         Node::Binary(BinaryOp::Sub, left, right) => {
-            is_address_constant_base(left) && eval_integer_constant(right).is_some()
+            is_address_constant_base(left, objects) && eval_integer_constant(right).is_some()
         }
         _ => false,
     }
@@ -221,20 +292,41 @@ enum StaticInit {
     NotConstant,
     /// 字符串字面量初始化了非字符数组
     StringArray,
+    /// 字符串字面量初始化了非字符指针
+    StringPtr,
+    /// 初始化器数量超过数组/结构体成员数
+    TooMany,
 }
 
-fn check_static_initializer(ty: &Type, node: &Node) -> StaticInit {
+fn check_static_initializer(ty: &Type, node: &Node, objects: &ObjectMap) -> StaticInit {
     match ty.unqualified() {
-        Type::Array(elem, _) => match node.inner() {
-            Node::Str(_) => {
+        Type::Array(elem, length) => match node.inner() {
+            Node::Str(value) => {
                 if matches!(elem.unqualified(), Type::Char | Type::UChar) {
+                    if let Some(len) = length {
+                        // 按转义解码后的实际字节数 + NUL 检查长度
+                        let decoded = crate::expr_eval::decode_string_escapes(value)
+                            .map(|bytes| bytes.len())
+                            .unwrap_or(value.len());
+                        if decoded + 1 > *len {
+                            return StaticInit::TooMany;
+                        }
+                    }
                     StaticInit::Ok
                 } else {
                     StaticInit::StringArray
                 }
             }
             Node::InitList(items) => {
-                if items.iter().all(is_constant_initializer) {
+                if let Some(len) = length {
+                    if items.len() > *len {
+                        return StaticInit::TooMany;
+                    }
+                }
+                if items
+                    .iter()
+                    .all(|item| is_static_init_constant(item, objects))
+                {
                     StaticInit::Ok
                 } else {
                     StaticInit::NotConstant
@@ -243,29 +335,68 @@ fn check_static_initializer(ty: &Type, node: &Node) -> StaticInit {
             _ => StaticInit::NotConstant,
         },
         Type::Struct(_) => match node.inner() {
-            Node::InitList(items) if items.iter().all(is_constant_initializer) => StaticInit::Ok,
+            Node::InitList(items) => {
+                if items.iter().all(|item| is_static_init_constant(item, objects)) {
+                    StaticInit::Ok
+                } else {
+                    StaticInit::NotConstant
+                }
+            }
             _ => StaticInit::NotConstant,
         },
-        Type::Ptr(_) => match node.inner() {
-            Node::Ident(_) | Node::Str(_) => StaticInit::Ok,
-            Node::Unary(UnaryOp::Addr, value) if is_address_constant_base(value) => StaticInit::Ok,
-            Node::Binary(_, _, _) if is_pointer_address_constant(node) => StaticInit::Ok,
+        Type::Ptr(pointee) => match node.inner() {
+            Node::Str(_) => {
+                if matches!(pointee.unqualified(), Type::Char | Type::UChar) {
+                    StaticInit::Ok
+                } else {
+                    StaticInit::StringPtr
+                }
+            }
             _ if eval_integer_constant(node) == Some(0) => StaticInit::Ok,
+            Node::Ident(name) => match objects.get(name).map(Type::unqualified) {
+                // 数组名/函数名退化为地址常量（C89 §3.2.2.1/§3.4）
+                Some(Type::Array(_, _)) | Some(Type::Function { .. }) => StaticInit::Ok,
+                // 对象的值不是常量（int *p = x 非法，须 &x）
+                Some(_) | None => StaticInit::NotConstant,
+            },
+            _ if is_pointer_address_constant(node, objects) => StaticInit::Ok,
             _ => StaticInit::NotConstant,
         },
-        Type::Float | Type::Double => match node.inner() {
-            Node::FNum(_) => StaticInit::Ok,
-            _ if eval_integer_constant(node).is_some() => StaticInit::Ok,
-            _ => StaticInit::NotConstant,
-        },
+        Type::Float | Type::Double => {
+            if is_arithmetic_constant(node) {
+                StaticInit::Ok
+            } else {
+                StaticInit::NotConstant
+            }
+        }
         ty if ty.is_integer() => {
-            if eval_integer_constant(node).is_some() {
+            if eval_integer_constant(node).is_some() || is_arithmetic_constant(node) {
                 StaticInit::Ok
             } else {
                 StaticInit::NotConstant
             }
         }
         _ => StaticInit::NotConstant,
+    }
+}
+
+/// 单个静态初始化器元素是否为常量：算术常量、字符串、或地址常量
+/// （&静态对象/数组名 ± 整数）。对象的值本身不是常量。
+fn is_static_init_constant(node: &Node, objects: &ObjectMap) -> bool {
+    match node.inner() {
+        Node::Num(_) | Node::FNum(_) | Node::Str(_) => true,
+        Node::Unary(UnaryOp::Neg | UnaryOp::Not | UnaryOp::BitNot, value)
+        | Node::Cast(_, value) => is_static_init_constant(value, objects),
+        Node::Binary(_, left, right) | Node::Comma(left, right) => {
+            is_static_init_constant(left, objects) && is_static_init_constant(right, objects)
+        }
+        Node::Cond(condition, yes, no) => {
+            is_static_init_constant(condition, objects)
+                && is_static_init_constant(yes, objects)
+                && is_static_init_constant(no, objects)
+        }
+        Node::InitList(items) => items.iter().all(|item| is_static_init_constant(item, objects)),
+        _ => is_pointer_address_constant(node, objects),
     }
 }
 
@@ -405,6 +536,14 @@ fn validate_function_signature(
 }
 
 fn validate_file_scope_objects(items: &[Node], context: &Context<'_>) -> CompileResult<()> {
+    // 文件作用域对象表：静态初始化器中的地址常量只能引用这些对象
+    let objects: ObjectMap = items
+        .iter()
+        .filter_map(|item| match item.inner() {
+            Node::Decl { specs, name, .. } => Some((name.clone(), specs.ty.clone())),
+            _ => None,
+        })
+        .collect();
     for item in items {
         if let Node::Decl { specs, init, .. } = item.inner() {
             if matches!(
@@ -420,10 +559,16 @@ fn validate_file_scope_objects(items: &[Node], context: &Context<'_>) -> Compile
                 if specs.storage == crate::ast::Storage::Extern {
                     return context.error(item, None, "extern 声明不能带初始化器");
                 }
-                match check_static_initializer(&specs.ty, init) {
+                match check_static_initializer(&specs.ty, init, &objects) {
                     StaticInit::Ok => {}
                     StaticInit::StringArray => {
                         return context.error(init, None, "字符串字面量只能初始化字符数组")
+                    }
+                    StaticInit::StringPtr => {
+                        return context.error(init, None, "字符串字面量只能初始化字符指针或字符数组")
+                    }
+                    StaticInit::TooMany => {
+                        return context.error(init, None, "初始化器数量超过数组长度")
                     }
                     StaticInit::NotConstant => {
                         return context.error(item, None, "静态存储期对象需要常量初始化器")
@@ -471,6 +616,7 @@ fn validate_block_objects(
     context: &Context<'_>,
     types: &HashMap<String, Type>,
     return_type: &Type,
+    globals: &ObjectMap,
 ) -> CompileResult<()> {
     let mut const_objects = HashSet::new();
     let mut register_objects = HashSet::new();
@@ -479,6 +625,7 @@ fn validate_block_objects(
         context: &Context<'_>,
         const_objects: &mut HashSet<String>,
         register_objects: &mut HashSet<String>,
+        globals: &ObjectMap,
     ) -> CompileResult<()> {
         match node.inner() {
             Node::Decl { specs, name, init } => {
@@ -496,11 +643,21 @@ fn validate_block_objects(
                 }
                 if specs.storage == crate::ast::Storage::Static {
                     if let Some(init) = init {
-                        match check_static_initializer(&specs.ty, init) {
+                        match check_static_initializer(&specs.ty, init, globals) {
                             StaticInit::Ok => {}
                             StaticInit::StringArray => {
                                 return context
                                     .error(init, None, "字符串字面量只能初始化字符数组")
+                            }
+                            StaticInit::StringPtr => {
+                                return context.error(
+                                    init,
+                                    None,
+                                    "字符串字面量只能初始化字符指针或字符数组",
+                                )
+                            }
+                            StaticInit::TooMany => {
+                                return context.error(init, None, "初始化器数量超过数组长度")
                             }
                             StaticInit::NotConstant => {
                                 return context
@@ -512,13 +669,13 @@ fn validate_block_objects(
             }
             Node::Block(nodes) => {
                 for child in nodes {
-                    collect(child, context, const_objects, register_objects)?;
+                    collect(child, context, const_objects, register_objects, globals)?;
                 }
             }
             Node::If(_, yes, no) => {
-                collect(yes, context, const_objects, register_objects)?;
+                collect(yes, context, const_objects, register_objects, globals)?;
                 if let Some(no) = no {
-                    collect(no, context, const_objects, register_objects)?;
+                    collect(no, context, const_objects, register_objects, globals)?;
                 }
             }
             Node::While(_, b)
@@ -527,12 +684,12 @@ fn validate_block_objects(
             | Node::Switch(_, b)
             | Node::Case(_, b)
             | Node::Default(b)
-            | Node::Label(_, b) => collect(b, context, const_objects, register_objects)?,
+            | Node::Label(_, b) => collect(b, context, const_objects, register_objects, globals)?,
             _ => {}
         }
         Ok(())
     }
-    collect(body, context, &mut const_objects, &mut register_objects)?;
+    collect(body, context, &mut const_objects, &mut register_objects, globals)?;
 
     fn check(
         node: &Node,
@@ -698,7 +855,7 @@ fn validate_function(
     );
     collect_local_types(body, &mut types);
     validate_expression_types(body, context, &types)?;
-    validate_block_objects(body, context, &types, return_type)?;
+    validate_block_objects(body, context, &types, return_type, global_types)?;
     validate_calls(body, context, &types, signatures)?;
     let mut labels = HashSet::new();
     let mut gotos = Vec::new();
@@ -810,6 +967,12 @@ fn expression_type(node: &Node, types: &HashMap<String, Type>) -> Option<Type> {
                     | BinaryOp::LogOr
             ) {
                 Some(Type::Int)
+            } else if matches!(op, BinaryOp::Sub)
+                && left.is_pointer_like()
+                && right.is_pointer_like()
+            {
+                // 指针相减得 ptrdiff_t（本实现为 int，C89 §3.3.6）
+                Some(Type::Int)
             } else if left.is_pointer_like() {
                 Some(left.without_top_qualifiers())
             } else if right.is_pointer_like() {
@@ -900,6 +1063,11 @@ fn validate_expression_types(
             if let Some(ty) = expression_type(array, types) {
                 if !ty.is_pointer_like() {
                     return context.error(node, Some("["), "下标运算左侧必须是数组或指针");
+                }
+            }
+            if let Some(ty) = expression_type(index, types) {
+                if !ty.is_integer() {
+                    return context.error(node, Some("["), "下标必须是整型表达式");
                 }
             }
         }
@@ -1266,6 +1434,70 @@ fn eval_integer_constant(node: &Node) -> Option<i64> {
             }
         }
         Node::Cast(_, value) => eval_integer_constant(value),
+        _ => None,
+    }
+}
+
+/// 求值浮点常量表达式（静态初始化器/数据段用）。
+/// C89 语义：两侧均为整数常量时按整型语义求值后转换（1/2 == 0），
+/// 否则按 double 算术。
+pub fn eval_float_constant(node: &Node) -> Option<f64> {
+    match node.inner() {
+        Node::FNum(value) => Some(*value),
+        Node::Unary(UnaryOp::Neg, value) => eval_float_constant(value).map(|v| -v),
+        Node::Cast(_, value) => eval_float_constant(value),
+        Node::Binary(op, left, right) => {
+            let left_int = eval_integer_constant(left);
+            let right_int = eval_integer_constant(right);
+            if let (Some(left), Some(right)) = (left_int, right_int) {
+                // 两侧都是整数常量：按整型语义求值，再转浮点
+                let value = match op {
+                    BinaryOp::Add => left.wrapping_add(right),
+                    BinaryOp::Sub => left.wrapping_sub(right),
+                    BinaryOp::Mul => left.wrapping_mul(right),
+                    BinaryOp::Div if right != 0 => left.checked_div(right)?,
+                    BinaryOp::Mod if right != 0 => left.checked_rem(right)?,
+                    BinaryOp::Lt => (left < right) as i64,
+                    BinaryOp::Gt => (left > right) as i64,
+                    BinaryOp::Le => (left <= right) as i64,
+                    BinaryOp::Ge => (left >= right) as i64,
+                    BinaryOp::Eq => (left == right) as i64,
+                    BinaryOp::Ne => (left != right) as i64,
+                    BinaryOp::LogAnd => (left != 0 && right != 0) as i64,
+                    BinaryOp::LogOr => (left != 0 || right != 0) as i64,
+                    _ => return None,
+                };
+                Some(value as f64)
+            } else {
+                let left = eval_float_constant(left)?;
+                let right = eval_float_constant(right)?;
+                match op {
+                    BinaryOp::Add => Some(left + right),
+                    BinaryOp::Sub => Some(left - right),
+                    BinaryOp::Mul => Some(left * right),
+                    BinaryOp::Div => Some(left / right),
+                    BinaryOp::Lt => Some((left < right) as i64 as f64),
+                    BinaryOp::Gt => Some((left > right) as i64 as f64),
+                    BinaryOp::Le => Some((left <= right) as i64 as f64),
+                    BinaryOp::Ge => Some((left >= right) as i64 as f64),
+                    BinaryOp::Eq => Some((left == right) as i64 as f64),
+                    BinaryOp::Ne => Some((left != right) as i64 as f64),
+                    _ => None,
+                }
+            }
+        }
+        Node::Cond(condition, yes, no) => {
+            if eval_integer_constant(condition)? != 0 {
+                eval_float_constant(yes)
+            } else {
+                eval_float_constant(no)
+            }
+        }
+        Node::Comma(_, right) => eval_float_constant(right),
+        // 整数常量在浮点上下文（double d = 1;）
+        _ if eval_integer_constant(node).is_some() => {
+            eval_integer_constant(node).map(|v| v as f64)
+        }
         _ => None,
     }
 }

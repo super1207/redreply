@@ -77,6 +77,7 @@ impl Preprocessor {
     /// 预处理入口（无 include 场景，简单使用/测试）
     pub fn run(&mut self, source: &str) -> Result<Vec<Token>, String> {
         self.last_error = None;
+        self.cond_stack.clear();
         self.run_source_named(source, Path::new(""), "<source>")
     }
 
@@ -114,6 +115,7 @@ impl Preprocessor {
         self.last_error = None;
         let p = PathBuf::from(path);
         self.include_stack.clear();
+        self.cond_stack.clear();
         let src =
             std::fs::read_to_string(&p).map_err(|e| format!("无法读取文件 {}: {}", path, e))?;
         let dir = p.parent().map(|d| d.to_path_buf()).unwrap_or_default();
@@ -172,6 +174,12 @@ impl Preprocessor {
         // #line 偏移是本文件处理流程的局部状态：每个文件从 0 开始，
         // include 的进出由独立的 run_source_named 调用天然隔离，互不串扰。
         let mut line_shift: i64 = 0;
+        // 待宏展开的普通 token 缓冲：宏展开在整个预处理记号流上进行
+        // （C89 §3.8），换行只是空白——跨行的函数宏调用（F(1,\n2)）必须
+        // 正常展开。指令（# 开头）是展开边界，保证 #define 等按位置生效。
+        let mut pending: Vec<Token> = Vec::new();
+        // 进入本文件时的条件编译深度：本文件新增的 #if 必须在本文件闭合。
+        let cond_depth_at_entry = self.cond_stack.len();
 
         while i < tokens.len() {
             let t = &tokens[i];
@@ -181,6 +189,8 @@ impl Preprocessor {
                 continue;
             }
             if t.kind == TokKind::Punct && t.text == "#" {
+                // 指令边界：先冲刷此前积累的普通 token
+                self.flush_pending(&mut pending, &mut out, line_shift)?;
                 i += 1;
                 // 条件编译指令需要特殊处理（即使在跳过状态也要维护结构）
                 if let Some(dt) = tokens.get(i) {
@@ -221,25 +231,19 @@ impl Preprocessor {
                     }
                 }
             }
-            // 普通行：收集整行 → 激活状态才宏展开输出
-            // （跳过 Eof：末尾统一追加一个带正确文件名的 Eof，避免重复）
-            let mut line_toks = Vec::new();
-            while i < tokens.len()
-                && tokens[i].kind != TokKind::Newline
-                && tokens[i].kind != TokKind::Eof
-            {
-                line_toks.push(tokens[i].clone());
-                i += 1;
-            }
+            // 普通 token：进待展开缓冲（激活状态才收集）
             if self.is_active() {
-                let mut expanded = self.expand_with_shift(&line_toks, line_shift)?;
-                if line_shift != 0 {
-                    for t in &mut expanded {
-                        t.line = (t.line as i64 + line_shift).max(0) as u32;
-                    }
-                }
-                out.extend(expanded);
+                pending.push(tokens[i].clone());
             }
+            i += 1;
+        }
+
+        // 冲刷剩余待展开 token
+        self.flush_pending(&mut pending, &mut out, line_shift)?;
+        // 本文件新增的 #if 未闭合 → 诊断（C89 §3.8.1 约束）
+        if self.cond_stack.len() > cond_depth_at_entry {
+            let last_line = tokens.last().map(|t| t.line).unwrap_or(1);
+            return Err(format!("第 {} 行: #if 缺少匹配的 #endif", last_line));
         }
 
         let last_line = tokens.last().map(|t| t.line).unwrap_or(1);
@@ -247,6 +251,27 @@ impl Preprocessor {
         eof.set_file(file);
         out.push(eof);
         Ok(out)
+    }
+
+    /// 宏展开并输出待处理的普通 token 流（跨行进行）。
+    fn flush_pending(
+        &self,
+        pending: &mut Vec<Token>,
+        out: &mut Vec<Token>,
+        line_shift: i64,
+    ) -> Result<(), String> {
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let mut expanded = self.expand_with_shift(pending, line_shift)?;
+        if line_shift != 0 {
+            for t in &mut expanded {
+                t.line = (t.line as i64 + line_shift).max(0) as u32;
+            }
+        }
+        out.append(&mut expanded);
+        pending.clear();
+        Ok(())
     }
 
     /// 当前是否处于输出状态（所有条件层都激活）
@@ -293,11 +318,17 @@ impl Preprocessor {
                 expr_toks.push(toks[i].clone());
                 i += 1;
             }
-            let expr_toks = self.replace_defined(&expr_toks)?;
-            let expr_toks = self.expand_with_shift(&expr_toks, line_shift)?;
-            cond = eval_expr(&expr_toks)
-                .map_err(|e| format!("第 {} 行: #if 表达式错误: {}", line, e))?
-                != 0;
+            if parent {
+                let expr_toks = self.replace_defined(&expr_toks)?;
+                let expr_toks = self.expand_with_shift(&expr_toks, line_shift)?;
+                cond = eval_expr(&expr_toks)
+                    .map_err(|e| format!("第 {} 行: #if 表达式错误: {}", line, e))?
+                    != 0;
+            } else {
+                // 跳过组内的 #if 控制表达式不得求值（C89 §3.8.1，
+                // 与 #elif 的 need_eval 保护一致）：不报除零/移位越界等错误
+                cond = false;
+            }
         }
         // 消耗行尾
         while i < toks.len() && toks[i].kind != TokKind::Newline {
@@ -589,12 +620,20 @@ impl Preprocessor {
                 return Err(format!("include 嵌套过深（疑似循环包含）: {}", fname));
             }
             let canonical = path.canonicalize().unwrap_or_else(|_| path.clone());
+            let src = std::fs::read_to_string(&path)
+                .map_err(|e| format!("无法读取头文件 {}: {}", fname, e))?;
             if self.include_stack.contains(&canonical) {
+                // 互含头文件 + include guard：守卫宏已定义时本次包含是
+                // 空操作（标准头文件惯用法，C89 §3.8.2 无栈内去重要求）
+                let guarded = detect_include_guard(&src)
+                    .map(|guard| self.macros.contains_key(&guard))
+                    .unwrap_or(false);
+                if guarded {
+                    return Ok((i, Vec::new()));
+                }
                 return Err(format!("循环包含: {}", fname));
             }
             // 递归处理被包含文件（从阶段 1 到阶段 4）
-            let src = std::fs::read_to_string(&path)
-                .map_err(|e| format!("无法读取头文件 {}: {}", fname, e))?;
             let sub_dir = path.parent().map(|d| d.to_path_buf()).unwrap_or_default();
             self.include_stack.push(canonical);
             let sub_tokens = self.run_source_named(&src, &sub_dir, &path.to_string_lossy())?;
@@ -609,6 +648,12 @@ impl Preprocessor {
                     return Err(format!("include 嵌套过深（疑似循环包含）: {}", fname));
                 }
                 if self.embedded_stack.contains(&fname) {
+                    let guarded = detect_include_guard(content)
+                        .map(|guard| self.macros.contains_key(&guard))
+                        .unwrap_or(false);
+                    if guarded {
+                        return Ok((i, Vec::new()));
+                    }
                     return Err(format!("循环包含: {}", fname));
                 }
                 self.embedded_stack.push(fname.clone());
@@ -757,10 +802,11 @@ impl Preprocessor {
                         continue;
                     }
                 }
-                // 宏名后紧跟 ( 且无空白 → 函数宏调用
+                // 宏名后紧跟 ( → 函数宏调用（C89 §3.8.3：调用点允许空白，
+                // "无空白"要求只适用于 #define 定义行）
                 let is_func_call = toks
                     .get(i + 1)
-                    .map(|n| n.kind == TokKind::Punct && n.text == "(" && !n.has_space)
+                    .map(|n| n.kind == TokKind::Punct && n.text == "(")
                     .unwrap_or(false);
 
                 if let Some(m) = self.macros.get(&t.text) {
@@ -778,7 +824,11 @@ impl Preprocessor {
                             }
                             Macro::Function { params, body } => {
                                 if is_func_call {
-                                    let (args, next) = collect_args(toks, i + 1)?;
+                                    let (mut args, next) = collect_args(toks, i + 1)?;
+                                    // F() 对零参数宏视为无实参（C89 §3.8.3）
+                                    if args.len() == 1 && args[0].is_empty() && params.is_empty() {
+                                        args.clear();
+                                    }
                                     if args.len() != params.len() {
                                         return Err(format!(
                                             "第 {} 行: 宏 {} 参数数量不匹配（需要 {}，给了 {}）",
@@ -871,36 +921,56 @@ impl Preprocessor {
         Ok(out)
     }
 
-    /// ## 记号粘贴：左右 token 文本拼接后重新 tokenize（§3.8.3.3）
+    /// ## 记号粘贴：左右 token 文本拼接后重新 tokenize（§3.8.3.3）。
+    /// 空操作数（CAT(x, )）时粘贴结果即另一侧操作数（标准行为）。
     fn apply_paste(&self, toks: Vec<Token>) -> Result<Vec<Token>, String> {
         let mut out: Vec<Token> = Vec::new();
         let mut i = 0;
         while i < toks.len() {
             if toks[i].kind == TokKind::Punct && toks[i].text == "##" {
-                let left = out.pop().ok_or("## 缺少左操作数")?;
-                let right = toks.get(i + 1).ok_or("## 缺少右操作数")?;
-                let joined = format!("{}{}", left.text, right.text);
-                let new_toks = tokenize(&joined)
-                    .map_err(|e| format!("## 粘贴结果无效: {} ({})", joined, e))?;
-                let mut real: Vec<Token> = new_toks
-                    .into_iter()
-                    .filter(|t| t.kind != TokKind::Newline && t.kind != TokKind::Eof)
-                    .collect();
-                if real.len() != 1 {
-                    // 宽松 pp-number：主流编译器允许粘贴结果以符号结尾（如 1 ## + → 1+）
-                    if !is_lenient_pp_number(&joined) {
-                        return Err(format!("## 粘贴必须产生单个记号: {}", joined));
+                let left = out.pop();
+                let right = toks.get(i + 1);
+                match (left, right) {
+                    (Some(left), Some(right)) => {
+                        let joined = format!("{}{}", left.text, right.text);
+                        let new_toks = tokenize(&joined)
+                            .map_err(|e| format!("## 粘贴结果无效: {} ({})", joined, e))?;
+                        let mut real: Vec<Token> = new_toks
+                            .into_iter()
+                            .filter(|t| t.kind != TokKind::Newline && t.kind != TokKind::Eof)
+                            .collect();
+                        if real.len() != 1 {
+                            // 宽松 pp-number：主流编译器允许粘贴结果以符号结尾（如 1 ## + → 1+）
+                            if !is_lenient_pp_number(&joined) {
+                                return Err(format!("## 粘贴必须产生单个记号: {}", joined));
+                            }
+                            let mut merged =
+                                Token::new(TokKind::Number, joined, left.line, left.has_space);
+                            merged.column = left.column;
+                            out.push(merged);
+                            i += 2;
+                            continue;
+                        }
+                        let mut merged = real.remove(0);
+                        merged.line = left.line;
+                        out.push(merged);
+                        i += 2;
                     }
-                    let mut merged = Token::new(TokKind::Number, joined, left.line, left.has_space);
-                    merged.column = left.column;
-                    out.push(merged);
-                    i += 2;
-                    continue;
+                    (Some(left), None) => {
+                        // CAT(x, )：右操作数为空 → 粘贴结果即 x
+                        out.push(left);
+                        i += 1;
+                    }
+                    (None, Some(right)) => {
+                        // CAT(, y)：左操作数为空 → 粘贴结果即 y
+                        out.push(right.clone());
+                        i += 2;
+                    }
+                    (None, None) => {
+                        // CAT(, )：两侧皆空 → 结果为空
+                        i += 1;
+                    }
                 }
-                let mut merged = real.remove(0);
-                merged.line = left.line;
-                out.push(merged);
-                i += 2;
             } else {
                 out.push(toks[i].clone());
                 i += 1;
@@ -959,10 +1029,9 @@ fn collect_args(toks: &[Token], open: usize) -> Result<(Vec<Vec<Token>>, usize),
             }
             depth -= 1;
             if depth == 0 {
-                // 空参数 F() 不产生参数
-                if !cur.is_empty() || !args.is_empty() {
-                    args.push(cur);
-                }
+                // C89 §3.8.3：F() 是一个空实参（F 为单参函数宏时）；
+                // 零参数宏由调用方按空列表处理。
+                args.push(cur);
                 return Ok((args, i + 1));
             }
             cur.push(t.clone());
@@ -975,6 +1044,56 @@ fn collect_args(toks: &[Token], open: usize) -> Result<(Vec<Vec<Token>>, usize),
         i += 1;
     }
     Err("宏调用缺少右括号 )".into())
+}
+
+/// 检测文件开头的 include guard（#ifndef G 紧跟 #define G），返回守卫宏名。
+/// 用于互含头文件的循环包含判定：守卫已定义时重入是空操作。
+fn detect_include_guard(src: &str) -> Option<String> {
+    let tokens = crate::lexer::tokenize(src).ok()?;
+    let mut idx = 0;
+    // 第一个指令前的 token 只能是换行（行首空白由词法器吞掉）
+    while idx < tokens.len() {
+        let t = &tokens[idx];
+        if t.kind == TokKind::Newline {
+            idx += 1;
+            continue;
+        }
+        if t.kind == TokKind::Punct && t.text == "#" {
+            break;
+        }
+        return None;
+    }
+    if idx >= tokens.len() {
+        return None;
+    }
+    let mut i = idx + 1; // 跳过 #
+    if tokens.get(i).map(|t| t.text.as_str()) != Some("ifndef") {
+        return None;
+    }
+    i += 1;
+    let guard = tokens.get(i)?;
+    if guard.kind != TokKind::Ident {
+        return None;
+    }
+    let guard = guard.text.clone();
+    // 下一行（或同行）必须是 #define guard
+    let mut j = i + 1;
+    while j < tokens.len() {
+        let t = &tokens[j];
+        if t.kind == TokKind::Punct && t.text == "#" {
+            let name = tokens.get(j + 1).map(|t| t.text.as_str());
+            if name != Some("define") {
+                return None;
+            }
+            let defined = tokens.get(j + 2);
+            if defined.map(|t| t.kind == TokKind::Ident && t.text == guard).unwrap_or(false) {
+                return Some(guard);
+            }
+            return None;
+        }
+        j += 1;
+    }
+    None
 }
 
 /// # 字符串化：参数 token → 带引号字符串（§3.8.3.2）

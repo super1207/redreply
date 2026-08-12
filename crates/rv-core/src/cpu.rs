@@ -183,7 +183,9 @@ fn detect_timezone() -> (i32, bool, String) {
         let mut t: libc::time_t = 0;
         let mut tm: libc::tm = std::mem::zeroed();
         libc::localtime_r(&t, &mut tm);
-        let offset = -tm.tm_gmtoff;
+        // tm_gmtoff 即“UTC 以东为正秒数”（东八区 +28800），
+        // 与文档约定和 Windows 分支一致，无需取反。
+        let offset = tm.tm_gmtoff;
         let dst = tm.tm_isdst > 0;
         let name = if tm.tm_zone.is_null() {
             "UTC".to_string()

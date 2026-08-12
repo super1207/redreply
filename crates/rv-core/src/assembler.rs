@@ -10,7 +10,7 @@
 //!   - 访存偏移：imm(reg)
 
 use crate::instr::{parse_reg, Instruction, Op};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 /// 指令区基址（PC 从这里开始）
 pub const TEXT_BASE: u32 = 0x0000_0000;
@@ -136,13 +136,40 @@ pub fn decode_string_escapes(inner: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// 解析字符串字面量（支持 \" \\ \n \r \t \0、八进制 \ddd、十六进制 \xHH）
+/// 解析字符串字面量列表（支持 \" \\ \n \r \t \0、八进制 \ddd、十六进制 \xHH）。
+/// 相邻字面量拼接（GAS 惯用法）：.asciiz "a" "b" 与 .asciiz "a", "b" 都得 ab\0；
+/// 段间的非法字符直接报错，不得静默编成数据字节。
 fn parse_string_literal(s: &str) -> Result<Vec<u8>, String> {
-    let s = s.trim();
-    if !s.starts_with('"') || !s.ends_with('"') {
-        return Err(format!("字符串字面量格式错误: {}", s));
+    let mut out = Vec::new();
+    let mut rest = s.trim();
+    while !rest.is_empty() {
+        // 多参数写法：跳过段间逗号与空白
+        if rest.starts_with(',') {
+            rest = rest[1..].trim_start();
+            continue;
+        }
+        if !rest.starts_with('"') {
+            return Err(format!("字符串字面量格式错误: {}", s));
+        }
+        // 找匹配的结束引号（跳过 \" 转义；引号/反斜杠均为 ASCII，逐字节扫描安全）
+        let mut end = 1usize;
+        while end < rest.len() {
+            let b = rest.as_bytes()[end];
+            if b == b'"' {
+                break;
+            }
+            if b == b'\\' && end + 1 < rest.len() {
+                end += 1;
+            }
+            end += 1;
+        }
+        if end >= rest.len() {
+            return Err(format!("字符串字面量缺少结束引号: {}", s));
+        }
+        out.extend_from_slice(&decode_string_escapes(&rest[1..end])?);
+        rest = rest[end + 1..].trim_start();
     }
-    decode_string_escapes(&s[1..s.len() - 1])
+    Ok(out)
 }
 
 /// 解析整数（十进制 / 十六进制 0x / 负数）
@@ -286,217 +313,240 @@ fn preprocess(source: &str) -> Result<(Vec<RawLine>, Vec<String>), String> {
 pub fn assemble(source: &str) -> Result<Program, String> {
     let (lines, _order) = preprocess(source)?;
 
-    // ===== 第一遍：布局 + 收集符号 =====
-    let mut symbols: HashMap<String, u32> = HashMap::new();
-    let mut text_addr = TEXT_BASE; // 指令按 4 字节递增
-    let mut data_addr = DATA_BASE;
-    let mut data_bytes: Vec<(u32, Vec<u8>)> = Vec::new();
-    let mut data_relocations: Vec<(usize, String, usize)> = Vec::new();
-    let mut first_text_label: Option<String> = None;
+    // 超范围 B 型分支松弛为「反转分支 + jal」的行集合（按 lines 下标）。
+    // 松弛插入 4 字节会移动后续地址，布局与生成整体迭代直到集合稳定
+    // （集合单调增长，必然终止）。
+    let mut relaxed: HashSet<usize> = HashSet::new();
 
-    for l in &lines {
-        if let Some(lb) = &l.label {
-            let addr = if l.section == "text" {
-                text_addr
+    loop {
+        // ===== 第一遍：布局 + 收集符号 =====
+        let mut symbols: HashMap<String, u32> = HashMap::new();
+        let mut text_addr = TEXT_BASE; // 指令按 4 字节递增
+        let mut data_addr = DATA_BASE;
+        let mut data_bytes: Vec<(u32, Vec<u8>)> = Vec::new();
+        let mut data_relocations: Vec<(usize, String, usize)> = Vec::new();
+
+        for (line_index, l) in lines.iter().enumerate() {
+            if let Some(lb) = &l.label {
+                let addr = if l.section == "text" {
+                    text_addr
+                } else {
+                    data_addr
+                };
+                if symbols.insert(lb.clone(), addr).is_some() {
+                    return Err(format!("重复标签: {}", lb));
+                }
+            }
+            if l.section == "text" {
+                if l.text.is_empty() {
+                    continue;
+                }
+                // 数据指令不会出现在 text 段，这里按指令处理
+                let parts: Vec<&str> = l.text.splitn(2, char::is_whitespace).collect();
+                let mnem = parts[0].to_lowercase();
+                if mnem == ".globl" {
+                    continue;
+                } // 符号导出指令忽略
+                let operands = if parts.len() > 1 {
+                    split_operands(parts[1])
+                } else {
+                    vec![]
+                };
+                if mnem.starts_with('.') {
+                    return Err(format!("数据指令 {} 不能出现在 .text 段", mnem));
+                }
+                let mut n = expansion_len(&mnem, &operands);
+                if relaxed.contains(&line_index) {
+                    n += 1; // 松弛为 2 条（反转分支 + jal）
+                }
+                let byte_len = n
+                    .checked_mul(4)
+                    .and_then(|value| u32::try_from(value).ok())
+                    .ok_or_else(|| "文本段大小溢出".to_string())?;
+                text_addr = text_addr
+                    .checked_add(byte_len)
+                    .ok_or_else(|| "文本段地址溢出".to_string())?;
             } else {
-                data_addr
-            };
-            if symbols.insert(lb.clone(), addr).is_some() {
-                return Err(format!("重复标签: {}", lb));
+                // 数据段
+                if l.text.is_empty() {
+                    continue;
+                }
+                let parts: Vec<&str> = l.text.splitn(2, char::is_whitespace).collect();
+                let mnem = parts[0];
+                let args = if parts.len() > 1 { parts[1].trim() } else { "" };
+                match mnem {
+                    ".float" => {
+                        // 单精度浮点常量（4 字节）
+                        for v in args.split(',') {
+                            let v = v.trim();
+                            if v.is_empty() {
+                                continue;
+                            }
+                            let val = v
+                                .parse::<f32>()
+                                .map_err(|_| format!("浮点数格式错误: {}", v))?;
+                            let bytes = val.to_bits().to_le_bytes().to_vec();
+                            let end = checked_data_end(data_addr, bytes.len())?;
+                            data_bytes.push((data_addr, bytes));
+                            data_addr = end;
+                        }
+                    }
+                    ".double" => {
+                        // 双精度浮点常量（8 字节）
+                        for v in args.split(',') {
+                            let v = v.trim();
+                            if v.is_empty() {
+                                continue;
+                            }
+                            let val = v
+                                .parse::<f64>()
+                                .map_err(|_| format!("浮点数格式错误: {}", v))?;
+                            let bytes = val.to_bits().to_le_bytes().to_vec();
+                            let end = checked_data_end(data_addr, bytes.len())?;
+                            data_bytes.push((data_addr, bytes));
+                            data_addr = end;
+                        }
+                    }
+                    ".word" | ".half" | ".byte" => {
+                        let size = if mnem == ".word" {
+                            4
+                        } else if mnem == ".half" {
+                            2
+                        } else {
+                            1
+                        };
+                        for v in args.split(',') {
+                            let v = v.trim();
+                            if v.is_empty() {
+                                continue;
+                            }
+                            let bytes = if let Ok(value) = parse_int(v) {
+                                (value as u32).to_le_bytes()[..size].to_vec()
+                            } else if v
+                                .chars()
+                                .all(|c| c == '_' || c == '.' || c.is_ascii_alphanumeric())
+                            {
+                                let index = data_bytes.len();
+                                data_relocations.push((index, v.to_owned(), size));
+                                vec![0; size]
+                            } else {
+                                return Err(format!("数据初值格式错误: {}", v));
+                            };
+                            let end = checked_data_end(data_addr, bytes.len())?;
+                            data_bytes.push((data_addr, bytes));
+                            data_addr = end;
+                        }
+                    }
+                    ".asciiz" | ".ascii" => {
+                        let mut bytes = parse_string_literal(args)?;
+                        if mnem == ".asciiz" {
+                            bytes.push(0);
+                        }
+                        let end = checked_data_end(data_addr, bytes.len())?;
+                        data_bytes.push((data_addr, bytes));
+                        data_addr = end;
+                    }
+                    ".space" => {
+                        let count = parse_int(args)?;
+                        if count < 0 {
+                            return Err(format!(".space 大小不能为负数: {}", count));
+                        }
+                        let count = count as usize;
+                        let end = checked_data_end(data_addr, count)?;
+                        data_bytes.push((data_addr, vec![0u8; count]));
+                        data_addr = end;
+                    }
+                    ".align" => {
+                        let exponent = parse_int(args)?;
+                        if !(0..=16).contains(&exponent) {
+                            return Err(format!(".align 指数必须在 0..=16: {}", exponent));
+                        }
+                        let alignment = 1u32 << exponent;
+                        let aligned = data_addr
+                            .checked_add(alignment - 1)
+                            .map(|value| value & !(alignment - 1))
+                            .ok_or_else(|| "数据段对齐地址溢出".to_string())?;
+                        checked_data_end(aligned, 0)?;
+                        data_addr = aligned;
+                    }
+                    _ => return Err(format!("不支持的数据指令: {}", mnem)),
+                }
             }
         }
-        if l.section == "text" {
-            if l.text.is_empty() {
+
+        for (index, symbol, size) in data_relocations {
+            let value = symbols
+                .get(&symbol)
+                .copied()
+                .ok_or_else(|| format!("数据初值引用了未知符号: {}", symbol))?;
+            data_bytes[index]
+                .1
+                .copy_from_slice(&value.to_le_bytes()[..size]);
+        }
+
+        // ===== 第二遍：生成指令（同时决定新增松弛）=====
+        let mut instructions: Vec<Instruction> = Vec::new();
+        let mut text_lines: Vec<String> = Vec::new();
+        let mut cur_addr = TEXT_BASE;
+        let mut changed = false;
+
+        for (line_index, l) in lines.iter().enumerate() {
+            if l.section != "text" || l.text.is_empty() || l.text.starts_with(".globl") {
                 continue;
             }
-            // 数据指令不会出现在 text 段，这里按指令处理
             let parts: Vec<&str> = l.text.splitn(2, char::is_whitespace).collect();
             let mnem = parts[0].to_lowercase();
-            if mnem == ".globl" {
-                continue;
-            } // 符号导出指令忽略
             let operands = if parts.len() > 1 {
                 split_operands(parts[1])
             } else {
                 vec![]
             };
-            if mnem.starts_with('.') {
-                return Err(format!("数据指令 {} 不能出现在 .text 段", mnem));
+            let raw_text = l.text.clone();
+            if is_branch_mnem(&mnem) {
+                let off = branch_target_offset(&mnem, &operands, cur_addr, &symbols)?;
+                if !(-4096..=4095).contains(&off) || off % 2 != 0 {
+                    if !relaxed.contains(&line_index) {
+                        relaxed.insert(line_index);
+                        changed = true;
+                    }
+                    let expanded = relaxed_branch(&mnem, &operands, cur_addr, &symbols)?;
+                    for ins in expanded {
+                        instructions.push(ins);
+                        text_lines.push(raw_text.clone());
+                        cur_addr = cur_addr.wrapping_add(4);
+                    }
+                    continue;
+                }
             }
-            let n = expansion_len(&mnem, &operands);
-            let byte_len = n
-                .checked_mul(4)
-                .and_then(|value| u32::try_from(value).ok())
-                .ok_or_else(|| "文本段大小溢出".to_string())?;
-            text_addr = text_addr
-                .checked_add(byte_len)
-                .ok_or_else(|| "文本段地址溢出".to_string())?;
-            if first_text_label.is_none() {
-                first_text_label = Some(l.text.clone());
-            }
-        } else {
-            // 数据段
-            if l.text.is_empty() {
-                continue;
-            }
-            let parts: Vec<&str> = l.text.splitn(2, char::is_whitespace).collect();
-            let mnem = parts[0];
-            let args = if parts.len() > 1 { parts[1].trim() } else { "" };
-            match mnem {
-                ".float" => {
-                    // 单精度浮点常量（4 字节）
-                    for v in args.split(',') {
-                        let v = v.trim();
-                        if v.is_empty() {
-                            continue;
-                        }
-                        let val = v
-                            .parse::<f32>()
-                            .map_err(|_| format!("浮点数格式错误: {}", v))?;
-                        let bytes = val.to_bits().to_le_bytes().to_vec();
-                        let end = checked_data_end(data_addr, bytes.len())?;
-                        data_bytes.push((data_addr, bytes));
-                        data_addr = end;
-                    }
-                }
-                ".double" => {
-                    // 双精度浮点常量（8 字节）
-                    for v in args.split(',') {
-                        let v = v.trim();
-                        if v.is_empty() {
-                            continue;
-                        }
-                        let val = v
-                            .parse::<f64>()
-                            .map_err(|_| format!("浮点数格式错误: {}", v))?;
-                        let bytes = val.to_bits().to_le_bytes().to_vec();
-                        let end = checked_data_end(data_addr, bytes.len())?;
-                        data_bytes.push((data_addr, bytes));
-                        data_addr = end;
-                    }
-                }
-                ".word" | ".half" | ".byte" => {
-                    let size = if mnem == ".word" {
-                        4
-                    } else if mnem == ".half" {
-                        2
-                    } else {
-                        1
-                    };
-                    for v in args.split(',') {
-                        let v = v.trim();
-                        if v.is_empty() {
-                            continue;
-                        }
-                        let bytes = if let Ok(value) = parse_int(v) {
-                            (value as u32).to_le_bytes()[..size].to_vec()
-                        } else if v
-                            .chars()
-                            .all(|c| c == '_' || c == '.' || c.is_ascii_alphanumeric())
-                        {
-                            let index = data_bytes.len();
-                            data_relocations.push((index, v.to_owned(), size));
-                            vec![0; size]
-                        } else {
-                            return Err(format!("数据初值格式错误: {}", v));
-                        };
-                        let end = checked_data_end(data_addr, bytes.len())?;
-                        data_bytes.push((data_addr, bytes));
-                        data_addr = end;
-                    }
-                }
-                ".asciiz" | ".ascii" => {
-                    let mut bytes = parse_string_literal(args)?;
-                    if mnem == ".asciiz" {
-                        bytes.push(0);
-                    }
-                    let end = checked_data_end(data_addr, bytes.len())?;
-                    data_bytes.push((data_addr, bytes));
-                    data_addr = end;
-                }
-                ".space" => {
-                    let count = parse_int(args)?;
-                    if count < 0 {
-                        return Err(format!(".space 大小不能为负数: {}", count));
-                    }
-                    let count = count as usize;
-                    let end = checked_data_end(data_addr, count)?;
-                    data_bytes.push((data_addr, vec![0u8; count]));
-                    data_addr = end;
-                }
-                ".align" => {
-                    let exponent = parse_int(args)?;
-                    if !(0..=16).contains(&exponent) {
-                        return Err(format!(".align 指数必须在 0..=16: {}", exponent));
-                    }
-                    let alignment = 1u32 << exponent;
-                    let aligned = data_addr
-                        .checked_add(alignment - 1)
-                        .map(|value| value & !(alignment - 1))
-                        .ok_or_else(|| "数据段对齐地址溢出".to_string())?;
-                    checked_data_end(aligned, 0)?;
-                    data_addr = aligned;
-                }
-                _ => return Err(format!("不支持的数据指令: {}", mnem)),
+            let expanded = parse_instruction(&mnem, &operands, cur_addr, &symbols)?;
+            for ins in expanded {
+                instructions.push(ins);
+                text_lines.push(raw_text.clone());
+                cur_addr = cur_addr.wrapping_add(4);
             }
         }
-    }
 
-    for (index, symbol, size) in data_relocations {
-        let value = symbols
-            .get(&symbol)
-            .copied()
-            .ok_or_else(|| format!("数据初值引用了未知符号: {}", symbol))?;
-        data_bytes[index]
-            .1
-            .copy_from_slice(&value.to_le_bytes()[..size]);
-    }
+        if !changed {
+            let data_end = data_addr;
+            // 入口：优先 _start（crt0 启动器），其次 main，否则 .text 首条
+            let entry = symbols
+                .get("_start")
+                .copied()
+                .or_else(|| symbols.get("main").copied())
+                .unwrap_or(TEXT_BASE);
 
-    // 收集 .text 行（第二遍用）
-    let text_lines_raw: Vec<&RawLine> = lines
-        .iter()
-        .filter(|l| l.section == "text" && !l.text.is_empty() && !l.text.starts_with(".globl"))
-        .collect();
-
-    // ===== 第二遍：生成指令 =====
-    let mut instructions: Vec<Instruction> = Vec::new();
-    let mut text_lines: Vec<String> = Vec::new();
-    let mut cur_addr = TEXT_BASE;
-
-    for l in &text_lines_raw {
-        let parts: Vec<&str> = l.text.splitn(2, char::is_whitespace).collect();
-        let mnem = parts[0].to_lowercase();
-        let operands = if parts.len() > 1 {
-            split_operands(parts[1])
-        } else {
-            vec![]
-        };
-        let raw_text = l.text.clone();
-        let expanded = parse_instruction(&mnem, &operands, cur_addr, &symbols)?;
-        for ins in expanded {
-            instructions.push(ins);
-            text_lines.push(raw_text.clone());
-            cur_addr = cur_addr.wrapping_add(4);
+            return Ok(Program {
+                instructions,
+                text_lines,
+                data_segments: data_bytes,
+                data_end,
+                entry,
+                symbols,
+            });
         }
     }
-
-    let data_end = data_addr;
-    // 入口：优先 _start（crt0 启动器），其次 main，否则 .text 首条
-    let entry = symbols
-        .get("_start")
-        .copied()
-        .or_else(|| symbols.get("main").copied())
-        .unwrap_or(TEXT_BASE);
-
-    Ok(Program {
-        instructions,
-        text_lines,
-        data_segments: data_bytes,
-        data_end,
-        entry,
-        symbols,
-    })
 }
+
 // ---- 指令解析与伪指令展开 ----
 
 /// 伪指令 + 真指令 → 若干条 Instruction
@@ -607,7 +657,7 @@ fn parse_instruction(
                 Op::Beq,
                 parse_reg(op!(0))?,
                 0,
-                resolve_label(op!(1), addr, symbols)?,
+                resolve_branch_label(op!(1), addr, symbols)?,
             )])
         }
         "bnez" => {
@@ -615,7 +665,7 @@ fn parse_instruction(
                 Op::Bne,
                 parse_reg(op!(0))?,
                 0,
-                resolve_label(op!(1), addr, symbols)?,
+                resolve_branch_label(op!(1), addr, symbols)?,
             )])
         }
         "bgt" => {
@@ -623,7 +673,7 @@ fn parse_instruction(
                 Op::Blt,
                 parse_reg(op!(1))?,
                 parse_reg(op!(0))?,
-                resolve_label(op!(2), addr, symbols)?,
+                resolve_branch_label(op!(2), addr, symbols)?,
             )])
         }
         "ble" => {
@@ -631,7 +681,7 @@ fn parse_instruction(
                 Op::Bge,
                 parse_reg(op!(1))?,
                 parse_reg(op!(0))?,
-                resolve_label(op!(2), addr, symbols)?,
+                resolve_branch_label(op!(2), addr, symbols)?,
             )])
         }
         "bgtu" => {
@@ -639,7 +689,7 @@ fn parse_instruction(
                 Op::Bltu,
                 parse_reg(op!(1))?,
                 parse_reg(op!(0))?,
-                resolve_label(op!(2), addr, symbols)?,
+                resolve_branch_label(op!(2), addr, symbols)?,
             )])
         }
         "bleu" => {
@@ -647,7 +697,7 @@ fn parse_instruction(
                 Op::Bgeu,
                 parse_reg(op!(1))?,
                 parse_reg(op!(0))?,
-                resolve_label(op!(2), addr, symbols)?,
+                resolve_branch_label(op!(2), addr, symbols)?,
             )])
         }
         "not" => {
@@ -815,24 +865,24 @@ fn parse_instruction(
             parse_reg(op!(2))?,
         )]),
         // I 型
-        "addi" => Ok(vec![Instruction::r2i(
-            Op::Addi,
-            parse_reg(op!(0))?,
-            parse_reg(op!(1))?,
-            parse_int(op!(2))?,
-        )]),
-        "slti" => Ok(vec![Instruction::r2i(
-            Op::Slti,
-            parse_reg(op!(0))?,
-            parse_reg(op!(1))?,
-            parse_int(op!(2))?,
-        )]),
-        "sltiu" => Ok(vec![Instruction::r2i(
-            Op::Sltiu,
-            parse_reg(op!(0))?,
-            parse_reg(op!(1))?,
-            parse_int(op!(2))?,
-        )]),
+        "addi" | "slti" | "sltiu" => {
+            // I 型：12 位符号扩展立即数（接受 -2048..=4095 的位型）
+            let imm = parse_int(op!(2))?;
+            if !(-2048..=4095).contains(&imm) {
+                return Err(format!("I 型立即数超出 12 位符号扩展范围: {}", imm));
+            }
+            let op = match mnem {
+                "addi" => Op::Addi,
+                "slti" => Op::Slti,
+                _ => Op::Sltiu,
+            };
+            Ok(vec![Instruction::r2i(
+                op,
+                parse_reg(op!(0))?,
+                parse_reg(op!(1))?,
+                imm,
+            )])
+        }
         "xori" => Ok(vec![Instruction::r2i(
             Op::Xori,
             parse_reg(op!(0))?,
@@ -873,6 +923,9 @@ fn parse_instruction(
         "lb" | "lh" | "lw" | "lbu" | "lhu" => {
             let rd = parse_reg(op!(0))?;
             let (imm, rs1) = parse_mem_operand(op!(1))?;
+            if !(-2048..=2047).contains(&imm) {
+                return Err(format!("访存偏移超出 I 型范围 ±2047: {}", imm));
+            }
             let op = match mnem {
                 "lb" => Op::Lb,
                 "lh" => Op::Lh,
@@ -1016,6 +1069,9 @@ fn parse_instruction(
         "flw" => {
             let rd = parse_freg(op!(0))?;
             let (imm, rs1) = parse_mem_operand(op!(1))?;
+            if !(-2048..=2047).contains(&imm) {
+                return Err(format!("访存偏移超出 I 型范围 ±2047: {}", imm));
+            }
             Ok(vec![Instruction {
                 op: Op::FLw,
                 rd,
@@ -1160,6 +1216,9 @@ fn parse_instruction(
         "fld" => {
             let rd = parse_freg(op!(0))?;
             let (imm, rs1) = parse_mem_operand(op!(1))?;
+            if !(-2048..=2047).contains(&imm) {
+                return Err(format!("访存偏移超出 I 型范围 ±2047: {}", imm));
+            }
             Ok(vec![Instruction {
                 op: Op::FLd,
                 rd,
@@ -1188,14 +1247,8 @@ fn parse_instruction(
         "beq" | "bne" | "blt" | "bge" | "bltu" | "bgeu" => {
             let rs1 = parse_reg(op!(0))?;
             let rs2 = parse_reg(op!(1))?;
-            let off = resolve_label(op!(2), addr, symbols)?;
-            // B 型编码：12 位 <<1 且要求偶数（即 -4096..=4094 的偶数）
-            if !(-4096..=4095).contains(&off) || off % 2 != 0 {
-                return Err(format!(
-                    "分支偏移超出 B 型范围（12 位 <<1，须为偶数）: {}",
-                    off
-                ));
-            }
+            // B 型编码：12 位 <<1 且要求偶数（-4096..=4094 的偶数）
+            let off = resolve_branch_label(op!(2), addr, symbols)?;
             let op = match mnem {
                 "beq" => Op::Beq,
                 "bne" => Op::Bne,
@@ -1208,7 +1261,7 @@ fn parse_instruction(
         }
         // 跳转
         "jal" => {
-            // 此时 ops 是 [rd, label]
+            // 此时 ops 是 [rd, label]；J 型 ±1MB 范围（标签恒 4 对齐）
             let rd = parse_reg(op!(0))?;
             let off = resolve_label(op!(1), addr, symbols)?;
             Ok(vec![Instruction {
@@ -1256,16 +1309,16 @@ fn parse_instruction(
             }])
         }
         // U 型
-        "lui" => Ok(vec![Instruction::r1i(
-            Op::Lui,
-            parse_reg(op!(0))?,
-            parse_int(op!(1))?,
-        )]),
-        "auipc" => Ok(vec![Instruction::r1i(
-            Op::Auipc,
-            parse_reg(op!(0))?,
-            parse_int(op!(1))?,
-        )]),
+        "lui" | "auipc" => {
+            // U 型：20 位立即数（接受符号扩展位型 -0x80000..=0xFFFFF，
+            // 如 lui t0, -1 表示 0xFFFFF；超范围静默回绕是真机不会有的行为）
+            let imm = parse_int(op!(1))?;
+            if !(-524288..=1048575).contains(&imm) {
+                return Err(format!("U 型立即数超出 20 位范围: {}", imm));
+            }
+            let op = if mnem == "lui" { Op::Lui } else { Op::Auipc };
+            Ok(vec![Instruction::r1i(op, parse_reg(op!(0))?, imm)])
+        }
         // 系统
         "ecall" => Ok(vec![mk(Op::Ecall)]),
         "ebreak" => Ok(vec![mk(Op::Ebreak)]),
@@ -1305,6 +1358,115 @@ fn resolve_label(label: &str, addr: u32, symbols: &HashMap<String, u32>) -> Resu
         return Err(format!("跳转目标超出范围: {} (偏移 {})", label, off));
     }
     Ok(off)
+}
+
+/// 分支目标解析：B 型编码 12 位 <<1，偏移须为偶数且在 ±4KB 内
+/// （伪分支 beqz/bgt/bleu 等与真分支同一编码约束）。
+fn resolve_branch_label(
+    label: &str,
+    addr: u32,
+    symbols: &HashMap<String, u32>,
+) -> Result<i32, String> {
+    let off = resolve_label(label, addr, symbols)?;
+    if !(-4096..=4095).contains(&off) || off % 2 != 0 {
+        return Err(format!(
+            "分支偏移超出 B 型范围（12 位 <<1，须为偶数）: {}",
+            off
+        ));
+    }
+    Ok(off)
+}
+
+/// 分支指令判定（含伪分支）。
+fn is_branch_mnem(mnem: &str) -> bool {
+    matches!(
+        mnem,
+        "beq" | "bne"
+            | "blt"
+            | "bge"
+            | "bltu"
+            | "bgeu"
+            | "beqz"
+            | "bnez"
+            | "bgt"
+            | "ble"
+            | "bgtu"
+            | "bleu"
+    )
+}
+
+/// 分支目标偏移（±1MB 校验，B 型范围由调用方/松弛处理）。
+fn branch_target_offset(
+    mnem: &str,
+    ops: &[String],
+    addr: u32,
+    symbols: &HashMap<String, u32>,
+) -> Result<i32, String> {
+    let label_index = match mnem {
+        "beqz" | "bnez" => 1,
+        _ => 2,
+    };
+    let label = ops
+        .get(label_index)
+        .ok_or_else(|| format!("{} 缺少标签操作数", mnem))?;
+    resolve_label(label, addr, symbols)
+}
+
+/// 超范围 B 型分支松弛：反转分支（跳到下一条指令）+ jal 直达目标。
+/// 两条均可真机编码，语义与原分支等价（真分支路径多执行 1 条指令）。
+fn relaxed_branch(
+    mnem: &str,
+    ops: &[String],
+    addr: u32,
+    symbols: &HashMap<String, u32>,
+) -> Result<Vec<Instruction>, String> {
+    // (反转后的操作码, rs1, rs2, 标签操作数下标)；伪分支已换算成等价真分支形式
+    let (op, rs1, rs2, label_index): (Op, u8, u8, usize) = match mnem {
+        "beq" => (Op::Bne, parse_reg(&ops[0])?, parse_reg(&ops[1])?, 2),
+        "bne" => (Op::Beq, parse_reg(&ops[0])?, parse_reg(&ops[1])?, 2),
+        "blt" => (Op::Bge, parse_reg(&ops[0])?, parse_reg(&ops[1])?, 2),
+        "bge" => (Op::Blt, parse_reg(&ops[0])?, parse_reg(&ops[1])?, 2),
+        "bltu" => (Op::Bgeu, parse_reg(&ops[0])?, parse_reg(&ops[1])?, 2),
+        "bgeu" => (Op::Bltu, parse_reg(&ops[0])?, parse_reg(&ops[1])?, 2),
+        // beqz a, L ≡ beq a, x0, L → 反转 bne a, x0, +8
+        "beqz" => (Op::Bne, parse_reg(&ops[0])?, 0, 1),
+        "bnez" => (Op::Beq, parse_reg(&ops[0])?, 0, 1),
+        // bgt a, b, L ≡ blt b, a, L → 反转 bge b, a, +8
+        "bgt" => (Op::Bge, parse_reg(&ops[1])?, parse_reg(&ops[0])?, 2),
+        "ble" => (Op::Blt, parse_reg(&ops[1])?, parse_reg(&ops[0])?, 2),
+        "bgtu" => (Op::Bgeu, parse_reg(&ops[1])?, parse_reg(&ops[0])?, 2),
+        "bleu" => (Op::Bltu, parse_reg(&ops[1])?, parse_reg(&ops[0])?, 2),
+        _ => return Err(format!("{} 不是可松弛的分支指令", mnem)),
+    };
+    let label = ops
+        .get(label_index)
+        .ok_or_else(|| format!("{} 缺少标签操作数", mnem))?;
+    let target = symbols
+        .get(label)
+        .copied()
+        .ok_or_else(|| format!("未知标签: {}", label))?;
+    let off = target as i32 - addr as i32;
+    if !(-(1 << 20)..(1 << 20)).contains(&off) {
+        return Err(format!("跳转目标超出范围: {} (偏移 {})", label, off));
+    }
+    Ok(vec![
+        Instruction {
+            op,
+            rd: 0,
+            rs1,
+            rs2,
+            rs3: 0,
+            imm: 8, // 跳过下一条 jal
+        },
+        Instruction {
+            op: Op::Jal,
+            rd: 0,
+            rs1: 0,
+            rs2: 0,
+            rs3: 0,
+            imm: off - 4, // jal 位于 addr+4
+        },
+    ])
 }
 
 /// li / la 大立即数展开：lui + addi（处理低 12 位符号扩展的进位）
@@ -1480,15 +1642,19 @@ main: nop
         assert!(assemble(".text\nmain: jalr t0, t1, 2047\n").is_ok());
         assert!(assemble(".text\nmain: jalr t0, -2048(t1)\n").is_ok());
 
-        // 条件分支偏移超出 ±4096（B 型 12 位 <<1）报错
+        // 条件分支偏移超出 ±4096（B 型 12 位 <<1）：自动松弛为
+        // 「反转分支 + jal」两条，均真机可编码
         let mut far_src = String::from(".text\nstart: beq zero, zero, far\n");
         for _ in 0..1030 {
             far_src.push_str("nop\n");
         }
         far_src.push_str("far: nop\n");
-        assert!(assemble(&far_src)
-            .unwrap_err()
-            .contains("分支偏移超出 B 型范围"));
+        let p = assemble(&far_src).unwrap();
+        assert_eq!(p.instructions.len(), 2 + 1030 + 1);
+        assert_eq!(p.instructions[0].op, Op::Bne); // 反转分支跳过 jal
+        assert_eq!(p.instructions[0].imm, 8);
+        assert_eq!(p.instructions[1].op, Op::Jal);
+        assert_eq!(p.instructions[1].imm, 4124); // 目标 4128 - 4
 
         // 偏移 4004（≤ 4094 且偶数）应通过
         let mut near_src = String::from(".text\nstart: beq zero, zero, far\n");

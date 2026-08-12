@@ -163,9 +163,13 @@ impl Codegen {
         // .data 段
         let mut data = String::new();
         data.push_str(".data\n");
+        // tentative definition（int x; int x;）合并为同一对象：只发射一次标签。
+        let mut emitted_globals: HashSet<String> = HashSet::new();
         for item in items {
             if let Node::Decl { specs, name, .. } = item {
-                if !matches!(specs.storage, Storage::Typedef | Storage::Extern) {
+                if !matches!(specs.storage, Storage::Typedef | Storage::Extern)
+                    && emitted_globals.insert(name.clone())
+                {
                     self.emit_global_data(&mut data, name, &specs.ty);
                 }
             }
@@ -663,10 +667,11 @@ impl Codegen {
 
     /// 生成函数（含序言/尾声）
     fn gen_func(&mut self, func: &Node) {
-        let (ret, name, params, _is_variadic, body) = match func {
+        let (ret, name, storage, params, _is_variadic, body) = match func {
             Node::FuncDef {
                 ret,
                 name,
+                storage,
                 params,
                 is_variadic,
                 body,
@@ -674,6 +679,7 @@ impl Codegen {
             } => (
                 ret.clone(),
                 name.clone(),
+                *storage,
                 params.clone(),
                 *is_variadic,
                 body,
@@ -752,13 +758,18 @@ impl Codegen {
         }
         self.collect_locals(body, base);
         self.collect_struct_call_temps(body);
-        let frame = ((self.frame_size + 8) + 7) & !7; // +8: ra/s0；对齐 8
+        // +16：ra/s0 各 4 字节，另留 t6 槽（调用侧 mv t6, sp 传入第一个变参
+        // 地址；va_start 须从帧内读取，不能依赖 caller-saved t6 存活）。
+        let frame = ((self.frame_size + 16) + 7) & !7;
         self.frame_size = frame;
         // 参数偏移
 
         self.ret_label = self.label();
 
-        self.emit(&format!(".globl {}", name));
+        // static 函数是内部链接，不导出（C89 §3.1.2.2）
+        if storage != Storage::Static {
+            self.emit(&format!(".globl {}", name));
+        }
         self.emit(&format!("{}:", name));
         if frame > 2047 {
             // 帧大于 12 位立即数范围：li + sub 分两步调整 sp
@@ -773,6 +784,9 @@ impl Codegen {
         let (rb, ro) = self.address_parts("sp", frame - 8, "t2");
         self.emit(&format!("    sw s0, {}({})", ro, rb));
         self.emit("    mv s0, sp");
+        // t6 = 第一个变参地址（调用侧在压完变参后设置）。它是 caller-saved，
+        // 须在序言立即存档，供函数体任意位置的 va_start 读取。
+        self.emit("    sw t6, -12(s0)");
         // 保存参数到栈帧（相对 s0）：int → aN，double → f10+fi，struct → 从 t5 拷贝
         {
             if self.sret_slot.is_some() {
@@ -801,13 +815,27 @@ impl Codegen {
                 } else if Self::is_float_ty(&p.ty) {
                     let slot = self.locals.get(&p.name).map(|x| x.0).unwrap_or(0);
                     if fi < 22 {
-                        let (rb, ro) = self.address_parts("s0", slot, "t2");
-                        self.emit(&format!("    fsd f{}, {}({})", 10 + fi, ro, rb));
+                        if matches!(p.ty.unqualified(), Type::Float) {
+                            // 调用侧按 double 位型传 float 实参（fa 寄存器 8 字节），
+                            // 形参槽是 4 字节单精度：先窄化再 fsw，与 load/store 约定一致。
+                            let (rb, ro) = self.address_parts("s0", slot, "t2");
+                            self.emit(&format!("    fcvt.s.d f11, f{}", 10 + fi));
+                            self.emit(&format!("    fsw f11, {}({})", ro, rb));
+                        } else {
+                            let (rb, ro) = self.address_parts("s0", slot, "t2");
+                            self.emit(&format!("    fsd f{}, {}({})", 10 + fi, ro, rb));
+                        }
                     } else {
                         let (rb, ro) = self.address_parts("s0", frame + overflow as i32 * 8, "t2");
                         self.emit(&format!("    fld f0, {}({})", ro, rb));
-                        let (rb, ro) = self.address_parts("s0", slot, "t2");
-                        self.emit(&format!("    fsd f0, {}({})", ro, rb));
+                        if matches!(p.ty.unqualified(), Type::Float) {
+                            self.emit("    fcvt.s.d f11, f0");
+                            let (rb, ro) = self.address_parts("s0", slot, "t2");
+                            self.emit(&format!("    fsw f11, {}({})", ro, rb));
+                        } else {
+                            let (rb, ro) = self.address_parts("s0", slot, "t2");
+                            self.emit(&format!("    fsd f0, {}({})", ro, rb));
+                        }
                         overflow += 1;
                     }
                     fi += 1;
@@ -865,9 +893,18 @@ impl Codegen {
 
     fn constant_data_value(&self, ty: &Type, node: Option<&Node>) -> String {
         match (ty.unqualified(), node.map(Node::inner)) {
-            (Type::Float | Type::Double, Some(Node::FNum(v))) => v.to_string(),
+            // 浮点初始化器可以是常量算术表达式（double g = 1.0 + 2.0）
+            (Type::Float | Type::Double, Some(node)) => {
+                crate::semantic::eval_float_constant(node)
+                    .unwrap_or(0.0)
+                    .to_string()
+            }
             (Type::Ptr(_), Some(node)) => self.static_ptr_value(node),
-            (_, Some(node)) => eval_integer_constant(node).unwrap_or(0).to_string(),
+            // 整型对象的浮点常量初始化器按 C 转换语义截断（int x = 3.7 → 3）
+            (_, Some(node)) => eval_integer_constant(node)
+                .or_else(|| crate::semantic::eval_float_constant(node).map(|v| v as i64))
+                .unwrap_or(0)
+                .to_string(),
             _ => "0".into(),
         }
     }
@@ -919,6 +956,8 @@ impl Codegen {
                 .iter()
                 .find(|(_, value)| value == content)
                 .map(|(label, _)| (label.clone(), 0)),
+            // &x + k / &arr[i]：取地址后基表达式相同
+            Node::Unary(UnaryOp::Addr, value) => self.address_base_offset(value),
             Node::Subscript(base, index) => {
                 let (label, offset) = self.address_base_offset(base)?;
                 let index = eval_integer_constant(index)?;
@@ -1411,8 +1450,11 @@ impl Codegen {
 
     fn emit_aggregate_copy(&mut self, destination: &str, source: &str, size: usize) {
         for offset in 0..size {
-            self.emit(&format!("    lbu t1, {}({})", offset, source));
-            self.emit(&format!("    sb t1, {}({})", offset, destination));
+            // 偏移可能超出 ±2047：经 address_parts 生成 li+add 寻址
+            let (rb, ro) = self.address_parts(source, offset as i32, "t4");
+            self.emit(&format!("    lbu t1, {}({})", ro, rb));
+            let (rb, ro) = self.address_parts(destination, offset as i32, "t4");
+            self.emit(&format!("    sb t1, {}({})", ro, rb));
         }
     }
 
@@ -1447,7 +1489,8 @@ impl Codegen {
                 self.emit("    mv t2, a0");
                 self.gen_addr(&Node::Ident(name.to_owned()));
                 if base != 0 {
-                    self.emit(&format!("    addi a0, a0, {}", base));
+                    let (rb, ro) = self.address_parts("a0", base as i32, "t4");
+                    self.emit(&format!("    addi a0, {}, {}", rb, ro));
                 }
                 self.emit("    mv t3, a0");
                 self.emit_aggregate_copy("t3", "t2", self.tt.size_of(ty).unwrap_or(0));
@@ -1487,7 +1530,9 @@ impl Codegen {
         }
         self.gen_addr(&Node::Ident(name.to_owned()));
         if offset != 0 {
-            self.emit(&format!("    addi a0, a0, {}", offset));
+            // 偏移可能超出 ±2047（大数组元素初始化）
+            let (rb, ro) = self.address_parts("a0", offset as i32, "t4");
+            self.emit(&format!("    addi a0, {}, {}", rb, ro));
         }
         self.emit("    mv t3, a0");
         if Self::is_float_ty(ty) {
@@ -1532,8 +1577,11 @@ impl Codegen {
                         self.emit("    lw t3, 0(s0)");
                         let size = self.tt.size_of(&self.current_ret).unwrap_or(0);
                         for offset in 0..size {
-                            self.emit(&format!("    lbu t1, {}(t2)", offset));
-                            self.emit(&format!("    sb t1, {}(t3)", offset));
+                            // 大结构体：偏移超出 ±2047 时经 li+add 寻址
+                            let (rb, ro) = self.address_parts("t2", offset as i32, "t4");
+                            self.emit(&format!("    lbu t1, {}({})", ro, rb));
+                            let (rb, ro) = self.address_parts("t3", offset as i32, "t4");
+                            self.emit(&format!("    sb t1, {}({})", ro, rb));
                         }
                         self.emit("    mv a0, t3");
                     } else {
@@ -1552,6 +1600,11 @@ impl Codegen {
                             } else {
                                 self.emit("    fcvt.w.d a0, f10");
                             }
+                        }
+                        if matches!(target.unqualified(), Type::Float) {
+                            // 返回值按单精度收敛（float 只有 24 位尾数）
+                            self.emit("    fcvt.s.d f10, f10");
+                            self.emit("    fcvt.d.s f10, f10");
                         }
                         self.emit_integer_conversion(&target);
                     }
@@ -1989,7 +2042,9 @@ impl Codegen {
                 }
                 let off = self.member_offset(obj, name);
                 if off != 0 {
-                    self.emit(&format!("    addi a0, a0, {}", off));
+                    // 大结构体成员偏移可能超出 ±2047
+                    let (rb, ro) = self.address_parts("a0", off as i32, "t4");
+                    self.emit(&format!("    addi a0, {}, {}", rb, ro));
                 }
             }
             _ => {
@@ -2157,7 +2212,9 @@ impl Codegen {
             Some(Type::UShort) => self.emit("    lhu a0, 0(a0)"),
             // 数组和结构体表达式以对象地址表示；下标结果仍为数组时需要
             // 继续退化为指针，不能把对象开头误当成 4 字节标量加载。
-            Some(Type::Array(_, _)) | Some(Type::Struct(_)) => {}
+            // 函数设计符同理：*fp ≡ fp（C89 §3.3.3.2），a0 中已是函数地址，
+            // 再按标量加载会把函数首址当数据读（文本段不在 mem 中恒得 0）。
+            Some(Type::Array(_, _)) | Some(Type::Struct(_)) | Some(Type::Function { .. }) => {}
             _ => self.emit("    lw a0, 0(a0)"),
         }
     }
@@ -2220,7 +2277,16 @@ impl Codegen {
                         self.emit_integer_conversion(t);
                     }
                     (s, t) if Self::is_float_ty(t) && !Self::is_float_ty(&s) => {
-                        if s.is_unsigned_integer() {
+                        if matches!(t.unqualified(), Type::Float) {
+                            // 单精度转换：先按 float 舍入（24 位尾数），再扩回内部
+                            // double 表示；(int)(float)16777217 必须得 16777216。
+                            if s.is_unsigned_integer() {
+                                self.emit("    fcvt.s.wu f11, a0");
+                            } else {
+                                self.emit("    fcvt.s.w f11, a0");
+                            }
+                            self.emit("    fcvt.d.s f10, f11");
+                        } else if s.is_unsigned_integer() {
                             self.emit("    fcvt.d.wu f10, a0");
                         } else {
                             self.emit("    fcvt.d.w f10, a0");
@@ -2709,12 +2775,13 @@ impl Codegen {
             Node::Call(f, args) => {
                 // va_* 特判
                 if let Node::Ident(name) = f.as_ref() {
-                    // va_start(ap, last)：ap = t6（第一个变参地址）
+                    // va_start(ap, last)：ap = 第一个变参地址（序言存档于帧内槽）
                     if name == "va_start" {
                         if let Some(Node::Ident(ap)) = args.first() {
                             let off = self.locals.get(ap).map(|x| x.0).unwrap_or(0);
                             let (rb, ro) = self.address_parts("s0", off, "t2");
-                            self.emit(&format!("    sw t6, {}({})", ro, rb));
+                            self.emit("    lw t1, -12(s0)");
+                            self.emit(&format!("    sw t1, {}({})", ro, rb));
                         }
                         return;
                     }
@@ -2874,13 +2941,21 @@ impl Codegen {
                         .tt
                         .size_of(&self.type_of(a).unwrap_or(Type::Int))
                         .unwrap_or(8);
-                    // 压栈 sz 字节（8 对齐）
+                    // 压栈 sz 字节（8 对齐）；大结构体经 li+sub 调整 sp
                     let align = (sz + 7) & !7;
-                    self.emit(&format!("    addi sp, sp, -{}", align));
+                    if align <= 2047 {
+                        self.emit(&format!("    addi sp, sp, -{}", align));
+                    } else {
+                        self.emit(&format!("    li t1, {}", align));
+                        self.emit("    sub sp, sp, t1");
+                    }
                     self.gen_expr(a); // a0 = struct 对象地址（含函数返回临时对象）
                     for k in 0..sz {
-                        self.emit(&format!("    lbu t1, {}(a0)", k));
-                        self.emit(&format!("    sb t1, {}(sp)", k));
+                        // 偏移可能超出 ±2047：经 address_parts 生成 li+add 寻址
+                        let (rb, ro) = self.address_parts("a0", k as i32, "t0");
+                        self.emit(&format!("    lbu t1, {}({})", ro, rb));
+                        let (rb, ro) = self.address_parts("sp", k as i32, "t0");
+                        self.emit(&format!("    sb t1, {}({})", ro, rb));
                     }
                 }
                 if !struct_args.is_empty() {
@@ -2925,27 +3000,31 @@ impl Codegen {
                         + struct_total
                         + varg_count * 8
                         + (non_struct_fixed - 1 - i) * 8;
+                    // source 可能超出 ±2047（大结构体/多变参）
+                    let (rb, ro) = self.address_parts("sp", source as i32, "t2");
                     if is_fp && reg < 22 {
-                        self.emit(&format!("    fld f{}, {}(sp)", 10 + reg, source));
+                        self.emit(&format!("    fld f{}, {}({})", 10 + reg, ro, rb));
                     } else if !is_fp && reg < 8 {
-                        self.emit(&format!("    lw a{}, {}(sp)", reg, source));
+                        self.emit(&format!("    lw a{}, {}({})", reg, ro, rb));
                     } else if is_fp {
-                        self.emit(&format!("    fld f0, {}(sp)", source));
+                        self.emit(&format!("    fld f0, {}({})", ro, rb));
                         self.emit(&format!("    fsd f0, {}(sp)", overflow_index * 8));
                         overflow_index += 1;
                     } else {
-                        self.emit(&format!("    lw t1, {}(sp)", source));
+                        self.emit(&format!("    lw t1, {}({})", ro, rb));
                         self.emit(&format!("    sw t1, {}(sp)", overflow_index * 8));
                         overflow_index += 1;
                     }
                 }
                 if let Some(offset) = return_temp {
-                    self.emit(&format!("    addi a0, s0, {}", offset));
+                    let (rb, ro) = self.address_parts("s0", offset as i32, "t2");
+                    self.emit(&format!("    addi a0, {}, {}", rb, ro));
                 }
                 if indirect {
                     let target_offset =
                         overflow_total + struct_total + varg_count * 8 + targets.len() * 8;
-                    self.emit(&format!("    lw t4, {}(sp)", target_offset));
+                    let (rb, ro) = self.address_parts("sp", target_offset as i32, "t2");
+                    self.emit(&format!("    lw t4, {}({})", ro, rb));
                     self.emit("    jalr ra, t4, 0");
                 } else if let Some(name) = &direct_name {
                     self.emit(&format!("    call {}", name));
@@ -2957,10 +3036,16 @@ impl Codegen {
                     + struct_total
                     + usize::from(indirect) * 8;
                 if total_slots > 0 {
-                    self.emit(&format!("    addi sp, sp, {}", total_slots));
+                    if total_slots <= 2047 {
+                        self.emit(&format!("    addi sp, sp, {}", total_slots));
+                    } else {
+                        self.emit(&format!("    li t2, {}", total_slots));
+                        self.emit("    add sp, sp, t2");
+                    }
                 }
                 if let Some(offset) = return_temp {
-                    self.emit(&format!("    addi a0, s0, {}", offset));
+                    let (rb, ro) = self.address_parts("s0", offset as i32, "t2");
+                    self.emit(&format!("    addi a0, {}, {}", rb, ro));
                 }
                 // 浮点函数返回值约定：在 f10
                 if Self::is_float_ty(&return_type) {
@@ -3981,6 +4066,7 @@ int main(void) {
         let node = Node::FuncDef {
             ret: Type::Int,
             name: "main".into(),
+            storage: Storage::None,
             params: Vec::new(),
             is_variadic: false,
             has_prototype: true,

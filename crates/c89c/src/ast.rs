@@ -329,6 +329,8 @@ pub enum Node {
     FuncDef {
         ret: Type,
         name: String,
+        /// 函数定义的存储类（static 内部链接 / extern 等）
+        storage: Storage,
         params: Vec<Param>,
         is_variadic: bool,
         has_prototype: bool,
@@ -463,6 +465,7 @@ impl Node {
             Self::FuncDef {
                 ret,
                 name,
+                storage,
                 params,
                 is_variadic,
                 has_prototype,
@@ -470,6 +473,7 @@ impl Node {
             } => Self::FuncDef {
                 ret,
                 name,
+                storage,
                 params,
                 is_variadic,
                 has_prototype,
@@ -547,6 +551,7 @@ impl Node {
             Self::FuncDef {
                 ret,
                 name,
+                storage,
                 params,
                 is_variadic,
                 has_prototype,
@@ -554,6 +559,7 @@ impl Node {
             } => Self::FuncDef {
                 ret,
                 name,
+                storage,
                 params,
                 is_variadic,
                 has_prototype,
@@ -670,11 +676,20 @@ impl fmt::Display for Node {
             Node::FuncDef {
                 ret,
                 name,
+                storage,
                 params,
                 is_variadic,
                 body,
                 ..
             } => {
+                let storage = match storage {
+                    Storage::Typedef => "typedef ",
+                    Storage::Static => "static ",
+                    Storage::Extern => "extern ",
+                    Storage::Auto => "auto ",
+                    Storage::Register => "register ",
+                    Storage::None => "",
+                };
                 let mut ps: Vec<String> = params
                     .iter()
                     .map(|p| {
@@ -690,7 +705,8 @@ impl fmt::Display for Node {
                 }
                 write!(
                     f,
-                    "{} {}({}) {}",
+                    "{}{} {}({}) {}",
+                    storage,
                     type_str(ret.clone()),
                     name,
                     ps.join(", "),

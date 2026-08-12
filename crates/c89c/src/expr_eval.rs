@@ -53,7 +53,9 @@ pub(crate) fn parse_char_value(text: &str) -> Result<i64, String> {
                 if !any {
                     return Err(format!("非法字符常量: {}", text));
                 }
-                Ok(value & 0xFF)
+                // 转义值不截断到 8 位（C89 §3.1.3.4：字符常量值是 int），
+                // 赋给 char 时由 codegen 窄化。
+                Ok(value)
             }
             Some(d @ b'0'..=b'7') => {
                 let mut value: i64 = (d - b'0') as i64;
@@ -65,12 +67,17 @@ pub(crate) fn parse_char_value(text: &str) -> Result<i64, String> {
                     value = value * 8 + (b - b'0') as i64;
                     count += 1;
                 }
-                Ok(value & 0xFF)
+                Ok(value)
             }
             _ => Err(format!("不支持的转义: {}", text)),
         }
-    } else if inner.chars().count() == 1 {
-        Ok(inner.chars().next().unwrap() as i64)
+    } else if !inner.is_empty() {
+        // 多字符常量（实现定义值）：按 GCC 约定，各字节依次左移 8 位拼接。
+        let mut value: i64 = 0;
+        for b in inner.bytes() {
+            value = (value << 8) | b as i64;
+        }
+        Ok(value)
     } else {
         Err(format!("非法字符常量: {}", text))
     }
@@ -79,6 +86,10 @@ pub(crate) fn parse_char_value(text: &str) -> Result<i64, String> {
 struct ExprParser {
     toks: Vec<Token>,
     pos: usize,
+    /// discard 模式：当前解析的表达式不会被求值（?: 未选中分支、&&/|| 的
+    /// 被短路右操作数）。语法错误仍须报错，但求值类错误（除零/溢出/移位越界）
+    /// 不得产生诊断——C89 §3.8.1 规定这些操作数不求值。
+    discard: bool,
 }
 impl ExprParser {
     fn peek(&self) -> Option<&Token> {
@@ -95,16 +106,41 @@ impl ExprParser {
             false
         }
     }
+    /// 在 discard 模式下运行闭包：求值类错误被抑制，语法错误照常传播。
+    fn with_discard<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, String>) -> Result<T, String> {
+        let saved = self.discard;
+        self.discard = true;
+        let r = f(self);
+        self.discard = saved;
+        r
+    }
 
     fn parse_conditional(&mut self) -> Result<i64, String> {
         let c = self.parse_logical_or()?;
         if self.eat("?") {
-            let a = self.parse_conditional()?;
+            if self.discard {
+                self.parse_conditional()?;
+                if !self.eat(":") {
+                    return Err("条件表达式缺少 :".into());
+                }
+                self.parse_conditional()?;
+                return Ok(0);
+            }
+            if c != 0 {
+                // 取 a，b 仅做语法检查不求值
+                let a = self.parse_conditional()?;
+                if !self.eat(":") {
+                    return Err("条件表达式缺少 :".into());
+                }
+                self.with_discard(|p| p.parse_conditional())?;
+                return Ok(a);
+            }
+            // 取 b，a 仅做语法检查不求值
+            self.with_discard(|p| p.parse_conditional())?;
             if !self.eat(":") {
                 return Err("条件表达式缺少 :".into());
             }
-            let b = self.parse_conditional()?;
-            return Ok(if c != 0 { a } else { b });
+            return self.parse_conditional();
         }
         Ok(c)
     }
@@ -113,8 +149,15 @@ impl ExprParser {
         let mut v = self.parse_logical_and()?;
         while self.is_punct("||") {
             self.pos += 1;
-            let r = self.parse_logical_and()?;
-            v = if v != 0 || r != 0 { 1 } else { 0 };
+            if self.discard {
+                self.parse_logical_and()?;
+            } else if v != 0 {
+                // 短路：右操作数不求值
+                self.with_discard(|p| p.parse_logical_and())?;
+            } else {
+                let r = self.parse_logical_and()?;
+                v = (r != 0) as i64;
+            }
         }
         Ok(v)
     }
@@ -123,8 +166,14 @@ impl ExprParser {
         let mut v = self.parse_bitwise_or()?;
         while self.is_punct("&&") {
             self.pos += 1;
-            let r = self.parse_bitwise_or()?;
-            v = if v != 0 && r != 0 { 1 } else { 0 };
+            if self.discard {
+                self.parse_bitwise_or()?;
+            } else if v == 0 {
+                self.with_discard(|p| p.parse_bitwise_or())?;
+            } else {
+                let r = self.parse_bitwise_or()?;
+                v = (r != 0) as i64;
+            }
         }
         Ok(v)
     }
@@ -133,7 +182,10 @@ impl ExprParser {
         let mut v = self.parse_bitwise_xor()?;
         while self.is_punct("|") {
             self.pos += 1;
-            v |= self.parse_bitwise_xor()?;
+            let r = self.parse_bitwise_xor()?;
+            if !self.discard {
+                v |= r;
+            }
         }
         Ok(v)
     }
@@ -141,7 +193,10 @@ impl ExprParser {
         let mut v = self.parse_bitwise_and()?;
         while self.is_punct("^") {
             self.pos += 1;
-            v ^= self.parse_bitwise_and()?;
+            let r = self.parse_bitwise_and()?;
+            if !self.discard {
+                v ^= r;
+            }
         }
         Ok(v)
     }
@@ -149,7 +204,10 @@ impl ExprParser {
         let mut v = self.parse_equality()?;
         while self.is_punct("&") {
             self.pos += 1;
-            v &= self.parse_equality()?;
+            let r = self.parse_equality()?;
+            if !self.discard {
+                v &= r;
+            }
         }
         Ok(v)
     }
@@ -157,9 +215,15 @@ impl ExprParser {
         let mut v = self.parse_relational()?;
         loop {
             if self.eat("==") {
-                v = (v == self.parse_relational()?) as i64;
+                let r = self.parse_relational()?;
+                if !self.discard {
+                    v = (v == r) as i64;
+                }
             } else if self.eat("!=") {
-                v = (v != self.parse_relational()?) as i64;
+                let r = self.parse_relational()?;
+                if !self.discard {
+                    v = (v != r) as i64;
+                }
             } else {
                 break;
             }
@@ -170,13 +234,25 @@ impl ExprParser {
         let mut v = self.parse_shift()?;
         loop {
             if self.eat("<") {
-                v = (v < self.parse_shift()?) as i64;
+                let r = self.parse_shift()?;
+                if !self.discard {
+                    v = (v < r) as i64;
+                }
             } else if self.eat(">") {
-                v = (v > self.parse_shift()?) as i64;
+                let r = self.parse_shift()?;
+                if !self.discard {
+                    v = (v > r) as i64;
+                }
             } else if self.eat("<=") {
-                v = (v <= self.parse_shift()?) as i64;
+                let r = self.parse_shift()?;
+                if !self.discard {
+                    v = (v <= r) as i64;
+                }
             } else if self.eat(">=") {
-                v = (v >= self.parse_shift()?) as i64;
+                let r = self.parse_shift()?;
+                if !self.discard {
+                    v = (v >= r) as i64;
+                }
             } else {
                 break;
             }
@@ -187,9 +263,21 @@ impl ExprParser {
         let mut v = self.parse_additive()?;
         loop {
             if self.eat("<<") {
-                v <<= self.parse_additive()?;
+                let r = self.parse_additive()?;
+                if !self.discard {
+                    if !(0..64).contains(&r) {
+                        return Err(format!("移位量超出范围: {}", r));
+                    }
+                    v = v.wrapping_shl(r as u32);
+                }
             } else if self.eat(">>") {
-                v >>= self.parse_additive()?;
+                let r = self.parse_additive()?;
+                if !self.discard {
+                    if !(0..64).contains(&r) {
+                        return Err(format!("移位量超出范围: {}", r));
+                    }
+                    v = v.wrapping_shr(r as u32);
+                }
             } else {
                 break;
             }
@@ -200,9 +288,15 @@ impl ExprParser {
         let mut v = self.parse_multiplicative()?;
         loop {
             if self.eat("+") {
-                v = v.wrapping_add(self.parse_multiplicative()?);
+                let r = self.parse_multiplicative()?;
+                if !self.discard {
+                    v = v.wrapping_add(r);
+                }
             } else if self.eat("-") {
-                v = v.wrapping_sub(self.parse_multiplicative()?);
+                let r = self.parse_multiplicative()?;
+                if !self.discard {
+                    v = v.wrapping_sub(r);
+                }
             } else {
                 break;
             }
@@ -213,19 +307,26 @@ impl ExprParser {
         let mut v = self.parse_unary()?;
         loop {
             if self.eat("*") {
-                v *= self.parse_unary()?;
+                let r = self.parse_unary()?;
+                if !self.discard {
+                    v = v.wrapping_mul(r);
+                }
             } else if self.eat("/") {
                 let d = self.parse_unary()?;
-                if d == 0 {
-                    return Err("除零".into());
+                if !self.discard {
+                    if d == 0 {
+                        return Err("除零".into());
+                    }
+                    v = v.checked_div(d).ok_or("除法溢出")?;
                 }
-                v /= d;
             } else if self.eat("%") {
                 let d = self.parse_unary()?;
-                if d == 0 {
-                    return Err("模零".into());
+                if !self.discard {
+                    if d == 0 {
+                        return Err("模零".into());
+                    }
+                    v = v.checked_rem(d).ok_or("取模溢出")?;
                 }
-                v %= d;
             } else {
                 break;
             }
@@ -234,13 +335,16 @@ impl ExprParser {
     }
     fn parse_unary(&mut self) -> Result<i64, String> {
         if self.eat("!") {
-            return Ok((self.parse_unary()? == 0) as i64);
+            let r = self.parse_unary()?;
+            return Ok(if self.discard { 0 } else { (r == 0) as i64 });
         }
         if self.eat("~") {
-            return Ok(!self.parse_unary()?);
+            let r = self.parse_unary()?;
+            return Ok(if self.discard { 0 } else { !r });
         }
         if self.eat("-") {
-            return Ok(-self.parse_unary()?);
+            let r = self.parse_unary()?;
+            return Ok(if self.discard { 0 } else { r.wrapping_neg() });
         }
         if self.eat("+") {
             return self.parse_unary();
@@ -258,6 +362,10 @@ impl ExprParser {
                 self.pos += 1;
                 parse_char_value(&t.text)
             }
+            TokKind::Ident if t.text == "sizeof" => {
+                self.pos += 1;
+                self.parse_sizeof()
+            }
             TokKind::Ident => {
                 // 未定义标识符（宏已展开过）→ 0（标准行为）
                 self.pos += 1;
@@ -274,6 +382,78 @@ impl ExprParser {
             _ => Err(format!("无法解析的表达式 token: {}", t.text)),
         }
     }
+
+    /// sizeof(类型名)：支持内建标量类型（#if 整数常量表达式子集）。
+    /// 结构体/联合体大小依赖 TypeTable，预处理阶段不可知，明确报错。
+    fn parse_sizeof(&mut self) -> Result<i64, String> {
+        if !self.eat("(") {
+            return Err("sizeof 后缺少 (".into());
+        }
+        let t = self.peek().cloned().ok_or("sizeof 表达式意外结束")?;
+        if t.kind == TokKind::Ident {
+            let name = t.text.clone();
+            if name == "unsigned" || name == "signed" {
+                self.pos += 1;
+                let base = self.peek().cloned().ok_or("sizeof 表达式意外结束")?;
+                if base.kind != TokKind::Ident {
+                    return Err(format!("sizeof {} 后应为类型名", name));
+                }
+                self.pos += 1;
+                let size = match base.text.as_str() {
+                    "char" => 1i64,
+                    "short" => 2,
+                    "int" | "long" => 4,
+                    _ => return Err(format!("sizeof 不支持的类型: {} {}", name, base.text)),
+                };
+                return self.finish_sizeof(size);
+            }
+            match name.as_str() {
+                "char" => {
+                    self.pos += 1;
+                    return self.finish_sizeof(1);
+                }
+                "short" => {
+                    self.pos += 1;
+                    return self.finish_sizeof(2);
+                }
+                "int" | "float" | "long" => {
+                    self.pos += 1;
+                    return self.finish_sizeof(4);
+                }
+                "double" => {
+                    self.pos += 1;
+                    return self.finish_sizeof(8);
+                }
+                "void" => return Err("sizeof(void) 无定义".into()),
+                "struct" | "union" | "enum" => {
+                    return Err(format!("sizeof({}) 依赖布局，预处理阶段不支持", name));
+                }
+                _ => return Err(format!("sizeof 不支持的类型: {}", name)),
+            }
+        }
+        Err("sizeof 表达式操作数暂不支持（#if 中仅支持类型名）".into())
+    }
+
+    /// 吸收尾部限定符/指针并消耗右括号；含 * 的指针类型一律 4 字节。
+    fn finish_sizeof(&mut self, base: i64) -> Result<i64, String> {
+        let mut extra = 0i64;
+        loop {
+            let done = !self.is_punct("*")
+                && !matches!(self.peek(), Some(t) if t.kind == TokKind::Ident
+                    && matches!(t.text.as_str(), "const" | "volatile"));
+            if done {
+                break;
+            }
+            if self.is_punct("*") {
+                extra += 1;
+            }
+            self.pos += 1;
+        }
+        if !self.eat(")") {
+            return Err("sizeof 缺少右括号 )".into());
+        }
+        Ok(if extra > 0 { 4 } else { base })
+    }
 }
 
 /// 求值 #if 常量表达式（token 序列）
@@ -286,6 +466,7 @@ pub fn eval_expr(toks: &[Token]) -> Result<i64, String> {
     let mut p = ExprParser {
         toks: filtered,
         pos: 0,
+        discard: false,
     };
     let v = p.parse_conditional()?;
     if p.pos != p.toks.len() {

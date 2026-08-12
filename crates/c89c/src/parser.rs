@@ -373,12 +373,54 @@ impl Parser {
     fn expect_ident(&mut self) -> Result<String, String> {
         match self.peek() {
             Some(t) if t.kind == TokKind::Ident => {
+                if Self::is_keyword(&t.text) {
+                    return Err(self.err(&format!("关键字 '{}' 不能用作标识符", t.text)));
+                }
                 let s = t.text.clone();
                 self.pos += 1;
                 Ok(s)
             }
             _ => Err(self.err("expected identifier")),
         }
+    }
+
+    /// C89 关键字（§3.1.1）：在任何上下文中都不能用作标识符
+    fn is_keyword(text: &str) -> bool {
+        matches!(
+            text,
+            "auto"
+                | "break"
+                | "case"
+                | "char"
+                | "const"
+                | "continue"
+                | "default"
+                | "do"
+                | "double"
+                | "else"
+                | "enum"
+                | "extern"
+                | "float"
+                | "for"
+                | "goto"
+                | "if"
+                | "int"
+                | "long"
+                | "register"
+                | "return"
+                | "short"
+                | "signed"
+                | "sizeof"
+                | "static"
+                | "struct"
+                | "switch"
+                | "typedef"
+                | "union"
+                | "unsigned"
+                | "void"
+                | "volatile"
+                | "while"
+        )
     }
 
     /// 基本表达式（§3.3.1）
@@ -526,10 +568,17 @@ impl Parser {
             if self.is_punct("{") {
                 // 函数定义
                 self.pos += 1;
+                // 形参遮蔽外层枚举常量（仅函数体内，C89 §3.1.2.1）
+                let saved_enums = self.enum_constants.clone();
+                for p in &params {
+                    self.enum_constants.remove(&p.name);
+                }
                 let body = self.parse_block_body()?;
+                self.enum_constants = saved_enums;
                 return Ok(vec![Node::FuncDef {
                     ret: specs.ty,
                     name,
+                    storage: specs.storage,
                     params,
                     is_variadic,
                     has_prototype,
@@ -712,10 +761,23 @@ impl Parser {
                         while !self.is_punct("}") {
                             let name = self.expect_ident()?;
                             let val = if self.eat("=") {
-                                // 收集常量表达式到 , 或 }
+                                // 收集常量表达式到 , 或 }；已登记的枚举常量
+                                // 代入为数值 token（B = A + 1 需要 A 的值）
                                 let mut toks = Vec::new();
                                 while !self.is_punct(",") && !self.is_punct("}") {
                                     if let Some(t3) = self.peek().cloned() {
+                                        if t3.kind == TokKind::Ident {
+                                            if let Some(v) = self.enum_constants.get(&t3.text) {
+                                                toks.push(Token::new(
+                                                    TokKind::Number,
+                                                    v.to_string(),
+                                                    t3.line,
+                                                    t3.has_space,
+                                                ));
+                                                self.pos += 1;
+                                                continue;
+                                            }
+                                        }
                                         toks.push(t3);
                                         self.pos += 1;
                                     } else {
@@ -727,6 +789,8 @@ impl Parser {
                             } else {
                                 next_val
                             };
+                            // 立即登记：后续枚举项可引用本项（enum { A=5, B=A+1 }）
+                            self.enum_constants.insert(name.clone(), val);
                             values.push((name, val));
                             next_val = val + 1;
                             if !self.eat(",") {
@@ -736,10 +800,6 @@ impl Parser {
                         self.expect_punct("}")?;
                         if tag.is_empty() {
                             tag = format!("__enum_{}", self.tt.enums.len());
-                        }
-                        // 登记枚举常量
-                        for (name, val) in &values {
-                            self.enum_constants.insert(name.clone(), *val);
                         }
                         let def = crate::types::EnumDef {
                             name: tag.clone(),
@@ -977,7 +1037,7 @@ impl Parser {
                     let e = self.parse_unary()?;
                     Node::SizeofExpr(Box::new(e))
                 };
-                let v = eval_const_size(&node)
+                let v = eval_const_size(&node, &self.tt, &self.typedefs)
                     .map_err(|e| self.err(&format!("数组大小错误: {}", e)))?;
                 toks.push(Token::new(TokKind::Number, v.to_string(), line, false));
                 continue;
@@ -1157,6 +1217,8 @@ impl Parser {
 
     /// 块体：在 "{" 之后解析到匹配的 "}"
     fn parse_block_body(&mut self) -> Result<Node, String> {
+        // 块内声明会遮蔽外层枚举常量；块结束时恢复外层可见性。
+        let saved_enums = self.enum_constants.clone();
         let mut stmts = Vec::new();
         while !self.is_punct("}") {
             if self.peek().is_none() {
@@ -1165,6 +1227,7 @@ impl Parser {
             stmts.push(self.parse_statement()?);
         }
         self.pos += 1; // }
+        self.enum_constants = saved_enums;
         Ok(Node::Block(stmts))
     }
 
@@ -1180,6 +1243,7 @@ impl Parser {
     fn parse_statement_inner(&mut self) -> Result<Node, String> {
         // 复合语句（块）
         if self.eat("{") {
+            let saved_enums = self.enum_constants.clone();
             let mut stmts = Vec::new();
             while !self.is_punct("}") {
                 if self.peek().is_none() {
@@ -1188,6 +1252,7 @@ impl Parser {
                 stmts.push(self.parse_statement()?);
             }
             self.pos += 1; // }
+            self.enum_constants = saved_enums;
             return Ok(Node::Block(stmts));
         }
 
@@ -1329,9 +1394,15 @@ impl Parser {
         }
         let mut declarations = vec![Node::Decl {
             specs: specs.clone(),
-            name,
+            name: name.clone(),
             init,
         }];
+        // 块内 typedef 登记（与外部声明一致，C89 §3.5.6）；
+        // 声明的名字遮蔽同名枚举常量。
+        if specs.storage == Storage::Typedef {
+            self.typedefs.insert(name.clone(), specs.ty.clone());
+        }
+        self.enum_constants.remove(&name);
         while self.eat(",") {
             let (ty, name, _f) = self.parse_declarator(base_ty.clone())?;
             let init = if self.eat("=") {
@@ -1346,6 +1417,10 @@ impl Parser {
                     item_specs.ty = Type::Array(inner.clone(), Some(items.len()));
                 }
             }
+            if item_specs.storage == Storage::Typedef {
+                self.typedefs.insert(name.clone(), item_specs.ty.clone());
+            }
+            self.enum_constants.remove(&name);
             declarations.push(Node::Decl {
                 specs: item_specs,
                 name,
@@ -1459,17 +1534,34 @@ impl Parser {
 }
 
 /// 求值数组维数的整型常量表达式（支持 sizeof、算术、条件表达式）。
-/// `sizeof(类型名)` 已在 parse_unary 折叠为 Num；这里只处理剩余的
-/// `sizeof(常量表达式)` —— 教学模型下整型常量表达式类型为 int（4 字节）。
-fn eval_const_size(node: &Node) -> Result<i64, String> {
+/// `sizeof(类型名)` 已在 parse_unary 折叠为 Num；这里处理剩余的
+/// `sizeof(表达式)` —— sizeof 的结果是常量表达式（C89 §3.3.3.4），
+/// 大小只取决于操作数类型，不取决于值。
+fn eval_const_size(
+    node: &Node,
+    tt: &crate::types::TypeTable,
+    typedefs: &HashMap<String, Type>,
+) -> Result<i64, String> {
     match node.inner() {
         Node::Num(v) => Ok(*v),
-        Node::SizeofExpr(e) => match eval_const_size(e) {
-            Ok(_) => Ok(4),
-            Err(_) => Err("sizeof 的操作数不是常量".into()),
+        Node::SizeofExpr(e) => match e.inner() {
+            Node::Num(_) | Node::Str(_) => Ok(4),
+            Node::FNum(_) => Ok(8),
+            Node::Cast(ty, _) => tt
+                .size_of(ty)
+                .map(|s| s as i64)
+                .map_err(|err| format!("sizeof 的操作数大小未知: {}", err)),
+            Node::Ident(name) => match typedefs.get(name) {
+                Some(ty) => tt
+                    .size_of(ty)
+                    .map(|s| s as i64)
+                    .map_err(|err| format!("sizeof 的操作数大小未知: {}", err)),
+                None => Err("sizeof 的操作数不是常量".into()),
+            },
+            _ => Err("sizeof 的操作数不是常量".into()),
         },
         Node::Unary(op, e) => {
-            let v = eval_const_size(e)?;
+            let v = eval_const_size(e, tt, typedefs)?;
             match op {
                 UnaryOp::Neg => Ok(v.wrapping_neg()),
                 UnaryOp::Not => Ok((v == 0) as i64),
@@ -1478,8 +1570,8 @@ fn eval_const_size(node: &Node) -> Result<i64, String> {
             }
         }
         Node::Binary(op, l, r) => {
-            let a = eval_const_size(l)?;
-            let b = eval_const_size(r)?;
+            let a = eval_const_size(l, tt, typedefs)?;
+            let b = eval_const_size(r, tt, typedefs)?;
             match op {
                 BinaryOp::Add => Ok(a.wrapping_add(b)),
                 BinaryOp::Sub => Ok(a.wrapping_sub(b)),
@@ -1505,14 +1597,14 @@ fn eval_const_size(node: &Node) -> Result<i64, String> {
             }
         }
         Node::Cond(c, a, b) => {
-            if eval_const_size(c)? != 0 {
-                eval_const_size(a)
+            if eval_const_size(c, tt, typedefs)? != 0 {
+                eval_const_size(a, tt, typedefs)
             } else {
-                eval_const_size(b)
+                eval_const_size(b, tt, typedefs)
             }
         }
-        Node::Cast(_, e) => eval_const_size(e),
-        Node::Comma(_, r) => eval_const_size(r),
+        Node::Cast(_, e) => eval_const_size(e, tt, typedefs),
+        Node::Comma(_, r) => eval_const_size(r, tt, typedefs),
         _ => Err("数组大小必须是整数常量表达式".into()),
     }
 }
