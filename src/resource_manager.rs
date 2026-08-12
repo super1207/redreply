@@ -5,7 +5,6 @@ use std::str::FromStr;
 use encoding::Encoding;
 use md5::{Digest, Md5};
 use path_clean::PathClean;
-use rusqlite::OptionalExtension;
 
 use crate::{cqapi::cq_get_app_directory1, runtime_context};
 
@@ -109,7 +108,6 @@ fn get_apath(filename: &str) -> Option<String> {
     Some(absolute.to_string_lossy().into_owned())
 }
 
-const LIVE2D_CHAT_DB_KEY: &str = "LIVE2D_CHAT_CONVERSATION";
 const LIVE2D_CHAT_GENERATION_DB_KEY: &str = "LIVE2D_CHAT_PENDING_GENERATION";
 
 /// 看板娘日记本最大条数。
@@ -137,7 +135,11 @@ fn open_live2d_db() -> Result<rusqlite::Connection, Box<dyn std::error::Error + 
     let _guard = scopeguard::guard(sql_file.clone(), |path| del_file_lock(&path));
     let conn = rusqlite::Connection::open(sql_file)?;
     conn.execute(
-        "CREATE TABLE IF NOT EXISTS LIVE2D_CHAT_TABLE (KEY TEXT PRIMARY KEY,VALUE TEXT);",
+        "CREATE TABLE IF NOT EXISTS LIVE2D_CHAT_MESSAGES (ID INTEGER PRIMARY KEY AUTOINCREMENT,MSG TEXT NOT NULL);",
+        [],
+    )?;
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS LIVE2D_CHAT_META (KEY TEXT PRIMARY KEY,VALUE TEXT);",
         [],
     )?;
     conn.execute(
@@ -147,20 +149,74 @@ fn open_live2d_db() -> Result<rusqlite::Connection, Box<dyn std::error::Error + 
     Ok(conn)
 }
 
-/// 从 reddat.db 读取看板娘对话内容，没有则返回 None。
-pub fn load_live2d_chat_conversation(
-) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+/// 从 reddat.db 读取全部看板娘对话消息（按写入顺序），没有对话时返回 None。
+pub fn load_live2d_chat_messages(
+) -> Result<Option<Vec<serde_json::Value>>, Box<dyn std::error::Error + Send + Sync>> {
     let conn = open_live2d_db()?;
-    let ret_rst: Result<String, rusqlite::Error> = conn.query_row(
-        "SELECT VALUE FROM LIVE2D_CHAT_TABLE WHERE KEY = ?",
-        [LIVE2D_CHAT_DB_KEY],
-        |row| row.get(0),
-    );
-    match ret_rst {
-        Ok(value) => Ok(Some(value)),
-        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
-        Err(error) => Err(error.into()),
+    let mut stmt = conn.prepare("SELECT MSG FROM LIVE2D_CHAT_MESSAGES ORDER BY ID")?;
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+    let mut messages = Vec::new();
+    for row in rows {
+        let raw = row?;
+        match serde_json::from_str::<serde_json::Value>(&raw) {
+            Ok(value) => messages.push(value),
+            Err(error) => {
+                return Err(format!("看板娘对话消息格式无效: {error}").into());
+            }
+        }
     }
+    if messages.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(messages))
+    }
+}
+
+/// 在对话末尾追加一条消息。
+pub fn append_live2d_chat_message(
+    message: &serde_json::Value,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let conn = open_live2d_db()?;
+    conn.execute(
+        "INSERT INTO LIVE2D_CHAT_MESSAGES (MSG) VALUES (?)",
+        rusqlite::params![message.to_string()],
+    )?;
+    Ok(())
+}
+
+/// 用新消息替换对话末尾最后一条消息；对话为空时退化为追加。
+pub fn replace_live2d_chat_last_message(
+    message: &serde_json::Value,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let conn = open_live2d_db()?;
+    let changed = conn.execute(
+        "UPDATE LIVE2D_CHAT_MESSAGES SET MSG = ? WHERE ID = (SELECT MAX(ID) FROM LIVE2D_CHAT_MESSAGES)",
+        rusqlite::params![message.to_string()],
+    )?;
+    if changed == 0 {
+        conn.execute(
+            "INSERT INTO LIVE2D_CHAT_MESSAGES (MSG) VALUES (?)",
+            rusqlite::params![message.to_string()],
+        )?;
+    }
+    Ok(())
+}
+
+/// 用给定消息整体替换对话内容。
+pub fn replace_all_live2d_chat_messages(
+    messages: &[serde_json::Value],
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut conn = open_live2d_db()?;
+    let transaction = conn.transaction()?;
+    transaction.execute("DELETE FROM LIVE2D_CHAT_MESSAGES", [])?;
+    for message in messages {
+        transaction.execute(
+            "INSERT INTO LIVE2D_CHAT_MESSAGES (MSG) VALUES (?)",
+            rusqlite::params![message.to_string()],
+        )?;
+    }
+    transaction.commit()?;
+    Ok(())
 }
 
 /// 返回当前等待工具结果的对话代次；没有待处理工具调用时返回 None。
@@ -168,7 +224,7 @@ pub fn load_live2d_chat_generation(
 ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
     let conn = open_live2d_db()?;
     let result = conn.query_row(
-        "SELECT VALUE FROM LIVE2D_CHAT_TABLE WHERE KEY = ?",
+        "SELECT VALUE FROM LIVE2D_CHAT_META WHERE KEY = ?",
         [LIVE2D_CHAT_GENERATION_DB_KEY],
         |row| row.get(0),
     );
@@ -179,101 +235,39 @@ pub fn load_live2d_chat_generation(
     }
 }
 
-/// 原子保存对话，并同步设置或清除等待工具结果的代次。
-pub fn save_live2d_chat_state(
-    value: &str,
+/// 设置或清除等待工具结果的代次。
+pub fn save_live2d_chat_generation(
     generation: Option<&str>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut conn = open_live2d_db()?;
-    let transaction = conn.transaction()?;
-    transaction.execute(
-        "REPLACE INTO LIVE2D_CHAT_TABLE (KEY,VALUE) VALUES (?,?)",
-        rusqlite::params![LIVE2D_CHAT_DB_KEY, value],
-    )?;
-    if let Some(generation) = generation {
-        transaction.execute(
-            "REPLACE INTO LIVE2D_CHAT_TABLE (KEY,VALUE) VALUES (?,?)",
-            rusqlite::params![LIVE2D_CHAT_GENERATION_DB_KEY, generation],
-        )?;
-    } else {
-        transaction.execute(
-            "DELETE FROM LIVE2D_CHAT_TABLE WHERE KEY = ?",
-            [LIVE2D_CHAT_GENERATION_DB_KEY],
-        )?;
-    }
-    transaction.commit()?;
-    Ok(())
-}
-
-/// 把看板娘对话内容写入 reddat.db。
-pub fn save_live2d_chat_conversation(
-    value: &str,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    save_live2d_chat_state(value, None)
-}
-
-/// 删除 reddat.db 中的看板娘对话。
-pub fn clear_live2d_chat_conversation() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let mut conn = open_live2d_db()?;
-    let transaction = conn.transaction()?;
-    transaction.execute(
-        "DELETE FROM LIVE2D_CHAT_TABLE WHERE KEY IN (?, ?)",
-        rusqlite::params![LIVE2D_CHAT_DB_KEY, LIVE2D_CHAT_GENERATION_DB_KEY],
-    )?;
-    transaction.commit()?;
-    Ok(())
-}
-
-fn drop_pending_live2d_tool_message(messages: &mut Vec<serde_json::Value>) -> bool {
-    let pending = messages.last().is_some_and(|message| {
-        message.get("role").and_then(serde_json::Value::as_str) == Some("assistant")
-            && message
-                .get("tool_calls")
-                .and_then(serde_json::Value::as_array)
-                .is_some_and(|calls| !calls.is_empty())
-    });
-    if pending {
-        messages.pop();
-    }
-    pending
-}
-
-/// 进程重启后清理上一次未完成的浏览器工具步骤。
-/// 工具调用消息不再可由旧页面继续提交，因此保留历史消息但移除尾部的悬挂 assistant 消息。
-pub fn recover_live2d_chat_after_restart() -> Result<bool, Box<dyn std::error::Error + Send + Sync>>
-{
-    let mut conn = open_live2d_db()?;
-    let raw = conn
-        .query_row(
-            "SELECT VALUE FROM LIVE2D_CHAT_TABLE WHERE KEY = ?",
-            [LIVE2D_CHAT_DB_KEY],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?;
-    let mut messages = raw
-        .as_deref()
-        .map(serde_json::from_str::<Vec<serde_json::Value>>)
-        .transpose()?;
-    let removed = messages
-        .as_mut()
-        .is_some_and(|messages| drop_pending_live2d_tool_message(messages));
-
-    let transaction = conn.transaction()?;
-    if let Some(messages) = messages {
-        if removed {
-            let value = serde_json::to_string(&messages)?;
-            transaction.execute(
-                "REPLACE INTO LIVE2D_CHAT_TABLE (KEY,VALUE) VALUES (?,?)",
-                rusqlite::params![LIVE2D_CHAT_DB_KEY, value],
+    let conn = open_live2d_db()?;
+    match generation {
+        Some(generation) => {
+            conn.execute(
+                "REPLACE INTO LIVE2D_CHAT_META (KEY,VALUE) VALUES (?,?)",
+                rusqlite::params![LIVE2D_CHAT_GENERATION_DB_KEY, generation],
+            )?;
+        }
+        None => {
+            conn.execute(
+                "DELETE FROM LIVE2D_CHAT_META WHERE KEY = ?",
+                [LIVE2D_CHAT_GENERATION_DB_KEY],
             )?;
         }
     }
+    Ok(())
+}
+
+/// 删除 reddat.db 中的全部看板娘对话与代次。
+pub fn clear_live2d_chat_conversation() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let mut conn = open_live2d_db()?;
+    let transaction = conn.transaction()?;
+    transaction.execute("DELETE FROM LIVE2D_CHAT_MESSAGES", [])?;
     transaction.execute(
-        "DELETE FROM LIVE2D_CHAT_TABLE WHERE KEY = ?",
+        "DELETE FROM LIVE2D_CHAT_META WHERE KEY = ?",
         [LIVE2D_CHAT_GENERATION_DB_KEY],
     )?;
     transaction.commit()?;
-    Ok(removed)
+    Ok(())
 }
 
 fn live2d_diary_key() -> String {
@@ -637,35 +631,4 @@ conn_fun()
         }
     });
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::drop_pending_live2d_tool_message;
-
-    #[test]
-    fn restart_recovery_removes_only_trailing_pending_tool_message() {
-        let mut messages = vec![
-            serde_json::json!({"role": "user", "content": "读取标题"}),
-            serde_json::json!({
-                "role": "assistant",
-                "content": null,
-                "tool_calls": [{
-                    "id": "call_1",
-                    "type": "function",
-                    "function": {"name": "execute_javascript", "arguments": "{}"}
-                }]
-            }),
-        ];
-        assert!(drop_pending_live2d_tool_message(&mut messages));
-        assert_eq!(messages.len(), 1);
-        assert_eq!(messages[0]["role"], "user");
-
-        let mut completed = vec![
-            serde_json::json!({"role": "assistant", "content": null, "tool_calls": []}),
-            serde_json::json!({"role": "assistant", "content": "完成"}),
-        ];
-        assert!(!drop_pending_live2d_tool_message(&mut completed));
-        assert_eq!(completed.len(), 2);
-    }
 }

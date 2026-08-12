@@ -576,6 +576,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "c89-runner"
+version = "0.1.0"
+dependencies = [
+ "c89c",
+ "rv-core",
+]
+
+[[package]]
+name = "c89c"
+version = "0.1.0"
+dependencies = [
+ "rv-core",
+]
+
+[[package]]
 name = "cairo-rs"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5161,6 +5176,7 @@ dependencies = [
  "base64",
  "brotli",
  "bytes",
+ "c89-runner",
  "chrono",
  "claxon",
  "crc64",
@@ -5653,6 +5669,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
 dependencies = [
  "twox-hash",
+]
+
+[[package]]
+name = "rv-core"
+version = "0.1.0"
+dependencies = [
+ "libc",
 ]
 
 [[package]]

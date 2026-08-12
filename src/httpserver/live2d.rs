@@ -1,5 +1,8 @@
 //! 看板娘 Live2D 对话的 HTTP 处理（从 mod.rs 拆分）
-//! 包含：会话管理、上下文存取、工具结果规范化、对话步骤响应等。
+//! 包含：会话管理、上下文存取、对话步骤响应等。
+//!
+//! 落库协议：对话的持久化全部由前端显式发起（POST /live2d_chat_append），
+//! 后端 AI 流式调用本身不写库，保证「用户看到的」与「数据库里的」始终一致。
 
 use crate::cqapi::cq_add_log_w;
 use serde::Deserialize;
@@ -26,30 +29,51 @@ where
         }
     }
 }
-use super::{json_api_response, BoxBody, Result};
+use super::{json_api_response, BoxBody};
 
 pub(crate) const LIVE2D_CHAT_BODY_LIMIT: usize = 64 * 1024;
 pub(crate) const LIVE2D_CONVERSATION_BODY_LIMIT: usize = 256 * 1024;
-pub(crate) const LIVE2D_TOOL_RESULTS_TOTAL_CHARS: usize = 12_000;
+/// 落库接口的请求体上限：工具调用参数不再限制长度后，
+/// assistant(tool_calls) 消息随落库可达 MB 级（run_c 源码上限为 1MB）。
+pub(crate) const LIVE2D_APPEND_BODY_LIMIT: usize = 4 * 1024 * 1024;
 
 #[derive(Deserialize)]
 pub(crate) struct Live2dChatRequest {
     #[serde(default)]
     pub(crate) message: Option<String>,
     #[serde(default)]
-    pub(crate) tool_results: Vec<Live2dToolResult>,
-    #[serde(default)]
     pub(crate) generation: Option<String>,
     /// 前端「压缩」按钮显式携带的压缩意图标志：不预先压缩，
-    /// 而是让看板娘在对话中可见地汇报压缩结果，完成后由后端用汇报替换旧历史。
+    /// 而是让看板娘在对话中可见地汇报压缩结果，完成后由前端用汇报替换旧历史。
     #[serde(default)]
     pub(crate) compress: bool,
 }
 
+/// 前端落库请求（POST /live2d_chat_append）。
+/// op 取值：
+/// - "append"：追加一条消息，可携带 generation 同写、clear_generation 同清
+/// - "replace_last"：用新消息替换末尾消息（思考快照 → 完整回复的演进）
+/// - "replace_all"：用 messages 整体替换对话
+/// - "compress_summary"：用 reply 作为压缩摘要替换整个对话（保留一条 system 摘要）
+/// - "clear"：清空对话与代次
 #[derive(Deserialize)]
-pub(crate) struct Live2dToolResult {
-    pub(crate) id: String,
-    pub(crate) result: String,
+pub(crate) struct Live2dAppendRequest {
+    pub(crate) op: String,
+    #[serde(default)]
+    pub(crate) message: Option<serde_json::Value>,
+    #[serde(default)]
+    pub(crate) messages: Option<Vec<serde_json::Value>>,
+    #[serde(default)]
+    pub(crate) reply: Option<String>,
+    #[serde(default)]
+    pub(crate) generation: Option<String>,
+    #[serde(default)]
+    pub(crate) clear_generation: bool,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct Live2dCancelRequest {
+    pub(crate) generation: String,
 }
 
 #[derive(Deserialize)]
@@ -68,7 +92,7 @@ pub(crate) enum Live2dConversationMutation {
 
 /// 单用户场景下的对话流程互斥锁：一次只处理一个对话请求，
 /// 防止初始提问与工具结果提交并发交错导致状态错乱。
-/// （原会话表已移除：工具调用状态可直接从数据库对话消息中恢复）
+/// （落库由前端 append 接口独立发起，不经过此锁）
 pub(crate) static LIVE2D_AGENT_FLOW_LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
 pub(crate) fn live2d_agent_flow_lock() -> &'static tokio::sync::Mutex<()> {
     LIVE2D_AGENT_FLOW_LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
@@ -77,34 +101,36 @@ pub(crate) fn live2d_agent_flow_lock() -> &'static tokio::sync::Mutex<()> {
 pub(crate) async fn get_live2d_agent_conversation(
 ) -> std::result::Result<Option<Vec<serde_json::Value>>, String> {
     // 每次调用都从数据库读取，保证记录与磁盘一致
-    let loaded = spawn_blocking_io(
+    spawn_blocking_io(
         "读取看板娘对话",
-        crate::resource_manager::load_live2d_chat_conversation,
+        crate::resource_manager::load_live2d_chat_messages,
     )
-    .await?;
-    loaded
-        .map(|raw| serde_json::from_str::<Vec<serde_json::Value>>(&raw).map_err(|e| e.to_string()))
-        .transpose()
-}
-pub(crate) async fn save_live2d_agent_conversation(
-    messages: Vec<serde_json::Value>,
-) -> std::result::Result<(), String> {
-    save_live2d_agent_conversation_state(messages, None).await
+    .await
 }
 
-#[derive(Deserialize)]
-pub(crate) struct Live2dCancelRequest {
-    pub(crate) generation: String,
+pub(crate) async fn append_live2d_agent_message(
+    message: serde_json::Value,
+) -> std::result::Result<(), String> {
+    spawn_blocking_io("追加看板娘对话", move || {
+        crate::resource_manager::append_live2d_chat_message(&message)
+    })
+    .await
 }
 
-pub(crate) async fn save_live2d_agent_conversation_state(
-    messages: Vec<serde_json::Value>,
-    generation: Option<String>,
+pub(crate) async fn replace_last_live2d_agent_message(
+    message: serde_json::Value,
 ) -> std::result::Result<(), String> {
-    let raw = serde_json::to_string(&messages).map_err(|error| error.to_string())?;
-    // 每次调用结束都写入数据库
-    spawn_blocking_io("保存看板娘对话", move || {
-        crate::resource_manager::save_live2d_chat_state(&raw, generation.as_deref())
+    spawn_blocking_io("更新看板娘对话", move || {
+        crate::resource_manager::replace_live2d_chat_last_message(&message)
+    })
+    .await
+}
+
+pub(crate) async fn replace_all_live2d_agent_messages(
+    messages: Vec<serde_json::Value>,
+) -> std::result::Result<(), String> {
+    spawn_blocking_io("替换看板娘对话", move || {
+        crate::resource_manager::replace_all_live2d_chat_messages(&messages)
     })
     .await
 }
@@ -116,6 +142,16 @@ pub(crate) async fn get_live2d_agent_generation() -> std::result::Result<Option<
     )
     .await
 }
+
+pub(crate) async fn save_live2d_agent_generation(
+    generation: Option<String>,
+) -> std::result::Result<(), String> {
+    spawn_blocking_io("保存看板娘对话代次", move || {
+        crate::resource_manager::save_live2d_chat_generation(generation.as_deref())
+    })
+    .await
+}
+
 pub(crate) async fn clear_live2d_agent_conversation() -> std::result::Result<(), String> {
     spawn_blocking_io(
         "清除看板娘对话",
@@ -182,13 +218,10 @@ pub(crate) async fn mutate_live2d_agent_conversation(
 ) -> std::result::Result<Vec<serde_json::Value>, String> {
     let mut messages = get_live2d_agent_conversation().await?.unwrap_or_default();
     apply_live2d_conversation_mutation(&mut messages, mutation)?;
-    let raw = serde_json::to_string(&messages).map_err(|error| error.to_string())?;
-    spawn_blocking_io("保存对话", move || {
-        crate::resource_manager::save_live2d_chat_conversation(&raw)
-    })
-    .await?;
+    replace_all_live2d_agent_messages(messages.clone()).await?;
     Ok(messages)
 }
+
 pub(crate) async fn live2d_agent_context_usage() -> (u64, bool) {
     match get_live2d_agent_conversation().await {
         Ok(Some(messages)) => crate::ai_client::stored_context_usage(&messages)
@@ -219,40 +252,134 @@ pub(crate) fn live2d_chat_config_response(
             "context_used": context_used,
             "context_used_estimated": context_used_estimated,
             "has_api_key": !config.api_key.is_empty(),
+            "proxy": config.proxy,
             "can_write": can_write
         }
     }))
 }
 
-/// 仅当对话尾部正好是 assistant 工具调用时返回待执行 ID。
-/// 已有 tool/final 消息的历史调用不会再次被识别为 pending。
+/// 判断对话当前阶段，用于刷新后恢复界面。
+/// - "empty"：从未对话
+/// - "completed"：最后一条是带内容的 assistant（一轮完整对话已完成）
+/// - "interrupted"：最后一条是带 interrupted 标记的 assistant（主动停止 / AI 报错已落库）
+/// - "tool_pending"：存在未执行完的工具调用（含"工具结果已落库但未继续生成"）
+/// - "interrupted_stream"：最后一条是 user 或思考快照，说明提问/思考/回复中意外中断
+pub(crate) fn live2d_agent_phase(messages: &[serde_json::Value]) -> &'static str {
+    let Some(last) = messages.last() else {
+        return "empty";
+    };
+    let role = last.get("role").and_then(serde_json::Value::as_str).unwrap_or("");
+    match role {
+        "assistant" => {
+            if last.get("interrupted").is_some() {
+                return "interrupted";
+            }
+            if last
+                .get("tool_calls")
+                .and_then(serde_json::Value::as_array)
+                .is_some_and(|calls| !calls.is_empty())
+            {
+                return "tool_pending";
+            }
+            if last.get("content").and_then(serde_json::Value::as_str).is_some() {
+                return "completed";
+            }
+            // 思考快照（content:null 且带 reasoning）说明停在思考完成后、回复未完成
+            "interrupted_stream"
+        }
+        "tool" => "tool_pending",
+        "user" => "interrupted_stream",
+        _ => "interrupted_stream",
+    }
+}
+
+/// 从尾向前找到最后一条 assistant(tool_calls)，返回其结果缺失的调用 ID 集合。
+/// - Some(非空)：仍有工具结果未提交（悬挂的工具执行）
+/// - Some(空集)：工具调用全部有结果（对话停在工具阶段，可继续生成）
+/// - None：对话末尾没有 assistant(tool_calls)（无工具流程）
 pub(crate) fn live2d_agent_pending_call_ids(
     messages: &[serde_json::Value],
 ) -> Option<HashSet<String>> {
-    let message = messages.last()?;
-    if message.get("role").and_then(serde_json::Value::as_str) != Some("assistant") {
-        return None;
+    let mut done_ids: HashSet<String> = HashSet::new();
+    for message in messages.iter().rev() {
+        let role = message.get("role").and_then(serde_json::Value::as_str).unwrap_or("");
+        if role == "assistant" {
+            let calls = message.get("tool_calls").and_then(serde_json::Value::as_array);
+            if calls.is_some_and(|calls| !calls.is_empty()) {
+                let call_ids: HashSet<String> = calls
+                    .unwrap()
+                    .iter()
+                    .filter_map(|call| {
+                        call.get("id").and_then(serde_json::Value::as_str).map(str::to_owned)
+                    })
+                    .collect();
+                return Some(call_ids.difference(&done_ids).cloned().collect());
+            }
+            // 最后一条 assistant 不带 tool_calls：对话已进入后续阶段，无工具流程
+            return None;
+        } else if role == "tool" {
+            if let Some(id) = message.get("tool_call_id").and_then(serde_json::Value::as_str) {
+                done_ids.insert(id.to_owned());
+            }
+        } else {
+            return None;
+        }
     }
-    let calls = message
-        .get("tool_calls")
-        .and_then(serde_json::Value::as_array)?;
-    let ids: HashSet<String> = calls
-        .iter()
-        .filter_map(|call| {
-            call.get("id")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_owned)
-        })
-        .collect();
-    (!ids.is_empty()).then_some(ids)
+    None
 }
 
-pub(crate) async fn live2d_agent_has_pending_tools() -> std::result::Result<bool, String> {
-    Ok(get_live2d_agent_conversation()
-        .await?
-        .as_ref()
-        .and_then(|messages| live2d_agent_pending_call_ids(messages))
-        .is_some())
+/// 返回待重跑工具的可执行调用列表（仅缺失结果的那些），供前端「继续执行」。
+/// 每个元素为 { id, name, javascript | source_code }。
+pub(crate) fn live2d_agent_pending_calls(
+    messages: &[serde_json::Value],
+) -> Option<Vec<serde_json::Value>> {
+    let pending_ids = live2d_agent_pending_call_ids(messages)?;
+    for message in messages.iter().rev() {
+        let role = message.get("role").and_then(serde_json::Value::as_str).unwrap_or("");
+        if role == "assistant" {
+            let Some(calls) = message.get("tool_calls").and_then(serde_json::Value::as_array)
+            else {
+                return None;
+            };
+            if calls.is_empty() {
+                return None;
+            }
+            let mut result = Vec::new();
+            for call in calls {
+                let Some(id) = call.get("id").and_then(serde_json::Value::as_str) else {
+                    continue;
+                };
+                if !pending_ids.contains(id) {
+                    continue;
+                }
+                let name = call
+                    .pointer("/function/name")
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or("");
+                let mut item = json!({ "id": id, "name": name });
+                if let Some(args_raw) =
+                    call.pointer("/function/arguments").and_then(serde_json::Value::as_str)
+                {
+                    if let Ok(args) = serde_json::from_str::<serde_json::Value>(args_raw) {
+                        if let Some(js) = args.get("javascript").and_then(serde_json::Value::as_str)
+                        {
+                            item["javascript"] = js.to_owned().into();
+                        }
+                        if let Some(src) =
+                            args.get("source_code").and_then(serde_json::Value::as_str)
+                        {
+                            item["source_code"] = src.to_owned().into();
+                        }
+                    }
+                }
+                result.push(item);
+            }
+            return Some(result);
+        } else if role != "tool" {
+            return None;
+        }
+    }
+    None
 }
 
 /// 统计对话中已完成（含进行中）的 Agent 工具调用轮数，用于步骤序号显示。
@@ -266,57 +393,20 @@ pub(crate) fn live2d_agent_completed_steps(messages: &[serde_json::Value]) -> u6
         .count() as u64
 }
 
-pub(crate) fn validate_live2d_tool_results(
-    pending_call_ids: &HashSet<String>,
-    tool_results: Vec<Live2dToolResult>,
-) -> Result<Vec<(String, String)>> {
-    // 容错设计：工具执行失败/超时/结果缺失时不断开对话，
-    // 而是为缺失的工具调用补占位失败说明，让模型看到后自行重试或调整方案。
-    const FAILED_NOTE: &str = "[工具执行失败：未收到该工具调用的结果（可能执行超时或页面异常）。请根据情况重试、更换方案或直接告知用户。]";
-    const TRUNCATED_NOTE: &str = "[返回内容过长，已截断。请缩小范围或分批读取后重新获取。]";
-    let single_budget = crate::ai_client::MAX_TOOL_RESULT_CHARS;
-    let total_budget = LIVE2D_TOOL_RESULTS_TOTAL_CHARS;
-
-    let mut received_ids = HashSet::new();
-    let mut results = Vec::with_capacity(pending_call_ids.len());
-    let mut total_chars = 0;
-    for result in tool_results {
-        // 无效或重复 ID 直接丢弃（缺失的会在下方补全）
-        if !pending_call_ids.contains(&result.id) || !received_ids.insert(result.id.clone()) {
-            continue;
-        }
-        let mut text = result.result;
-        if text.chars().count() > single_budget {
-            text = text.chars().take(single_budget).collect::<String>();
-            text.push_str("\n\n");
-            text.push_str(TRUNCATED_NOTE);
-        }
-        if total_chars + text.chars().count() > total_budget {
-            text = TRUNCATED_NOTE.to_owned();
-        }
-        total_chars += text.chars().count();
-        results.push((result.id, text));
-    }
-    // 补全缺失的工具调用：以失败说明占位，保证模型拿到全部工具结果
-    for id in pending_call_ids {
-        if !received_ids.contains(id) {
-            results.push((id.clone(), FAILED_NOTE.to_owned()));
-        }
-    }
-    Ok(results)
+pub(crate) async fn live2d_agent_has_pending_tools() -> std::result::Result<bool, String> {
+    Ok(get_live2d_agent_conversation()
+        .await?
+        .as_ref()
+        .and_then(|messages| live2d_agent_pending_call_ids(messages))
+        .is_some_and(|pending| !pending.is_empty()))
 }
 
-/// 统一处理一个 Agent 步骤：保存对话、创建/清理会话、构造 data JSON。
-/// 流式（SSE done 事件）与非流式（JSON 响应）共用，避免两套逻辑重复。
-/// 统一处理一个 Agent 步骤：保存对话、构造 data JSON。
-/// 流式（SSE done 事件）与非流式（JSON 响应）共用。
-/// 单用户场景下不维护会话表：工具调用状态直接从数据库对话消息中恢复，
-/// 这里只负责把每一步的完整消息持久化。
+/// 统一构造一个 Agent 步骤的 data JSON（done 事件体）。
+/// 落库由前端发起，这里不再写库；assistant_message 携带完整消息供前端落库。
 pub(crate) async fn live2d_agent_step_data(
     step: crate::ai_client::AgentStep,
     completed_steps: u64,
     context_length: u64,
-    compress: bool,
 ) -> std::result::Result<serde_json::Value, String> {
     match step {
         crate::ai_client::AgentStep::Final {
@@ -325,37 +415,16 @@ pub(crate) async fn live2d_agent_step_data(
             messages,
             context_tokens,
             context_tokens_estimated,
+            ..
         } => {
-            // 压缩请求：AI 已在对话中可见地汇报压缩结果。
-            // 用该汇报替换旧历史（只保留一个 system 摘要消息），让上下文真正变小。
-            if compress {
-                let summary = reply.trim();
-                let compressed_messages = vec![serde_json::json!({
-                    "role": "system",
-                    "content": format!(
-                        "{}{}",
-                        crate::ai_client::COMPRESSED_SUMMARY_PREFIX,
-                        summary
-                    ),
-                    "timestamp": crate::ai_client::now_timestamp()
-                })];
-                save_live2d_agent_conversation(compressed_messages.clone()).await?;
-                let context_tokens =
-                    crate::ai_client::estimate_context_tokens(&compressed_messages);
-                return Ok(json!({
-                    "type": "final",
-                    "reply": reply,
-                    "reasoning_content": reasoning_content,
-                    "context_tokens": context_tokens,
-                    "context_tokens_estimated": true,
-                    "context_length": context_length
-                }));
-            }
-            save_live2d_agent_conversation(messages).await?;
+            let assistant_message = messages.last().cloned().unwrap_or_else(|| {
+                json!({ "role": "assistant", "content": reply })
+            });
             Ok(json!({
                 "type": "final",
                 "reply": reply,
                 "reasoning_content": reasoning_content,
+                "assistant_message": assistant_message,
                 "context_tokens": context_tokens,
                 "context_tokens_estimated": context_tokens_estimated,
                 "context_length": context_length
@@ -368,12 +437,12 @@ pub(crate) async fn live2d_agent_step_data(
             content,
             context_tokens,
             context_tokens_estimated,
+            ..
         } => {
             let next_step = completed_steps + 1;
             let generation = uuid::Uuid::new_v4().to_string();
-            // 完整消息（含 assistant 的 tool_calls）已持久化，前端下次提交时
-            // 通过 live2d_agent_pending_call_ids 从数据库恢复校验
-            save_live2d_agent_conversation_state(messages, Some(generation.clone())).await?;
+            let assistant_message =
+                messages.last().cloned().unwrap_or_else(|| json!({ "role": "assistant" }));
             Ok(json!({
                 "type": "tool_calls",
                 "step": next_step,
@@ -381,6 +450,7 @@ pub(crate) async fn live2d_agent_step_data(
                 "reasoning_content": reasoning_content,
                 "content": content,
                 "calls": calls,
+                "assistant_message": assistant_message,
                 "context_tokens": context_tokens,
                 "context_tokens_estimated": context_tokens_estimated,
                 "context_length": context_length
@@ -393,44 +463,48 @@ pub(crate) async fn live2d_agent_step_data(
 mod live2d_agent_tests {
     use super::{
         apply_live2d_conversation_mutation, get_live2d_agent_conversation,
-        live2d_agent_pending_call_ids, save_live2d_agent_conversation,
-        validate_live2d_tool_results, Live2dConversationMutation, Live2dToolResult,
+        live2d_agent_pending_call_ids, live2d_agent_pending_calls, live2d_agent_phase,
+        replace_all_live2d_agent_messages, Live2dConversationMutation,
     };
     use std::collections::HashSet;
+    /// 涉及真实 reddat.db 的测试共享同一数据库文件，串行执行避免相互污染。
+    static DB_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    #[test]
-    fn validates_complete_tool_result_set() {
-        let expected = HashSet::from(["call_1".to_owned(), "call_2".to_owned()]);
-        let results = validate_live2d_tool_results(
-            &expected,
-            vec![
-                Live2dToolResult {
-                    id: "call_1".to_owned(),
-                    result: "one".to_owned(),
-                },
-                Live2dToolResult {
-                    id: "call_2".to_owned(),
-                    result: "two".to_owned(),
-                },
-            ],
-        )
-        .unwrap();
-        assert_eq!(results.len(), 2);
+    fn tool_message(id: &str, done: bool) -> serde_json::Value {
+        let mut message = serde_json::json!({
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [
+                {
+                    "id": id,
+                    "type": "function",
+                    "function": { "name": "execute_javascript", "arguments": "{\"javascript\":\"return 1;\"}" }
+                }
+            ]
+        });
+        if done {
+            message["content"] = serde_json::json!("已完成");
+        }
+        message
     }
 
     #[test]
-    fn pending_tool_calls_must_be_at_conversation_tail() {
-        let pending = serde_json::json!({
-            "role": "assistant",
-            "content": null,
-            "tool_calls": [{"id": "call_1", "type": "function"}]
-        });
+    fn pending_tool_calls_must_be_missing_results() {
+        let pending = tool_message("call_1", false);
         assert_eq!(
             live2d_agent_pending_call_ids(&[pending.clone()])
                 .unwrap()
-                .len(),
-            1
+                .into_iter()
+                .collect::<HashSet<_>>(),
+            HashSet::from(["call_1".to_owned()])
         );
+        // 结果已提交、停在工具阶段：返回空集（可继续生成，非悬挂）
+        let all_done = vec![
+            pending.clone(),
+            serde_json::json!({"role": "tool", "tool_call_id": "call_1", "content": "ok"}),
+        ];
+        assert_eq!(live2d_agent_pending_call_ids(&all_done).unwrap(), HashSet::new());
+        // 对话已进入最终回答阶段：无工具流程
         let completed = vec![
             pending,
             serde_json::json!({"role": "tool", "tool_call_id": "call_1", "content": "ok"}),
@@ -440,50 +514,64 @@ mod live2d_agent_tests {
     }
 
     #[test]
-    fn fills_missing_tool_result_with_failure_note() {
-        let expected = HashSet::from(["call_1".to_owned(), "call_2".to_owned()]);
-        let results = validate_live2d_tool_results(
-            &expected,
-            vec![Live2dToolResult {
-                id: "call_1".to_owned(),
-                result: "one".to_owned(),
-            }],
-        )
-        .unwrap();
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].0, "call_1");
-        assert_eq!(results[0].1, "one");
-        assert_eq!(results[1].0, "call_2");
-        assert!(results[1].1.contains("工具执行失败"));
+    fn pending_calls_reexpose_executable_arguments() {
+        let messages = vec![
+            serde_json::json!({"role": "user", "content": "hi"}),
+            serde_json::json!({
+                "role": "assistant",
+                "content": null,
+                "tool_calls": [
+                    {
+                        "id": "call_1",
+                        "type": "function",
+                        "function": { "name": "execute_javascript", "arguments": "{\"javascript\":\"return 1;\"}" }
+                    },
+                    {
+                        "id": "call_2",
+                        "type": "function",
+                        "function": { "name": "run_c", "arguments": "{\"source_code\":\"int main(){return 0;}\"}" }
+                    }
+                ]
+            }),
+            serde_json::json!({"role": "tool", "tool_call_id": "call_1", "content": "ok"}),
+        ];
+        let calls = live2d_agent_pending_calls(&messages).unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0]["id"], "call_2");
+        assert!(calls[0].get("source_code").is_some());
     }
 
     #[test]
-    fn truncates_oversized_tool_results_instead_of_rejecting() {
-        let expected = HashSet::from(["call_1".to_owned(), "call_2".to_owned()]);
-        let huge = "字".repeat(20_000);
-        let results = validate_live2d_tool_results(
-            &expected,
-            vec![
-                Live2dToolResult {
-                    id: "call_1".to_owned(),
-                    result: huge.clone(),
-                },
-                Live2dToolResult {
-                    id: "call_2".to_owned(),
-                    result: huge,
-                },
-            ],
-        )
-        .unwrap();
-        assert_eq!(results.len(), 2);
-        let total_chars: usize = results.iter().map(|(_, text)| text.chars().count()).sum();
-        assert!(
-            total_chars <= 12_000,
-            "截断后总长不应超过预算: {total_chars}"
+    fn phase_reflects_conversation_stage() {
+        assert_eq!(live2d_agent_phase(&[]), "empty");
+        assert_eq!(
+            live2d_agent_phase(&[serde_json::json!({"role": "user", "content": "hi"})]),
+            "interrupted_stream"
         );
-        assert!(results
-            .iter()
-            .all(|(_, text)| text.contains("返回内容过长")));
+        assert_eq!(
+            live2d_agent_phase(&[serde_json::json!({"role": "assistant", "content": "hi"})]),
+            "completed"
+        );
+        assert_eq!(
+            live2d_agent_phase(&[tool_message("call_1", false)]),
+            "tool_pending"
+        );
+        assert_eq!(
+            live2d_agent_phase(&[serde_json::json!({
+                "role": "assistant",
+                "content": "已停止",
+                "interrupted": true
+            })]),
+            "interrupted"
+        );
+        assert_eq!(
+            live2d_agent_phase(&[serde_json::json!({
+                "role": "assistant",
+                "content": null,
+                "reasoning_content": "思考"
+            })]),
+            "interrupted_stream"
+        );
     }
 
     #[test]
@@ -540,13 +628,16 @@ mod live2d_agent_tests {
 
     #[tokio::test]
     async fn stores_single_conversation_for_next_user_turn() {
+        let _db_guard = DB_TEST_LOCK.lock().unwrap();
+        // 测试间共享同一个 reddat.db，先清理隔离
+        super::clear_live2d_agent_conversation().await.unwrap();
         let messages = vec![serde_json::json!({
             "role": "assistant",
             "reasoning_content": "reasoning",
             "content": "answer",
             "timestamp": crate::ai_client::now_timestamp()
         })];
-        save_live2d_agent_conversation(messages.clone())
+        replace_all_live2d_agent_messages(messages.clone())
             .await
             .unwrap();
         assert_eq!(
@@ -556,8 +647,68 @@ mod live2d_agent_tests {
         super::clear_live2d_agent_conversation().await.unwrap();
         assert_eq!(get_live2d_agent_conversation().await.unwrap(), None);
     }
-}
 
+    #[tokio::test]
+    async fn replace_last_persists_generation_for_tool_continue() {
+        let _db_guard = DB_TEST_LOCK.lock().unwrap();
+        // 测试间共享同一个 reddat.db，先清理隔离
+        super::clear_live2d_agent_conversation().await.unwrap();
+        // 模拟前端工具调用落库协议：replace_last + generation（④ 工具调用落库）
+        let assistant = serde_json::json!({
+            "role": "assistant",
+            "content": null,
+            "tool_calls": [{
+                "id": "call_1",
+                "type": "function",
+                "function": { "name": "execute_javascript", "arguments": "{\"javascript\":\"return 1;\"}" }
+            }]
+        });
+        super::super::deal_live2d_chat_append(super::super::Live2dAppendRequest {
+            op: "replace_last".to_owned(),
+            message: Some(assistant.clone()),
+            messages: None,
+            reply: None,
+            generation: Some("gen-123".to_owned()),
+            clear_generation: false,
+        })
+        .await
+        .unwrap();
+        // 代次必须已写入，否则继续工具调用会被拒绝
+        assert_eq!(
+            super::get_live2d_agent_generation().await.unwrap(),
+            Some("gen-123".to_owned())
+        );
+        // 尾部消息是 assistant(tool_calls) 且全部结果缺失 → pending 非空
+        let messages = super::get_live2d_agent_conversation().await.unwrap().unwrap();
+        let pending = live2d_agent_pending_call_ids(&messages).unwrap();
+        assert_eq!(pending, HashSet::from(["call_1".to_owned()]));
+        // 继续流程全部落库后：结果为全，但代次仍应在（直到最终回复时才清除）
+        let tool_result = serde_json::json!({
+            "role": "tool",
+            "tool_call_id": "call_1",
+            "content": "ok",
+            "timestamp": crate::ai_client::now_timestamp()
+        });
+        super::super::deal_live2d_chat_append(super::super::Live2dAppendRequest {
+            op: "append".to_owned(),
+            message: Some(tool_result),
+            messages: None,
+            reply: None,
+            generation: None,
+            clear_generation: false,
+        })
+        .await
+        .unwrap();
+        let messages = super::get_live2d_agent_conversation().await.unwrap().unwrap();
+        assert!(live2d_agent_pending_call_ids(&messages).unwrap().is_empty());
+        assert_eq!(
+            super::get_live2d_agent_generation().await.unwrap(),
+            Some("gen-123".to_owned())
+        );
+        // 清理
+        super::clear_live2d_agent_conversation().await.unwrap();
+    }
+}
 /// 构造一条 SSE 事件文本（event + data 两行，空行结尾）。
 pub(crate) fn live2d_sse_event(event: &str, data: &serde_json::Value) -> bytes::Bytes {
     let mut out = String::with_capacity(64 + data.to_string().len());
@@ -567,43 +718,4 @@ pub(crate) fn live2d_sse_event(event: &str, data: &serde_json::Value) -> bytes::
     out.push_str(&data.to_string());
     out.push_str("\n\n");
     bytes::Bytes::from(out)
-}
-
-pub(crate) async fn cancel_live2d_pending_tools(
-    generation: &str,
-) -> std::result::Result<(), String> {
-    let generation = generation.trim();
-    if generation.is_empty() || generation.len() > 100 {
-        return Err("取消请求缺少有效的对话代次".to_owned());
-    }
-
-    let stored_generation = get_live2d_agent_generation()
-        .await?
-        .ok_or_else(|| "当前没有待取消的工具调用".to_owned())?;
-    if stored_generation != generation {
-        return Err("待取消的工具调用已经失效".to_owned());
-    }
-    let mut messages = get_live2d_agent_conversation()
-        .await?
-        .ok_or_else(|| "当前没有待取消的对话".to_owned())?;
-    let pending_ids = live2d_agent_pending_call_ids(&messages)
-        .ok_or_else(|| "当前没有待取消的工具调用".to_owned())?;
-    for id in pending_ids {
-        messages.push(serde_json::json!({
-            "role": "tool",
-            "tool_call_id": id,
-            "content": "[用户已停止本轮工具执行，结果未提交]",
-            "timestamp": crate::ai_client::now_timestamp()
-        }));
-    }
-    messages.push(serde_json::json!({
-        "role": "assistant",
-        "content": "本轮工具执行已由用户停止。",
-        "timestamp": crate::ai_client::now_timestamp()
-    }));
-    let raw = serde_json::to_string(&messages).map_err(|error| error.to_string())?;
-    spawn_blocking_io("取消看板娘工具执行", move || {
-        crate::resource_manager::save_live2d_chat_state(&raw, None)
-    })
-    .await
 }

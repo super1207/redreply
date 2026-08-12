@@ -32,6 +32,9 @@ pub struct Live2dProviderConfig {
     pub context_length: u64,
     #[serde(default)]
     pub thinking_level: String,
+    /// 访问该模型的 HTTP 代理地址（空表示直连，不走代理）。
+    #[serde(default)]
+    pub proxy: String,
 }
 
 impl Default for Live2dProviderConfig {
@@ -43,6 +46,7 @@ impl Default for Live2dProviderConfig {
             model: "gpt-4o-mini".to_owned(),
             context_length: 131_072,
             thinking_level: "high".to_owned(),
+            proxy: String::new(),
         }
     }
 }
@@ -57,6 +61,8 @@ pub struct Live2dChatConfig {
     pub system_prompt: String,
     pub thinking_level: String,
     pub context_length: u64,
+    /// 当前选中配置的代理地址（空表示直连）。
+    pub proxy: String,
 }
 
 impl Default for Live2dChatConfig {
@@ -71,6 +77,7 @@ impl Default for Live2dChatConfig {
             system_prompt: DEFAULT_LIVE2D_SYSTEM_PROMPT.to_owned(),
             thinking_level: provider.thinking_level.clone(),
             context_length: provider.context_length,
+            proxy: provider.proxy.clone(),
         }
     }
 }
@@ -419,6 +426,7 @@ fn parse_provider_config(value: &Value) -> Option<Live2dProviderConfig> {
         model,
         context_length: obj.get("context_length").and_then(Value::as_u64).unwrap_or(defaults.context_length),
         thinking_level: obj.get("thinking_level").and_then(Value::as_str).unwrap_or(&defaults.thinking_level).to_owned(),
+        proxy: obj.get("proxy").and_then(Value::as_str).unwrap_or_default().to_owned(),
     })
 }
 
@@ -444,6 +452,7 @@ pub(crate) fn parse_live2d_chat_config(config: &Value) -> Live2dChatConfig {
         system_prompt: chat.get("system_prompt").and_then(Value::as_str).unwrap_or(&defaults.system_prompt).to_owned(),
         thinking_level: current.thinking_level.clone(),
         context_length: current.context_length,
+        proxy: current.proxy.clone(),
     }
 }
 
@@ -467,6 +476,9 @@ fn validate_live2d_chat_config(chat: &Live2dChatConfig) -> ConfigResult<()> {
         }
         if item.api_key.chars().count() > 8192 {
             return Err("API Key过长".into());
+        }
+        if item.proxy.chars().count() > 2048 {
+            return Err("代理地址不能超过2048个字符".into());
         }
         if !matches!(
             item.thinking_level.as_str(),
@@ -554,7 +566,8 @@ mod tests {
                         "api_key": "key",
                         "model": "deepseek-v4-flash",
                         "context_length": 524288,
-                        "thinking_level": "max"
+                        "thinking_level": "max",
+                        "proxy": "http://127.0.0.1:7890"
                     },
                     {
                         "name": "本地模型",
@@ -573,6 +586,9 @@ mod tests {
         assert_eq!(chat.configs.len(), 2);
         assert_eq!(chat.configs[1].name, "本地模型");
         assert_eq!(chat.configs[1].model, "qwen2.5");
+        // 选中配置的代理同步到顶层，未设置的配置代理为空
+        assert_eq!(chat.proxy, "http://127.0.0.1:7890");
+        assert_eq!(chat.configs[1].proxy, "");
     }
 
     #[test]

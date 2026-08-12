@@ -46,6 +46,7 @@ uuid = { version = "1.18.1", features = ["v4", "fast-rng"] }
 
 [dependencies]
 redreply-adapter = { path = "crates/redreply-adapter" }
+c89-runner = { path = "../rv/crates/c89-runner" }
 fancy-regex = { workspace = true }
 encoding = "0.2.33"
 getrandom = "0.3.3"

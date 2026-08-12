@@ -2,7 +2,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::process::{Child, Command, Output};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -45,6 +45,7 @@ struct CommandRequest {
 
 struct CommandGeneration {
     pids: HashSet<u32>,
+    cancel_flags: Vec<Arc<AtomicBool>>,
     cancelled_at: Option<Instant>,
 }
 
@@ -58,6 +59,7 @@ fn command_generations() -> &'static Mutex<HashMap<String, CommandGeneration>> {
 fn prune_command_generations(generations: &mut HashMap<String, CommandGeneration>) {
     generations.retain(|_, state| {
         !state.pids.is_empty()
+            || !state.cancel_flags.is_empty()
             || state
                 .cancelled_at
                 .is_some_and(|cancelled_at| cancelled_at.elapsed() < CANCELLED_GENERATION_TTL)
@@ -82,12 +84,58 @@ fn register_command(tokens: &[String], pid: u32) -> bool {
             .entry(token.clone())
             .or_insert_with(|| CommandGeneration {
                 pids: HashSet::new(),
+                cancel_flags: Vec::new(),
                 cancelled_at: None,
             })
             .pids
             .insert(pid);
     }
     true
+}
+
+fn register_c_program(tokens: &[String]) -> Option<Arc<AtomicBool>> {
+    let cancel = Arc::new(AtomicBool::new(false));
+    if tokens.is_empty() {
+        return Some(cancel);
+    }
+    let mut generations = command_generations().lock().unwrap();
+    prune_command_generations(&mut generations);
+    if tokens.iter().any(|token| {
+        generations
+            .get(token)
+            .is_some_and(|state| state.cancelled_at.is_some())
+    }) {
+        return None;
+    }
+    for token in tokens {
+        generations
+            .entry(token.clone())
+            .or_insert_with(|| CommandGeneration {
+                pids: HashSet::new(),
+                cancel_flags: Vec::new(),
+                cancelled_at: None,
+            })
+            .cancel_flags
+            .push(cancel.clone());
+    }
+    Some(cancel)
+}
+
+fn unregister_c_program(tokens: &[String], cancel: &Arc<AtomicBool>) {
+    let mut generations = command_generations().lock().unwrap();
+    for token in tokens {
+        let remove = if let Some(state) = generations.get_mut(token) {
+            state.cancel_flags.retain(|item| !Arc::ptr_eq(item, cancel));
+            state.pids.is_empty()
+                && state.cancel_flags.is_empty()
+                && state.cancelled_at.is_none()
+        } else {
+            false
+        };
+        if remove {
+            generations.remove(token);
+        }
+    }
 }
 
 fn unregister_command(tokens: &[String], pid: u32) {
@@ -156,9 +204,13 @@ pub async fn cancel_generation(generation: &str) -> std::result::Result<(), Stri
             .entry(generation.to_owned())
             .or_insert_with(|| CommandGeneration {
                 pids: HashSet::new(),
+                cancel_flags: Vec::new(),
                 cancelled_at: None,
             });
         state.cancelled_at = Some(Instant::now());
+        for cancel in &state.cancel_flags {
+            cancel.store(true, Ordering::Relaxed);
+        }
         state.pids.iter().copied().collect::<Vec<_>>()
     };
     let generation = generation.to_owned();
@@ -179,6 +231,42 @@ pub async fn cancel_generation(generation: &str) -> std::result::Result<(), Stri
     })
     .await
     .map_err(|error| format!("停止命令行任务失败: {error}"))?
+}
+
+pub async fn run_c(
+    source_code: String,
+    generation: &str,
+    command_id: &str,
+) -> std::result::Result<serde_json::Value, String> {
+    if source_code.trim().is_empty() {
+        return Err("C 源代码不能为空".to_owned());
+    }
+    if source_code.chars().count() > 1_000_000 {
+        return Err("C 源代码过大，最多支持 1000000 个字符".to_owned());
+    }
+    if generation.len() > 100 || command_id.len() > 100 {
+        return Err("命令取消标识过长".to_owned());
+    }
+    let mut tokens = Vec::new();
+    for token in [generation.trim(), command_id.trim()] {
+        if !token.is_empty() && !tokens.iter().any(|item| item == token) {
+            tokens.push(token.to_owned());
+        }
+    }
+    let cancel = register_c_program(&tokens).ok_or_else(|| "C 程序执行已取消".to_owned())?;
+    let task_cancel = cancel.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        c89_runner::run_c89_with_cancel(source_code, task_cancel)
+    })
+    .await
+    .map_err(|error| format!("C 程序任务失败: {error}"));
+    unregister_c_program(&tokens, &cancel);
+    let output = result?;
+    Ok(json!({
+        "stdout": output,
+        "stderr": "",
+        "exit_code": 0
+    }))
 }
 
 fn wait_for_command(child: Child, tokens: &[String]) -> std::result::Result<Output, String> {
@@ -421,9 +509,48 @@ pub async fn handle(request: Request<Incoming>) -> Result<Response<BoxBody>> {
     }
 }
 
+#[derive(Deserialize)]
+struct RunCRequest {
+    #[serde(default)]
+    source_code: String,
+    #[serde(default)]
+    generation: String,
+    #[serde(default)]
+    command_id: String,
+}
+
+pub async fn handle_run_c(request: Request<Incoming>) -> Result<Response<BoxBody>> {
+    if request.method() != Method::POST {
+        let mut response = err_response("请求方法不支持");
+        *response.status_mut() = hyper::StatusCode::METHOD_NOT_ALLOWED;
+        return Ok(response);
+    }
+    let body = match read_body(request.into_body()).await {
+        Ok(body) => body,
+        Err(error) => return Ok(err_response(&format!("请求体过大: {error}"))),
+    };
+    let request: RunCRequest = match serde_json::from_slice(&body) {
+        Ok(request) => request,
+        Err(error) => return Ok(err_response(&format!("请求格式错误: {error}"))),
+    };
+    match run_c(
+        request.source_code,
+        &request.generation,
+        &request.command_id,
+    )
+    .await
+    {
+        Ok(data) => Ok(ok_response(data)),
+        Err(error) => Ok(err_response(&error)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{cancel_generation, command_generations, run_command, CommandRequest};
+    use super::{
+        cancel_generation, command_generations, register_c_program, run_c, run_command,
+        unregister_c_program, CommandRequest,
+    };
     use std::sync::mpsc;
     use std::time::{Duration, Instant};
 
@@ -487,6 +614,42 @@ mod tests {
             .unwrap()
             .contains("argument with spaces"));
         assert_eq!(result["exit_code"], 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn run_c_compiles_and_executes_on_riscv() {
+        let result = run_c(
+            "#include <stdio.h>\nint main(void) { printf(\"run_c ok\\n\"); return 0; }"
+                .to_owned(),
+            "test-run-c",
+            "test-run-c-command",
+        )
+        .await
+        .unwrap();
+        assert_eq!(result["stdout"], "run_c ok\n");
+        assert_eq!(result["stderr"], "");
+        assert_eq!(result["exit_code"], 0);
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn cancel_generation_stops_run_c() {
+        let command_id = format!("run-c-command-{}", uuid::Uuid::new_v4());
+        let tokens = vec![command_id.clone()];
+        let cancel = register_c_program(&tokens).unwrap();
+        let task_cancel = cancel.clone();
+        let task = tokio::task::spawn_blocking(move || {
+            c89_runner::run_c89_with_cancel(
+                "int main(void) { for (;;) {} return 0; }".to_owned(),
+                task_cancel,
+            )
+        });
+        cancel_generation(&command_id).await.unwrap();
+        let output = tokio::time::timeout(Duration::from_secs(5), task)
+            .await
+            .expect("取消后 run_c 没有及时退出")
+            .unwrap();
+        unregister_c_program(&tokens, &cancel);
+        assert!(output.contains("运行已取消"));
     }
 
     #[tokio::test(flavor = "multi_thread")]

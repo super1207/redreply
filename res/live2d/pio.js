@@ -71,6 +71,9 @@ var Paul_Pio = function (prop) {
         idol: () => {
             current.idol < (prop.model.length - 1) ? current.idol++ : current.idol = 0;
 
+            // 记录当前换装索引，刷新/重启后恢复
+            localStorage.setItem("posterGirlSkin", String(current.idol));
+
             return current.idol;
         },
         clearMessage: () => {
@@ -333,7 +336,13 @@ var Paul_Pio = function (prop) {
         if (!(prop.hidden && tools.isMobile())) {
             if (!noModel) {
                 action.welcome();
-                loadlive2d("pio", prop.model[0]);
+                // 读取换装存储：恢复上次选择的模型，索引越界时取模兜底
+                const skinIndex = parseInt(localStorage.getItem("posterGirlSkin") || "0", 10);
+                const safeIndex = (Number.isInteger(skinIndex) && skinIndex >= 0 && prop.model.length > 0)
+                    ? skinIndex % prop.model.length
+                    : 0;
+                current.idol = safeIndex;
+                loadlive2d("pio", prop.model[safeIndex]);
             }
 
             switch (prop.mode) {

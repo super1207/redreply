@@ -24,6 +24,7 @@
     const configDelButton = document.getElementById("pio-chat-config-del-btn");
     const modelInput = document.getElementById("pio-chat-model");
     const apiKeyInput = document.getElementById("pio-chat-api-key");
+    const proxyInput = document.getElementById("pio-chat-proxy");
     const systemPromptInput = document.getElementById("pio-chat-system-prompt");
     const thinkingLevelInput = document.getElementById("pio-chat-thinking-level");
     const contextLengthInput = document.getElementById("pio-chat-context-length");
@@ -35,7 +36,8 @@
     const dialog = container && container.querySelector(".pio-dialog");
     const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
     const JAVASCRIPT_TOOL_NAME = "execute_javascript";
-    const MAX_TOOL_RESULT_CHARS = 10000;
+    const RUN_C_TOOL_NAME = "run_c";
+    const MAX_TOOL_RESULT_CHARS = 16000;
 
     // 看板娘显式状态机：业务状态与展示文案分离。
     const AGENT_STATE = Object.freeze({
@@ -146,7 +148,6 @@ const state = {
         controller: null,
         generation: null,
         cancelPromise: null,
-        cancelRetryTimer: null,
         pendingCompress: false,
         pendingMessage: null,
         skipAutoCompress: false,
@@ -299,6 +300,17 @@ const state = {
         if (state.controller) state.controller.abort();
         void cancelPendingGeneration().catch(function () {});
         appendAgentStatus("提示", "已请求停止", "result");
+        // 中断原因落库（用户主动停止），保证界面与数据库一致
+        void persistAppend({
+            op: "append",
+            message: {
+                role: "assistant",
+                content: "[用户已停止本轮对话]",
+                interrupted: true,
+                timestamp: nowTimestamp()
+            },
+            clear_generation: true
+        }).catch(function () {});
     }
 
     async function cancelPendingGeneration() {
@@ -309,6 +321,7 @@ const state = {
             const controller = new AbortController();
             const timeout = setTimeout(function () { controller.abort(); }, 10000);
             try {
+                // 仅终止本次对话期间由前端发起的 run_c 命令进程
                 const response = await fetch("/live2d_chat_cancel", {
                     method: "POST",
                     headers: { "Content-Type": "application/json" },
@@ -322,11 +335,6 @@ const state = {
                         ? result.data.message
                         : "取消工具执行失败");
                 }
-                if (state.generation === generation) state.generation = null;
-                if (state.cancelRetryTimer) {
-                    clearTimeout(state.cancelRetryTimer);
-                    state.cancelRetryTimer = null;
-                }
             } finally {
                 clearTimeout(timeout);
             }
@@ -335,13 +343,7 @@ const state = {
         try {
             await request;
         } catch (error) {
-            console.error("Cancel pending Live2D tools failed:", error);
-            if (state.generation === generation && !state.cancelRetryTimer) {
-                state.cancelRetryTimer = setTimeout(function () {
-                    state.cancelRetryTimer = null;
-                    void cancelPendingGeneration().catch(function () {});
-                }, 1500);
-            }
+            console.error("Cancel Live2D commands failed:", error);
             throw error;
         } finally {
             if (state.cancelPromise === request) state.cancelPromise = null;
@@ -401,10 +403,83 @@ const state = {
         return limitToolResult("ok:false stdout: stderr:" + message);
     }
 
+    // ── 落库协议：对话持久化全部由前端显式发起（与后端 /live2d_chat_append 对应）──
+    async function persistAppend(payload) {
+        const response = await fetch("/live2d_chat_append", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+            keepalive: true
+        });
+        const result = await response.json();
+        if (!response.ok || !result || result.retcode !== 0) {
+            throw new Error(result && result.data && result.data.message
+                ? result.data.message
+                : "对话记录保存失败");
+        }
+    }
+
+    function nowTimestamp() {
+        return Math.floor(Date.now() / 1000);
+    }
+
+    function createToolCommandId() {
+        if (window.crypto && typeof window.crypto.randomUUID === "function") return window.crypto.randomUUID();
+        return "tool-" + Date.now() + "-" + Math.random().toString(16).slice(2);
+    }
+
+    async function executeRunCTool(call) {
+        if (!call || !call.id || typeof call.source_code !== "string") {
+            throw new Error("AI 返回了无效的 run_c 工具调用");
+        }
+        const signal = state.controller ? state.controller.signal : undefined;
+        const commandId = createToolCommandId();
+        let cancelSent = false;
+        const cancel = function () {
+            if (cancelSent) return;
+            cancelSent = true;
+            void fetch("/run_command_cancel", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ generation: commandId }),
+                keepalive: true
+            }).catch(function () {});
+        };
+        if (signal) {
+            if (signal.aborted) cancel();
+            else signal.addEventListener("abort", cancel, { once: true });
+        }
+        try {
+            const response = await fetch("/run_c", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    source_code: call.source_code,
+                    generation: state.generation,
+                    command_id: commandId
+                }),
+                signal: signal
+            });
+            const result = await response.json();
+            if (!response.ok || !result || result.retcode !== 0) {
+                throw new Error(result && result.data && result.data.message
+                    ? result.data.message
+                    : "run_c 工具执行失败");
+            }
+            return { id: call.id, result: serializeToolValue(result.data) };
+        } catch (error) {
+            console.error("AI run_c tool failed:", error);
+            return { id: call.id, result: serializeToolError(error) };
+        } finally {
+            if (signal) signal.removeEventListener("abort", cancel);
+        }
+    }
+
     async function executeJavascriptTool(call) {
         if (!call || !call.id) {
             throw new Error("AI 返回了无效的工具调用");
         }
+        if (call.name === RUN_C_TOOL_NAME) return executeRunCTool(call);
         if (call.name !== JAVASCRIPT_TOOL_NAME || typeof call.javascript !== "string") {
             // 未知工具：与后端 AgentToolCall::Unknown 的容忍策略一致，
             // 返回失败结果而不中断整个对话流程
@@ -413,11 +488,8 @@ const state = {
                 result: serializeToolError(new Error("未知工具: " + (call.name || "无名称")))
             };
         }
-        const nodeCp = window.nodeCp;
-        const previousCommandContext = nodeCp && nodeCp.__live2dContext;
         try {
             const signal = state.controller ? state.controller.signal : undefined;
-            if (nodeCp) nodeCp.__live2dContext = { generation: state.generation, signal: signal };
             const run = new AsyncFunction("signal", "\"use strict\";\n" + call.javascript);
             const execution = run(signal);
             let abortHandler = null;
@@ -441,8 +513,6 @@ const state = {
         } catch (error) {
             console.error("AI JavaScript tool failed:", error);
             return { id: call.id, result: serializeToolError(error) };
-        } finally {
-            if (nodeCp) nodeCp.__live2dContext = previousCommandContext;
         }
     }
 
@@ -527,15 +597,57 @@ const state = {
         const controller = new AbortController();
         state.stopRequested = false;
         state.controller = controller;
+        // 刷新恢复「继续执行」：重跑未完成的工具并直接携带代次继续生成
+        const resumed = Boolean(state.resumeGeneration);
+        let payload;
+        if (resumed) {
+            payload = { generation: state.resumeGeneration };
+            state.generation = state.resumeGeneration;
+            state.resumeGeneration = null;
+            const calls = state.resumingCalls || [];
+            state.resumingCalls = null;
+            for (let i = 0; i < calls.length; i += 1) {
+                if (state.stopRequested) throw stoppedError();
+                const call = calls[i];
+                appendAgentStatus("看板娘搓搓小手", call.name + "\n" + (call.javascript || call.source_code || ""), "tool");
+                const toolResult = await executeJavascriptTool(call);
+                if (state.stopRequested) throw stoppedError();
+                // ⑤ 工具结果落库（代次在最终回复落库时统一清除）
+                await persistAppend({
+                    op: "append",
+                    message: {
+                        role: "tool",
+                        tool_call_id: toolResult.id,
+                        content: toolResult.result,
+                        timestamp: nowTimestamp()
+                    }
+                });
+                appendAgentStatus("看板娘战利品+1", toolResult.result, "result");
+            }
+        } else {
+            payload = { message: message };
+            // ① 提问立即落库
+            await persistAppend({
+                op: "append",
+                message: {
+                    role: "user",
+                    content: message,
+                    timestamp: nowTimestamp()
+                }
+            });
+        }
         try {
-            let payload = { message: message, compress: state.pendingCompress || false };
-            state.pendingCompress = false;
             let requestIndex = 0;
             // 本轮对话是否发生过工具调用（发生过则最终回答显示"大彻大悟"）
             let usedTool = false;
             while (true) {
+                // 本轮的思考快照是否已落库（每轮独立：多工具轮时各自管理，
+                // 只有落库过思考快照才允许 replace_last 演进，否则直接 append）
+                let reasonSnapshotAppended = false;
                 if (state.stopRequested) throw stoppedError();
-                setAgentState(requestIndex === 0 ? AGENT_STATE.THINKING : AGENT_STATE.CONTINUING);
+                setAgentState(requestIndex === 0
+                    ? (resumed ? AGENT_STATE.CONTINUING : AGENT_STATE.THINKING)
+                    : AGENT_STATE.CONTINUING);
                 let reasoningEntry = null;
                 let contentEntry = null;
                 let reasoningText = "";
@@ -578,6 +690,19 @@ const state = {
                             updateAgentEntry(reasoningEntry, reasoningText);
                         }
                     } else if (event === "content") {
+                        // ② 首个内容增量 = 思考完成：若有思考，先落库思考快照
+                        if (!contentEntry && !reasonSnapshotAppended && reasoningText.trim()) {
+                            reasonSnapshotAppended = true;
+                            await persistAppend({
+                                op: "append",
+                                message: {
+                                    role: "assistant",
+                                    content: null,
+                                    reasoning_content: reasoningText,
+                                    timestamp: nowTimestamp()
+                                }
+                            });
+                        }
                         contentText += data.delta || "";
                         if (contentText.trim()) {
                             if (!contentEntry) contentEntry = appendAgentEntryLive(usedTool ? "看板娘大彻大悟" : "看板娘碎碎念", "");
@@ -590,6 +715,16 @@ const state = {
                             updateContextUsage();
                         }
                     } else if (event === "error") {
+                        // AI 报错：落库中断原因（发给 AI，让后续对话理解发生了什么）
+                        await persistAppend({
+                            op: "append",
+                            message: {
+                                role: "assistant",
+                                content: "[对话中断] " + (data.message || "看板娘请求失败"),
+                                interrupted: true,
+                                timestamp: nowTimestamp()
+                            }
+                        }).catch(function () {});
                         throw new Error(data.message || "看板娘请求失败");
                     }
                 }
@@ -603,6 +738,27 @@ const state = {
                 if (outcome.type === "final") {
                     const reply = String(outcome.reply || "").trim();
                     if (!reply) throw new Error("看板娘没有返回内容");
+                    // ③ 回复落库：思考快照演进为完整回复；压缩请求整体替换为摘要
+                    if (state.pendingCompress) {
+                        await persistAppend({
+                            op: "compress_summary",
+                            reply: reply,
+                            clear_generation: true
+                        });
+                        state.pendingCompress = false;
+                    } else if (reasonSnapshotAppended) {
+                        await persistAppend({
+                            op: "replace_last",
+                            message: outcome.assistant_message,
+                            clear_generation: true
+                        });
+                    } else {
+                        await persistAppend({
+                            op: "append",
+                            message: outcome.assistant_message,
+                            clear_generation: true
+                        });
+                    }
                     state.generation = null;
                     setAgentState(AGENT_STATE.COMPLETED);
                     if (!contentEntry) {
@@ -622,6 +778,21 @@ const state = {
                 const generation = String(outcome.generation || "").trim();
                 if (!generation) throw new Error("工具步骤缺少对话代次");
                 state.generation = generation;
+                // ④ 工具调用落库：有思考快照时演进为完整消息（replace_last），
+                // 无思考快照时直接追加（append），避免误把末尾的 user 提问替换掉
+                if (reasonSnapshotAppended) {
+                    await persistAppend({
+                        op: "replace_last",
+                        message: outcome.assistant_message,
+                        generation: generation
+                    });
+                } else {
+                    await persistAppend({
+                        op: "append",
+                        message: outcome.assistant_message,
+                        generation: generation
+                    });
+                }
                 const toolResults = [];
                 for (let callIndex = 0; callIndex < outcome.calls.length; callIndex += 1) {
                     if (state.stopRequested) throw stoppedError();
@@ -631,12 +802,20 @@ const state = {
                     const toolResult = await executeJavascriptTool(call);
                     if (state.stopRequested) throw stoppedError();
                     toolResults.push(toolResult);
+                    // ⑤ 工具结果落库（代次在最终回复落库时统一清除）
+                    await persistAppend({
+                        op: "append",
+                        message: {
+                            role: "tool",
+                            tool_call_id: toolResult.id,
+                            content: toolResult.result,
+                            timestamp: nowTimestamp()
+                        }
+                    });
                     appendAgentStatus("看板娘战利品+1", toolResult.result, "result");
                 }
-                payload = {
-                    generation: generation,
-                    tool_results: toolResults
-                };
+                // 工具全部完成：携带代次继续生成
+                payload = { generation: generation };
                 requestIndex += 1;
             }
         } catch (error) {
@@ -668,7 +847,7 @@ const state = {
             if (shouldAutoCompress) {
                 state.pendingMessage = message;
                 state.pendingCompress = true;
-                await sendMessage("总结下之前的对话");
+                await sendMessage("总结下之前的对话，要尽可能长，要注意记录关键信息，方法要点以及用户反复强调的东西，以及当前正在做的事情");
                 return; // 原消息续发由内层 finally 处理
             }
         }
@@ -701,6 +880,8 @@ const state = {
         } finally {
             autoResizeInput();
             settingsButton.disabled = false;
+            // 压缩请求无论成功还是中断，都必须清除压缩标记，避免状态卡死
+            if (isCompressRequest) state.pendingCompress = false;
             // 压缩请求完成（未被停止）后：若有暂存的原消息，自动续发
             if (isCompressRequest && state.pendingMessage && !stopped) {
                 const originalMessage = state.pendingMessage;
@@ -716,6 +897,147 @@ const state = {
     function clearBubble() {
         if (window.pio && typeof window.pio.clearMessage === "function") {
             window.pio.clearMessage();
+        }
+    }
+
+    // ── 刷新恢复：只展示最近一轮对话 ──
+    // 从最后一条 user 提问开始渲染到末尾（含该轮的工具调用/结果/回复）。
+    // 数据库仍保留全部轮次（AI 上下文完整），这里仅精简界面展示。
+    function renderHistory(messages) {
+        const list = Array.isArray(messages) ? messages : [];
+        let startIndex = 0;
+        for (let i = list.length - 1; i >= 0; i -= 1) {
+            if (list[i] && list[i].role === "user") {
+                startIndex = i;
+                break;
+            }
+        }
+        for (let i = startIndex; i < list.length; i += 1) {
+            const message = list[i];
+            const role = message && message.role;
+            const content = message && message.content;
+            if (role === "user") {
+                appendAgentStatus("主人", content, "user");
+            } else if (role === "assistant") {
+                if (Array.isArray(message.tool_calls) && message.tool_calls.length) {
+                    const names = message.tool_calls.map(function (call) {
+                        return (call.function && call.function.name) || "";
+                    }).filter(Boolean).join(", ");
+                    appendAgentStatus("看板娘搓搓小手", names || "调用工具", "tool");
+                } else if (typeof content === "string" && content.trim()) {
+                    const entry = appendAgentEntryLive(message.interrupted ? "提示" : "看板娘碎碎念", "");
+                    updateAgentEntry(entry, content, !message.interrupted);
+                }
+            } else if (role === "tool") {
+                appendAgentStatus("看板娘战利品+1", content, "result");
+            } else if (role === "system") {
+                appendAgentStatus("系统", content, "result");
+            }
+        }
+    }
+
+    // 刷新后「继续执行」：重跑缺失结果的工具并继续生成
+    async function resumePendingTools(generation, calls) {
+        state.resumeGeneration = generation;
+        state.resumingCalls = Array.isArray(calls) ? calls : [];
+        state.skipAutoCompress = true;
+        clearBubble();
+        resetAgentStatus();
+        setAgentState(AGENT_STATE.THINKING);
+        settingsButton.disabled = true;
+        try {
+            const reply = await runAgent(null);
+            bubble(reply, { persist: true, closeable: true, markdown: true });
+        } catch (error) {
+            if (error && error.stopped) {
+                setAgentState(AGENT_STATE.STOPPED);
+                appendAgentStatus("提示", "已停止", "result");
+                bubble("已停止", 3000);
+            } else {
+                setAgentState(AGENT_STATE.FAILED);
+                appendAgentStatus("错误", error && error.message ? error.message : String(error), "error");
+                bubble(error && error.message ? error.message : "继续执行失败", 8000);
+            }
+        } finally {
+            settingsButton.disabled = false;
+        }
+    }
+
+    // 刷新后「放弃执行」：占位结果 + 中断原因落库，恢复后可正常提问
+    async function abortPendingTools(calls) {
+        const list = Array.isArray(calls) ? calls : [];
+        try {
+            for (let i = 0; i < list.length; i += 1) {
+                await persistAppend({
+                    op: "append",
+                    message: {
+                        role: "tool",
+                        tool_call_id: list[i].id,
+                        content: "[已放弃执行该工具]",
+                        timestamp: nowTimestamp()
+                    }
+                });
+            }
+            await persistAppend({
+                op: "append",
+                message: {
+                    role: "assistant",
+                    content: "[本轮工具执行已由用户放弃]",
+                    interrupted: true,
+                    timestamp: nowTimestamp()
+                },
+                clear_generation: true
+            });
+            appendAgentStatus("提示", "已放弃未完成的工具执行。", "result");
+        } catch (error) {
+            bubble(error && error.message ? error.message : "放弃执行失败", 8000);
+        }
+    }
+
+    // 页面加载后恢复看板娘状态
+    async function restoreAgentState() {
+        try {
+            const data = apiResult(await axios.get("/live2d_chat_state"));
+            renderHistory(data.messages || []);
+            if (Number.isFinite(data.context_used)) {
+                state.contextUsed = data.context_used;
+                state.contextEstimated = data.context_used_estimated !== false;
+            }
+            if (Number.isFinite(data.context_length)) state.contextLimit = data.context_length;
+            updateContextUsage();
+            const phase = data.phase;
+            if (phase === "tool_pending") {
+                const calls = Array.isArray(data.pending_calls) ? data.pending_calls : [];
+                if (calls.length === 0) {
+                    appendAgentStatus("提示", "上次对话的工具已执行完成，可继续提问。", "result");
+                } else {
+                    appendAgentStatus("提示", "检测到未完成的工具执行，请选择继续或放弃。", "result");
+                    const actions = document.createElement("div");
+                    actions.className = "pio-agent-actions";
+                    const resumeButton = document.createElement("button");
+                    resumeButton.textContent = "继续执行";
+                    resumeButton.addEventListener("click", function () {
+                        actions.remove();
+                        void resumePendingTools(data.generation, calls);
+                    });
+                    const abortButton = document.createElement("button");
+                    abortButton.textContent = "放弃执行";
+                    abortButton.addEventListener("click", function () {
+                        actions.remove();
+                        void abortPendingTools(calls);
+                    });
+                    actions.appendChild(resumeButton);
+                    actions.appendChild(abortButton);
+                    agentLog.appendChild(actions);
+                    scrollAgentLog();
+                }
+            } else if (phase === "interrupted") {
+                appendAgentStatus("提示", "上次对话已中断，可继续提问。", "result");
+            } else if (phase === "interrupted_stream") {
+                appendAgentStatus("提示", "上次对话未完成（可能因刷新中断），可重新提问。", "result");
+            }
+        } catch (error) {
+            console.error("Restore Live2D state failed:", error);
         }
     }
 
@@ -785,6 +1107,7 @@ const state = {
         baseUrlInput.value = (current && current.base_url) || "";
         apiKeyInput.value = (current && current.api_key) || "";
         modelInput.value = (current && current.model) || "";
+        if (proxyInput) proxyInput.value = (current && current.proxy) || "";
         thinkingLevelInput.value = (current && current.thinking_level) || "high";
         const length = Number((current && current.context_length) || 131072);
         if (contextLengthInput) contextLengthInput.value = String(length);
@@ -841,12 +1164,13 @@ const state = {
                 bubble("正在对话中，请稍后再压缩", 4000);
                 return;
             }
+            if (!window.confirm("确定要压缩当前对话吗？压缩后历史对话将被摘要替换。")) return;
             // 压缩只由按钮触发：不篡改输入框，以与用户手动发送相同的方式
             // 发送压缩提示词（界面展示为一条“主人”消息）。
             state.pendingMessage = null;
             state.skipAutoCompress = false;
             state.pendingCompress = true;
-            void sendMessage("总结下之前的对话");
+            void sendMessage("总结下之前的对话，要尽可能长，要注意记录关键信息，方法要点以及用户反复强调的东西，以及当前正在做的事情");
         });
     }
 
@@ -954,6 +1278,7 @@ const state = {
         current.base_url = baseUrlInput.value.trim();
         current.api_key = apiKeyInput.value.trim();
         current.model = modelInput.value.trim();
+        if (proxyInput) current.proxy = proxyInput.value.trim();
         current.context_length = Number(contextLengthInput.value) || 131072;
         current.thinking_level = thinkingLevelInput.value;
     }
@@ -983,7 +1308,8 @@ const state = {
                 api_key: "",
                 model: "",
                 context_length: 131072,
-                thinking_level: "high"
+                thinking_level: "high",
+                proxy: ""
             });
             const option = document.createElement("option");
             option.value = name;
@@ -1041,4 +1367,5 @@ const state = {
 
     updateContextUsage();
     loadConfig();
+    restoreAgentState();
 }());
