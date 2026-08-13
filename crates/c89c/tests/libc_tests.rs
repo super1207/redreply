@@ -2433,3 +2433,19 @@ fn lib_deep_paren_nesting_is_error_not_crash() {
     src.push_str("; }");
     expect_compile_error(&src, "嵌套过深");
 }
+
+#[test]
+fn lib_malloc_out_of_memory_returns_null() {
+    // sbrk 失败（请求超过模拟器内存）时 malloc 必须返回 NULL 而不是写
+    // 0xFFFFFFFF 附近导致崩溃（C89 §4.10.3.2）
+    expect_exit(
+        r#"#include <stdlib.h>
+int main(void) {
+    char *p = (char *)malloc(8000000u);
+    if (p == 0) return 42;
+    return 1;
+}
+"#,
+        42,
+    );
+}

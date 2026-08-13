@@ -540,7 +540,6 @@ impl ExprParser {
                 let mut is_unsigned = false;
                 let mut is_char = false;
                 let mut is_short = false;
-                let mut is_long = false;
                 loop {
                     let done = !matches!(self.peek(), Some(t)
                         if t.kind == TokKind::Ident
@@ -564,7 +563,6 @@ impl ExprParser {
                         Some("unsigned") => is_unsigned = true,
                         Some("char") => is_char = true,
                         Some("short") => is_short = true,
-                        Some("long") => is_long = true,
                         _ => {}
                     }
                     self.pos += 1;
@@ -580,7 +578,9 @@ impl ExprParser {
                 let v = self.parse_unary()?;
                 return Ok(if self.discard {
                     ICVal::S(0)
-                } else if is_unsigned && !is_char && !is_short && !is_long {
+                } else if is_unsigned && !is_char && !is_short {
+                    // (unsigned) 与 (unsigned long)：本目标 long=32 位，
+                    // 无符号强转改变符号性（(unsigned long)-1 == 4294967295）
                     ICVal::U(v.to_u64())
                 } else {
                     // 窄化强转（C89 §3.3.4）；char 有符号（本实现约定）

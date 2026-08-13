@@ -8,6 +8,9 @@ use std::sync::{
 };
 
 const MAX_STEPS: usize = 1000000000;
+/// 累计输出上限：恶意/失控程序可在步数耗尽前输出撑爆宿主内存，
+/// 超过上限即终止执行并给出结构化诊断。
+const MAX_OUTPUT: usize = 4 * 1024 * 1024;
 
 /// 编译并运行 C89 源码，返回模拟器 fd 1/fd 2 的合并输出。
 ///
@@ -60,6 +63,13 @@ fn run_program(
         }
         match cpu.step(&program.instructions) {
             Ok(info) => {
+                if output.len() + info.syscall_output.len() > MAX_OUTPUT {
+                    output.push_str(&format!(
+                        "运行错误: 输出超过上限 {} 字节\n",
+                        MAX_OUTPUT
+                    ));
+                    return output;
+                }
                 output.push_str(&info.syscall_output);
                 if cpu.exited || info.break_hit {
                     return output;

@@ -243,8 +243,11 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             space = false;
             continue;
         }
-        // 预处理数字（pp-number）：digit 开头（C89 §3.1.8）
-        if c.is_ascii_digit() {
+        // 预处理数字（pp-number）：digit 或 ". digit" 开头（C89 §3.1.8 的
+        // pp-number 文法含 ". digit" 形式，故 .5/.25 是合法浮点常量）
+        if c.is_ascii_digit()
+            || (c == '.' && chars.get(i + 1).is_some_and(|next| next.is_ascii_digit()))
+        {
             let start = i;
             i += 1;
             while i < chars.len() {
@@ -473,9 +476,9 @@ mod tests {
     }
 
     #[test]
-    fn test_pp_number_dot_start_is_c89_split() {
-        // C89 §3.1.8：. 开头不是 pp-number，.5 拆为 . 和 5
-        assert_eq!(texts(".5 .5e-2"), [".", "5", ".", "5e-2"]);
+    fn test_pp_number_dot_start_is_pp_number() {
+        // C89 §3.1.8：pp-number 含 ". digit" 形式，.5 是单个浮点预处理数字
+        assert_eq!(texts(".5 .5e-2"), [".5", ".5e-2"]);
         assert_eq!(texts("a.b ..."), ["a", ".", "b", "..."]);
     }
 

@@ -2482,11 +2482,19 @@ impl Codegen {
                         self.emit_integer_conversion(ty);
                     }
                     self.emit_bitfield_store(bbit, bwidth);
-                    // 赋值表达式的值是赋值后的值：store 后 a0 只剩掩码内的位，
-                    // 按字段有符号性还原（而非返回单元地址 t3）
-                    if bsigned {
-                        self.emit(&format!("    slli a0, a0, {}", 32 - bwidth));
-                        self.emit(&format!("    srai a0, a0, {}", 32 - bwidth));
+                    // 赋值表达式的值是赋值后的字段值：store 后 a0 是整字单元，
+                    // 先移出字段位并掩码，再按字段有符号性还原
+                    if bbit != 0 {
+                        self.emit(&format!("    srli a0, a0, {}", bbit));
+                    }
+                    if bwidth < 32 {
+                        let mask = (1u64 << bwidth) - 1;
+                        self.emit(&format!("    li t0, {}", mask));
+                        self.emit("    and a0, a0, t0");
+                        if bsigned {
+                            self.emit(&format!("    slli a0, a0, {}", 32 - bwidth));
+                            self.emit(&format!("    srai a0, a0, {}", 32 - bwidth));
+                        }
                     }
                 } else {
                     self.gen_addr(lhs);
@@ -2565,7 +2573,12 @@ impl Codegen {
                         self.emit("    mv a0, t3");
                         self.load_from_address(lhs_type.as_ref());
                         self.emit("    mv t1, t2");
-                        if matches!(op, AssignOp::Add | AssignOp::Sub) {
+                        // 指针 ± 整数：整数按元素大小缩放；指针 - 指针（C89 §3.3.6，
+                        // 结果为元素差）不缩放，sub 后按元素大小除（与 Binary 路径一致）。
+                        let rhs_type = self.type_of(rhs);
+                        let lhs_ptr = Self::is_pointer_like(&lhs_type);
+                        let rhs_ptr = Self::is_pointer_like(&rhs_type);
+                        if matches!(op, AssignOp::Add | AssignOp::Sub) && !rhs_ptr {
                             if let Some(size) = self.pointer_elem_size(lhs_type.as_ref()) {
                                 if size != 1 {
                                     self.emit(&format!("    li t0, {}", size));
@@ -2578,6 +2591,13 @@ impl Codegen {
                             .map(Type::is_unsigned_integer)
                             .unwrap_or(false);
                         self.emit_binop_assign(*op, unsigned);
+                        if *op == AssignOp::Sub && lhs_ptr && rhs_ptr {
+                            let size = self.pointer_elem_size(lhs_type.as_ref()).unwrap_or(1);
+                            if size != 1 {
+                                self.emit(&format!("    li t0, {}", size));
+                                self.emit("    div a0, a0, t0");
+                            }
+                        }
                         if let Some(ty) = lhs_type.as_ref() {
                             self.emit_integer_conversion(ty);
                         }
@@ -3327,8 +3347,22 @@ fn eval_integer_constant(node: &Node) -> Option<i64> {
                 eval_integer_constant(b)
             }
         }
-        Node::Cast(_, e) => eval_integer_constant(e),
+        Node::Cast(ty, e) => Some(narrow_constant(ty, eval_integer_constant(e)?)),
         _ => None,
+    }
+}
+
+/// 编译期强转窄化（C89 §3.3.4）：按目标类型截断/符号扩展。
+/// 本目标 RV32 上 long 与 int 同为 32 位。
+fn narrow_constant(ty: &Type, v: i64) -> i64 {
+    match ty.unqualified() {
+        Type::Char => v as u8 as i8 as i64,
+        Type::UChar => v as u8 as i64,
+        Type::Short => v as u16 as i16 as i64,
+        Type::UShort => v as u16 as i64,
+        Type::Int | Type::Long => v as u32 as i32 as i64,
+        Type::UInt | Type::ULong => v as u32 as i64,
+        _ => v,
     }
 }
 

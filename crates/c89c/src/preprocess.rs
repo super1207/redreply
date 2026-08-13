@@ -182,15 +182,30 @@ impl Preprocessor {
         let mut pending: Vec<Token> = Vec::new();
         // 进入本文件时的条件编译深度：本文件新增的 #if 必须在本文件闭合。
         let cond_depth_at_entry = self.cond_stack.len();
+        // 当前行是否已出现预处理记号：# 必须是该行第一个记号（C89 §3.8）
+        let mut line_has_tokens = false;
 
         while i < tokens.len() {
             let t = &tokens[i];
             // 跳过 Newline 与 Eof：Eof 统一在末尾追加一个（此处若跳过会导致死循环）
-            if t.kind == TokKind::Newline || t.kind == TokKind::Eof {
+            if t.kind == TokKind::Newline {
+                line_has_tokens = false;
+                i += 1;
+                continue;
+            }
+            if t.kind == TokKind::Eof {
                 i += 1;
                 continue;
             }
             if t.kind == TokKind::Punct && t.text == "#" {
+                // C89 §3.8：预处理指令的 # 必须是该行第一个预处理记号；
+                // 行中间的 #（如 int x = 1 # define Y 2）应报错而非吞掉
+                if line_has_tokens {
+                    return Err(format!(
+                        "第 {} 行: 行中出现 '#'（预处理指令必须以行首 # 开头）",
+                        t.line
+                    ));
+                }
                 // 指令边界：先冲刷此前积累的普通 token
                 self.flush_pending(&mut pending, &mut out, line_shift)?;
                 i += 1;
@@ -234,6 +249,7 @@ impl Preprocessor {
                 }
             }
             // 普通 token：进待展开缓冲（激活状态才收集）
+            line_has_tokens = true;
             if self.is_active() {
                 pending.push(tokens[i].clone());
             }
@@ -534,23 +550,21 @@ impl Preprocessor {
             }
             "line" => {
                 i += 1;
-                if let Some(t) = toks.get(i) {
+                // C89 §3.8.4：#line 的行号（与可选文件名）参与宏替换，
+                // #define L 100 之后 #line L 合法。
+                let mut line_toks = Vec::new();
+                while i < toks.len() && toks[i].kind != TokKind::Newline {
+                    line_toks.push(toks[i].clone());
+                    i += 1;
+                }
+                let expanded = self.expand(&line_toks)?;
+                if let Some(t) = expanded.first() {
                     if t.kind == TokKind::Number {
                         if let Ok(n) = t.text.parse::<u32>() {
                             // 当前物理行是 t.line，下一行开始应为 n
                             *line_shift = n as i64 - (t.line as i64 + 1);
                         }
-                        i += 1;
-                        // 可选文件名
-                        if let Some(t2) = toks.get(i) {
-                            if t2.kind == TokKind::String {
-                                i += 1;
-                            }
-                        }
                     }
-                }
-                while i < toks.len() && toks[i].kind != TokKind::Newline {
-                    i += 1;
                 }
                 Ok((i, Vec::new()))
             }
@@ -688,6 +702,38 @@ impl Preprocessor {
         Err(format!("第 {} 行: 找不到头文件 {}", line, fname))
     }
 
+    /// C89 §3.8.3：已定义的宏只能用完全相同的替换列表（函数宏还须参数表
+    /// 一致）重定义，否则是约束违反。比较忽略空白（has_space），只看
+    /// token 种类与拼写。
+    fn check_redefinition(&self, name: &str, line: u32, new: &Macro) -> Result<(), String> {
+        let Some(old) = self.macros.get(name) else {
+            return Ok(());
+        };
+        let same = match (old, new) {
+            (Macro::Object(a), Macro::Object(b)) => a
+                .iter()
+                .map(|t| (&t.kind, &t.text))
+                .eq(b.iter().map(|t| (&t.kind, &t.text))),
+            (
+                Macro::Function { params: pa, body: ba },
+                Macro::Function { params: pb, body: bb },
+            ) => {
+                pa == pb
+                    && ba.iter()
+                        .map(|t| (&t.kind, &t.text))
+                        .eq(bb.iter().map(|t| (&t.kind, &t.text)))
+            }
+            _ => false,
+        };
+        if !same {
+            return Err(format!(
+                "第 {} 行: 宏 '{}' 重定义与原有定义不一致（C89 §3.8.3）",
+                line, name
+            ));
+        }
+        Ok(())
+    }
+
     /// 解析 #define（i 指向宏名）
     fn parse_define(&mut self, toks: &[Token], mut i: usize) -> Result<usize, String> {
         let line = toks.get(i).map(|t| t.line).unwrap_or(0);
@@ -716,7 +762,7 @@ impl Preprocessor {
                 if let Some(t) = toks.get(i) {
                     if t.kind == TokKind::Punct && t.text == ")" {
                         i += 1;
-                        return self.finish_define(name, params, toks, i);
+                        return self.finish_define(name, params, toks, i, line);
                     }
                 }
                 loop {
@@ -740,7 +786,7 @@ impl Preprocessor {
                         sep.line
                     ));
                 }
-                return self.finish_define(name, params, toks, i);
+                return self.finish_define(name, params, toks, i, line);
             }
         }
         // 对象宏
@@ -749,6 +795,7 @@ impl Preprocessor {
             body.push(toks[i].clone());
             i += 1;
         }
+        self.check_redefinition(&name, line, &Macro::Object(body.clone()))?;
         self.macros.insert(name, Macro::Object(body));
         Ok(i)
     }
@@ -760,12 +807,21 @@ impl Preprocessor {
         params: Vec<String>,
         toks: &[Token],
         mut i: usize,
+        line: u32,
     ) -> Result<usize, String> {
         let mut body = Vec::new();
         while i < toks.len() && toks[i].kind != TokKind::Newline {
             body.push(toks[i].clone());
             i += 1;
         }
+        self.check_redefinition(
+            &name,
+            line,
+            &Macro::Function {
+                params: params.clone(),
+                body: body.clone(),
+            },
+        )?;
         self.macros.insert(name, Macro::Function { params, body });
         Ok(i)
     }
@@ -1397,8 +1453,8 @@ mod tests {
         // ## 粘贴（§3.8.3.3）
         assert_eq!(texts("#define CAT(a,b) a##b\nCAT(ho,me)"), ["home"]);
         assert_eq!(texts("#define CAT(a,b) a##b\nCAT(12,34)"), ["1234"]);
-        // C89：.5 不是单个 pp-number，1 ## . 产生 1.，随后 5 独立
-        assert_eq!(texts("#define CAT(a,b) a##b\nCAT(1,.5)"), ["1.", "5"]);
+        // C89：.5 是 pp-number（§3.1.8 含 ". digit" 形式），1 ## .5 → 1.5
+        assert_eq!(texts("#define CAT(a,b) a##b\nCAT(1,.5)"), ["1.5"]);
         // C89 下拼出 1.5 的写法：1. ## 5
         assert_eq!(texts("#define CAT(a,b) a##b\nCAT(1.,5)"), ["1.5"]);
         // 宽松扩展（GCC/Clang 通行）：1 ## + → 1+

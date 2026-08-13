@@ -43,6 +43,10 @@ pub struct Parser {
     pub tt: TypeTable,
     /// 枚举常量表（RED → 0）
     enum_constants: HashMap<String, i64>,
+    /// 对象名 → 类型（sizeof 对象等常量上下文按类型求值用，与 typedefs 同作用域维护）
+    obj_types: HashMap<String, Type>,
+    /// 参数声明符解析中：允许抽象声明符（无名参数 int f(int (*)(void))）
+    abstract_declarator: bool,
     /// 表达式/声明符递归深度（防御深度嵌套栈溢出）
     expr_depth: usize,
 }
@@ -55,6 +59,8 @@ impl Parser {
             typedefs: HashMap::new(),
             tt: TypeTable::new(),
             enum_constants: HashMap::new(),
+            obj_types: HashMap::new(),
+            abstract_declarator: false,
             expr_depth: 0,
         }
     }
@@ -381,6 +387,17 @@ impl Parser {
                 return Ok(Node::SizeofExpr(Box::new(e)));
             }
             let e = self.parse_unary()?;
+            // sizeof T（typedef 名无括号）：结果只取决于类型，编译期折叠为
+            // 大小（C89 §3.3.3.4）。对象名走 SizeofExpr 由语义层按类型求值。
+            if let Node::Ident(name) = e.inner() {
+                if let Some(ty) = self.typedefs.get(name) {
+                    let sz = self
+                        .tt
+                        .size_of(ty)
+                        .map_err(|err| self.err(&format!("sizeof 错误: {}", err)))?;
+                    return Ok(Node::Num(sz as i64));
+                }
+            }
             return Ok(Node::SizeofExpr(Box::new(e)));
         }
         self.parse_postfix()
@@ -609,13 +626,18 @@ impl Parser {
                 // 函数体结束恢复外层作用域。
                 let saved_enums = self.enum_constants.clone();
                 let saved_typedefs = self.typedefs.clone();
+                let saved_obj_types = self.obj_types.clone();
                 for p in &params {
                     self.enum_constants.remove(&p.name);
                     self.typedefs.remove(&p.name);
+                    // 形参登记为对象（sizeof 形参的常量上下文用；类型已是
+                    // parse_params 调整后的类型，如数组参数已退化为指针）
+                    self.obj_types.insert(p.name.clone(), p.ty.clone());
                 }
                 let body = self.parse_block_body()?;
                 self.enum_constants = saved_enums;
                 self.typedefs = saved_typedefs;
+                self.obj_types = saved_obj_types;
                 return Ok(vec![Node::FuncDef {
                     ret: specs.ty,
                     name,
@@ -660,6 +682,8 @@ impl Parser {
         }
         if specs.storage == Storage::Typedef {
             self.typedefs.insert(name.clone(), specs.ty.clone());
+        } else {
+            self.obj_types.insert(name.clone(), specs.ty.clone());
         }
         // 声明登记的名字遮蔽同名枚举常量（C89 普通标识符命名空间）
         self.enum_constants.remove(&name);
@@ -694,6 +718,8 @@ impl Parser {
             }
             if item_specs.storage == Storage::Typedef {
                 self.typedefs.insert(name.clone(), item_specs.ty.clone());
+            } else {
+                self.obj_types.insert(name.clone(), item_specs.ty.clone());
             }
             self.enum_constants.remove(&name);
             declarations.push(Node::Decl {
@@ -1004,6 +1030,15 @@ impl Parser {
         }
     }
 
+    /// 参数声明符：与 parse_declarator 相同，但允许抽象声明符（无名参数）
+    fn parse_param_declarator(&mut self, base: Type) -> Result<DeclaratorResult, String> {
+        let saved = self.abstract_declarator;
+        self.abstract_declarator = true;
+        let result = self.parse_declarator(base);
+        self.abstract_declarator = saved;
+        result
+    }
+
     fn parse_declarator_tree(&mut self) -> Result<DeclNode, String> {
         // 深度护栏：***** 指针链与括号声明符递归
         self.enter_depth()?;
@@ -1038,7 +1073,19 @@ impl Parser {
             self.expect_punct(")")?;
             return self.apply_suffix(inner);
         }
-        let name = self.expect_ident()?;
+        // 名字缺省 = 抽象声明符（仅参数声明允许，C89 §3.5.4.3：
+        // int f(int (*)(void))、int f(int [3]) 等无名参数）
+        let name = match self.peek().cloned() {
+            Some(t) if t.kind == TokKind::Ident && !is_keyword(&t.text) => {
+                self.pos += 1;
+                t.text
+            }
+            Some(t) if t.kind == TokKind::Ident => {
+                return Err(self.err(&format!("关键字 '{}' 不能用作标识符", t.text)));
+            }
+            _ if self.abstract_declarator => String::new(),
+            _ => return Err(self.err("expected identifier")),
+        };
         self.apply_suffix(DeclNode::Name(name))
     }
 
@@ -1114,7 +1161,7 @@ impl Parser {
                     let e = self.parse_unary()?;
                     Node::SizeofExpr(Box::new(e))
                 };
-                let v = eval_const_size(&node, &self.tt, &self.typedefs)
+                let v = eval_const_size(&node, &self.tt, &self.typedefs, &self.obj_types)
                     .map_err(|e| self.err(&format!("数组大小错误: {}", e)))?;
                 toks.push(Token::new(TokKind::Number, v.to_string(), line, false));
                 continue;
@@ -1179,17 +1226,25 @@ impl Parser {
             let specs = self.parse_decl_specs()?;
             loop {
                 let (ty, name, function) = self.parse_declarator(specs.ty.clone())?;
-                if function.is_some() {
-                    return Err(self.err("旧式参数不能声明为函数"));
-                }
                 let parameter = params
                     .iter_mut()
                     .find(|parameter| parameter.name == name)
                     .ok_or_else(|| self.err(&format!("旧式参数声明了未知名字 '{}'", name)))?;
-                parameter.ty = match ty {
-                    Type::Array(inner, _) => Type::Ptr(inner),
-                    Type::Function { .. } => Type::Ptr(Box::new(ty)),
-                    other => other,
+                parameter.ty = match function {
+                    // C89 §3.7.1：旧式参数声明为函数（int f(g) int g();）
+                    // 同样调整为指向函数的指针
+                    Some((fparams, is_variadic, has_prototype)) => {
+                        Type::Ptr(Box::new(Type::Function {
+                            ret: Box::new(ty),
+                            params: fparams,
+                            is_variadic,
+                            has_prototype,
+                        }))
+                    }
+                    None => match ty {
+                        Type::Array(inner, _) => Type::Ptr(inner),
+                        other => other,
+                    },
                 };
                 if self.eat(",") {
                     continue;
@@ -1252,7 +1307,7 @@ impl Parser {
             }
             let specs = self.parse_decl_specs()?;
             // 参数声明符可选（支持无名参数 int f(int); 与 const void *f(...) 的无名指针参数）
-            let (ty, name, _f) = if self.is_punct(",") || self.is_punct(")") || self.is_punct("...")
+            let (ty, name, fparams) = if self.is_punct(",") || self.is_punct(")") || self.is_punct("...")
             {
                 (specs.ty.clone(), String::new(), None)
             } else if self.is_punct("*") {
@@ -1277,15 +1332,26 @@ impl Parser {
                     )
                 } else {
                     self.pos = save;
-                    self.parse_declarator(specs.ty.clone())?
+                    self.parse_param_declarator(specs.ty.clone())?
                 }
             } else {
-                self.parse_declarator(specs.ty.clone())?
+                self.parse_param_declarator(specs.ty.clone())?
             };
-            let ty = match ty {
-                Type::Array(inner, _) => Type::Ptr(inner),
-                Type::Function { .. } => Type::Ptr(Box::new(ty)),
-                other => other,
+            let ty = match fparams {
+                // 声明为函数的参数调整为指向函数的指针（C89 §3.5.4.3：
+                // int f(int g(void)) 中 g 的类型是 int(*)(void)）
+                Some((params, is_variadic, has_prototype)) => {
+                    Type::Ptr(Box::new(Type::Function {
+                        ret: Box::new(ty),
+                        params,
+                        is_variadic,
+                        has_prototype,
+                    }))
+                }
+                None => match ty {
+                    Type::Array(inner, _) => Type::Ptr(inner),
+                    other => other,
+                },
             };
             params.push(Param { ty, name });
             if self.eat(",") {
@@ -1303,6 +1369,7 @@ impl Parser {
         // （C89 §3.1.2.1：typedef 名的作用域止于块末尾）。
         let saved_enums = self.enum_constants.clone();
         let saved_typedefs = self.typedefs.clone();
+        let saved_obj_types = self.obj_types.clone();
         let mut stmts = Vec::new();
         while !self.is_punct("}") {
             if self.peek().is_none() {
@@ -1313,6 +1380,7 @@ impl Parser {
         self.pos += 1; // }
         self.enum_constants = saved_enums;
         self.typedefs = saved_typedefs;
+        self.obj_types = saved_obj_types;
         Ok(Node::Block(stmts))
     }
 
@@ -1321,15 +1389,22 @@ impl Parser {
     /// 解析一条语句
     pub fn parse_statement(&mut self) -> Result<Node, String> {
         let span = self.current_span();
-        self.parse_statement_inner()
+        self.parse_statement_inner(true)
             .map(|node| node.with_fallback_span(span))
     }
 
-    fn parse_statement_inner(&mut self) -> Result<Node, String> {
+    /// 语句体（if/while/do/for/switch 与标签后的语句）：C89 §3.6 中声明
+    /// 不是语句，语句体位置不允许直接跟声明（块内声明走 parse_statement）。
+    fn parse_statement_body(&mut self) -> Result<Node, String> {
+        self.parse_statement_inner(false)
+    }
+
+    fn parse_statement_inner(&mut self, allow_decl: bool) -> Result<Node, String> {
         // 复合语句（块）：块内 typedef/枚举常量遮蔽外层，块结束恢复
         if self.eat("{") {
             let saved_enums = self.enum_constants.clone();
             let saved_typedefs = self.typedefs.clone();
+            let saved_obj_types = self.obj_types.clone();
             let mut stmts = Vec::new();
             while !self.is_punct("}") {
                 if self.peek().is_none() {
@@ -1340,6 +1415,7 @@ impl Parser {
             self.pos += 1; // }
             self.enum_constants = saved_enums;
             self.typedefs = saved_typedefs;
+            self.obj_types = saved_obj_types;
             return Ok(Node::Block(stmts));
         }
 
@@ -1397,7 +1473,7 @@ impl Parser {
                         }
                         let name = t.text.clone();
                         self.pos += 2;
-                        let stmt = self.parse_statement()?;
+                        let stmt = self.parse_statement_body()?;
                         return Ok(Node::Label(name, Box::new(stmt)));
                     }
                 }
@@ -1406,6 +1482,14 @@ impl Parser {
 
         // 块内声明（C89：类型关键字或 typedef 名开头）
         if self.is_type_start() {
+            // C89 §3.6：声明不是语句。if/while/for/do/switch 的语句体与
+            // 标签后不能直接跟声明（GCC 同样报 "a declaration is not a
+            // statement"）；块内的声明条目由 parse_statement 解析。
+            if !allow_decl {
+                return Err(self.err(
+                    "声明不是语句：if/while/for/do/switch 语句体与标签后不能直接声明（C89 §3.6）",
+                ));
+            }
             return self.parse_local_decl();
         }
 
@@ -1500,6 +1584,8 @@ impl Parser {
         // 声明的名字遮蔽同名枚举常量。
         if specs.storage == Storage::Typedef {
             self.typedefs.insert(name.clone(), specs.ty.clone());
+        } else {
+            self.obj_types.insert(name.clone(), specs.ty.clone());
         }
         self.enum_constants.remove(&name);
         while self.eat(",") {
@@ -1518,6 +1604,8 @@ impl Parser {
             }
             if item_specs.storage == Storage::Typedef {
                 self.typedefs.insert(name.clone(), item_specs.ty.clone());
+            } else {
+                self.obj_types.insert(name.clone(), item_specs.ty.clone());
             }
             self.enum_constants.remove(&name);
             declarations.push(Node::Decl {
@@ -1541,10 +1629,10 @@ impl Parser {
         self.expect_punct("(")?;
         let cond = self.parse_expr()?;
         self.expect_punct(")")?;
-        let then = self.parse_statement()?;
+        let then = self.parse_statement_body()?;
         let els = if self.is_ident("else") {
             self.pos += 1;
-            Some(Box::new(self.parse_statement()?))
+            Some(Box::new(self.parse_statement_body()?))
         } else {
             None
         };
@@ -1557,14 +1645,14 @@ impl Parser {
         self.expect_punct("(")?;
         let cond = self.parse_expr()?;
         self.expect_punct(")")?;
-        let body = self.parse_statement()?;
+        let body = self.parse_statement_body()?;
         Ok(Node::While(Box::new(cond), Box::new(body)))
     }
 
     /// do-while 语句（§3.6.5.2）
     fn parse_do(&mut self) -> Result<Node, String> {
         self.pos += 1;
-        let body = self.parse_statement()?;
+        let body = self.parse_statement_body()?;
         if !self.is_ident("while") {
             return Err(self.err("do 语句缺少 while"));
         }
@@ -1601,7 +1689,7 @@ impl Parser {
             Some(Box::new(e))
         };
         self.expect_punct(")")?;
-        let body = self.parse_statement()?;
+        let body = self.parse_statement_body()?;
         Ok(Node::For(init, cond, post, Box::new(body)))
     }
 
@@ -1611,7 +1699,7 @@ impl Parser {
         self.expect_punct("(")?;
         let cond = self.parse_expr()?;
         self.expect_punct(")")?;
-        let body = self.parse_statement()?;
+        let body = self.parse_statement_body()?;
         Ok(Node::Switch(Box::new(cond), Box::new(body)))
     }
 
@@ -1620,7 +1708,7 @@ impl Parser {
         self.pos += 1;
         let v = self.parse_expr()?;
         self.expect_punct(":")?;
-        let stmt = self.parse_statement()?;
+        let stmt = self.parse_statement_body()?;
         Ok(Node::Case(Box::new(v), Box::new(stmt)))
     }
 
@@ -1628,7 +1716,7 @@ impl Parser {
     fn parse_default(&mut self) -> Result<Node, String> {
         self.pos += 1;
         self.expect_punct(":")?;
-        let stmt = self.parse_statement()?;
+        let stmt = self.parse_statement_body()?;
         Ok(Node::Default(Box::new(stmt)))
     }
 }
@@ -1641,12 +1729,13 @@ fn eval_const_size(
     node: &Node,
     tt: &crate::types::TypeTable,
     typedefs: &HashMap<String, Type>,
+    obj_types: &HashMap<String, Type>,
 ) -> Result<i64, String> {
     match node.inner() {
         Node::Num(v) => Ok(*v),
-        Node::SizeofExpr(e) => const_expr_size(e, tt, typedefs),
+        Node::SizeofExpr(e) => const_expr_size(e, tt, typedefs, obj_types),
         Node::Unary(op, e) => {
-            let v = eval_const_size(e, tt, typedefs)?;
+            let v = eval_const_size(e, tt, typedefs, obj_types)?;
             match op {
                 UnaryOp::Neg => Ok(v.wrapping_neg()),
                 UnaryOp::Not => Ok((v == 0) as i64),
@@ -1655,8 +1744,8 @@ fn eval_const_size(
             }
         }
         Node::Binary(op, l, r) => {
-            let a = eval_const_size(l, tt, typedefs)?;
-            let b = eval_const_size(r, tt, typedefs)?;
+            let a = eval_const_size(l, tt, typedefs, obj_types)?;
+            let b = eval_const_size(r, tt, typedefs, obj_types)?;
             match op {
                 BinaryOp::Add => Ok(a.wrapping_add(b)),
                 BinaryOp::Sub => Ok(a.wrapping_sub(b)),
@@ -1682,14 +1771,14 @@ fn eval_const_size(
             }
         }
         Node::Cond(c, a, b) => {
-            if eval_const_size(c, tt, typedefs)? != 0 {
-                eval_const_size(a, tt, typedefs)
+            if eval_const_size(c, tt, typedefs, obj_types)? != 0 {
+                eval_const_size(a, tt, typedefs, obj_types)
             } else {
-                eval_const_size(b, tt, typedefs)
+                eval_const_size(b, tt, typedefs, obj_types)
             }
         }
-        Node::Cast(_, e) => eval_const_size(e, tt, typedefs),
-        Node::Comma(_, r) => eval_const_size(r, tt, typedefs),
+        Node::Cast(_, e) => eval_const_size(e, tt, typedefs, obj_types),
+        Node::Comma(_, r) => eval_const_size(r, tt, typedefs, obj_types),
         _ => Err("数组大小必须是整数常量表达式".into()),
     }
 }
@@ -1701,6 +1790,7 @@ fn const_expr_size(
     node: &Node,
     tt: &crate::types::TypeTable,
     typedefs: &HashMap<String, Type>,
+    obj_types: &HashMap<String, Type>,
 ) -> Result<i64, String> {
     match node.inner() {
         Node::Num(_) | Node::Str(_) => Ok(4),
@@ -1710,25 +1800,29 @@ fn const_expr_size(
             .size_of(ty)
             .map(|s| s as i64)
             .map_err(|err| format!("sizeof 的操作数大小未知: {}", err)),
-        Node::Ident(name) => match typedefs.get(name) {
-            Some(ty) => tt
-                .size_of(ty)
+        Node::Ident(name) => {
+            // sizeof 对象（int x; int a[sizeof x];）同样是整型常量表达式：
+            // 结果只取决于对象类型。typedef 名与对象名查各自的符号表。
+            let ty = typedefs
+                .get(name)
+                .or_else(|| obj_types.get(name))
+                .ok_or_else(|| format!("sizeof 的操作数 '{}' 不是常量", name))?;
+            tt.size_of(ty)
                 .map(|s| s as i64)
-                .map_err(|err| format!("sizeof 的操作数大小未知: {}", err)),
-            None => Err(format!("sizeof 的操作数 '{}' 不是常量", name)),
-        },
-        Node::Unary(_, e) => const_expr_size(e, tt, typedefs),
+                .map_err(|err| format!("sizeof 的操作数大小未知: {}", err))
+        }
+        Node::Unary(_, e) => const_expr_size(e, tt, typedefs, obj_types),
         Node::Binary(_, l, r) => {
-            let a = const_expr_size(l, tt, typedefs)?;
-            let b = const_expr_size(r, tt, typedefs)?;
+            let a = const_expr_size(l, tt, typedefs, obj_types)?;
+            let b = const_expr_size(r, tt, typedefs, obj_types)?;
             Ok(a.max(b))
         }
         Node::Cond(_, a, b) => {
-            let x = const_expr_size(a, tt, typedefs)?;
-            let y = const_expr_size(b, tt, typedefs)?;
+            let x = const_expr_size(a, tt, typedefs, obj_types)?;
+            let y = const_expr_size(b, tt, typedefs, obj_types)?;
             Ok(x.max(y))
         }
-        Node::Comma(_, r) => const_expr_size(r, tt, typedefs),
+        Node::Comma(_, r) => const_expr_size(r, tt, typedefs, obj_types),
         _ => Err("sizeof 的操作数不是常量".into()),
     }
 }

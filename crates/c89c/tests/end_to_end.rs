@@ -1446,3 +1446,179 @@ fn test_fix_static_local_pointer_string_plus_offset() {
         42
     );
 }
+
+// ---- 三次审计（RISC-V/C89 工具链缺陷）修复回归 ----
+
+/// 预处理/解析任一阶段失败时返回错误信息（成功则 panic）
+fn audit_compile_error(src: &str) -> String {
+    match Preprocessor::new().run(src) {
+        Err(message) => return message,
+        Ok(toks) => {
+            let toks: Vec<_> = toks
+                .into_iter()
+                .filter(|t| t.kind != TokKind::Eof)
+                .collect();
+            let mut p = Parser::new(toks);
+            match p.parse_program() {
+                Err(message) => message,
+                Ok(_) => panic!("应当编译失败"),
+            }
+        }
+    }
+}
+
+#[test]
+fn test_audit_dot_float_literal() {
+    // C89 §3.1.8：pp-number 含 ". digit" 形式，.5/.25 是合法浮点常量
+    assert_eq!(
+        run_c("int main(void) { double d = .5; return d == 0.5 ? 42 : 1; }"),
+        42
+    );
+    assert_eq!(
+        run_c("int main(void) { double e = .25 + .5e-2; return e > 0.25 && e < 0.26 ? 42 : 1; }"),
+        42
+    );
+}
+
+#[test]
+fn test_audit_function_type_param_adjusted() {
+    // C89 §3.5.4.3：参数 int g(void) 调整为 int(*)(void)
+    assert_eq!(
+        run_c(
+            "int h(void) { return 7; } int f(int g(void)) { return g(); } \
+             int main(void) { return f(h) == 7 ? 42 : 1; }"
+        ),
+        42
+    );
+}
+
+#[test]
+fn test_audit_old_style_function_param() {
+    // C89 §3.7.1：旧式参数声明为函数同样调整为函数指针
+    assert_eq!(
+        run_c(
+            "int g(void) { return 3; } int f(g) int g(); { return g() + 1; } \
+             int main(void) { return f(g) == 4 ? 42 : 1; }"
+        ),
+        42
+    );
+}
+
+#[test]
+fn test_audit_sizeof_object_and_typedef_in_array_size() {
+    assert_eq!(
+        run_c("int x; int a[sizeof x]; int main(void) { return sizeof a == 16 ? 42 : 1; }"),
+        42
+    );
+    assert_eq!(
+        run_c("typedef int T; int b[sizeof T]; int main(void) { return sizeof b == 16 ? 42 : 1; }"),
+        42
+    );
+}
+
+#[test]
+fn test_audit_sizeof_typedef_without_parens() {
+    assert_eq!(
+        run_c("typedef int T; int main(void) { return sizeof T == 4 ? 42 : 1; }"),
+        42
+    );
+}
+
+#[test]
+fn test_audit_abstract_declarator_params() {
+    // 无名参数抽象声明符：int f(int (*)(void), int [3])
+    assert_eq!(
+        run_c(
+            "int f(int (*cb)(void), int arr[3]) { return cb() + sizeof arr; } \
+             int g(void) { return 1; } int main(void) { return f(g, 0) == 5 ? 42 : 1; }"
+        ),
+        42
+    );
+}
+
+#[test]
+fn test_audit_ptr_minus_ptr_compound_assign() {
+    // p -= q：指针差按元素大小缩放（C89 §3.3.6），不能再把 q 的地址乘 4
+    assert_eq!(
+        run_c(
+            "int main(void) { int arr[8]; int *p = &arr[4]; int *q = &arr[1]; \
+             p -= q; if ((int)p == 3) return 42; return 1; }"
+        ),
+        42
+    );
+}
+
+#[test]
+fn test_audit_bitfield_assignment_value() {
+    // 赋值表达式的值应是字段值（按字段符号性解释），而不是整字单元
+    assert_eq!(
+        run_c(
+            "struct B { int a : 3; int b : 5; }; \
+             int main(void) { struct B s; int x = (s.b = 31); return x == -1 ? 42 : 1; }"
+        ),
+        42
+    );
+    assert_eq!(
+        run_c(
+            "struct B { unsigned a : 3; unsigned b : 5; }; \
+             int main(void) { struct B s; int x = (s.b = 5); return x == 5 ? 42 : 1; }"
+        ),
+        42
+    );
+}
+
+#[test]
+fn test_audit_constant_cast_narrowing() {
+    // 编译期强转窄化（C89 §3.3.4）：(char)300 == 44
+    assert_eq!(
+        run_c("int g = (char)300; int main(void) { return g == 44 ? 42 : 1; }"),
+        42
+    );
+    assert_eq!(
+        run_c("int g = (unsigned short)70000; int main(void) { return g == 4464 ? 42 : 1; }"),
+        42
+    );
+}
+
+#[test]
+fn test_audit_unsigned_long_cast_in_if() {
+    // (unsigned long) 强转保持无符号性（本目标 long=32 位）
+    assert_eq!(
+        run_c(
+            "#if (unsigned long)-1 > 0\nint ok = 1;\n#else\nint ok = 0;\n#endif\n\
+             int main(void) { return ok == 1 ? 42 : 1; }"
+        ),
+        42
+    );
+}
+
+#[test]
+fn test_audit_macro_redefinition_detected() {
+    let e = audit_compile_error("#define X 1\n#define X 2\nint main(void) { return X; }");
+    assert!(e.contains("重定义"), "{}", e);
+    // 替换列表完全相同的重定义放行（C89 §3.8.3）
+    assert_eq!(
+        run_c("#define X 1\n#define X 1\nint main(void) { return X == 1 ? 42 : 1; }"),
+        42
+    );
+}
+
+#[test]
+fn test_audit_line_directive_macro_expansion() {
+    // #line 行号参与宏替换（C89 §3.8.4）：错误应报在展开后的 101 行附近
+    let e = audit_compile_error("#define L 100\n#line L\nint x = ;");
+    assert!(e.contains("101"), "{}", e);
+}
+
+#[test]
+fn test_audit_hash_must_start_line() {
+    let e = audit_compile_error("int x = 1 # define Y 2\nint main(void) { return x; }");
+    assert!(e.contains("行首"), "{}", e);
+}
+
+#[test]
+fn test_audit_declaration_not_statement() {
+    // C89 §3.6：声明不是语句，if 语句体不能直接跟声明
+    let e = audit_compile_error("int main(void) { if (1) int x = 2; return 0; }");
+    assert!(e.contains("声明不是语句"), "{}", e);
+}

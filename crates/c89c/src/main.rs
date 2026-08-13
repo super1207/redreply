@@ -58,11 +58,21 @@ fn main() {
     // 解析/生成全部在 64MB 栈的线程上进行。Windows 主线程默认栈只有 1MB，
     // 而 debug 构建的递归下降解析器栈帧很大，稍复杂的文件（如 -l 链接的
     // c89lib 源文件）会在主线程栈上溢出（0xC00000FD）。
-    let handle = std::thread::Builder::new()
+    let handle = match std::thread::Builder::new()
         .stack_size(64 * 1024 * 1024)
         .spawn(move || run_cli(&file, &include_dirs, to_asm, link_lib))
-        .expect("无法创建编译线程");
-    handle.join().expect("编译线程崩溃");
+    {
+        Ok(handle) => handle,
+        Err(error) => {
+            eprintln!("编译内部错误：无法创建编译线程（{error}）");
+            std::process::exit(1);
+        }
+    };
+    // 编译线程 panic 时输出结构化诊断而非让主线程跟着 panic（退出码 101）
+    if handle.join().is_err() {
+        eprintln!("编译内部错误：编译线程异常终止");
+        std::process::exit(1);
+    }
 }
 
 fn run_cli(file: &str, include_dirs: &[PathBuf], to_asm: bool, link_lib: bool) {

@@ -63,7 +63,11 @@ static struct c89_block *c89_split_block(struct c89_block *block, size_t size) {
 static struct c89_block *c89_heap_extend(size_t size) {
     size_t capacity = (size + 15) & ~(size_t)15;
     char *p = sys_sbrk((int)(capacity + sizeof(struct c89_block)));
-    struct c89_block *b = (struct c89_block *)p;
+    struct c89_block *b;
+    if (p == (char *)-1) {
+        return 0; /* sbrk 失败（宿主内存耗尽）：按 C89 malloc 约定返回 NULL */
+    }
+    b = (struct c89_block *)p;
     b->size = capacity;
     b->free = 1;
     b->pad = 0;

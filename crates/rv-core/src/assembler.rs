@@ -311,9 +311,10 @@ fn preprocess(source: &str) -> Result<(Vec<RawLine>, Vec<String>), String> {
         let mut label = None;
         let mut text = trimmed.to_string();
         // 行首标签：label: 或 label: 指令
-        // 扫描时跟踪引号与反斜杠转义状态，字符串字面量内的冒号
-        // （如 .asciiz "http://example.com"）不算标签分隔符。
+        // 扫描时跟踪引号与反斜杠转义状态，字符串/字符字面量内的冒号
+        // （如 .asciiz "http://example.com"、li a0, ':'）不算标签分隔符。
         let mut in_str = false;
+        let mut in_char = false;
         let mut esc = false;
         let mut label_end = None;
         for (i, c) in text.char_indices() {
@@ -325,8 +326,18 @@ fn preprocess(source: &str) -> Result<(Vec<RawLine>, Vec<String>), String> {
                 } else if c == '"' {
                     in_str = false;
                 }
+            } else if in_char {
+                if esc {
+                    esc = false;
+                } else if c == '\\' {
+                    esc = true;
+                } else if c == '\'' {
+                    in_char = false;
+                }
             } else if c == '"' {
                 in_str = true;
+            } else if c == '\'' {
+                in_char = true;
             } else if c == ':' {
                 label_end = Some(i);
                 break;
@@ -568,7 +579,8 @@ pub fn assemble(source: &str) -> Result<Program, String> {
             let first_word = l.text.split_whitespace().next().unwrap_or("");
             if l.section != "text"
                 || l.text.is_empty()
-                || first_word.to_ascii_lowercase() == ".globl"
+                || first_word.eq_ignore_ascii_case(".globl")
+                || first_word.eq_ignore_ascii_case(".align")
             {
                 continue;
             }
@@ -1418,6 +1430,9 @@ fn parse_instruction(
                     let rd = parse_reg(op!(0))?;
                     let (imm, rs1) = parse_mem_operand(op!(1))?;
                     (rd, rs1, imm)
+                } else if let Ok(rs1) = parse_reg(op!(1)) {
+                    // jalr rd, rs1：GNU as/RARS 接受的标准写法，imm 缺省 0
+                    (parse_reg(op!(0))?, rs1, 0)
                 } else {
                     let rd = 1; // jalr rs, imm 隐含写 ra
                     let rs1 = parse_reg(op!(0))?;
@@ -1864,5 +1879,33 @@ main: nop
         assert_eq!(p.instructions.len(), 1);
         assert_eq!(p.instructions[0].op, Op::Addi);
         assert_eq!(p.instructions[0].imm, 35);
+    }
+
+    #[test]
+    fn test_char_literal_colon_is_not_label() {
+        // 字符字面量内的冒号不是标签分隔符
+        let p = assemble(".text\nmain:\n    li a0, ':'\n").unwrap();
+        assert_eq!(p.instructions.len(), 1);
+        assert_eq!(p.instructions[0].op, Op::Addi);
+        assert_eq!(p.instructions[0].imm, 58);
+        assert!(p.symbols.contains_key("main"));
+    }
+
+    #[test]
+    fn test_align_directive_in_text_section() {
+        // .align 在 .text 段为无害操作：两遍都必须跳过（第二遍曾报“未知指令”）
+        let p = assemble(".text\nmain: nop\n.align 2\nnop\n").unwrap();
+        assert_eq!(p.instructions.len(), 2);
+    }
+
+    #[test]
+    fn test_jalr_two_register_form() {
+        // jalr rd, rs1：GNU as/RARS 接受的标准写法（imm 缺省 0）
+        let p = assemble(".text\nmain:\n    jalr ra, t0\n").unwrap();
+        assert_eq!(p.instructions.len(), 1);
+        assert_eq!(p.instructions[0].op, Op::Jalr);
+        assert_eq!(p.instructions[0].rd, 1);
+        assert_eq!(p.instructions[0].rs1, 5);
+        assert_eq!(p.instructions[0].imm, 0);
     }
 }

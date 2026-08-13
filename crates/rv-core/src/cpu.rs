@@ -190,9 +190,14 @@ fn detect_timezone() -> (i32, bool, String) {
 #[cfg(not(windows))]
 fn detect_timezone() -> (i32, bool, String) {
     unsafe {
-        let mut t: libc::time_t = 0;
+        // 按“当前时刻”查询夏令时状态：epoch 时刻恒为冬季时间，
+        // 夏季运行时 tz_dst 会恒报 0（与文档约定和 Windows 分支不一致）。
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs() as libc::time_t)
+            .unwrap_or(0);
         let mut tm: libc::tm = std::mem::zeroed();
-        libc::localtime_r(&t, &mut tm);
+        libc::localtime_r(&now, &mut tm);
         // tm_gmtoff 即“UTC 以东为正秒数”（东八区 +28800），
         // 与文档约定和 Windows 分支一致，无需取反。
         let offset = tm.tm_gmtoff;
@@ -1354,10 +1359,12 @@ impl Cpu {
                 self.regs[10] = if self.tz_dst { 1 } else { 0 };
             }
             1104 => {
-                // 本项目扩展：tz_name —— 把 NUL 结尾的时区名写入 a0 指向的缓冲区
+                // 本项目扩展：tz_name —— 把 NUL 结尾的时区名写入 a0 指向的缓冲区。
+                // 调用侧缓冲区为 64 字节（c89lib time.c 的 zbuf[64]），这里
+                // 截断到 63 + NUL，避免跨 crate 约定不一致时越界写。
                 let buf = self.regs[10];
                 let name = self.tz_name.as_bytes();
-                let len = name.len().min(255);
+                let len = name.len().min(63);
                 let range = Self::checked_range(buf, len + 1, "tz_name")?;
                 self.mem[range.start..range.start + len].copy_from_slice(&name[..len]);
                 self.mem[range.start + len] = 0;
