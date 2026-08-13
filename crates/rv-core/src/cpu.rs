@@ -2,24 +2,34 @@
 //!
 //! ecall 采用 RARS 风格约定（a7 = 功能号）：
 //!   1    = print int（打印 a0 的有符号十进制）
+//!   2    = print float（打印 $f12 的单精度值）
+//!   3    = print double（打印 $f12 的双精度值）
 //!   4    = print string（打印 a0 指向的 \0 结尾字符串）
-//!   9    = sbrk（从堆顶分配 a0 字节，返回地址放 a0）
+//!   9    = sbrk（从堆顶分配 a0 字节，返回地址放 a0；失败返回 -1）
 //!   10   = exit（a0 = 退出码）
 //!   11   = print char（打印 a0 低 8 位字符）
 //!   30   = time（秒级时间戳，a0 = 1970-01-01 起的秒数）
-//!   31   = clock（毫秒，a0 = 模拟器启动起的毫秒数）
-//!   32   = tz_offset（a0 = 宿主 UTC 偏移秒，东为正）
-//!   33   = tz_dst（a0 = 1 表示宿主处于夏令时）
-//!   34   = tz_name（a0 = 缓冲区，写入 NUL 结尾的时区名）
-//!   35   = print hex（打印 a0 的十六进制）
+//!   31   = MIDI out（无音频后端，空操作）
+//!   32   = sleep（a0 = 毫秒，宿主真实休眠）
+//!   33   = MIDI out sync（空操作）
+//!   34   = print hex（打印 a0 的 8 位十六进制）
+//!   35   = print binary（打印 a0 的 32 位二进制）
 //!   36   = print unsigned（打印 a0 的无符号十进制）
-//!   62   = close（a0 = fd，成功返回 0，失败返回 -1）
+//!   57   = open（a0 = 路径, a1 位标志：读/写/创建/截断/追加 → a0 = fd 或 -1）
+//!   58   = read fd（a0 = fd, a1 = 缓冲区, a2 = 字节数 → a0 = 读取字节数或 -1）
+//!   59   = write fd（a0 = fd, a1 = 缓冲区, a2 = 字节数 → a0 = 写入字节数或 -1）
+//!   60   = close（a0 = fd，成功返回 0，失败返回 -1）
+//!   62   = lseek（a0 = fd, a1 = 偏移, a2 = whence(0/1/2) → a0 = 新偏移或 -1）
 //!   63   = read（a0 = fd, a1 = 缓冲区, a2 = 最大字节数 → a0 = 读取字节数或 -1）
 //!   64   = write（a0 = fd, a1 = 缓冲区, a2 = 字节数 → a0 = 写入字节数或 -1；fd 1/2 输出到控制台）
-//!   66   = lseek（a0 = fd, a1 = 偏移, a2 = whence(0/1/2) → a0 = 新偏移或 -1）
 //!   1000 = system（a0 = 命令字符串 → a0 = 命令退出码或 -1）
 //!   1001 = remove（a0 = 路径 → a0 = 0 或 -1）
-//!   1024 = open（a0 = 路径, a1 位标志：读/写/创建/截断/追加 → a0 = fd 或 -1）
+//!   1002 = rename（a0 = 旧路径, a1 = 新路径 → a0 = 0 或 -1）
+//!   1003 = getenv（a0 = 变量名, a1 = 缓冲区, a2 = 容量 → a0 = 写入字节数或 -1）
+//!   1101 = clock（毫秒，a0 = 模拟器启动起的毫秒数）
+//!   1102 = tz_offset（a0 = 宿主 UTC 偏移秒，东为正）
+//!   1103 = tz_dst（a0 = 1 表示宿主处于夏令时）
+//!   1104 = tz_name（a0 = 缓冲区，写入 NUL 结尾的时区名）
 //!   fd 0/1/2 保留给 stdin/stdout/stderr
 
 use crate::assembler::{Program, DATA_BASE, TEXT_BASE};
@@ -343,8 +353,9 @@ impl Cpu {
     fn frv(&self, i: u8) -> f32 {
         f32::from_bits(self.fr[i as usize] as u32)
     }
+    /// 写 f32 结果：按 FLEN=64 规范做 NaN-boxing（高 32 位全 1）
     fn set_fr(&mut self, rd: u8, v: f32) {
-        self.fr[rd as usize] = v.to_bits() as u64;
+        self.fr[rd as usize] = (v.to_bits() as u64) | 0xFFFF_FFFF_0000_0000;
     }
     /// 读浮点寄存器为 f64（全 64 位）
     fn frv64(&self, i: u8) -> f64 {
@@ -352,6 +363,34 @@ impl Cpu {
     }
     fn set_fr64(&mut self, rd: u8, v: f64) {
         self.fr[rd as usize] = v.to_bits();
+    }
+
+    /// 按 rm 字段对 f64 取整到最近整数：
+    /// 0=RNE（默认）1=RTZ 2=RDN 3=RUP 4=RMM 7=DYN（无 fcsr，按 RNE），其余按 RNE。
+    fn round_to_int(x: f64, rm: u8) -> f64 {
+        match rm {
+            1 => x.trunc(),
+            2 => x.floor(),
+            3 => x.ceil(),
+            4 => x.round(), // Rust round 即 half-away-from-zero = RMM
+            _ => x.round_ties_even(),
+        }
+    }
+
+    /// 运算结果 NaN 收敛为规范 NaN（RISC-V 规范：除另有说明外结果为 canonical NaN）
+    fn canonicalize_s(v: f32) -> f32 {
+        if v.is_nan() {
+            f32::from_bits(0x7FC0_0000)
+        } else {
+            v
+        }
+    }
+    fn canonicalize_d(v: f64) -> f64 {
+        if v.is_nan() {
+            f64::from_bits(0x7FF8_0000_0000_0000)
+        } else {
+            v
+        }
     }
 
     /// 浮点数值分类（fclass.d）：返回 10 位掩码（64 位版）
@@ -670,29 +709,30 @@ impl Cpu {
             }
             // ---- F 扩展：单精度浮点（固定 RNE 舍入）----
             Op::FAddS => {
-                let v = self.frv(instr.rs1) + self.frv(instr.rs2);
+                let v = Self::canonicalize_s(self.frv(instr.rs1) + self.frv(instr.rs2));
                 self.set_fr(instr.rd, v);
             }
             Op::FSubS => {
-                let v = self.frv(instr.rs1) - self.frv(instr.rs2);
+                let v = Self::canonicalize_s(self.frv(instr.rs1) - self.frv(instr.rs2));
                 self.set_fr(instr.rd, v);
             }
             Op::FMulS => {
-                let v = self.frv(instr.rs1) * self.frv(instr.rs2);
+                let v = Self::canonicalize_s(self.frv(instr.rs1) * self.frv(instr.rs2));
                 self.set_fr(instr.rd, v);
             }
             Op::FDivS => {
-                let v = self.frv(instr.rs1) / self.frv(instr.rs2);
+                let v = Self::canonicalize_s(self.frv(instr.rs1) / self.frv(instr.rs2));
                 self.set_fr(instr.rd, v);
             }
             Op::FSqrtS => {
-                let v = self.frv(instr.rs1).sqrt();
+                let v = Self::canonicalize_s(self.frv(instr.rs1).sqrt());
                 self.set_fr(instr.rd, v);
             }
             Op::FMinS => {
                 let a = self.frv(instr.rs1);
                 let b = self.frv(instr.rs2);
-                // RISC-V 20191213：单 NaN 返回另一操作数，双 NaN 返回 canonical NaN
+                // RISC-V 20191213：单 NaN 返回另一操作数，双 NaN 返回 canonical NaN；
+                // ±0 比较时 -0 视为更小（min 取 -0，max 取 +0）
                 let v = if a.is_nan() {
                     if b.is_nan() {
                         f32::from_bits(0x7FC0_0000)
@@ -701,6 +741,8 @@ impl Cpu {
                     }
                 } else if b.is_nan() {
                     a
+                } else if a == 0.0 && b == 0.0 {
+                    f32::from_bits(a.to_bits() | b.to_bits())
                 } else {
                     a.min(b)
                 };
@@ -717,6 +759,8 @@ impl Cpu {
                     }
                 } else if b.is_nan() {
                     a
+                } else if a == 0.0 && b == 0.0 {
+                    f32::from_bits(a.to_bits() & b.to_bits())
                 } else {
                     a.max(b)
                 };
@@ -725,41 +769,41 @@ impl Cpu {
             Op::FSignJ => {
                 let v = (self.fr[instr.rs1 as usize] & 0x7FFF_FFFF)
                     | (self.fr[instr.rs2 as usize] & 0x8000_0000);
-                self.fr[instr.rd as usize] = v;
+                self.fr[instr.rd as usize] = v | 0xFFFF_FFFF_0000_0000;
             }
             Op::FSignJn => {
                 let v = (self.fr[instr.rs1 as usize] & 0x7FFF_FFFF)
                     | ((self.fr[instr.rs2 as usize] ^ 0x8000_0000) & 0x8000_0000);
-                self.fr[instr.rd as usize] = v;
+                self.fr[instr.rd as usize] = v | 0xFFFF_FFFF_0000_0000;
             }
             Op::FSignJx => {
                 let v = (self.fr[instr.rs1 as usize] & 0x7FFF_FFFF)
                     | ((self.fr[instr.rs1 as usize] ^ self.fr[instr.rs2 as usize]) & 0x8000_0000);
-                self.fr[instr.rd as usize] = v;
+                self.fr[instr.rd as usize] = v | 0xFFFF_FFFF_0000_0000;
             }
             Op::FMAddS => {
                 let v = self
                     .frv(instr.rs1)
                     .mul_add(self.frv(instr.rs2), self.frv(instr.rs3));
-                self.set_fr(instr.rd, v);
+                self.set_fr(instr.rd, Self::canonicalize_s(v));
             }
             Op::FMSubS => {
                 let v = self
                     .frv(instr.rs1)
                     .mul_add(self.frv(instr.rs2), -self.frv(instr.rs3));
-                self.set_fr(instr.rd, v);
+                self.set_fr(instr.rd, Self::canonicalize_s(v));
             }
             Op::FNMAddS => {
                 let v = -self
                     .frv(instr.rs1)
                     .mul_add(self.frv(instr.rs2), self.frv(instr.rs3));
-                self.set_fr(instr.rd, v);
+                self.set_fr(instr.rd, Self::canonicalize_s(v));
             }
             Op::FNMSUBS => {
                 let v = -self
                     .frv(instr.rs1)
                     .mul_add(self.frv(instr.rs2), -self.frv(instr.rs3));
-                self.set_fr(instr.rd, v);
+                self.set_fr(instr.rd, Self::canonicalize_s(v));
             }
             Op::FEqS => {
                 let v = (self.frv(instr.rs1) == self.frv(instr.rs2)) as u32;
@@ -778,30 +822,39 @@ impl Cpu {
                 self.set_reg(instr.rd, v);
             }
             Op::FCvtWS => {
-                // 浮点 → 有符号整数（向零截断；按 RISC-V 规范饱和：
-                // NaN → 0x7FFFFFFF；+∞ 或 x ≥ 2^31 → 0x7FFFFFFF；
-                // -∞ 或 x < -2^31 → 0x80000000）
-                let x = self.frv(instr.rs1);
-                let v = if x.is_nan() || x >= 2147483648.0 {
+                // 浮点 → 有符号整数：按 rm 字段舍入（默认 RNE，编码见 assembler），
+                // 舍入结果不可表示时按 RISC-V 规范饱和：
+                // NaN → 0x7FFFFFFF；≥ 2^31 → 0x7FFFFFFF；< -2^31 → 0x80000000
+                let x = self.frv(instr.rs1) as f64;
+                let v = if x.is_nan() {
                     0x7FFF_FFFFu32
-                } else if x < -2147483648.0 {
-                    0x8000_0000u32
                 } else {
-                    (x.trunc() as i32) as u32
+                    let r = Self::round_to_int(x, instr.rs3);
+                    if r >= 2147483648.0 {
+                        0x7FFF_FFFFu32
+                    } else if r < -2147483648.0 {
+                        0x8000_0000u32
+                    } else {
+                        r as i32 as u32
+                    }
                 };
                 self.set_reg(instr.rd, v);
             }
             Op::FCvtWUS => {
-                // 浮点 → 无符号整数（向零截断；NaN → 0xFFFFFFFF；
-                // +∞ 或 x ≥ 2^32 → 0xFFFFFFFF；x ≤ -1.0 → 0；
-                // 其余截断转 u32，如 -0.5 截断为 -0.0 转 0）
-                let x = self.frv(instr.rs1);
-                let v = if x.is_nan() || x >= 4294967296.0 {
+                // 浮点 → 无符号整数：按 rm 字段舍入后饱和
+                // NaN → 0xFFFFFFFF；≥ 2^32 → 0xFFFFFFFF；≤ -1.0 → 0
+                let x = self.frv(instr.rs1) as f64;
+                let v = if x.is_nan() {
                     0xFFFF_FFFFu32
-                } else if x <= -1.0 {
-                    0
                 } else {
-                    x.trunc() as u32
+                    let r = Self::round_to_int(x, instr.rs3);
+                    if r >= 4294967296.0 {
+                        0xFFFF_FFFFu32
+                    } else if r <= -1.0 {
+                        0
+                    } else {
+                        r as u32
+                    }
                 };
                 self.set_reg(instr.rd, v);
             }
@@ -817,12 +870,13 @@ impl Cpu {
                 self.set_reg(instr.rd, self.fr[instr.rs1 as usize] as u32);
             }
             Op::FMvWX => {
-                self.fr[instr.rd as usize] = self.regs[instr.rs1 as usize] as u64;
+                self.fr[instr.rd as usize] = (self.regs[instr.rs1 as usize] as u64)
+                    | 0xFFFF_FFFF_0000_0000;
             }
             Op::FLw => {
                 let a = self.regs[instr.rs1 as usize].wrapping_add(instr.imm as u32);
                 let v = self.load32(a)?;
-                self.fr[instr.rd as usize] = v as u64;
+                self.fr[instr.rd as usize] = (v as u64) | 0xFFFF_FFFF_0000_0000;
             }
             Op::FSw => {
                 let a = self.regs[instr.rs1 as usize].wrapping_add(instr.imm as u32);
@@ -830,29 +884,30 @@ impl Cpu {
             }
             // ---- D 扩展：双精度浮点 ----
             Op::FAddD => {
-                let v = self.frv64(instr.rs1) + self.frv64(instr.rs2);
+                let v = Self::canonicalize_d(self.frv64(instr.rs1) + self.frv64(instr.rs2));
                 self.set_fr64(instr.rd, v);
             }
             Op::FSubD => {
-                let v = self.frv64(instr.rs1) - self.frv64(instr.rs2);
+                let v = Self::canonicalize_d(self.frv64(instr.rs1) - self.frv64(instr.rs2));
                 self.set_fr64(instr.rd, v);
             }
             Op::FMulD => {
-                let v = self.frv64(instr.rs1) * self.frv64(instr.rs2);
+                let v = Self::canonicalize_d(self.frv64(instr.rs1) * self.frv64(instr.rs2));
                 self.set_fr64(instr.rd, v);
             }
             Op::FDivD => {
-                let v = self.frv64(instr.rs1) / self.frv64(instr.rs2);
+                let v = Self::canonicalize_d(self.frv64(instr.rs1) / self.frv64(instr.rs2));
                 self.set_fr64(instr.rd, v);
             }
             Op::FSqrtD => {
-                let v = self.frv64(instr.rs1).sqrt();
+                let v = Self::canonicalize_d(self.frv64(instr.rs1).sqrt());
                 self.set_fr64(instr.rd, v);
             }
             Op::FMinD => {
                 let a = self.frv64(instr.rs1);
                 let b = self.frv64(instr.rs2);
-                // RISC-V 20191213：单 NaN 返回另一操作数，双 NaN 返回 canonical NaN
+                // RISC-V 20191213：单 NaN 返回另一操作数，双 NaN 返回 canonical NaN；
+                // ±0 比较时 -0 视为更小（min 取 -0，max 取 +0）
                 let v = if a.is_nan() {
                     if b.is_nan() {
                         f64::from_bits(0x7FF8_0000_0000_0000)
@@ -861,6 +916,8 @@ impl Cpu {
                     }
                 } else if b.is_nan() {
                     a
+                } else if a == 0.0 && b == 0.0 {
+                    f64::from_bits(a.to_bits() | b.to_bits())
                 } else {
                     a.min(b)
                 };
@@ -877,6 +934,8 @@ impl Cpu {
                     }
                 } else if b.is_nan() {
                     a
+                } else if a == 0.0 && b == 0.0 {
+                    f64::from_bits(a.to_bits() & b.to_bits())
                 } else {
                     a.max(b)
                 };
@@ -948,24 +1007,35 @@ impl Cpu {
                 self.set_fr(instr.rd, v);
             }
             Op::FCvtWD => {
+                // 按 rm 字段舍入（默认 RNE）后饱和，见 FCvtWS
                 let x = self.frv64(instr.rs1);
-                let v = if x.is_nan() || x >= 2147483648.0 {
+                let v = if x.is_nan() {
                     0x7FFF_FFFFu32
-                } else if x < -2147483648.0 {
-                    0x8000_0000u32
                 } else {
-                    (x.trunc() as i32) as u32
+                    let r = Self::round_to_int(x, instr.rs3);
+                    if r >= 2147483648.0 {
+                        0x7FFF_FFFFu32
+                    } else if r < -2147483648.0 {
+                        0x8000_0000u32
+                    } else {
+                        r as i32 as u32
+                    }
                 };
                 self.set_reg(instr.rd, v);
             }
             Op::FCvtWUD => {
                 let x = self.frv64(instr.rs1);
-                let v = if x.is_nan() || x >= 4294967296.0 {
+                let v = if x.is_nan() {
                     0xFFFF_FFFFu32
-                } else if x <= -1.0 {
-                    0
                 } else {
-                    x.trunc() as u32
+                    let r = Self::round_to_int(x, instr.rs3);
+                    if r >= 4294967296.0 {
+                        0xFFFF_FFFFu32
+                    } else if r <= -1.0 {
+                        0
+                    } else {
+                        r as u32
+                    }
                 };
                 self.set_reg(instr.rd, v);
             }
@@ -1199,12 +1269,14 @@ impl Cpu {
                 output.push_str(&format!("{}", a0 as i32));
             }
             2 => {
+                // RARS：PrintFloat 取 $f12
                 output.push_str(&self.flush_pending_output());
-                output.push_str(&format!("{}", self.frv(10)));
+                output.push_str(&format!("{}", self.frv(12)));
             }
             3 => {
+                // RARS：PrintDouble 取 $f12
                 output.push_str(&self.flush_pending_output());
-                output.push_str(&format!("{}", self.frv64(10)));
+                output.push_str(&format!("{}", self.frv64(12)));
             }
             4 => {
                 // 打印以 \\0 结尾的 UTF-8 字符串。
@@ -1223,20 +1295,20 @@ impl Cpu {
             }
             9 => {
                 // sbrk：请求按 16 字节向上取整，堆不得越过初始栈顶。
+                // 失败按 RARS 约定返回 -1（不终止程序）。
                 let requested = a0 as usize;
                 let n = requested
                     .checked_add(15)
                     .map(|value| value & !15)
-                    .ok_or_else(|| format!("sbrk 请求大小溢出: {}", a0))?;
-                let new_heap = (self.heap_cur as usize)
-                    .checked_add(n)
-                    .ok_or_else(|| format!("sbrk 请求大小溢出: {}", a0))?;
-                if new_heap > STACK_TOP as usize || new_heap > MEM_SIZE {
-                    return Err(format!("sbrk 堆空间不足: 请求 {} 字节", a0));
+                    .unwrap_or(usize::MAX);
+                let new_heap = (self.heap_cur as usize).checked_add(n).unwrap_or(usize::MAX);
+                if n == usize::MAX || new_heap > STACK_TOP as usize || new_heap > MEM_SIZE {
+                    self.regs[10] = u32::MAX;
+                } else {
+                    let ret = self.heap_cur;
+                    self.heap_cur = new_heap as u32;
+                    self.regs[10] = ret;
                 }
-                let ret = self.heap_cur;
-                self.heap_cur = new_heap as u32;
-                self.regs[10] = ret;
             }
             10 => {
                 output.push_str(&self.flush_pending_output());
@@ -1255,18 +1327,34 @@ impl Cpu {
                 self.regs[10] = seconds;
             }
             31 => {
-                self.regs[10] = self.start_instant.elapsed().as_millis() as u32;
+                // RARS：MIDI out（a0 音高 a1 时长 a2 乐器 a3 音量），无音频后端，空操作
             }
             32 => {
-                // tz_offset：宿主 UTC 偏移秒（东为正），负值按位模式返回
-                self.regs[10] = self.tz_offset_sec as u32;
+                // RARS：sleep（a0 毫秒），按宿主时间真实休眠
+                std::thread::sleep(std::time::Duration::from_millis(a0 as u64));
             }
             33 => {
-                // tz_dst：1 表示宿主当前处于夏令时
-                self.regs[10] = if self.tz_dst { 1 } else { 0 };
+                // RARS：MIDI out sync，无音频后端，空操作
             }
             34 => {
-                // tz_name：把 NUL 结尾的时区名写入 a0 指向的缓冲区
+                // RARS：PrintIntHex（32 位十六进制）
+                output.push_str(&self.flush_pending_output());
+                output.push_str(&format!("{:08x}", a0));
+            }
+            1101 => {
+                // 本项目扩展：clock —— 模拟器启动以来的毫秒数
+                self.regs[10] = self.start_instant.elapsed().as_millis() as u32;
+            }
+            1102 => {
+                // 本项目扩展：tz_offset —— 宿主 UTC 偏移秒（东为正），负值按位模式返回
+                self.regs[10] = self.tz_offset_sec as u32;
+            }
+            1103 => {
+                // 本项目扩展：tz_dst —— 1 表示宿主当前处于夏令时
+                self.regs[10] = if self.tz_dst { 1 } else { 0 };
+            }
+            1104 => {
+                // 本项目扩展：tz_name —— 把 NUL 结尾的时区名写入 a0 指向的缓冲区
                 let buf = self.regs[10];
                 let name = self.tz_name.as_bytes();
                 let len = name.len().min(255);
@@ -1274,8 +1362,8 @@ impl Cpu {
                 self.mem[range.start..range.start + len].copy_from_slice(&name[..len]);
                 self.mem[range.start + len] = 0;
             }
-            62 => {
-                // close
+            60 => {
+                // RARS：CloseFile（fd < 3 为标准流，直接成功）
                 let fd = self.regs[10];
                 self.regs[10] = if fd >= 3 {
                     if self.files.remove(&fd).is_some() {
@@ -1286,6 +1374,88 @@ impl Cpu {
                 } else {
                     0
                 };
+            }
+            57 => {
+                // RARS：OpenFile —— 读取 \0 结尾 UTF-8 路径（与 read_cstr/remove 一致，
+                // 用 from_utf8_lossy 解码，不能逐字节 push(b as char) 双重编码）
+                let path_addr = self.regs[10];
+                let flags = self.regs[11];
+                let mut path_bytes = Vec::new();
+                let mut addr = path_addr;
+                loop {
+                    let b = self.load8(addr)?;
+                    if b == 0 {
+                        break;
+                    }
+                    path_bytes.push(b);
+                    addr = addr.wrapping_add(1);
+                }
+                let path = String::from_utf8_lossy(&path_bytes);
+                let readable = flags & 1 != 0;
+                let writable = flags & 2 != 0;
+                let create = flags & 4 != 0;
+                let truncate = flags & 8 != 0;
+                let append = flags & 16 != 0;
+                if flags & !31 != 0
+                    || (!readable && !writable)
+                    || (truncate && (!writable || append))
+                    || (append && !writable)
+                    || (create && !writable)
+                {
+                    self.regs[10] = u32::MAX;
+                    return Ok(output);
+                }
+                let mut options = std::fs::OpenOptions::new();
+                options
+                    .read(readable)
+                    .write(writable)
+                    .create(create)
+                    .truncate(truncate)
+                    .append(append);
+                match options.open(path.as_ref()) {
+                    Ok(file) => {
+                        let fd = self.next_fd;
+                        self.next_fd += 1;
+                        self.files.insert(fd, file);
+                        self.regs[10] = fd;
+                    }
+                    Err(_) => self.regs[10] = u32::MAX,
+                }
+            }
+            58 => {
+                // RARS：ReadFile（fd 必须为打开的文件）
+                let fd = self.regs[10];
+                let buf = self.regs[11];
+                let count = self.regs[12] as usize;
+                let range = Self::checked_range(buf, count, "read")?;
+                let result = if let Some(file) = self.files.get_mut(&fd) {
+                    let mut chunk = vec![0u8; count];
+                    match file.read(&mut chunk) {
+                        Ok(n) => {
+                            self.mem[range.start..range.start + n].copy_from_slice(&chunk[..n]);
+                            n as u32
+                        }
+                        Err(_) => u32::MAX,
+                    }
+                } else {
+                    u32::MAX
+                };
+                self.regs[10] = result;
+            }
+            59 => {
+                // RARS：WriteFile（fd 必须为打开的文件）
+                let fd = self.regs[10];
+                let buf = self.regs[11];
+                let count = self.regs[12] as usize;
+                let range = Self::checked_range(buf, count, "write")?;
+                if let Some(file) = self.files.get_mut(&fd) {
+                    match file.write_all(&self.mem[range]) {
+                        Ok(()) => self.regs[10] = count as u32,
+                        Err(_) => self.regs[10] = u32::MAX,
+                    }
+                } else {
+                    self.regs[10] = u32::MAX;
+                }
             }
             63 => {
                 // read
@@ -1337,8 +1507,8 @@ impl Cpu {
                     self.regs[10] = u32::MAX;
                 }
             }
-            66 => {
-                // lseek
+            62 => {
+                // RARS：Lseek
                 let fd = self.regs[10];
                 let offset = self.regs[11] as i32 as i64;
                 let whence = self.regs[12];
@@ -1364,53 +1534,6 @@ impl Cpu {
                     u32::MAX // stdin/stdout 不支持 seek
                 };
                 self.regs[10] = result;
-            }
-            1024 => {
-                // open：读取 \0 结尾 UTF-8 路径（与 read_cstr/remove 一致，
-                // 用 from_utf8_lossy 解码，不能逐字节 push(b as char) 双重编码）
-                let path_addr = self.regs[10];
-                let flags = self.regs[11];
-                let mut path_bytes = Vec::new();
-                let mut addr = path_addr;
-                loop {
-                    let b = self.load8(addr)?;
-                    if b == 0 {
-                        break;
-                    }
-                    path_bytes.push(b);
-                    addr = addr.wrapping_add(1);
-                }
-                let path = String::from_utf8_lossy(&path_bytes);
-                let readable = flags & 1 != 0;
-                let writable = flags & 2 != 0;
-                let create = flags & 4 != 0;
-                let truncate = flags & 8 != 0;
-                let append = flags & 16 != 0;
-                if flags & !31 != 0
-                    || (!readable && !writable)
-                    || (truncate && (!writable || append))
-                    || (append && !writable)
-                    || (create && !writable)
-                {
-                    self.regs[10] = u32::MAX;
-                    return Ok(output);
-                }
-                let mut options = std::fs::OpenOptions::new();
-                options
-                    .read(readable)
-                    .write(writable)
-                    .create(create)
-                    .truncate(truncate)
-                    .append(append);
-                match options.open(path.as_ref()) {
-                    Ok(file) => {
-                        let fd = self.next_fd;
-                        self.next_fd += 1;
-                        self.files.insert(fd, file);
-                        self.regs[10] = fd;
-                    }
-                    Err(_) => self.regs[10] = u32::MAX,
-                }
             }
             1000 => {
                 // system：通过宿主命令处理器执行命令并捕获其输出。
@@ -1508,10 +1631,12 @@ impl Cpu {
                 }
             }
             35 => {
+                // RARS：PrintIntBinary（32 位二进制）
                 output.push_str(&self.flush_pending_output());
-                output.push_str(&format!("0x{:08x}", a0));
+                output.push_str(&format!("{:032b}", a0));
             }
             36 => {
+                // RARS：PrintIntUnsigned
                 output.push_str(&self.flush_pending_output());
                 output.push_str(&format!("{}", a0));
             }
@@ -1709,8 +1834,8 @@ mod tests {
     }
     #[test]
     fn test_fcvt_overflow() {
-        // fcvt.w.s：按 RISC-V 规范饱和（NaN/+∞/≥2^31 → 0x7FFFFFFF；
-        // -∞/<-2^31 → 0x80000000），越界时不再统一返回 0x80000000
+        // fcvt.w.s：按 RISC-V 规范先按 rm 舍入（默认 RNE）再饱和
+        // （NaN/+∞/≥2^31 → 0x7FFFFFFF；-∞/<-2^31 → 0x80000000）
         let mut cpu = Cpu::new();
         let ins = crate::instr::Instruction {
             op: Op::FCvtWS,
@@ -1733,13 +1858,26 @@ mod tests {
         assert_eq!(run(&mut cpu, -2147483904.0), 0x8000_0000); // < -2^31
         assert_eq!(run(&mut cpu, -2147483648.0), 0x8000_0000); // 恰好 -2^31，合法
         assert_eq!(run(&mut cpu, 2147483520.0), 2147483520); // 2^31 - 128
-        // 向零截断：-3.7 → -3
-        assert_eq!(run(&mut cpu, -3.7), (-3i32) as u32);
-        assert_eq!(run(&mut cpu, 3.7), 3);
+        // 默认 RNE 舍入：±3.7 → ±4（真机行为；截断需显式 rtz）
+        assert_eq!(run(&mut cpu, -3.7), (-4i32) as u32);
+        assert_eq!(run(&mut cpu, 3.7), 4);
+        // 显式 rtz：向零截断
+        let ins_rtz = crate::instr::Instruction {
+            op: Op::FCvtWS,
+            rd: 11,
+            rs1: 10,
+            rs2: 0,
+            rs3: 1,
+            imm: 0,
+        };
+        cpu.fr[10] = (-3.7f32).to_bits() as u64;
+        cpu.pc = TEXT_BASE;
+        cpu.step(&[ins_rtz]).unwrap();
+        assert_eq!(cpu.regs[11], (-3i32) as u32);
     }
     #[test]
     fn test_fcvt_wus_saturation() {
-        // fcvt.wu.s：NaN/+∞/≥2^32 → 0xFFFFFFFF；≤ -1.0 → 0；其余截断
+        // fcvt.wu.s：NaN/+∞/≥2^32 → 0xFFFFFFFF；≤ -1.0 → 0；默认 RNE 舍入
         let mut cpu = Cpu::new();
         let ins = crate::instr::Instruction {
             op: Op::FCvtWUS,
@@ -1761,13 +1899,15 @@ mod tests {
         assert_eq!(run(&mut cpu, f32::NEG_INFINITY), 0);
         assert_eq!(run(&mut cpu, -1.0), 0);
         assert_eq!(run(&mut cpu, -1.5), 0);
-        assert_eq!(run(&mut cpu, -0.5), 0); // trunc → -0.0 → 0
+        assert_eq!(run(&mut cpu, -0.5), 0); // RNE → -0.0 → 0
         assert_eq!(run(&mut cpu, 3000000000.0), 3000000000);
-        assert_eq!(run(&mut cpu, 42.7), 42);
+        assert_eq!(run(&mut cpu, 42.7), 43); // RNE
+        assert_eq!(run(&mut cpu, 0.5), 0); // 平局向偶
+        assert_eq!(run(&mut cpu, 1.5), 2);
     }
     #[test]
     fn test_fcvt_wd_wud_saturation() {
-        // fcvt.w.d / fcvt.wu.d：双精度版饱和边界（f64 可精确表示整数边界）
+        // fcvt.w.d / fcvt.wu.d：双精度版饱和边界（f64 可精确表示整数边界），默认 RNE
         let mut cpu = Cpu::new();
         let ins_w = crate::instr::Instruction {
             op: Op::FCvtWD,
@@ -1787,10 +1927,25 @@ mod tests {
         assert_eq!(run_w(&mut cpu, f64::INFINITY), 0x7FFF_FFFF);
         assert_eq!(run_w(&mut cpu, 2147483648.0), 0x7FFF_FFFF);
         assert_eq!(run_w(&mut cpu, 2147483647.0), 0x7FFF_FFFF);
+        assert_eq!(run_w(&mut cpu, 2147483647.5), 0x7FFF_FFFF); // RNE → 2^31 → 饱和
+        assert_eq!(run_w(&mut cpu, 2147483646.5), 2147483646); // 平局向偶
         assert_eq!(run_w(&mut cpu, f64::NEG_INFINITY), 0x8000_0000);
         assert_eq!(run_w(&mut cpu, -2147483649.0), 0x8000_0000);
         assert_eq!(run_w(&mut cpu, -2147483648.0), 0x8000_0000);
-        assert_eq!(run_w(&mut cpu, -3.7), (-3i32) as u32);
+        assert_eq!(run_w(&mut cpu, -3.7), (-4i32) as u32); // RNE
+        // rtz：2147483647.5 → 2147483647（向零截断不饱和）
+        let ins_w_rtz = crate::instr::Instruction {
+            op: Op::FCvtWD,
+            rd: 11,
+            rs1: 10,
+            rs2: 0,
+            rs3: 1,
+            imm: 0,
+        };
+        cpu.fr[10] = 2147483647.5f64.to_bits();
+        cpu.pc = TEXT_BASE;
+        cpu.step(&[ins_w_rtz]).unwrap();
+        assert_eq!(cpu.regs[11], 0x7FFF_FFFF);
 
         let ins_wu = crate::instr::Instruction {
             op: Op::FCvtWUD,
@@ -1809,13 +1964,13 @@ mod tests {
         assert_eq!(run_wu(&mut cpu, f64::NAN), 0xFFFF_FFFF);
         assert_eq!(run_wu(&mut cpu, f64::INFINITY), 0xFFFF_FFFF);
         assert_eq!(run_wu(&mut cpu, 4294967296.0), 0xFFFF_FFFF);
-        assert_eq!(run_wu(&mut cpu, 4294967295.9), 0xFFFF_FFFF); // 截断 → 2^32-1
+        assert_eq!(run_wu(&mut cpu, 4294967295.9), 0xFFFF_FFFF); // RNE → 2^32 → 饱和
         assert_eq!(run_wu(&mut cpu, 4294967295.0), 0xFFFF_FFFF);
         assert_eq!(run_wu(&mut cpu, f64::NEG_INFINITY), 0);
         assert_eq!(run_wu(&mut cpu, -1.0), 0);
-        assert_eq!(run_wu(&mut cpu, -0.5), 0);
-        assert_eq!(run_wu(&mut cpu, 0.5), 0);
-        assert_eq!(run_wu(&mut cpu, 42.7), 42);
+        assert_eq!(run_wu(&mut cpu, -0.5), 0); // RNE → -0.0
+        assert_eq!(run_wu(&mut cpu, 0.5), 0); // 平局向偶
+        assert_eq!(run_wu(&mut cpu, 42.7), 43); // RNE
     }
     #[test]
     fn test_fcmp() {
@@ -1904,7 +2059,8 @@ mod tests {
         };
         cpu.pc = TEXT_BASE;
         cpu.step(&[ins]).unwrap();
-        assert_eq!(cpu.fr[11], 0x40490FDBu64);
+        // fmv.w.x 写入 f32 位型：按 FLEN=64 规范 NaN-box（高 32 位全 1）
+        assert_eq!(cpu.fr[11], 0xFFFF_FFFF_4049_0FDBu64);
     }
     #[allow(clippy::approx_constant)]
     #[test]
@@ -2174,9 +2330,9 @@ mod tests {
         let path_str = path.to_str().unwrap().replace('\\', "\\\\");
 
         let write_src = format!(
-            ".text\nmain:\n  la a0, path\n  li a1, 14\n  li a7, 1024\n  ecall\n  mv t0, a0\n  \
+            ".text\nmain:\n  la a0, path\n  li a1, 14\n  li a7, 57\n  ecall\n  mv t0, a0\n  \
              la a1, msg\n  li a2, 11\n  mv a0, t0\n  li a7, 64\n  ecall\n  \
-             mv a0, t0\n  li a7, 62\n  ecall\n  \
+             mv a0, t0\n  li a7, 60\n  ecall\n  \
              li a0, 0\n  li a7, 10\n  ecall\n\
              .data\npath: .asciiz \"{path_str}\"\nmsg: .asciiz \"hello world\"\n"
         );
@@ -2187,12 +2343,12 @@ mod tests {
         assert_eq!(fs::read_to_string(&path).unwrap(), "hello world");
 
         let read_src = format!(
-            ".text\nmain:\n  la a0, path\n  li a1, 1\n  li a7, 1024\n  ecall\n  mv t0, a0\n  \
+            ".text\nmain:\n  la a0, path\n  li a1, 1\n  li a7, 57\n  ecall\n  mv t0, a0\n  \
              la a1, buf\n  li a2, 32\n  mv a0, t0\n  li a7, 63\n  ecall\n  mv t1, a0\n  \
              mv a0, t1\n  li a7, 1\n  ecall\n  \
-             mv a0, t0\n  li a1, 6\n  li a2, 0\n  li a7, 66\n  ecall\n  mv t1, a0\n  \
+             mv a0, t0\n  li a1, 6\n  li a2, 0\n  li a7, 62\n  ecall\n  mv t1, a0\n  \
              mv a0, t1\n  li a7, 1\n  ecall\n  \
-             mv a0, t0\n  li a7, 62\n  ecall\n  \
+             mv a0, t0\n  li a7, 60\n  ecall\n  \
              li a0, 0\n  li a7, 10\n  ecall\n\
              .data\npath: .asciiz \"{path_str}\"\nbuf: .space 32\n"
         );
@@ -2218,7 +2374,7 @@ mod tests {
         assert!(cpu.regs[5] > 1_500_000_000); // 2026 年前后约为 17.8 亿秒
     }
 
-    /// ecall 1024 open：guest 内存中的 UTF-8 路径不能被逐字节双重编码
+    /// ecall 57 open：guest 内存中的 UTF-8 路径不能被逐字节双重编码
     #[test]
     fn test_open_utf8_path() {
         use std::fs;
@@ -2243,7 +2399,7 @@ mod tests {
         cpu.mem[addr as usize + path_bytes.len()] = 0;
         cpu.regs[10] = addr;
         cpu.regs[11] = 1; // 只读打开（无 create，旧实现必然打不开）
-        cpu.regs[17] = 1024;
+        cpu.regs[17] = 57;
         let ecall = Instruction::new(Op::Ecall);
         cpu.pc = TEXT_BASE;
         cpu.step(&[ecall]).unwrap();
@@ -2253,7 +2409,7 @@ mod tests {
 
         // 关闭并清理
         cpu.regs[10] = fd;
-        cpu.regs[17] = 62;
+        cpu.regs[17] = 60;
         cpu.pc = TEXT_BASE;
         cpu.step(&[ecall]).unwrap();
         assert_eq!(cpu.regs[10], 0);

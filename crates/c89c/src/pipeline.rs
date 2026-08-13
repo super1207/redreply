@@ -96,7 +96,7 @@ fn parse_tokens(tokens: Vec<Token>) -> CompileResult<ParsedProgram> {
 
 pub fn compile_source_to_asm(source: &str) -> CompileResult<String> {
     let program = parse_source(source)?;
-    crate::semantic::validate_with_tokens(&program.items, "<source>", &program.tokens)?;
+    crate::semantic::validate_with_types(&program.items, "<source>", &program.tokens, &program.types)?;
     generate_asm_checked_with_tokens_lib(
         &program.items,
         &program.types,
@@ -113,7 +113,7 @@ pub fn compile_source_to_asm_with_lib(source: &str) -> CompileResult<String> {
 
 pub fn compile_file_to_asm(path: &str) -> CompileResult<String> {
     let program = parse_file(path)?;
-    crate::semantic::validate_with_tokens(&program.items, path, &program.tokens)?;
+    crate::semantic::validate_with_types(&program.items, path, &program.tokens, &program.types)?;
     generate_asm_checked_with_tokens_lib(
         &program.items,
         &program.types,
@@ -136,7 +136,7 @@ fn compile_program_to_asm_with_lib(
     program: &ParsedProgram,
     source_name: &str,
 ) -> CompileResult<String> {
-    crate::semantic::validate_with_tokens(&program.items, source_name, &program.tokens)?;
+    crate::semantic::validate_with_types(&program.items, source_name, &program.tokens, &program.types)?;
     let lib_symbols = stdlib::lib_symbol_set();
     let mut asm = generate_asm_checked_with_tokens_lib(
         &program.items,
@@ -148,7 +148,7 @@ fn compile_program_to_asm_with_lib(
 
     for (name, source) in stdlib::embedded_lib_sources() {
         let lib_program = parse_embedded_source(name, source)?;
-        crate::semantic::validate_with_tokens(&lib_program.items, name, &lib_program.tokens)?;
+        crate::semantic::validate_with_types(&lib_program.items, name, &lib_program.tokens, &lib_program.types)?;
         // 每个库翻译单元独立编译，局部标签从 1 开始；用文件名的前缀避免拼接后冲突
         let prefix = name
             .chars()

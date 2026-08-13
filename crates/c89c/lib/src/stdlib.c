@@ -283,6 +283,12 @@ double strtod(const char *s, char **end) {
         *end = (char *)s;
     }
     if (value == 0.0) {
+        /* 0 值 + 极端负指数（如 "0e-999"）：正确值下溢为 0，同样置 ERANGE
+           （C89 7.10.1.4）。阈值与下方非 0 值下溢路径一致；"0"/"0.000"
+           等普通零表示可表示值，不置。 */
+        if (decimal_exponent < -400) {
+            errno = ERANGE;
+        }
         return sign < 0 ? -value : value;
     }
     if (decimal_exponent > 400) {

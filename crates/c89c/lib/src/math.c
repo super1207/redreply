@@ -17,6 +17,9 @@
 #define C89_LN10_INV 0.43429448190325182765
 
 double fabs(double x) {
+    if (x == 0.0) {
+        return 0.0; /* -0.0 → +0.0（|x| 定义要求；NaN 不会 == 0，仍走下方直通） */
+    }
     return (x < 0.0) ? -x : x;
 }
 
@@ -94,9 +97,33 @@ static double c89_trunc(double x) {
 double fmod(double x, double y) {
     double q;
     double r;
+    double s;
     if (y == 0.0) {
         errno = EDOM;
         return 0.0;
+    }
+    if (x != x) {
+        return x; /* NaN 直通 */
+    }
+    if (x > 1.7976931348623157e308 || x < -1.7976931348623157e308) {
+        errno = EDOM; /* ±inf：不存在有限余数，防修正循环死循环 */
+        return 0.0;
+    }
+    /* |x/y| >= 2^52 时 q = trunc(x/y) 舍入失真；x/y 溢出为 ±inf 时 q 非有穷，
+       r = x - q*y = ∓inf，修正循环永不退出。预归约：s 取 |y| 的 2 的幂倍
+       （2^52 起步；|y| 过小时 x/s 本身也溢出，逐次左移 s 使 x/s 有穷），
+       每次 x -= trunc(x/s)*s 把 |x| 至少缩小 2^50 倍，直到 |x| < |y|·2^52。
+       2 的幂乘法只移指数，s 仍是 |y| 的精确整数倍，不破坏模同余性。 */
+    while (fabs(x) >= fabs(y) * 4503599627370496.0) {
+        s = fabs(y) * 4503599627370496.0;
+        while (fabs(x) / s > 1e308) {
+            s = s * 4503599627370496.0;
+        }
+        q = c89_trunc(x / s);
+        if (q == 0.0) {
+            break; /* s > |x|：防御（正常不可达），防死循环 */
+        }
+        x -= q * s;
     }
     q = c89_trunc(x / y);
     r = x - q * y;

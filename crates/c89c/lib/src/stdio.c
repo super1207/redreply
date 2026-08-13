@@ -103,7 +103,7 @@ int fputc(int c, FILE *stream) {
     }
     ch = (char)c;
     if (sys_write(fd, &ch, 1) == 1) {
-        return c;
+        return (unsigned char)c; /* C89 4.9.7.3：返回写入字符按 unsigned char 转换 */
     }
     return EOF;
 }
@@ -624,6 +624,95 @@ static int c89_print_big_int(char *out, double d) {
     return len;
 }
 
+/* 把 frac（∈ [0,1)，d 的小数部分）精确展开为 precision 位十进制数字，
+   返回进位指示（残余 >= 0.5 时返回 1，即四舍五入的进位）。
+   逐位 ×10 提取会在 frac·10 恰舍入为整数时吞掉残余（如 0.1：
+   1.0000000000000000555…×10 舍入为 1.0，残余 5.55e-17 丢失）。
+   精确算法：frac = m·2^e（m 为 53 位整数，e <= -1），
+   frac·10^precision = m·5^precision·2^(e+precision) = w / 2^k（k = -(e+precision)）。
+   w 用 32 位字大整数精确计算，右移 k 位即向下取整，逐次除 10 取数字；
+   残余 >= 0.5 ⟺ w 的第 k-1 位为 1。仅用于 precision 18..60（上限同
+   c89_parse_spec 的 60 位精度截断；更低精度保持原逐位提取，输出不变）。 */
+static int c89_frac_digits_exact(char *digits, double frac, int precision) {
+    double m;
+    int e;
+    unsigned long words[12];
+    int nwords;
+    int i;
+    int j;
+    int k;
+    int q32;
+    int rbits;
+    int roundup;
+    m = frexp(frac, &e);   /* frac = m·2^e，m ∈ [0.5,1) */
+    m = ldexp(m, 53);      /* 整数，∈ [2^52, 2^53)（frac==0 时为 0） */
+    e = e - 53;
+    words[0] = (unsigned long)fmod(m, 4294967296.0);
+    words[1] = (unsigned long)(m / 4294967296.0);
+    nwords = 2;
+    /* w = m·5^precision：×5 拆 16 位半字，避免 32 位中间量溢出 */
+    for (j = 0; j < precision; j += 1) {
+        unsigned long carry = 0;
+        for (i = 0; i < nwords; i += 1) {
+            unsigned long low = (words[i] & 0xFFFFUL) * 5UL + carry;
+            unsigned long high = (words[i] >> 16) * 5UL + (low >> 16);
+            words[i] = ((high & 0xFFFFUL) << 16) | (low & 0xFFFFUL);
+            carry = high >> 16;
+        }
+        if (carry != 0) {
+            words[nwords] = carry;
+            nwords += 1;
+        }
+    }
+    k = 0 - (e + precision); /* 右移位数；负时（e+precision>=0）无需移位 */
+    if (k < 0) {
+        k = 0;
+    }
+    roundup = 0;
+    if (k > 0) {
+        i = (k - 1) / 32;
+        if (i < nwords) {
+            roundup = (int)((words[i] >> ((k - 1) % 32)) & 1UL);
+        }
+    }
+    q32 = k / 32;
+    rbits = k % 32;
+    if (q32 >= nwords) {
+        /* w 整体移出：数字全 0（残余 < 0.5，roundup 已按位判出） */
+        for (j = 0; j < precision; j += 1) {
+            digits[j] = 0;
+        }
+        return roundup;
+    }
+    for (i = 0; i + q32 < nwords; i += 1) {
+        words[i] = words[i + q32];
+    }
+    nwords -= q32;
+    if (rbits > 0) {
+        unsigned long carry = 0;
+        for (i = nwords - 1; i >= 0; i -= 1) {
+            unsigned long cur = words[i];
+            words[i] = ((cur >> rbits) | (carry << (32 - rbits))) & 0xFFFFFFFFUL;
+            carry = cur & ((1UL << rbits) - 1UL);
+        }
+    }
+    /* 逐次除 10 取低位数字（c89_div62 要求余数 < 除数 10 < 2^30） */
+    for (j = precision - 1; j >= 0; j -= 1) {
+        unsigned long rem = 0;
+        for (i = nwords - 1; i >= 0; i -= 1) {
+            unsigned long q, r;
+            c89_div62(rem, words[i], 10UL, &q, &r);
+            words[i] = q;
+            rem = r;
+        }
+        digits[j] = (char)rem;
+        while (nwords > 0 && words[nwords - 1] == 0) {
+            nwords -= 1;
+        }
+    }
+    return roundup;
+}
+
 /* 非负 d 按 f 风格 → out（precision 位小数，force 强制小数点），返回长度。
    |d| >= 2^32 时整数部分按 1e9 分块输出（(unsigned int)d 的 fcvt 会饱和）。 */
 static int c89_fmt_f(char *out, double d, int precision, int force) {
@@ -633,16 +722,27 @@ static int c89_fmt_f(char *out, double d, int precision, int force) {
     int i;
     int len;
     int carry;
+    int exact;
     ipart = floor(d);
     frac = d - ipart;
-    for (i = 0; i < precision; i += 1) {
-        frac = frac * 10.0;
-        digits[i] = (char)(int)frac;
-        frac = frac - (double)(int)frac;
-    }
+    exact = 0;
     carry = 0;
-    if (frac >= 0.5) {
-        carry = 1;
+    if (precision >= 18 && precision <= 60) {
+        /* 高位精度：逐位 ×10 会丢残余，改用大整数精确展开 */
+        exact = 1;
+        carry = c89_frac_digits_exact(digits, frac, precision);
+    }
+    if (!exact) {
+        for (i = 0; i < precision; i += 1) {
+            frac = frac * 10.0;
+            digits[i] = (char)(int)frac;
+            frac = frac - (double)(int)frac;
+        }
+        if (frac >= 0.5) {
+            carry = 1;
+        }
+    }
+    if (carry) {
         for (i = precision - 1; i >= 0; i -= 1) {
             digits[i] = (char)(digits[i] + 1);
             if (digits[i] < 10) {
@@ -685,6 +785,7 @@ static int c89_fmt_e(char *out, double d, int precision, int upper, int force, i
     int len;
     int carry;
     int a;
+    int exact;
     exp = 0;
     if (d != 0.0) {
         while (d >= 10.0) {
@@ -699,14 +800,24 @@ static int c89_fmt_e(char *out, double d, int precision, int upper, int force, i
     *e_exp = exp;
     ip = (unsigned int)d;
     frac = d - (double)ip;
-    for (i = 0; i < precision; i += 1) {
-        frac = frac * 10.0;
-        digits[i] = (char)(int)frac;
-        frac = frac - (double)(int)frac;
-    }
+    exact = 0;
     carry = 0;
-    if (frac >= 0.5) {
-        carry = 1;
+    if (precision >= 18 && precision <= 60) {
+        /* 高位精度：逐位 ×10 会丢残余，改用大整数精确展开 */
+        exact = 1;
+        carry = c89_frac_digits_exact(digits, frac, precision);
+    }
+    if (!exact) {
+        for (i = 0; i < precision; i += 1) {
+            frac = frac * 10.0;
+            digits[i] = (char)(int)frac;
+            frac = frac - (double)(int)frac;
+        }
+        if (frac >= 0.5) {
+            carry = 1;
+        }
+    }
+    if (carry) {
         for (i = precision - 1; i >= 0; i -= 1) {
             digits[i] = (char)(digits[i] + 1);
             if (digits[i] < 10) {
@@ -1472,7 +1583,7 @@ static int c89_vscan(struct c89_scan_source *source, const char *fmt, va_list ap
                     char_dest[i] = (char)c;
                 }
             }
-            if (i == nchars) {
+            if (i == nchars && !suppress) {
                 matched += 1;
             }
             p += 1;
@@ -1498,7 +1609,9 @@ static int c89_vscan(struct c89_scan_source *source, const char *fmt, va_list ap
             int r;
             r = c89_scan_scanset(source, &p, width, suppress, ap, &ap);
             if (r == 1) {
-                matched += 1;
+                if (!suppress) {
+                    matched += 1;
+                }
             } else {
                 break; /* 格式畸形或首字符不匹配 */
             }
@@ -1512,7 +1625,9 @@ static int c89_vscan(struct c89_scan_source *source, const char *fmt, va_list ap
                                   suppress, ap, &ap)) {
                 break;
             }
-            matched += 1;
+            if (!suppress) {
+                matched += 1;
+            }
         } else if (*p == 'u' || *p == 'o' || *p == 'x' || *p == 'X') {
             base = (*p == 'x' || *p == 'X') ? 16 : (*p == 'o' ? 8 : 10);
             token_length = c89_scan_token(source, token, width);
@@ -1520,13 +1635,17 @@ static int c89_vscan(struct c89_scan_source *source, const char *fmt, va_list ap
                                   suppress, ap, &ap)) {
                 break;
             }
-            matched += 1;
+            if (!suppress) {
+                matched += 1;
+            }
         } else if (*p == 'f' || *p == 'e' || *p == 'g') {
             token_length = c89_scan_token(source, token, width);
             if (!c89_scan_float(source, token, token_length, long_mode, suppress, ap, &ap)) {
                 break;
             }
-            matched += 1;
+            if (!suppress) {
+                matched += 1;
+            }
         } else if (*p == 's') {
             if (c89_scan_peek(source) == EOF) {
                 break;
@@ -1551,7 +1670,9 @@ static int c89_vscan(struct c89_scan_source *source, const char *fmt, va_list ap
             if (text != 0) {
                 *text = 0;
             }
-            matched += 1;
+            if (!suppress) {
+                matched += 1;
+            }
         } else {
             break;
         }

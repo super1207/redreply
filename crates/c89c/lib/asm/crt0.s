@@ -43,13 +43,13 @@ sys_read_stdin:
 # sys_open(const char *path, int flags)锛歠lags 浣?0..4 = 璇?鍐?鍒涘缓/鎴柇/杩藉姞
 .globl sys_open
 sys_open:
-    li a7, 1024
+    li a7, 57
     ecall
     ret
 
-# sys_close(int fd)锛氬叧闂枃浠讹紝杩斿洖 0锛堝け璐?-1锛夛紙ecall 62锛?.globl sys_close
+# sys_close(int fd)锛氬叧闂枃浠讹紝杩斿洖 0锛堝け璐?-1锛夛紙ecall 60锛?.globl sys_close
 sys_close:
-    li a7, 62
+    li a7, 60
     ecall
     ret
 
@@ -65,9 +65,9 @@ sys_write:
     ecall
     ret
 
-# sys_lseek(int fd, int offset, int whence)锛氬畾浣嶏紝杩斿洖鏂颁綅缃紙澶辫触 -1锛夛紙ecall 66锛?.globl sys_lseek
+# sys_lseek(int fd, int offset, int whence)锛氬畾浣嶏紝杩斿洖鏂颁綅缃紙澶辫触 -1锛夛紙ecall 62锛?.globl sys_lseek
 sys_lseek:
-    li a7, 66
+    li a7, 62
     ecall
     ret
 
@@ -93,28 +93,28 @@ sys_time:
 # sys_clock(): milliseconds since emulator start (u32)
 .globl sys_clock
 sys_clock:
-    li a7, 31
+    li a7, 1101
     ecall
     ret
 
 # sys_tz_offset(): host UTC offset seconds (east positive)
 .globl sys_tz_offset
 sys_tz_offset:
-    li a7, 32
+    li a7, 1102
     ecall
     ret
 
 # sys_tz_dst(): 1 if DST active else 0
 .globl sys_tz_dst
 sys_tz_dst:
-    li a7, 33
+    li a7, 1103
     ecall
     ret
 
 # sys_tz_name(char *buf): copy NUL-terminated TZ name
 .globl sys_tz_name
 sys_tz_name:
-    li a7, 34
+    li a7, 1104
     ecall
     ret
 

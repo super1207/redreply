@@ -90,6 +90,9 @@ struct ExprParser {
     /// 被短路右操作数）。语法错误仍须报错，但求值类错误（除零/溢出/移位越界）
     /// 不得产生诊断——C89 §3.8.1 规定这些操作数不求值。
     discard: bool,
+    /// strict 模式：未定义标识符报错（枚举值/位域宽度/数组界等上下文）。
+    /// #if 中保持宽松语义：未定义标识符按 0 求值（C89 §3.8.1）。
+    strict: bool,
 }
 impl ExprParser {
     fn peek(&self) -> Option<&Token> {
@@ -349,6 +352,62 @@ impl ExprParser {
         if self.eat("+") {
             return self.parse_unary();
         }
+        // 强转：(类型名) cast-expression —— 枚举值等常量上下文需要
+        // （如 (unsigned)3）。教学模型不窄化，值不变，仅做语法消费。
+        if self.is_punct("(") {
+            let type_like = matches!(
+                self.toks.get(self.pos + 1),
+                Some(t) if t.kind == TokKind::Ident
+                    && matches!(
+                        t.text.as_str(),
+                        "char"
+                            | "short"
+                            | "int"
+                            | "long"
+                            | "float"
+                            | "double"
+                            | "signed"
+                            | "unsigned"
+                            | "const"
+                            | "volatile"
+                    )
+            );
+            if type_like {
+                let save = self.pos;
+                self.pos += 1; // (
+                loop {
+                    let done = !matches!(self.peek(), Some(t)
+                        if t.kind == TokKind::Ident
+                            && matches!(
+                                t.text.as_str(),
+                                "char"
+                                    | "short"
+                                    | "int"
+                                    | "long"
+                                    | "float"
+                                    | "double"
+                                    | "signed"
+                                    | "unsigned"
+                                    | "const"
+                                    | "volatile"
+                            ));
+                    if done {
+                        break;
+                    }
+                    self.pos += 1;
+                }
+                while self.is_punct("*") {
+                    self.pos += 1;
+                }
+                if !self.eat(")") {
+                    // 不是类型转换 → 回退，按括号表达式解析
+                    self.pos = save;
+                    return self.parse_primary();
+                }
+                let v = self.parse_unary()?;
+                return Ok(if self.discard { 0 } else { v });
+            }
+        }
         self.parse_primary()
     }
     fn parse_primary(&mut self) -> Result<i64, String> {
@@ -367,8 +426,11 @@ impl ExprParser {
                 self.parse_sizeof()
             }
             TokKind::Ident => {
-                // 未定义标识符（宏已展开过）→ 0（标准行为）
                 self.pos += 1;
+                if self.strict {
+                    return Err(format!("未定义的标识符: {}", t.text));
+                }
+                // 未定义标识符（宏已展开过）→ 0（标准行为）
                 Ok(0)
             }
             TokKind::Punct if t.text == "(" => {
@@ -389,11 +451,36 @@ impl ExprParser {
         if !self.eat("(") {
             return Err("sizeof 后缺少 (".into());
         }
+        // const/volatile 限定符可出现在类型名前（sizeof(const int)，C89 §3.5.3）
+        loop {
+            let done = !matches!(self.peek(), Some(t)
+                if t.kind == TokKind::Ident
+                    && matches!(t.text.as_str(), "const" | "volatile"));
+            if done {
+                break;
+            }
+            self.pos += 1;
+        }
         let t = self.peek().cloned().ok_or("sizeof 表达式意外结束")?;
         if t.kind == TokKind::Ident {
             let name = t.text.clone();
             if name == "unsigned" || name == "signed" {
                 self.pos += 1;
+                // unsigned/signed 后也可跟限定符
+                loop {
+                    let done = !matches!(self.peek(), Some(t)
+                        if t.kind == TokKind::Ident
+                            && matches!(t.text.as_str(), "const" | "volatile"));
+                    if done {
+                        break;
+                    }
+                    self.pos += 1;
+                }
+                // 单独出现：sizeof(unsigned) / sizeof(signed) → int（4 字节）
+                if self.is_punct(")") {
+                    self.pos += 1;
+                    return Ok(4);
+                }
                 let base = self.peek().cloned().ok_or("sizeof 表达式意外结束")?;
                 if base.kind != TokKind::Ident {
                     return Err(format!("sizeof {} 后应为类型名", name));
@@ -406,6 +493,14 @@ impl ExprParser {
                     _ => return Err(format!("sizeof 不支持的类型: {} {}", name, base.text)),
                 };
                 return self.finish_sizeof(size);
+            }
+            if name == "void" {
+                self.pos += 1;
+                // 仅指针合法：sizeof(void*) = 4；sizeof(void) 是约束违反
+                if !self.is_punct("*") {
+                    return Err("sizeof(void) 无定义".into());
+                }
+                return self.finish_sizeof(4);
             }
             match name.as_str() {
                 "char" => {
@@ -424,7 +519,6 @@ impl ExprParser {
                     self.pos += 1;
                     return self.finish_sizeof(8);
                 }
-                "void" => return Err("sizeof(void) 无定义".into()),
                 "struct" | "union" | "enum" => {
                     return Err(format!("sizeof({}) 依赖布局，预处理阶段不支持", name));
                 }
@@ -456,8 +550,18 @@ impl ExprParser {
     }
 }
 
-/// 求值 #if 常量表达式（token 序列）
+/// 求值 #if 常量表达式（token 序列；未定义标识符按 0 处理——标准行为）
 pub fn eval_expr(toks: &[Token]) -> Result<i64, String> {
+    eval_expr_mode(toks, false)
+}
+
+/// 严格求值：未定义标识符报错。枚举值/位域宽度/数组界等上下文
+/// 不允许前向引用与任意变量名（C89 整型常量表达式约束）。
+pub fn eval_expr_strict(toks: &[Token]) -> Result<i64, String> {
+    eval_expr_mode(toks, true)
+}
+
+fn eval_expr_mode(toks: &[Token], strict: bool) -> Result<i64, String> {
     let filtered: Vec<Token> = toks
         .iter()
         .filter(|t| t.kind != TokKind::Newline)
@@ -467,6 +571,7 @@ pub fn eval_expr(toks: &[Token]) -> Result<i64, String> {
         toks: filtered,
         pos: 0,
         discard: false,
+        strict,
     };
     let v = p.parse_conditional()?;
     if p.pos != p.toks.len() {

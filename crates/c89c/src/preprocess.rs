@@ -20,6 +20,8 @@ struct CondState {
     taking: bool,
     /// 本层是否已有分支为真（#elif/#else 用）
     ever_true: bool,
+    /// 本层是否已出现 #else（重复 #else 与 #else 后的 #elif 诊断用）
+    seen_else: bool,
 }
 
 /// 宏定义
@@ -337,6 +339,7 @@ impl Preprocessor {
         self.cond_stack.push(CondState {
             taking: parent && cond,
             ever_true: cond,
+            seen_else: false,
         });
         Ok(i)
     }
@@ -347,6 +350,9 @@ impl Preprocessor {
         i += 1;
         if self.cond_stack.is_empty() {
             return Err(format!("第 {} 行: #elif 没有匹配的 #if", line));
+        }
+        if self.cond_stack.last().map(|s| s.seen_else).unwrap_or(false) {
+            return Err(format!("第 {} 行: #elif 不能出现在 #else 之后", line));
         }
         let parent = self.parent_active();
         // 收集 elif 表达式
@@ -388,6 +394,9 @@ impl Preprocessor {
         if self.cond_stack.is_empty() {
             return Err(format!("第 {} 行: #else 没有匹配的 #if", line));
         }
+        if self.cond_stack.last().map(|s| s.seen_else).unwrap_or(false) {
+            return Err(format!("第 {} 行: 重复的 #else", line));
+        }
         let parent = self.parent_active();
         let st = self.cond_stack.last_mut().unwrap();
         if parent && !st.ever_true {
@@ -396,6 +405,7 @@ impl Preprocessor {
         } else {
             st.taking = false;
         }
+        st.seen_else = true;
         while i < toks.len() && toks[i].kind != TokKind::Newline {
             i += 1;
         }
@@ -558,8 +568,16 @@ impl Preprocessor {
         dir: &Path,
     ) -> Result<(usize, Vec<Token>), String> {
         let line = toks.get(i).map(|t| t.line).unwrap_or(0);
-        let t = toks
-            .get(i)
+        // 收集本行剩余 token 并做宏展开（C89 §3.8.2：文件名参与宏替换，
+        // #define H "x.h" 之后 #include H 合法）
+        let mut line_toks = Vec::new();
+        while i < toks.len() && toks[i].kind != TokKind::Newline {
+            line_toks.push(toks[i].clone());
+            i += 1;
+        }
+        let expanded = self.expand(&line_toks)?;
+        let t = expanded
+            .first()
             .ok_or_else(|| format!("第 {} 行: #include 后缺少文件名", line))?;
 
         let fname: String;
@@ -567,14 +585,12 @@ impl Preprocessor {
         if t.kind == TokKind::String {
             // #include "foo.h"
             fname = t.text.trim_matches('"').to_string();
-            i += 1;
         } else if t.kind == TokKind::Punct && t.text == "<" {
             // #include <foo.h>：收集到 > 为止
             is_angle = true;
-            let mut j = i + 1; // 跳过 < 本身
             let mut parts = Vec::new();
             let mut closed = false;
-            while let Some(t2) = toks.get(j) {
+            for t2 in expanded.iter().skip(1) {
                 if t2.kind == TokKind::Punct && t2.text == ">" {
                     closed = true;
                     break;
@@ -583,13 +599,11 @@ impl Preprocessor {
                     break;
                 }
                 parts.push(t2.text.clone());
-                j += 1;
             }
             if !closed {
                 return Err(format!("第 {} 行: #include <...> 缺少右尖括号", line));
             }
             fname = parts.join("");
-            i = j + 1;
         } else {
             return Err(format!(
                 "第 {} 行: #include 后应为 \"文件名\" 或 <文件名>",
@@ -674,6 +688,13 @@ impl Preprocessor {
             .ok_or_else(|| format!("第 {} 行: #define 后缺少宏名", line))?;
         if name_tok.kind != TokKind::Ident {
             return Err(format!("第 {} 行: 宏名必须是标识符", line));
+        }
+        // C89 §3.8.3：宏名不得是关键字（不能通过宏重定义关键字）
+        if crate::lexer::is_keyword(&name_tok.text) {
+            return Err(format!(
+                "第 {} 行: 宏名不能是关键字 '{}'（C89 §3.8.3）",
+                line, name_tok.text
+            ));
         }
         let name = name_tok.text.clone();
         i += 1;
@@ -802,11 +823,12 @@ impl Preprocessor {
                         continue;
                     }
                 }
-                // 宏名后紧跟 ( → 函数宏调用（C89 §3.8.3：调用点允许空白，
-                // "无空白"要求只适用于 #define 定义行）
+                // 宏名后紧跟 ( 且无空白 → 函数宏调用。C89 §3.8.3 的
+                // "无空白"要求对调用点同样成立：F (1) / F\n(1) / F /*c*/ (1)
+                // 都不是函数宏调用，保留为普通标识符（GCC/Clang 行为）。
                 let is_func_call = toks
                     .get(i + 1)
-                    .map(|n| n.kind == TokKind::Punct && n.text == "(")
+                    .map(|n| n.kind == TokKind::Punct && n.text == "(" && !n.has_space)
                     .unwrap_or(false);
 
                 if let Some(m) = self.macros.get(&t.text) {
@@ -825,8 +847,10 @@ impl Preprocessor {
                             Macro::Function { params, body } => {
                                 if is_func_call {
                                     let (mut args, next) = collect_args(toks, i + 1)?;
-                                    // F() 对零参数宏视为无实参（C89 §3.8.3）
-                                    if args.len() == 1 && args[0].is_empty() && params.is_empty() {
+                                    // collect_args 把 F() 记为一个空实参：零参数宏
+                                    // 视为无实参（C89 §3.8.3）；带参数宏则由下方
+                                    // 数量检查报"参数个数不匹配"（GCC/Clang 行为）。
+                                    if args.len() == 1 && args[0].is_empty() {
                                         args.clear();
                                     }
                                     if args.len() != params.len() {
@@ -1029,8 +1053,8 @@ fn collect_args(toks: &[Token], open: usize) -> Result<(Vec<Vec<Token>>, usize),
             }
             depth -= 1;
             if depth == 0 {
-                // C89 §3.8.3：F() 是一个空实参（F 为单参函数宏时）；
-                // 零参数宏由调用方按空列表处理。
+                // F() 收集为一个空实参；零参数宏按空列表、带参数宏按
+                // 个数不匹配处理（由调用方 expand_inner 决定）
                 args.push(cur);
                 return Ok((args, i + 1));
             }
@@ -1046,8 +1070,9 @@ fn collect_args(toks: &[Token], open: usize) -> Result<(Vec<Vec<Token>>, usize),
     Err("宏调用缺少右括号 )".into())
 }
 
-/// 检测文件开头的 include guard（#ifndef G 紧跟 #define G），返回守卫宏名。
-/// 用于互含头文件的循环包含判定：守卫已定义时重入是空操作。
+/// 检测文件开头的 include guard（#ifndef G 或 #if !defined(G) 紧跟
+/// #define G），返回守卫宏名。用于互含头文件的循环包含判定：
+/// 守卫已定义时重入是空操作。
 fn detect_include_guard(src: &str) -> Option<String> {
     let tokens = crate::lexer::tokenize(src).ok()?;
     let mut idx = 0;
@@ -1067,17 +1092,47 @@ fn detect_include_guard(src: &str) -> Option<String> {
         return None;
     }
     let mut i = idx + 1; // 跳过 #
-    if tokens.get(i).map(|t| t.text.as_str()) != Some("ifndef") {
-        return None;
+    // 两种 guard 形式：#ifndef G 与 #if !defined(G)
+    let guard: String;
+    match tokens.get(i).map(|t| t.text.as_str()) {
+        Some("ifndef") => {
+            i += 1;
+            let g = tokens.get(i)?;
+            if g.kind != TokKind::Ident {
+                return None;
+            }
+            guard = g.text.clone();
+            i += 1;
+        }
+        Some("if") => {
+            i += 1;
+            if tokens.get(i).map(|t| t.text.as_str()) != Some("!") {
+                return None;
+            }
+            i += 1;
+            if tokens.get(i).map(|t| t.text.as_str()) != Some("defined") {
+                return None;
+            }
+            i += 1;
+            if tokens.get(i).map(|t| t.text.as_str()) != Some("(") {
+                return None;
+            }
+            i += 1;
+            let g = tokens.get(i)?;
+            if g.kind != TokKind::Ident {
+                return None;
+            }
+            guard = g.text.clone();
+            i += 1;
+            if tokens.get(i).map(|t| t.text.as_str()) != Some(")") {
+                return None;
+            }
+            i += 1;
+        }
+        _ => return None,
     }
-    i += 1;
-    let guard = tokens.get(i)?;
-    if guard.kind != TokKind::Ident {
-        return None;
-    }
-    let guard = guard.text.clone();
     // 下一行（或同行）必须是 #define guard
-    let mut j = i + 1;
+    let mut j = i;
     while j < tokens.len() {
         let t = &tokens[j];
         if t.kind == TokKind::Punct && t.text == "#" {

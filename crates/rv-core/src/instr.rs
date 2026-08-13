@@ -345,12 +345,24 @@ impl Instruction {
                 f_reg_name(self.rs1),
                 f_reg_name(self.rs2)
             ),
-            FClassS | FCvtWS | FCvtWUS | FMvXW => {
+            FClassS | FMvXW => {
                 format!("{} {}, {}", name, reg_name(self.rd), f_reg_name(self.rs1))
             }
-            FCvtSW | FCvtSWU | FMvWX => {
-                format!("{} {}, {}", name, f_reg_name(self.rd), reg_name(self.rs1))
-            }
+            FCvtWS | FCvtWUS => format!(
+                "{} {}, {}{}",
+                name,
+                reg_name(self.rd),
+                f_reg_name(self.rs1),
+                rm_suffix(self.rs3)
+            ),
+            FCvtSW | FCvtSWU => format!(
+                "{} {}, {}{}",
+                name,
+                f_reg_name(self.rd),
+                reg_name(self.rs1),
+                rm_suffix(self.rs3)
+            ),
+            FMvWX => format!("{} {}, {}", name, f_reg_name(self.rd), reg_name(self.rs1)),
             FLw => format!(
                 "{} {}, {}({})",
                 name,
@@ -375,9 +387,16 @@ impl Instruction {
                     f_reg_name(self.rs2)
                 )
             }
-            FSqrtD | FCvtDS | FCvtSD => {
+            FSqrtD => {
                 format!("{} {}, {}", name, f_reg_name(self.rd), f_reg_name(self.rs1))
             }
+            FCvtDS | FCvtSD => format!(
+                "{} {}, {}{}",
+                name,
+                f_reg_name(self.rd),
+                f_reg_name(self.rs1),
+                rm_suffix(self.rs3)
+            ),
             FMAddD | FMSubD | FNMAddD | FNMSubD => format!(
                 "{} {}, {}, {}, {}",
                 name,
@@ -393,10 +412,23 @@ impl Instruction {
                 f_reg_name(self.rs1),
                 f_reg_name(self.rs2)
             ),
-            FClassD | FCvtWD | FCvtWUD => {
+            FClassD => {
                 format!("{} {}, {}", name, reg_name(self.rd), f_reg_name(self.rs1))
             }
-            FCvtDW | FCvtDWU => format!("{} {}, {}", name, f_reg_name(self.rd), reg_name(self.rs1)),
+            FCvtWD | FCvtWUD => format!(
+                "{} {}, {}{}",
+                name,
+                reg_name(self.rd),
+                f_reg_name(self.rs1),
+                rm_suffix(self.rs3)
+            ),
+            FCvtDW | FCvtDWU => format!(
+                "{} {}, {}{}",
+                name,
+                f_reg_name(self.rd),
+                reg_name(self.rs1),
+                rm_suffix(self.rs3)
+            ),
             FLd => format!(
                 "{} {}, {}({})",
                 name,
@@ -424,6 +456,18 @@ pub fn reg_name(r: u8) -> String {
         "t5", "t6",
     ];
     NAMES[(r & 31) as usize].to_string()
+}
+
+/// fcvt 系列指令的舍入模式后缀（rs3 字段，0=RNE 缺省不显示）
+fn rm_suffix(rm: u8) -> String {
+    match rm {
+        1 => ", rtz".to_string(),
+        2 => ", rdn".to_string(),
+        3 => ", rup".to_string(),
+        4 => ", rmm".to_string(),
+        7 => ", dyn".to_string(),
+        _ => String::new(),
+    }
 }
 
 /// 浮点寄存器编号 → 名称

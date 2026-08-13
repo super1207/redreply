@@ -7,9 +7,9 @@
 //! P2 语句 / P3 声明 后续添加。
 
 use crate::ast::{AssignOp, BinaryOp, DeclSpec, Node, Param, Storage, Type, UnaryOp};
-use crate::expr_eval::eval_expr;
+use crate::expr_eval::eval_expr_strict;
 use crate::expr_eval::{parse_char_value, parse_int_value};
-use crate::lexer::{TokKind, Token};
+use crate::lexer::{is_keyword, TokKind, Token};
 use crate::types::TypeTable;
 use std::collections::HashMap;
 
@@ -91,6 +91,35 @@ impl Parser {
             Some(t) => format!("第 {} 行: {}", t.line, msg),
             None => format!("文件末尾: {}", msg),
         }
+    }
+
+    fn is_punct_any(&self, ss: &[&str]) -> bool {
+        matches!(self.peek(), Some(t) if t.kind == TokKind::Punct && ss.contains(&t.text.as_str()))
+    }
+
+    /// 收集整型常量表达式 token（到 stop 中任一标点为止，不消费该标点）；
+    /// 已登记的枚举常量替换为数值 token（严格求值前预处理）。
+    fn collect_const_expr(&mut self, stop: &[&str]) -> Result<Vec<Token>, String> {
+        let mut toks = Vec::new();
+        while !self.is_punct_any(stop) {
+            if let Some(t) = self.peek().cloned() {
+                if t.kind == TokKind::Ident {
+                    if let Some(v) = self.enum_constants.get(&t.text) {
+                        let mut num = t;
+                        num.kind = TokKind::Number;
+                        num.text = v.to_string();
+                        toks.push(num);
+                        self.pos += 1;
+                        continue;
+                    }
+                }
+                toks.push(t);
+                self.pos += 1;
+            } else {
+                return Err(self.err("常量表达式意外结束"));
+            }
+        }
+        Ok(toks)
     }
 
     // ---- 表达式（§3.3）----
@@ -315,10 +344,14 @@ impl Parser {
             if self.eat("(") {
                 // ( 已被吃掉，当前 token 是类型名（sizeof(int)）或表达式
                 if self.is_type_start() {
-                    // sizeof(类型名)：编译期常量
+                    // sizeof(类型名)：编译期常量。
+                    // sizeof(void) 等无大小的类型是约束违反（C89 §3.3.3.4）。
                     let ty = self.parse_cast_type()?;
                     self.expect_punct(")")?;
-                    let sz = self.tt.size_of(&ty).unwrap_or(4);
+                    let sz = self
+                        .tt
+                        .size_of(&ty)
+                        .map_err(|e| self.err(&format!("sizeof 错误: {}", e)))?;
                     return Ok(Node::Num(sz as i64));
                 }
                 // sizeof(表达式)
@@ -342,10 +375,26 @@ impl Parser {
                 node = Node::Subscript(Box::new(node), Box::new(idx));
             } else if self.eat("(") {
                 // 函数调用参数
+                let is_va_arg = matches!(node.inner(), Node::Ident(name) if name == "va_arg");
                 let mut args = Vec::new();
                 if !self.is_punct(")") {
                     loop {
-                        args.push(self.parse_assign()?);
+                        // va_arg(ap, 类型名)：内置宏的第二个实参是类型而非
+                        // 表达式（C89 §4.8.1.1）。类型名折叠为 Ident 文本
+                        // （书写形式），语义层跳过、代码生成层识别 int/double。
+                        if is_va_arg && args.len() == 1 && self.is_type_start() {
+                            let type_start = self.pos;
+                            let span = self.current_span();
+                            self.parse_cast_type()?;
+                            let text: String = self.toks[type_start..self.pos]
+                                .iter()
+                                .map(|t| t.text.clone())
+                                .collect::<Vec<_>>()
+                                .join(" ");
+                            args.push(Node::Ident(text).with_fallback_span(span));
+                        } else {
+                            args.push(self.parse_assign()?);
+                        }
                         if !self.eat(",") {
                             break;
                         }
@@ -373,7 +422,7 @@ impl Parser {
     fn expect_ident(&mut self) -> Result<String, String> {
         match self.peek() {
             Some(t) if t.kind == TokKind::Ident => {
-                if Self::is_keyword(&t.text) {
+                if is_keyword(&t.text) {
                     return Err(self.err(&format!("关键字 '{}' 不能用作标识符", t.text)));
                 }
                 let s = t.text.clone();
@@ -382,45 +431,6 @@ impl Parser {
             }
             _ => Err(self.err("expected identifier")),
         }
-    }
-
-    /// C89 关键字（§3.1.1）：在任何上下文中都不能用作标识符
-    fn is_keyword(text: &str) -> bool {
-        matches!(
-            text,
-            "auto"
-                | "break"
-                | "case"
-                | "char"
-                | "const"
-                | "continue"
-                | "default"
-                | "do"
-                | "double"
-                | "else"
-                | "enum"
-                | "extern"
-                | "float"
-                | "for"
-                | "goto"
-                | "if"
-                | "int"
-                | "long"
-                | "register"
-                | "return"
-                | "short"
-                | "signed"
-                | "sizeof"
-                | "static"
-                | "struct"
-                | "switch"
-                | "typedef"
-                | "union"
-                | "unsigned"
-                | "void"
-                | "volatile"
-                | "while"
-        )
     }
 
     /// 基本表达式（§3.3.1）
@@ -489,6 +499,10 @@ impl Parser {
                 Ok(Node::Num(parse_char_value(&t.text)?))
             }
             TokKind::Ident => {
+                // 关键字在任何上下文中都不能用作标识符（C89 §3.1.1）
+                if is_keyword(&t.text) {
+                    return Err(self.err(&format!("关键字 '{}' 不能用作标识符", t.text)));
+                }
                 self.pos += 1;
                 // 枚举常量 → 编译期数值
                 if let Some(v) = self.enum_constants.get(&t.text) {
@@ -550,8 +564,12 @@ impl Parser {
 
     fn parse_external_declaration_inner(&mut self) -> Result<Vec<Node>, String> {
         let specs = self.parse_decl_specs()?;
-        // struct { ... }; 类型定义（无变量名）
+        // struct/union/enum 类型说明符允许无声明符（struct { ... }; 定义）；
+        // 其余类型必须跟声明符（int; / typedef int; 是约束违反，C89 §3.5）
         if self.is_punct(";") {
+            if !matches!(specs.ty, Type::Struct(_) | Type::Enum(_)) {
+                return Err(self.err("声明缺少声明符（仅 struct/union/enum 允许无声明符）"));
+            }
             self.pos += 1;
             return Ok(vec![Node::NullStmt]);
         }
@@ -562,19 +580,25 @@ impl Parser {
 
         // 函数（定义或声明）：declarator 已吃掉参数列表
         if let Some((mut params, is_variadic, has_prototype)) = fparams {
+            // 函数名遮蔽同名枚举常量（C89 普通标识符命名空间，§3.1.2.3）
+            self.enum_constants.remove(&name);
             if !has_prototype && !params.is_empty() && !self.is_punct("{") && !self.is_punct(";") {
                 self.parse_old_style_parameter_declarations(&mut params)?;
             }
             if self.is_punct("{") {
                 // 函数定义
                 self.pos += 1;
-                // 形参遮蔽外层枚举常量（仅函数体内，C89 §3.1.2.1）
+                // 形参遮蔽外层枚举常量/typedef 名（仅函数体内，C89 §3.1.2.1）；
+                // 函数体结束恢复外层作用域。
                 let saved_enums = self.enum_constants.clone();
+                let saved_typedefs = self.typedefs.clone();
                 for p in &params {
                     self.enum_constants.remove(&p.name);
+                    self.typedefs.remove(&p.name);
                 }
                 let body = self.parse_block_body()?;
                 self.enum_constants = saved_enums;
+                self.typedefs = saved_typedefs;
                 return Ok(vec![Node::FuncDef {
                     ret: specs.ty,
                     name,
@@ -616,6 +640,8 @@ impl Parser {
         if specs.storage == Storage::Typedef {
             self.typedefs.insert(name.clone(), specs.ty.clone());
         }
+        // 声明登记的名字遮蔽同名枚举常量（C89 普通标识符命名空间）
+        self.enum_constants.remove(&name);
         let mut declarations = vec![Node::Decl {
             specs: specs.clone(),
             name,
@@ -645,6 +671,7 @@ impl Parser {
             if item_specs.storage == Storage::Typedef {
                 self.typedefs.insert(name.clone(), item_specs.ty.clone());
             }
+            self.enum_constants.remove(&name);
             declarations.push(Node::Decl {
                 specs: item_specs,
                 name,
@@ -665,11 +692,16 @@ impl Parser {
             if t.kind != TokKind::Ident {
                 break;
             }
-            // typedef 名感知：查符号表返回真实类型
-            if let Some(real) = self.typedefs.get(&t.text) {
-                specs.ty = real.clone();
-                self.pos += 1;
-                continue;
+            // typedef 名感知：查符号表返回真实类型。
+            // 已有类型说明符时不再吸收 typedef 名，留给声明符位置——
+            // typedef int T; 中 T 是声明符而非类型说明符（C89 §3.5.6）。
+            if !saw_type {
+                if let Some(real) = self.typedefs.get(&t.text) {
+                    specs.ty = real.clone();
+                    saw_type = true;
+                    self.pos += 1;
+                    continue;
+                }
             }
             match t.text.as_str() {
                 "typedef" => {
@@ -762,29 +794,10 @@ impl Parser {
                             let name = self.expect_ident()?;
                             let val = if self.eat("=") {
                                 // 收集常量表达式到 , 或 }；已登记的枚举常量
-                                // 代入为数值 token（B = A + 1 需要 A 的值）
-                                let mut toks = Vec::new();
-                                while !self.is_punct(",") && !self.is_punct("}") {
-                                    if let Some(t3) = self.peek().cloned() {
-                                        if t3.kind == TokKind::Ident {
-                                            if let Some(v) = self.enum_constants.get(&t3.text) {
-                                                toks.push(Token::new(
-                                                    TokKind::Number,
-                                                    v.to_string(),
-                                                    t3.line,
-                                                    t3.has_space,
-                                                ));
-                                                self.pos += 1;
-                                                continue;
-                                            }
-                                        }
-                                        toks.push(t3);
-                                        self.pos += 1;
-                                    } else {
-                                        break;
-                                    }
-                                }
-                                eval_expr(&toks)
+                                // 代入为数值 token（B = A + 1 需要 A 的值）。
+                                // 严格求值：未定义的标识符报错（C89 整型常量表达式）。
+                                let toks = self.collect_const_expr(&[",", "}"])?;
+                                eval_expr_strict(&toks)
                                     .map_err(|e| self.err(&format!("枚举值错误: {}", e)))?
                             } else {
                                 next_val
@@ -839,23 +852,23 @@ impl Parser {
                                 } else {
                                     self.parse_declarator(mspecs.ty.clone())?
                                 };
-                                // 位域：: width（C89 §3.5.2.1）
+                                // 位域：: width（C89 §3.5.2.1，宽度是整型常量表达式）
                                 let mut bit_width = None;
                                 if self.is_punct(":") {
                                     self.pos += 1;
-                                    let wt = self
-                                        .peek()
-                                        .cloned()
-                                        .ok_or_else(|| self.err("位域宽度缺失"))?;
-                                    if wt.kind != TokKind::Number {
-                                        return Err(self.err("位域宽度必须是整型常量表达式"));
+                                    let width_line =
+                                        self.peek().map(|t| t.line).unwrap_or(struct_line);
+                                    let toks = self.collect_const_expr(&[",", ";"])?;
+                                    if toks.is_empty() {
+                                        return Err(self.err("位域宽度缺失"));
                                     }
-                                    self.pos += 1;
-                                    bit_width = Some(
-                                        crate::expr_eval::parse_int_value(&wt.text)
-                                            .map_err(|e| format!("第 {} 行: {}", wt.line, e))?
-                                            as usize,
-                                    );
+                                    let v = eval_expr_strict(&toks).map_err(|e| {
+                                        format!("第 {} 行: 位域宽度错误: {}", width_line, e)
+                                    })?;
+                                    if v < 0 {
+                                        return Err(format!("第 {} 行: 位域宽度为负", width_line));
+                                    }
+                                    bit_width = Some(v as usize);
                                 }
                                 // 位域的有效类型：int / unsigned int（含 signed）
                                 let eff_ty = if mspecs.is_unsigned {
@@ -888,6 +901,13 @@ impl Parser {
                                 }
                             }
                             self.expect_punct(";")?;
+                        }
+                        // C89 §3.5.2.1：struct/union 至少需要一个成员
+                        if members.is_empty() {
+                            return Err(format!(
+                                "第 {} 行: struct/union 定义不能为空（至少需要一个成员）",
+                                struct_line
+                            ));
                         }
                         self.pos += 1; // }
                                        // 匿名结构体：自动命名
@@ -1018,7 +1038,7 @@ impl Parser {
         let mut toks = Vec::new();
         while !self.is_punct("]") {
             // sizeof：用真实解析器处理（支持 sizeof(类型名) 与 sizeof(表达式)），
-            // 结果折叠为常量 token，与其余常量表达式一起交给 eval_expr。
+            // 结果折叠为常量 token，与其余常量表达式一起交给 eval_expr_strict。
             if matches!(self.peek(), Some(t) if t.kind == TokKind::Ident && t.text == "sizeof") {
                 let line = self.peek().map(|t| t.line).unwrap_or(0);
                 self.pos += 1;
@@ -1026,7 +1046,10 @@ impl Parser {
                     if self.is_type_start() {
                         let ty = self.parse_cast_type()?;
                         self.expect_punct(")")?;
-                        let sz = self.tt.size_of(&ty).unwrap_or(4);
+                        let sz = self
+                            .tt
+                            .size_of(&ty)
+                            .map_err(|e| self.err(&format!("数组大小错误: {}", e)))?;
                         Node::Num(sz as i64)
                     } else {
                         let e = self.parse_expr()?;
@@ -1043,7 +1066,7 @@ impl Parser {
                 continue;
             }
             if let Some(t) = self.peek().cloned() {
-                // 枚举常量 → 数值 token（eval_expr 只认数值 token）
+                // 枚举常量 → 数值 token（常量求值器只认数值 token）
                 if t.kind == TokKind::Ident {
                     if let Some(v) = self.enum_constants.get(&t.text) {
                         let mut num = t;
@@ -1061,7 +1084,8 @@ impl Parser {
             }
         }
         self.expect_punct("]")?;
-        let v = eval_expr(&toks).map_err(|e| self.err(&format!("数组大小错误: {}", e)))?;
+        // 严格求值：数组界是整型常量表达式，未定义标识符报错
+        let v = eval_expr_strict(&toks).map_err(|e| self.err(&format!("数组大小错误: {}", e)))?;
         if v < 0 {
             return Err(self.err("数组大小为负"));
         }
@@ -1217,8 +1241,10 @@ impl Parser {
 
     /// 块体：在 "{" 之后解析到匹配的 "}"
     fn parse_block_body(&mut self) -> Result<Node, String> {
-        // 块内声明会遮蔽外层枚举常量；块结束时恢复外层可见性。
+        // 块内声明会遮蔽外层枚举常量/typedef 名；块结束时恢复外层可见性
+        // （C89 §3.1.2.1：typedef 名的作用域止于块末尾）。
         let saved_enums = self.enum_constants.clone();
+        let saved_typedefs = self.typedefs.clone();
         let mut stmts = Vec::new();
         while !self.is_punct("}") {
             if self.peek().is_none() {
@@ -1228,6 +1254,7 @@ impl Parser {
         }
         self.pos += 1; // }
         self.enum_constants = saved_enums;
+        self.typedefs = saved_typedefs;
         Ok(Node::Block(stmts))
     }
 
@@ -1241,9 +1268,10 @@ impl Parser {
     }
 
     fn parse_statement_inner(&mut self) -> Result<Node, String> {
-        // 复合语句（块）
+        // 复合语句（块）：块内 typedef/枚举常量遮蔽外层，块结束恢复
         if self.eat("{") {
             let saved_enums = self.enum_constants.clone();
+            let saved_typedefs = self.typedefs.clone();
             let mut stmts = Vec::new();
             while !self.is_punct("}") {
                 if self.peek().is_none() {
@@ -1253,6 +1281,7 @@ impl Parser {
             }
             self.pos += 1; // }
             self.enum_constants = saved_enums;
+            self.typedefs = saved_typedefs;
             return Ok(Node::Block(stmts));
         }
 
@@ -1298,16 +1327,16 @@ impl Parser {
             }
         }
 
-        // 块内声明（C89：类型关键字或 typedef 名开头）
-        if self.is_type_start() {
-            return self.parse_local_decl();
-        }
-
-        // 标签 label:（标识符 + 冒号）
+        // 标签 label:（标识符 + 冒号）。C89 标签是独立命名空间，
+        // 可与 typedef 名同名（typedef int L; L: ...），必须先于
+        // 块内声明的类型开头判定。
         if let Some(t) = self.peek() {
             if t.kind == TokKind::Ident {
                 if let Some(t2) = self.toks.get(self.pos + 1) {
                     if t2.kind == TokKind::Punct && t2.text == ":" {
+                        if is_keyword(&t.text) {
+                            return Err(self.err(&format!("关键字 '{}' 不能用作标签", t.text)));
+                        }
                         let name = t.text.clone();
                         self.pos += 2;
                         let stmt = self.parse_statement()?;
@@ -1315,6 +1344,11 @@ impl Parser {
                     }
                 }
             }
+        }
+
+        // 块内声明（C89：类型关键字或 typedef 名开头）
+        if self.is_type_start() {
+            return self.parse_local_decl();
         }
 
         // 空语句
@@ -1366,8 +1400,12 @@ impl Parser {
     /// 块内变量声明（§3.5）
     fn parse_local_decl(&mut self) -> Result<Node, String> {
         let specs = self.parse_decl_specs()?;
-        // struct { ... }; 类型定义（无变量名）
+        // struct/union/enum 类型说明符允许无声明符（struct { ... }; 定义）；
+        // 其余类型必须跟声明符（int; / typedef int; 是约束违反）
         if self.is_punct(";") {
+            if !matches!(specs.ty, Type::Struct(_) | Type::Enum(_)) {
+                return Err(self.err("声明缺少声明符（仅 struct/union/enum 允许无声明符）"));
+            }
             self.pos += 1;
             return Ok(Node::NullStmt);
         }
@@ -1544,22 +1582,7 @@ fn eval_const_size(
 ) -> Result<i64, String> {
     match node.inner() {
         Node::Num(v) => Ok(*v),
-        Node::SizeofExpr(e) => match e.inner() {
-            Node::Num(_) | Node::Str(_) => Ok(4),
-            Node::FNum(_) => Ok(8),
-            Node::Cast(ty, _) => tt
-                .size_of(ty)
-                .map(|s| s as i64)
-                .map_err(|err| format!("sizeof 的操作数大小未知: {}", err)),
-            Node::Ident(name) => match typedefs.get(name) {
-                Some(ty) => tt
-                    .size_of(ty)
-                    .map(|s| s as i64)
-                    .map_err(|err| format!("sizeof 的操作数大小未知: {}", err)),
-                None => Err("sizeof 的操作数不是常量".into()),
-            },
-            _ => Err("sizeof 的操作数不是常量".into()),
-        },
+        Node::SizeofExpr(e) => const_expr_size(e, tt, typedefs),
         Node::Unary(op, e) => {
             let v = eval_const_size(e, tt, typedefs)?;
             match op {
@@ -1606,6 +1629,45 @@ fn eval_const_size(
         Node::Cast(_, e) => eval_const_size(e, tt, typedefs),
         Node::Comma(_, r) => eval_const_size(r, tt, typedefs),
         _ => Err("数组大小必须是整数常量表达式".into()),
+    }
+}
+
+/// 求 sizeof(表达式) 的操作数类型大小（教学型 32 位数据模型）：
+/// 整型/指针/float = 4 字节，double = 8 字节。sizeof 只看类型不看值，
+/// 所以对整型常量表达式做结构上的类型推导即可（C89 §3.3.3.4）。
+fn const_expr_size(
+    node: &Node,
+    tt: &crate::types::TypeTable,
+    typedefs: &HashMap<String, Type>,
+) -> Result<i64, String> {
+    match node.inner() {
+        Node::Num(_) | Node::Str(_) => Ok(4),
+        Node::FNum(_) => Ok(8),
+        Node::SizeofExpr(_) => Ok(4),
+        Node::Cast(ty, _) => tt
+            .size_of(ty)
+            .map(|s| s as i64)
+            .map_err(|err| format!("sizeof 的操作数大小未知: {}", err)),
+        Node::Ident(name) => match typedefs.get(name) {
+            Some(ty) => tt
+                .size_of(ty)
+                .map(|s| s as i64)
+                .map_err(|err| format!("sizeof 的操作数大小未知: {}", err)),
+            None => Err(format!("sizeof 的操作数 '{}' 不是常量", name)),
+        },
+        Node::Unary(_, e) => const_expr_size(e, tt, typedefs),
+        Node::Binary(_, l, r) => {
+            let a = const_expr_size(l, tt, typedefs)?;
+            let b = const_expr_size(r, tt, typedefs)?;
+            Ok(a.max(b))
+        }
+        Node::Cond(_, a, b) => {
+            let x = const_expr_size(a, tt, typedefs)?;
+            let y = const_expr_size(b, tt, typedefs)?;
+            Ok(x.max(y))
+        }
+        Node::Comma(_, r) => const_expr_size(r, tt, typedefs),
+        _ => Err("sizeof 的操作数不是常量".into()),
     }
 }
 

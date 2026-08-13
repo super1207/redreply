@@ -113,15 +113,17 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             i += 1;
             continue;
         }
-        // 换行：保留（预处理器按行工作）
+        // 换行：保留（预处理器按行工作）。换行同样是空白——
+        // 其后 token 的 has_space 置位（F\n(1) 不是函数宏调用）。
         if c == '\n' {
+            space = true;
             let column = (i - line_start + 1) as u32;
             toks.push(Token::new_at(
                 TokKind::Newline,
                 "\n".into(),
                 line,
                 column,
-                false,
+                true,
             ));
             line += 1;
             i += 1;
@@ -301,6 +303,46 @@ pub fn tokenize_with_file(input: &str, file: &str) -> Result<Vec<Token>, String>
         token.set_file(file);
     }
     Ok(tokens)
+}
+
+/// C89 关键字（§3.1.1）：在任何上下文中都不能用作标识符。
+/// 与语法分析器共用（表达式标识符检查、宏名检查等）。
+pub fn is_keyword(text: &str) -> bool {
+    matches!(
+        text,
+        "auto"
+            | "break"
+            | "case"
+            | "char"
+            | "const"
+            | "continue"
+            | "default"
+            | "do"
+            | "double"
+            | "else"
+            | "enum"
+            | "extern"
+            | "float"
+            | "for"
+            | "goto"
+            | "if"
+            | "int"
+            | "long"
+            | "register"
+            | "return"
+            | "short"
+            | "signed"
+            | "sizeof"
+            | "static"
+            | "struct"
+            | "switch"
+            | "typedef"
+            | "union"
+            | "unsigned"
+            | "void"
+            | "volatile"
+            | "while"
+    )
 }
 
 pub fn tokenize_diagnostic(

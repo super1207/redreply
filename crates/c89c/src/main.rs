@@ -99,7 +99,7 @@ fn run_cli(file: &str, include_dirs: &[PathBuf], to_asm: bool, link_lib: bool) {
 }
 
 fn run(file: &str, program: &c89c::pipeline::ParsedProgram, to_asm: bool, link_lib: bool) {
-    if let Err(error) = semantic::validate_with_tokens(&program.items, file, &program.tokens) {
+    if let Err(error) = semantic::validate_with_types(&program.items, file, &program.tokens, &program.types) {
         eprintln!("{}", error);
         std::process::exit(1);
     }

@@ -29,9 +29,29 @@ fn inner_mut(node: &mut Node) -> &mut Node {
 /// 在 AST 中把所有被遮蔽的局部变量重写为唯一名。
 ///
 /// 同时实施两条作用域约束检查：
-/// - 同一（最内层）作用域内重复声明同名普通局部变量 → 报「重复声明」；
+/// - 同一（最内层）作用域内重复声明同名局部变量（含 static/extern）→ 报「重复声明」；
 /// - 块内声明出现在语句之后（C89 约束）→ 报「块内声明必须位于所有语句之前」。
 pub fn rename_shadowed_locals(items: &mut [Node]) -> CompileResult<()> {
+    // 文件作用域 extern 带初始化器即定义（C89 §3.5.7）：把存储类规范化为
+    // 无存储类（外部链接定义），让代码生成层把它当作普通定义发射数据段。
+    for item in items.iter_mut() {
+        if let Node::Decl { specs, init, .. } = inner_mut(item) {
+            if specs.storage == Storage::Extern && init.is_some() {
+                specs.storage = Storage::None;
+            }
+        }
+    }
+    // 文件作用域对象/函数名集合。局部变量与文件作用域实体同名时也须改唯一名，
+    // 否则语义层与代码生成层会把函数内的该名字误判为文件作用域实体
+    //（如「局部数组名 - 整数常量」被当作地址常量，或引用到全局符号）。
+    let file_scope_names: HashSet<String> = items
+        .iter()
+        .filter_map(|item| match item.inner() {
+            Node::Decl { name, .. } => Some(name.clone()),
+            Node::FuncDecl { name, .. } | Node::FuncDef { name, .. } => Some(name.clone()),
+            _ => None,
+        })
+        .collect();
     for item in items {
         let Node::FuncDef {
             params, body, ..
@@ -51,7 +71,13 @@ pub fn rename_shadowed_locals(items: &mut [Node]) -> CompileResult<()> {
         let mut used_names: HashSet<String> =
             params.iter().map(|param| param.name.clone()).collect();
         let mut counter = 0usize;
-        rewrite(body, &mut scopes, &mut used_names, &mut counter)?;
+        rewrite(
+            body,
+            &mut scopes,
+            &mut used_names,
+            &mut counter,
+            &file_scope_names,
+        )?;
     }
     Ok(())
 }
@@ -62,6 +88,7 @@ fn rewrite(
     scopes: &mut Vec<Scope>,
     used_names: &mut HashSet<String>,
     counter: &mut usize,
+    file_scope_names: &HashSet<String>,
 ) -> CompileResult<()> {
     let entry_span = node.span().cloned().unwrap_or_else(Span::unknown);
     let node = inner_mut(node);
@@ -80,13 +107,12 @@ fn rewrite(
             name,
             init,
         } => {
-            // 只重命名普通局部变量；static/extern/typedef 不参与块遮蔽
-            if !matches!(
-                specs.storage,
-                Storage::Static | Storage::Extern | Storage::Typedef
-            ) {
+            // typedef 不参与块遮蔽；extern 引用外部链接对象（保持原名，
+            // 代码生成靠原名在全局符号表中解析），两者都不注册为块内实体。
+            if specs.storage != Storage::Typedef {
                 // 同一（最内层）作用域已有同名声明 → 重复声明（C89 约束违规），
-                // 而不是把它改名成遮蔽变量。
+                // 而不是把它改名成遮蔽变量。块 static/extern 同样参与同层查重
+                //（static int x; int x; 非法），跨层遮蔽仍然允许。
                 if let Some(scope) = scopes.last() {
                     if scope.iter().any(|(orig, _)| orig == name) {
                         return Err(CompileError::semantic(
@@ -95,20 +121,30 @@ fn rewrite(
                         ));
                     }
                 }
-                // 函数内已出现过该局部名（嵌套或兄弟）→ 改唯一名
-                let shadowed = used_names.contains(name);
-                if shadowed {
-                    let original = name.clone();
-                    let unique = format!("{}#{}", original, *counter);
-                    *counter += 1;
-                    *name = unique.clone();
-                    used_names.insert(original.clone());
-                    scopes
-                        .last_mut()
-                        .expect("decl 必然在某个块作用域内")
-                        .push((original, unique));
+                if specs.storage != Storage::Extern {
+                    // 函数内已出现过该局部名（嵌套或兄弟），或与文件作用域
+                    // 对象/函数同名 → 改唯一名，避免扁平符号表误判。
+                    let shadowed = used_names.contains(name) || file_scope_names.contains(name);
+                    if shadowed {
+                        let original = name.clone();
+                        let unique = format!("{}#{}", original, *counter);
+                        *counter += 1;
+                        *name = unique.clone();
+                        used_names.insert(original.clone());
+                        scopes
+                            .last_mut()
+                            .expect("decl 必然在某个块作用域内")
+                            .push((original, unique));
+                    } else {
+                        used_names.insert(name.clone());
+                        scopes
+                            .last_mut()
+                            .expect("decl 必然在某个块作用域内")
+                            .push((name.clone(), name.clone()));
+                    }
                 } else {
-                    used_names.insert(name.clone());
+                    // extern 参与同层查重，但保持原名并登记到作用域栈，
+                    // 使本块内对其的引用维持外部链接解析。
                     scopes
                         .last_mut()
                         .expect("decl 必然在某个块作用域内")
@@ -116,7 +152,7 @@ fn rewrite(
                 }
             }
             if let Some(init) = init {
-                rewrite(init, scopes, used_names, counter)?;
+                rewrite(init, scopes, used_names, counter, file_scope_names)?;
             }
         }
         Node::Block(stmts) => {
@@ -143,7 +179,7 @@ fn rewrite(
                         "块内声明必须位于所有语句之前",
                     ));
                 }
-                rewrite(statement, scopes, used_names, counter)?;
+                rewrite(statement, scopes, used_names, counter, file_scope_names)?;
                 if !is_decl_like {
                     seen_statement = true;
                 }
@@ -151,69 +187,69 @@ fn rewrite(
             scopes.pop();
         }
         Node::If(cond, yes, no) => {
-            rewrite(cond, scopes, used_names, counter)?;
-            rewrite(yes, scopes, used_names, counter)?;
+            rewrite(cond, scopes, used_names, counter, file_scope_names)?;
+            rewrite(yes, scopes, used_names, counter, file_scope_names)?;
             if let Some(no) = no {
-                rewrite(no, scopes, used_names, counter)?;
+                rewrite(no, scopes, used_names, counter, file_scope_names)?;
             }
         }
         Node::While(cond, body) | Node::Switch(cond, body) | Node::Case(cond, body) => {
-            rewrite(cond, scopes, used_names, counter)?;
-            rewrite(body, scopes, used_names, counter)?;
+            rewrite(cond, scopes, used_names, counter, file_scope_names)?;
+            rewrite(body, scopes, used_names, counter, file_scope_names)?;
         }
         Node::DoWhile(body, cond) => {
-            rewrite(body, scopes, used_names, counter)?;
-            rewrite(cond, scopes, used_names, counter)?;
+            rewrite(body, scopes, used_names, counter, file_scope_names)?;
+            rewrite(cond, scopes, used_names, counter, file_scope_names)?;
         }
         Node::For(init, cond, post, body) => {
             // for 语句自成一个作用域：init 声明与其 body 可见
             scopes.push(Vec::new());
             if let Some(init) = init {
-                rewrite(init, scopes, used_names, counter)?;
+                rewrite(init, scopes, used_names, counter, file_scope_names)?;
             }
             if let Some(cond) = cond {
-                rewrite(cond, scopes, used_names, counter)?;
+                rewrite(cond, scopes, used_names, counter, file_scope_names)?;
             }
             if let Some(post) = post {
-                rewrite(post, scopes, used_names, counter)?;
+                rewrite(post, scopes, used_names, counter, file_scope_names)?;
             }
-            rewrite(body, scopes, used_names, counter)?;
+            rewrite(body, scopes, used_names, counter, file_scope_names)?;
             scopes.pop();
         }
         Node::Default(statement) | Node::Label(_, statement) => {
-            rewrite(statement, scopes, used_names, counter)?
+            rewrite(statement, scopes, used_names, counter, file_scope_names)?
         }
         Node::Return(Some(expr)) | Node::ExprStmt(expr) | Node::SizeofExpr(expr) => {
-            rewrite(expr, scopes, used_names, counter)?
+            rewrite(expr, scopes, used_names, counter, file_scope_names)?
         }
-        Node::Unary(_, expr) | Node::Cast(_, expr) => rewrite(expr, scopes, used_names, counter)?,
+        Node::Unary(_, expr) | Node::Cast(_, expr) => rewrite(expr, scopes, used_names, counter, file_scope_names)?,
         Node::Comma(left, right) => {
-            rewrite(left, scopes, used_names, counter)?;
-            rewrite(right, scopes, used_names, counter)?;
+            rewrite(left, scopes, used_names, counter, file_scope_names)?;
+            rewrite(right, scopes, used_names, counter, file_scope_names)?;
         }
         Node::Binary(_, left, right) | Node::Assign(_, left, right) => {
-            rewrite(left, scopes, used_names, counter)?;
-            rewrite(right, scopes, used_names, counter)?;
+            rewrite(left, scopes, used_names, counter, file_scope_names)?;
+            rewrite(right, scopes, used_names, counter, file_scope_names)?;
         }
         Node::Cond(cond, yes, no) => {
-            rewrite(cond, scopes, used_names, counter)?;
-            rewrite(yes, scopes, used_names, counter)?;
-            rewrite(no, scopes, used_names, counter)?;
+            rewrite(cond, scopes, used_names, counter, file_scope_names)?;
+            rewrite(yes, scopes, used_names, counter, file_scope_names)?;
+            rewrite(no, scopes, used_names, counter, file_scope_names)?;
         }
         Node::Call(callee, args) => {
-            rewrite(callee, scopes, used_names, counter)?;
+            rewrite(callee, scopes, used_names, counter, file_scope_names)?;
             for argument in args {
-                rewrite(argument, scopes, used_names, counter)?;
+                rewrite(argument, scopes, used_names, counter, file_scope_names)?;
             }
         }
         Node::Subscript(array, index) => {
-            rewrite(array, scopes, used_names, counter)?;
-            rewrite(index, scopes, used_names, counter)?;
+            rewrite(array, scopes, used_names, counter, file_scope_names)?;
+            rewrite(index, scopes, used_names, counter, file_scope_names)?;
         }
-        Node::Member(object, _, _) => rewrite(object, scopes, used_names, counter)?,
+        Node::Member(object, _, _) => rewrite(object, scopes, used_names, counter, file_scope_names)?,
         Node::InitList(items) => {
             for item in items {
-                rewrite(item, scopes, used_names, counter)?;
+                rewrite(item, scopes, used_names, counter, file_scope_names)?;
             }
         }
         Node::Break

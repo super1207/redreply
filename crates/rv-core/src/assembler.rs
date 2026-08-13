@@ -30,6 +30,15 @@ fn checked_data_end(address: u32, size: usize) -> Result<u32, String> {
     Ok(end)
 }
 
+/// 数据地址向上对齐到 alignment（2 的幂）字节边界（RARS 数据指令自动对齐语义）
+fn align_data_addr(address: u32, alignment: u32) -> Result<u32, String> {
+    let aligned = address
+        .checked_add(alignment - 1)
+        .map(|value| value & !(alignment - 1))
+        .ok_or_else(|| "数据段对齐地址溢出".to_string())?;
+    Ok(aligned)
+}
+
 #[derive(Debug)]
 pub struct Program {
     /// 展开后的指令序列（地址 = TEXT_BASE + i * 4）
@@ -172,9 +181,18 @@ fn parse_string_literal(s: &str) -> Result<Vec<u8>, String> {
     Ok(out)
 }
 
-/// 解析整数（十进制 / 十六进制 0x / 负数）
+/// 解析整数（十进制 / 十六进制 0x / 二进制 0b / 字符字面量 / 负数）
 fn parse_int(s: &str) -> Result<i32, String> {
     let s = s.trim();
+    // 字符字面量：'a' '\n' 等（解析为首个字符的字节值）
+    if s.len() >= 2 && s.starts_with('\'') && s.ends_with('\'') {
+        let inner = &s[1..s.len() - 1];
+        let decoded = decode_string_escapes(inner)?;
+        return match decoded.first() {
+            Some(&b) => Ok(b as i32),
+            None => Err(format!("空字符字面量: {}", s)),
+        };
+    }
     let (neg, body) = if let Some(b) = s.strip_prefix('-') {
         (true, b)
     } else {
@@ -184,6 +202,10 @@ fn parse_int(s: &str) -> Result<i32, String> {
         i64::from_str_radix(h, 16)
     } else if let Some(h) = body.strip_prefix("0X") {
         i64::from_str_radix(h, 16)
+    } else if let Some(b) = body.strip_prefix("0b") {
+        i64::from_str_radix(b, 2)
+    } else if let Some(b) = body.strip_prefix("0B") {
+        i64::from_str_radix(b, 2)
     } else {
         body.parse::<i64>()
     };
@@ -193,6 +215,20 @@ fn parse_int(s: &str) -> Result<i32, String> {
         return Err(format!("立即数超出 32 位范围: {}", s));
     }
     Ok(v as i32)
+}
+
+/// 解析 fcvt 系列指令的可选舍入模式第三操作数：
+/// rne(0) rtz(1) rdn(2) rup(3) rmm(4) dyn(7)，缺省 rne
+fn parse_rm(s: Option<&String>) -> Result<u8, String> {
+    match s.map(|v| v.trim().to_lowercase()).as_deref() {
+        None | Some("rne") => Ok(0),
+        Some("rtz") => Ok(1),
+        Some("rdn") => Ok(2),
+        Some("rup") => Ok(3),
+        Some("rmm") => Ok(4),
+        Some("dyn") => Ok(7),
+        Some(other) => Err(format!("未知舍入模式: {}（支持 rne/rtz/rdn/rup/rmm/dyn）", other)),
+    }
 }
 
 /// 解析浮点寄存器名 f0~f31
@@ -331,7 +367,15 @@ pub fn assemble(source: &str) -> Result<Program, String> {
                 let addr = if l.section == "text" {
                     text_addr
                 } else {
-                    data_addr
+                    // 同行数据指令会先按其自然大小对齐，标签应落在对齐后的地址
+                    let mnem = l.text.split_whitespace().next().unwrap_or("");
+                    let align = match mnem {
+                        ".word" | ".float" => 4,
+                        ".half" => 2,
+                        ".double" => 8,
+                        _ => 1,
+                    };
+                    align_data_addr(data_addr, align)?
                 };
                 if symbols.insert(lb.clone(), addr).is_some() {
                     return Err(format!("重复标签: {}", lb));
@@ -353,6 +397,10 @@ pub fn assemble(source: &str) -> Result<Program, String> {
                     vec![]
                 };
                 if mnem.starts_with('.') {
+                    // .align 在 .text 段为无害操作：指令流恒 4 字节对齐
+                    if mnem == ".align" {
+                        continue;
+                    }
                     return Err(format!("数据指令 {} 不能出现在 .text 段", mnem));
                 }
                 let mut n = expansion_len(&mnem, &operands);
@@ -375,8 +423,10 @@ pub fn assemble(source: &str) -> Result<Program, String> {
                 let mnem = parts[0];
                 let args = if parts.len() > 1 { parts[1].trim() } else { "" };
                 match mnem {
+                    ".globl" => {} // 符号导出指令段无关，忽略
                     ".float" => {
-                        // 单精度浮点常量（4 字节）
+                        // 单精度浮点常量（4 字节，自动对齐到 4）
+                        data_addr = align_data_addr(data_addr, 4)?;
                         for v in args.split(',') {
                             let v = v.trim();
                             if v.is_empty() {
@@ -392,7 +442,8 @@ pub fn assemble(source: &str) -> Result<Program, String> {
                         }
                     }
                     ".double" => {
-                        // 双精度浮点常量（8 字节）
+                        // 双精度浮点常量（8 字节，自动对齐到 8）
+                        data_addr = align_data_addr(data_addr, 8)?;
                         for v in args.split(',') {
                             let v = v.trim();
                             if v.is_empty() {
@@ -408,19 +459,34 @@ pub fn assemble(source: &str) -> Result<Program, String> {
                         }
                     }
                     ".word" | ".half" | ".byte" => {
-                        let size = if mnem == ".word" {
+                        let size: usize = if mnem == ".word" {
                             4
                         } else if mnem == ".half" {
                             2
                         } else {
                             1
                         };
+                        // 按自然大小对齐（RARS 语义），避免 lw/ld 运行时对齐错误
+                        data_addr = align_data_addr(data_addr, size as u32)?;
                         for v in args.split(',') {
                             let v = v.trim();
                             if v.is_empty() {
                                 continue;
                             }
                             let bytes = if let Ok(value) = parse_int(v) {
+                                // 超范围静默截断会掩盖笔误（RARS 报错）
+                                let ok = match size {
+                                    2 => (-32768..=65535).contains(&value),
+                                    1 => (-128..=255).contains(&value),
+                                    _ => true,
+                                };
+                                if !ok {
+                                    return Err(format!(
+                                        "数据初值超出 {} 位范围: {}",
+                                        size * 8,
+                                        v
+                                    ));
+                                }
                                 (value as u32).to_le_bytes()[..size].to_vec()
                             } else if v
                                 .chars()
@@ -565,6 +631,40 @@ fn parse_instruction(
         };
     }
 
+    // 操作数个数校验：多余操作数静默忽略会掩盖笔误（RARS 会报错）
+    {
+        let (min, max): (usize, usize) = match mnem {
+            "add" | "sub" | "sll" | "slt" | "sltu" | "xor" | "srl" | "sra" | "or" | "and"
+            | "mul" | "mulh" | "mulhsu" | "mulhu" | "div" | "divu" | "rem" | "remu"
+            | "addi" | "slti" | "sltiu" | "xori" | "ori" | "andi" | "slli" | "srli" | "srai"
+            | "beq" | "bne" | "blt" | "bge" | "bltu" | "bgeu" | "feq.s" | "flt.s" | "fle.s"
+            | "feq.d" | "flt.d" | "fle.d" | "fadd.s" | "fsub.s" | "fmul.s" | "fdiv.s"
+            | "fmin.s" | "fmax.s" | "fsgnj.s" | "fsgnjn.s" | "fsgnjx.s" | "fadd.d"
+            | "fsub.d" | "fmul.d" | "fdiv.d" | "fmin.d" | "fmax.d" | "fsgnj.d" | "fsgnjn.d"
+            | "fsgnjx.d" => (3, 3),
+            "lb" | "lh" | "lw" | "lbu" | "lhu" | "sb" | "sh" | "sw" | "flw" | "fsw" | "fld"
+            | "fsd" => (2, 2),
+            "fmadd.s" | "fmsub.s" | "fnmadd.s" | "fnmsub.s" | "fmadd.d" | "fmsub.d"
+            | "fnmadd.d" | "fnmsub.d" => (4, 4),
+            "fsqrt.s" | "fsqrt.d" | "fclass.s" | "fclass.d" | "fmv.x.w" | "fmv.w.x"
+            | "lui" | "auipc" | "fneg.d" | "neg" | "not" | "seqz" | "snez" | "sltz"
+            | "sgtz" | "beqz" | "bnez" | "bgt" | "ble" | "bgtu" | "bleu" | "li" | "la"
+            | "mv" => (2, 2),
+            "fcvt.w.s" | "fcvt.wu.s" | "fcvt.s.w" | "fcvt.s.wu" | "fcvt.d.s" | "fcvt.s.d"
+            | "fcvt.w.d" | "fcvt.wu.d" | "fcvt.d.w" | "fcvt.d.wu" | "jalr" => (2, 3),
+            "jal" => (1, 2),
+            "j" | "call" | "jr" => (1, 1),
+            "nop" | "ret" | "ecall" | "ebreak" | "fence" | "fence.i" => (0, 0),
+            _ => (0, usize::MAX),
+        };
+        if ops.len() < min {
+            return Err(format!("指令 {} 缺少操作数（需要 {} 个）", mnem, min));
+        }
+        if ops.len() > max {
+            return Err(format!("指令 {} 操作数过多（最多 {} 个）", mnem, max));
+        }
+    }
+
     // ---- 伪指令 ----
     match mnem {
         "nop" => return Ok(vec![Instruction::r2i(Op::Addi, 0, 0, 0)]),
@@ -626,6 +726,17 @@ fn parse_instruction(
         "j" => {
             let target = resolve_label(op!(0), addr, symbols)?;
             return Ok(vec![Instruction::r2(Op::Jal, 0, 0, target)]);
+        }
+        "jr" => {
+            // jr rs = jalr x0, rs, 0
+            return Ok(vec![Instruction {
+                op: Op::Jalr,
+                rd: 0,
+                rs1: parse_reg(op!(0))?,
+                rs2: 0,
+                rs3: 0,
+                imm: 0,
+            }]);
         }
         "jal" => {
             if ops.len() == 1 {
@@ -864,13 +975,14 @@ fn parse_instruction(
             parse_reg(op!(1))?,
             parse_reg(op!(2))?,
         )]),
-        // I 型
+        // I 型：12 位立即数（接受 -2048..=4095 的位型），按真机编码符号扩展
+        //（0xFFF → -1），避免同一机器码在本模拟器与真机行为不一致。
         "addi" | "slti" | "sltiu" => {
-            // I 型：12 位符号扩展立即数（接受 -2048..=4095 的位型）
             let imm = parse_int(op!(2))?;
             if !(-2048..=4095).contains(&imm) {
                 return Err(format!("I 型立即数超出 12 位符号扩展范围: {}", imm));
             }
+            let imm = (imm << 20) >> 20;
             let op = match mnem {
                 "addi" => Op::Addi,
                 "slti" => Op::Slti,
@@ -883,24 +995,26 @@ fn parse_instruction(
                 imm,
             )])
         }
-        "xori" => Ok(vec![Instruction::r2i(
-            Op::Xori,
-            parse_reg(op!(0))?,
-            parse_reg(op!(1))?,
-            parse_int(op!(2))?,
-        )]),
-        "ori" => Ok(vec![Instruction::r2i(
-            Op::Ori,
-            parse_reg(op!(0))?,
-            parse_reg(op!(1))?,
-            parse_int(op!(2))?,
-        )]),
-        "andi" => Ok(vec![Instruction::r2i(
-            Op::Andi,
-            parse_reg(op!(0))?,
-            parse_reg(op!(1))?,
-            parse_int(op!(2))?,
-        )]),
+        "xori" | "ori" | "andi" => {
+            // 逻辑运算同样受 12 位位型约束：超出范围（如 ori t0, t1, 65536）
+            // 在真机无法编码，这里静默执行会得到错误结果
+            let imm = parse_int(op!(2))?;
+            if !(-2048..=4095).contains(&imm) {
+                return Err(format!("I 型立即数超出 12 位符号扩展范围: {}", imm));
+            }
+            let imm = (imm << 20) >> 20;
+            let op = match mnem {
+                "xori" => Op::Xori,
+                "ori" => Op::Ori,
+                _ => Op::Andi,
+            };
+            Ok(vec![Instruction::r2i(
+                op,
+                parse_reg(op!(0))?,
+                parse_reg(op!(1))?,
+                imm,
+            )])
+        }
         "slli" | "srli" | "srai" => {
             let imm = parse_int(op!(2))?;
             // RV32I 移位量字段只有 5 位，立即数 ≥ 32（或为负）真机无法编码
@@ -1026,12 +1140,13 @@ fn parse_instruction(
             } else {
                 Op::FCvtWUS
             };
+            let rm = parse_rm(ops.get(2))?;
             Ok(vec![Instruction {
                 op,
                 rd: parse_reg(op!(0))?,
                 rs1: parse_freg(op!(1))?,
                 rs2: 0,
-                rs3: 0,
+                rs3: rm,
                 imm: 0,
             }])
         }
@@ -1041,12 +1156,13 @@ fn parse_instruction(
             } else {
                 Op::FCvtSWU
             };
+            let rm = parse_rm(ops.get(2))?;
             Ok(vec![Instruction {
                 op,
                 rd: parse_freg(op!(0))?,
                 rs1: parse_reg(op!(1))?,
                 rs2: 0,
-                rs3: 0,
+                rs3: rm,
                 imm: 0,
             }])
         }
@@ -1172,7 +1288,7 @@ fn parse_instruction(
             rd: parse_freg(op!(0))?,
             rs1: parse_freg(op!(1))?,
             rs2: 0,
-            rs3: 0,
+            rs3: parse_rm(ops.get(2))?,
             imm: 0,
         }]),
         "fcvt.s.d" => Ok(vec![Instruction {
@@ -1180,7 +1296,7 @@ fn parse_instruction(
             rd: parse_freg(op!(0))?,
             rs1: parse_freg(op!(1))?,
             rs2: 0,
-            rs3: 0,
+            rs3: parse_rm(ops.get(2))?,
             imm: 0,
         }]),
         "fcvt.w.d" | "fcvt.wu.d" => {
@@ -1189,12 +1305,13 @@ fn parse_instruction(
             } else {
                 Op::FCvtWUD
             };
+            let rm = parse_rm(ops.get(2))?;
             Ok(vec![Instruction {
                 op,
                 rd: parse_reg(op!(0))?,
                 rs1: parse_freg(op!(1))?,
                 rs2: 0,
-                rs3: 0,
+                rs3: rm,
                 imm: 0,
             }])
         }
@@ -1204,12 +1321,13 @@ fn parse_instruction(
             } else {
                 Op::FCvtDWU
             };
+            let rm = parse_rm(ops.get(2))?;
             Ok(vec![Instruction {
                 op,
                 rd: parse_freg(op!(0))?,
                 rs1: parse_reg(op!(1))?,
                 rs2: 0,
-                rs3: 0,
+                rs3: rm,
                 imm: 0,
             }])
         }
@@ -1547,7 +1665,7 @@ main: nop
     fn test_missing_operand_is_error() {
         let result = assemble(".text\nmain: li t0\n");
         match result {
-            Err(error) => assert!(error.contains("缺少第 2 个操作数")),
+            Err(error) => assert!(error.contains("缺少操作数") || error.contains("缺少第 2 个操作数")),
             Ok(_) => panic!("缺少操作数时不应汇编成功"),
         }
     }

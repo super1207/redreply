@@ -3,6 +3,7 @@
 use crate::ast::{BinaryOp, Node, Param, Type, UnaryOp};
 use crate::diagnostics::{CompileError, CompileResult, Span};
 use crate::lexer::Token;
+use crate::types::TypeTable;
 use std::collections::{HashMap, HashSet};
 
 const BUILTINS: &[&str] = &["va_start", "va_arg", "va_end"];
@@ -44,6 +45,12 @@ fn compatible_types(left: &Type, right: &Type) -> bool {
                             .zip(right_params)
                             .all(|(left, right)| compatible_types(&left.ty, &right.ty))))
         }
+        // C89 §3.5.4.3：不完整数组与同元素类型的完成数组兼容
+        //（extern int a[]; int a[3]; 合法重声明）
+        (Type::Array(left_elem, None), Type::Array(right_elem, Some(_)))
+        | (Type::Array(left_elem, Some(_)), Type::Array(right_elem, None)) => {
+            compatible_types(left_elem, right_elem)
+        }
         _ => left == right,
     }
 }
@@ -51,6 +58,8 @@ fn compatible_types(left: &Type, right: &Type) -> bool {
 struct Context<'a> {
     file: &'a str,
     tokens: &'a [Token],
+    /// 类型表（可选）：结构体初始化器成员数检查等需要
+    types: Option<&'a TypeTable>,
 }
 
 impl Context<'_> {
@@ -84,12 +93,65 @@ impl Context<'_> {
     }
 }
 
+/// 从 token 流恢复函数声明（FuncDecl）的存储类：解析器生成的 FuncDecl 节点
+/// 不携带 storage 字段，但声明首 token 若是存储类关键字仍留在 token 流中，
+/// 用节点 span（声明起点行/列）定位并识别（`static int f();` → Static）。
+fn func_decl_storage(item: &Node, context: &Context<'_>) -> crate::ast::Storage {
+    let Some(span) = item.span() else {
+        return crate::ast::Storage::None;
+    };
+    if let Some(token) = context.tokens.iter().find(|token| {
+        token.file == span.file && token.line == span.line && token.column == span.column
+    }) {
+        match token.text.as_str() {
+            "static" => return crate::ast::Storage::Static,
+            "extern" => return crate::ast::Storage::Extern,
+            "auto" => return crate::ast::Storage::Auto,
+            "register" => return crate::ast::Storage::Register,
+            _ => {}
+        }
+    }
+    crate::ast::Storage::None
+}
+
 pub fn validate(items: &[Node], file: &str) -> CompileResult<()> {
     validate_with_tokens(items, file, &[])
 }
 
 pub fn validate_with_tokens(items: &[Node], file: &str, tokens: &[Token]) -> CompileResult<()> {
-    let context = Context { file, tokens };
+    validate_impl(items, file, tokens, None)
+}
+
+/// 带类型表的语义校验：结构体初始化器成员数等检查需要类型表。
+pub fn validate_with_types(
+    items: &[Node],
+    file: &str,
+    tokens: &[Token],
+    types: &TypeTable,
+) -> CompileResult<()> {
+    validate_impl(items, file, tokens, Some(types))
+}
+
+fn validate_impl<'a>(
+    items: &'a [Node],
+    file: &'a str,
+    tokens: &'a [Token],
+    types: Option<&'a TypeTable>,
+) -> CompileResult<()> {
+    let context = Context { file, tokens, types };
+    // 枚举常量值必须可表示为 int（i32），溢出报错（C89 §3.5.2.2）。
+    if let Some(tt) = types {
+        for def in tt.enums.values() {
+            for (name, value) in &def.values {
+                if *value > i32::MAX as i64 || *value < i32::MIN as i64 {
+                    return context.token_error(
+                        Some(name),
+                        format!("枚举常量 '{name}' 的值 {value} 超出 int 范围"),
+                    );
+                }
+            }
+        }
+    }
     let mut globals = HashSet::new();
     let mut global_types = HashMap::new();
     let mut functions = HashSet::new();
@@ -97,12 +159,29 @@ pub fn validate_with_tokens(items: &[Node], file: &str, tokens: &[Token]) -> Com
     // 文件作用域对象声明记录：(类型, 是否已定义, 存储类)——用于重复声明/定义/
     // 链接性冲突检查（C89 §3.1.2.2/§3.5）。函数定义集合用于重复定义检查。
     let mut object_decls: HashMap<String, (Type, bool, crate::ast::Storage)> = HashMap::new();
+    // typedef 名集合与函数链接性记录：typedef 名不能再声明为对象/函数；
+    // 函数与对象一样记录 static/extern 并做内部/外部链接冲突矩阵。
+    let mut typedef_names: HashSet<String> = HashSet::new();
+    let mut func_linkages: HashMap<String, crate::ast::Storage> = HashMap::new();
     let mut func_defs: HashSet<String> = HashSet::new();
     for item in items {
         match item.inner() {
             Node::Decl {
                 specs, name, init, ..
             } => {
+                if specs.storage == crate::ast::Storage::Typedef {
+                    // typedef 名占用普通标识符名字空间（C89 §3.5.6）：单独登记，
+                    // 不参与对象符号表。
+                    typedef_names.insert(name.clone());
+                    continue;
+                }
+                if typedef_names.contains(name) {
+                    return context.error(
+                        item,
+                        Some(name),
+                        format!("typedef 名 '{name}' 不能重新声明为对象"),
+                    );
+                }
                 if functions.contains(name) {
                     return context.error(
                         item,
@@ -118,6 +197,14 @@ pub fn validate_with_tokens(items: &[Node], file: &str, tokens: &[Token]) -> Com
                             item,
                             Some(name),
                             format!("对象 '{name}' 的重复声明类型不兼容"),
+                        );
+                    }
+                    // C89 §3.5.4.3：同一对象的重复声明必须限定符组合一致
+                    if !exactly_qualified_compatible(prev_ty, &specs.ty) {
+                        return context.error(
+                            item,
+                            Some(name),
+                            format!("对象 '{name}' 的重复声明限定符不一致"),
                         );
                     }
                     let prev_is_static = *prev_storage == crate::ast::Storage::Static;
@@ -163,6 +250,13 @@ pub fn validate_with_tokens(items: &[Node], file: &str, tokens: &[Token]) -> Com
                 has_prototype,
                 ..
             } => {
+                if typedef_names.contains(name) {
+                    return context.error(
+                        item,
+                        Some(name),
+                        format!("typedef 名 '{name}' 不能重新声明为函数"),
+                    );
+                }
                 if globals.contains(name) {
                     return context.error(
                         item,
@@ -177,6 +271,29 @@ pub fn validate_with_tokens(items: &[Node], file: &str, tokens: &[Token]) -> Com
                     }
                     func_defs.insert(name.clone());
                 }
+                // 函数存储类：FuncDef 自带；FuncDecl 从声明首 token 恢复
+                //（`static int f();` 与 `extern int f();` 的链接冲突检查）。
+                let storage = match item.inner() {
+                    Node::FuncDef { storage, .. } => *storage,
+                    _ => func_decl_storage(item, &context),
+                };
+                if let Some(prev_storage) = func_linkages.get(name) {
+                    let prev_is_static = *prev_storage == crate::ast::Storage::Static;
+                    let new_is_static = storage == crate::ast::Storage::Static;
+                    let linkage_conflict = match (prev_is_static, new_is_static) {
+                        (true, false) => storage != crate::ast::Storage::Extern,
+                        (false, true) => true,
+                        _ => false,
+                    };
+                    if linkage_conflict {
+                        return context.error(
+                            item,
+                            Some(name),
+                            format!("函数 '{name}' 的内部/外部链接声明冲突"),
+                        );
+                    }
+                }
+                func_linkages.insert(name.clone(), storage);
                 validate_function_signature(ret, params, &context, item)?;
                 functions.insert(name.clone());
                 let next = FunctionSignature {
@@ -296,6 +413,10 @@ enum StaticInit {
     StringPtr,
     /// 初始化器数量超过数组/结构体成员数
     TooMany,
+    /// 数组初始化器元素类型与元素类型不兼容
+    ElemType,
+    /// 常量表达式求值失败（如除零）
+    Unevaluable,
 }
 
 fn check_static_initializer(ty: &Type, node: &Node, objects: &ObjectMap) -> StaticInit {
@@ -321,6 +442,14 @@ fn check_static_initializer(ty: &Type, node: &Node, objects: &ObjectMap) -> Stat
                 if let Some(len) = length {
                     if items.len() > *len {
                         return StaticInit::TooMany;
+                    }
+                }
+                // 逐元素校验类型（C89 §3.5.7）：元素须与数组元素类型赋值兼容
+                for item in items {
+                    if let Some(actual) = expression_type(item, objects) {
+                        if !assignment_compatible(elem, &actual, item) {
+                            return StaticInit::ElemType;
+                        }
                     }
                 }
                 if items
@@ -363,15 +492,21 @@ fn check_static_initializer(ty: &Type, node: &Node, objects: &ObjectMap) -> Stat
             _ => StaticInit::NotConstant,
         },
         Type::Float | Type::Double => {
-            if is_arithmetic_constant(node) {
+            if eval_float_constant(node).is_some() {
                 StaticInit::Ok
+            } else if is_arithmetic_constant(node) {
+                // 结构上是算术常量但求值失败（如 1/0）→ 约束违规
+                StaticInit::Unevaluable
             } else {
                 StaticInit::NotConstant
             }
         }
         ty if ty.is_integer() => {
-            if eval_integer_constant(node).is_some() || is_arithmetic_constant(node) {
+            if eval_integer_constant(node).is_some() || eval_float_constant(node).is_some() {
                 StaticInit::Ok
+            } else if is_arithmetic_constant(node) {
+                // 结构上是算术常量但求值失败（如 1/0）→ 约束违规
+                StaticInit::Unevaluable
             } else {
                 StaticInit::NotConstant
             }
@@ -400,20 +535,56 @@ fn is_static_init_constant(node: &Node, objects: &ObjectMap) -> bool {
     }
 }
 
+/// 块作用域（auto）初始化器是否超过数组长度或结构体成员数（C89 §3.5.7）。
+/// static/文件作用域路径走 check_static_initializer 的 TooMany。
+fn block_initializer_too_many(ty: &Type, node: &Node, types: Option<&TypeTable>) -> bool {
+    match ty.unqualified() {
+        Type::Array(elem, Some(len)) => match node.inner() {
+            Node::InitList(items) => items.len() > *len,
+            Node::Str(value) => {
+                if matches!(elem.unqualified(), Type::Char | Type::UChar) {
+                    // 按转义解码后的实际字节数 + NUL 检查长度
+                    let decoded = crate::expr_eval::decode_string_escapes(value)
+                        .map(|bytes| bytes.len())
+                        .unwrap_or(value.len());
+                    decoded + 1 > *len
+                } else {
+                    false
+                }
+            }
+            _ => false,
+        },
+        Type::Struct(tag) => match node.inner() {
+            Node::InitList(items) => types
+                .and_then(|tt| tt.structs.get(tag))
+                .is_some_and(|def| items.len() > def.members.len()),
+            _ => false,
+        },
+        _ => false,
+    }
+}
+
 fn validate_object_type(
     ty: &Type,
     storage: crate::ast::Storage,
     context: &Context<'_>,
     node: &Node,
+    file_scope: bool,
 ) -> CompileResult<()> {
     match ty {
-        Type::Qualified { ty, .. } => validate_object_type(ty, storage, context, node),
+        Type::Qualified { ty, .. } => validate_object_type(ty, storage, context, node, file_scope),
         Type::Void => context.error(node, None, "对象不能声明为 void 类型"),
         Type::Array(element, length) => {
             if matches!(length, Some(0)) {
                 return context.error(node, None, "数组长度必须大于零");
             }
-            if length.is_none() && storage != crate::ast::Storage::Extern {
+            // C89 §3.7.2：内部链接（static）的 tentative 定义不得为不完整类型；
+            // 外部链接的 int a[]; 合法（翻译单元末尾按 int a[1] 完成）。
+            // 块作用域（非 extern）数组必须完整（C89 §3.1.2.5）。
+            if length.is_none()
+                && storage != crate::ast::Storage::Extern
+                && (storage == crate::ast::Storage::Static || !file_scope)
+            {
                 return context.error(node, None, "对象使用了不完整数组类型");
             }
             if matches!(element.as_ref(), Type::Void | Type::Function { .. }) {
@@ -553,12 +724,9 @@ fn validate_file_scope_objects(items: &[Node], context: &Context<'_>) -> Compile
                 return context.error(item, None, "文件作用域对象不能使用 auto 或 register");
             }
             if specs.storage != crate::ast::Storage::Typedef {
-                validate_object_type(&specs.ty, specs.storage, context, item)?;
+                validate_object_type(&specs.ty, specs.storage, context, item, true)?;
             }
             if let Some(init) = init {
-                if specs.storage == crate::ast::Storage::Extern {
-                    return context.error(item, None, "extern 声明不能带初始化器");
-                }
                 match check_static_initializer(&specs.ty, init, &objects) {
                     StaticInit::Ok => {}
                     StaticInit::StringArray => {
@@ -569,6 +737,12 @@ fn validate_file_scope_objects(items: &[Node], context: &Context<'_>) -> Compile
                     }
                     StaticInit::TooMany => {
                         return context.error(init, None, "初始化器数量超过数组长度")
+                    }
+                    StaticInit::ElemType => {
+                        return context.error(init, None, "初始化器元素类型与数组元素类型不兼容")
+                    }
+                    StaticInit::Unevaluable => {
+                        return context.error(init, None, "静态初始化器常量表达式无法求值（如除零）")
                     }
                     StaticInit::NotConstant => {
                         return context.error(item, None, "静态存储期对象需要常量初始化器")
@@ -630,16 +804,13 @@ fn validate_block_objects(
         match node.inner() {
             Node::Decl { specs, name, init } => {
                 if specs.storage != crate::ast::Storage::Typedef {
-                    validate_object_type(&specs.ty, specs.storage, context, node)?;
+                    validate_object_type(&specs.ty, specs.storage, context, node, false)?;
                 }
                 if specs.ty.is_const_qualified() {
                     const_objects.insert(name.clone());
                 }
                 if specs.storage == crate::ast::Storage::Register {
                     register_objects.insert(name.clone());
-                }
-                if specs.storage == crate::ast::Storage::Extern && init.is_some() {
-                    return context.error(node, None, "块作用域 extern 声明不能带初始化器");
                 }
                 if specs.storage == crate::ast::Storage::Static {
                     if let Some(init) = init {
@@ -658,6 +829,20 @@ fn validate_block_objects(
                             }
                             StaticInit::TooMany => {
                                 return context.error(init, None, "初始化器数量超过数组长度")
+                            }
+                            StaticInit::ElemType => {
+                                return context.error(
+                                    init,
+                                    None,
+                                    "初始化器元素类型与数组元素类型不兼容",
+                                )
+                            }
+                            StaticInit::Unevaluable => {
+                                return context.error(
+                                    init,
+                                    None,
+                                    "静态初始化器常量表达式无法求值（如除零）",
+                                )
                             }
                             StaticInit::NotConstant => {
                                 return context
@@ -811,6 +996,13 @@ fn validate_block_objects(
                 init: Some(init),
                 ..
             } => {
+                // 块作用域（auto）初始化器元素数不能超过数组长度/结构体成员数
+                //（块 static 已在 collect 里做 TooMany 检查）
+                if specs.storage != crate::ast::Storage::Static
+                    && block_initializer_too_many(&specs.ty, init, context.types)
+                {
+                    return context.error(init, None, "初始化器数量超过数组长度或结构体成员数");
+                }
                 if !matches!(init.inner(), Node::InitList(_)) {
                     if let Some(actual) = expression_type(init, types) {
                         if !assignment_compatible(&specs.ty, &actual, init) {
@@ -865,7 +1057,7 @@ fn validate_function(
             return context.token_error(Some(&label), format!("goto 引用了未定义标签 '{label}'"));
         }
     }
-    walk(body, context, globals, functions, &locals, 0, 0)
+    walk(body, context, globals, functions, &locals, &types, 0, 0)
 }
 
 fn collect_locals(node: &Node, locals: &mut HashSet<String>) {
@@ -1057,6 +1249,19 @@ fn validate_expression_types(
                 }
             }
         }
+        Node::Unary(op @ (UnaryOp::Neg | UnaryOp::BitNot), value) => {
+            check(value)?;
+            if let Some(ty) = expression_type(value, types) {
+                // C89 §3.3.3：一元 - 要求算术类型；~ 要求整型
+                if *op == UnaryOp::BitNot {
+                    if !ty.is_integer() {
+                        return context.error(node, Some("~"), "按位取反操作数必须是整型");
+                    }
+                } else if !ty.is_arithmetic() {
+                    return context.error(node, Some("-"), "一元负号操作数必须是算术类型");
+                }
+            }
+        }
         Node::Subscript(array, index) => {
             check(array)?;
             check(index)?;
@@ -1221,12 +1426,10 @@ fn argument_type(
     }
 }
 
-/// 空指针常量：值为 0 的整型常量表达式（C89 §6.2.2.3）
-fn is_null_pointer_constant(mut node: &Node) -> bool {
-    while let Node::Located(inner, _) = node.inner() {
-        node = inner;
-    }
-    matches!(node.inner(), Node::Num(0))
+/// 空指针常量：值为 0 的整型常量表达式（C89 §6.2.2.3）。
+/// 按常量表达式求值判断，使 `1-1`、`(char*)0` 等也算空指针常量。
+fn is_null_pointer_constant(node: &Node) -> bool {
+    eval_integer_constant(node) == Some(0)
 }
 
 fn parameter_accepts(parameter: &Type, argument: &Node, argument_type: &Type) -> bool {
@@ -1553,6 +1756,7 @@ fn walk(
     globals: &HashSet<String>,
     functions: &HashSet<String>,
     locals: &HashSet<String>,
+    types: &HashMap<String, Type>,
     loop_depth: usize,
     switch_depth: usize,
 ) -> CompileResult<()> {
@@ -1563,6 +1767,7 @@ fn walk(
             globals,
             functions,
             locals,
+            types,
             loop_depth,
             switch_depth,
         )
@@ -1598,6 +1803,17 @@ fn walk(
                 skip_type_argument = name == "va_arg";
             } else {
                 recurse(callee, loop_depth, switch_depth)?;
+            }
+            // 被调表达式必须是函数或函数指针（C89 §3.3.2.2）
+            if let Some(ty) = expression_type(callee, types) {
+                let callable = matches!(ty.unqualified(), Type::Function { .. })
+                    || matches!(
+                        ty.unqualified(),
+                        Type::Ptr(inner) if matches!(inner.unqualified(), Type::Function { .. })
+                    );
+                if !callable {
+                    return context.error(callee, None, "调用了一个非函数对象");
+                }
             }
             for (index, arg) in args.iter().enumerate() {
                 if !(skip_type_argument && index == 1) {
