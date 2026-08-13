@@ -6,6 +6,17 @@
 use rv_core::assembler;
 use rv_core::cpu::Cpu;
 
+/// 在 64MB 栈的线程上编译：debug 构建的递归下降解析器栈帧很大，
+/// 深层嵌套用例（如 5000 层括号的回归测试）在测试线程默认栈上会溢出。
+fn compile_on_big_stack(file: String) -> Result<String, c89c::diagnostics::CompileError> {
+    std::thread::Builder::new()
+        .stack_size(64 * 1024 * 1024)
+        .spawn(move || c89c::pipeline::compile_file_to_asm_with_lib(&file))
+        .expect("无法创建编译线程")
+        .join()
+        .expect("编译线程异常退出")
+}
+
 fn compile_and_run(src: &str) -> (i32, String) {
     let dir = std::env::temp_dir().join(format!(
         "c89lib_test_{}_{}",
@@ -18,7 +29,7 @@ fn compile_and_run(src: &str) -> (i32, String) {
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("main.c");
     std::fs::write(&file, src).unwrap();
-    let asm = c89c::pipeline::compile_file_to_asm_with_lib(&file.to_string_lossy())
+    let asm = compile_on_big_stack(file.to_string_lossy().into_owned())
         .expect("c89c 编译失败");
     std::fs::remove_dir_all(&dir).ok();
 
@@ -46,7 +57,7 @@ fn expect_compile_error(src: &str, needle: &str) {
     std::fs::create_dir_all(&dir).unwrap();
     let file = dir.join("main.c");
     std::fs::write(&file, src).unwrap();
-    let result = c89c::pipeline::compile_file_to_asm_with_lib(&file.to_string_lossy());
+    let result = compile_on_big_stack(file.to_string_lossy().into_owned());
     std::fs::remove_dir_all(&dir).ok();
     let error = result.expect_err("应当编译失败");
     assert!(
@@ -2194,4 +2205,231 @@ int main(void) {
 "#;
     let (code, _) = compile_and_run(src);
     assert_eq!(code, 0, "退出码不符：源码\n{}", src);
+}
+
+#[test]
+fn lib_math_frexp_neg_inf_and_log_inf() {
+    // 回归：frexp(-inf) 曾死循环（撞执行步数上限）；log(inf) 曾返回 NaN
+    let src = r#"#include <stdio.h>
+#include <math.h>
+int main(void) {
+    double ninf = -1e308 * 10.0;
+    double pinf = 1e308 * 10.0;
+    int e = 0;
+    double r = frexp(ninf, &e);
+    if (!(r < -1e300)) { return 1; }  /* r 应为 -inf */
+    if (e != 0) { return 2; }
+    if (!(log(pinf) > 1e300)) { return 3; }  /* log(+inf) = +inf */
+    printf("ok\n");
+    return 0;
+}
+"#;
+    let (code, output) = compile_and_run(src);
+    assert_eq!(code, 0, "退出码不符，输出: {}", output);
+    assert_eq!(output, "ok\n");
+}
+
+// ---- 审计修复回归：codegen / 前端 / 运行库 ----
+
+#[test]
+fn lib_float_assignment_narrows_expression_value() {
+    let src = r#"int main(void) {
+    float x;
+    double y;
+    int r1, r2;
+    y = (x = 1.0000001);
+    if (!(y == (double)(float)1.0000001)) { return 1; }
+    r1 = ((x = 1.0000001) == 1.0000001);
+    if (r1 != 0) { return 2; }
+    x = 1.0000001;
+    x += 0.1;
+    if (!(x == (float)(1.0000001 + 0.1))) { return 3; }
+    return 0;
+}
+"#;
+    let (code, output) = compile_and_run(src);
+    assert_eq!(code, 0, "float 赋值表达式未收敛，输出: {}", output);
+}
+
+#[test]
+fn lib_deref_array_loads_element_not_word() {
+    let src = r#"int main(void) {
+    char a[3] = "AB";
+    double d[2] = {1.5, 2.5};
+    if (*a != 'A') { return 1; }
+    if (a[1] != 'B') { return 2; }
+    if (*d != 1.5) { return 3; }
+    return 0;
+}
+"#;
+    let (code, output) = compile_and_run(src);
+    assert_eq!(code, 0, "*数组名 解引用结果错误，输出: {}", output);
+}
+
+#[test]
+fn lib_sizeof_string_escape_arrays() {
+    let src = r#"int main(void) {
+    char s[] = "\x41\x42";
+    char t[] = "\n";
+    if (sizeof s != 3) { return 1; }
+    if (s[0] != 'A' || s[1] != 'B' || s[2] != 0) { return 2; }
+    if (sizeof t != 2) { return 3; }
+    return 0;
+}
+"#;
+    let (code, output) = compile_and_run(src);
+    assert_eq!(code, 0, "转义字符串数组长度错误，输出: {}", output);
+}
+
+#[test]
+fn lib_macro_rescan_across_boundary() {
+    let src = r#"
+#define A F
+#define F(x) (x)
+#define g(x) f
+#define f(x) x
+int main(void) {
+    if (A(3) != 3) { return 1; }
+    if (g(1)(2) != 2) { return 2; }
+    return 0;
+}
+"#;
+    let (code, output) = compile_and_run(src);
+    assert_eq!(code, 0, "宏重扫描失败，输出: {}", output);
+}
+
+#[test]
+fn lib_if_unsigned_semantics() {
+    let src = r#"
+#if -1 < 0u
+int bad = 1;
+#else
+int bad = 0;
+#endif
+int main(void) { return bad; }
+"#;
+    let (code, output) = compile_and_run(src);
+    assert_eq!(code, 0, "#if 无符号语义错误，输出: {}", output);
+}
+
+#[test]
+fn lib_brace_elision_initializers() {
+    let src = r#"
+int a[2][2] = {1,2,3,4};
+int main(void) {
+    int b[2][2] = {5,6,7,8};
+    if (a[0][0] != 1 || a[1][1] != 4) { return 1; }
+    if (b[0][0] != 5 || b[1][1] != 8) { return 2; }
+    return 0;
+}
+"#;
+    let (code, output) = compile_and_run(src);
+    assert_eq!(code, 0, "花括号省略初始化被拒绝或结果错误，输出: {}", output);
+}
+
+#[test]
+fn lib_enum_implicit_value_overflow_is_error() {
+    expect_compile_error("enum { A = (1 << 63) - 1, B };", "枚举");
+}
+
+#[test]
+fn lib_hex_escape_overflow_is_error() {
+    expect_compile_error(
+        r#"int main(void) { int x = '\xFFFFFFFFFFFFFFFF'; return 0; }"#,
+        "溢出",
+    );
+}
+
+#[test]
+fn lib_tag_redefinition_is_error() {
+    expect_compile_error(
+        "struct S { int x; }; struct S { int y; }; int main(void) { return 0; }",
+        "重复定义",
+    );
+    expect_compile_error(
+        "enum E { A }; enum E { B }; int main(void) { return 0; }",
+        "重复定义",
+    );
+}
+
+#[test]
+fn lib_duplicate_struct_member_is_error() {
+    expect_compile_error(
+        "struct S { int x; int x; }; int main(void) { return 0; }",
+        "重复定义",
+    );
+}
+
+#[test]
+fn lib_duplicate_kr_param_is_error() {
+    expect_compile_error("int f(a, a) int a; { return a; }", "重复");
+}
+
+#[test]
+fn lib_use_after_scope_end_is_error() {
+    expect_compile_error("int main(void) { { int x = 1; } return x; }", "未声明");
+}
+
+#[test]
+fn lib_member_validation() {
+    expect_compile_error(
+        "struct S { int x; }; int main(void) { struct S s; return s.y; }",
+        "没有成员",
+    );
+    expect_compile_error("int main(void) { return (1).x; }", "结构体");
+}
+
+#[test]
+fn lib_addrof_non_lvalue_is_error() {
+    expect_compile_error("int main(void) { int x; &(x + 1); return 0; }", "左值");
+}
+
+#[test]
+fn lib_block_init_elem_type_is_error() {
+    expect_compile_error(
+        r#"int main(void) { int a[2] = {"x", 1}; return 0; }"#,
+        "元素类型",
+    );
+}
+
+#[test]
+fn lib_file_scope_struct_init_excess_is_error() {
+    expect_compile_error(
+        "struct S { int x; }; struct S s = {1, 2}; int main(void) { return 0; }",
+        "初始化器数量",
+    );
+}
+
+#[test]
+fn lib_invalid_int_suffix_is_error() {
+    expect_compile_error("int main(void) { int x = 42ll; return 0; }", "后缀");
+}
+
+#[test]
+fn lib_defined_missing_paren_is_error() {
+    expect_compile_error("#if defined(X + 1)\n#endif\n", "defined");
+}
+
+#[test]
+fn lib_prototype_pointee_qualifier_conflict_is_error() {
+    expect_compile_error("int f(int *); int f(const int *);", "不兼容");
+}
+
+#[test]
+fn lib_incomplete_struct_object_is_error() {
+    expect_compile_error("struct S; struct S s;", "不完整");
+}
+
+#[test]
+fn lib_deep_paren_nesting_is_error_not_crash() {
+    let mut src = String::from("int main(void) { return ");
+    for _ in 0..5000 {
+        src.push('(');
+    }
+    src.push('1');
+    for _ in 0..5000 {
+        src.push(')');
+    }
+    src.push_str("; }");
+    expect_compile_error(&src, "嵌套过深");
 }

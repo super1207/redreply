@@ -20,7 +20,26 @@ fn compatible_types(left: &Type, right: &Type) -> bool {
     let left = left.unqualified();
     let right = right.unqualified();
     match (left, right) {
-        (Type::Ptr(left), Type::Ptr(right)) => compatible_types(left, right),
+        // C89 §3.1.2.6：两指针类型兼容要求所指类型"同等限定"且互兼容
+        (Type::Ptr(left), Type::Ptr(right)) => {
+            let left_quals = match left.as_ref() {
+                Type::Qualified {
+                    is_const,
+                    is_volatile,
+                    ..
+                } => (*is_const, *is_volatile),
+                _ => (false, false),
+            };
+            let right_quals = match right.as_ref() {
+                Type::Qualified {
+                    is_const,
+                    is_volatile,
+                    ..
+                } => (*is_const, *is_volatile),
+                _ => (false, false),
+            };
+            left_quals == right_quals && compatible_types(left, right)
+        }
         (
             Type::Function {
                 ret: left_ret,
@@ -419,7 +438,120 @@ enum StaticInit {
     Unevaluable,
 }
 
-fn check_static_initializer(ty: &Type, node: &Node, objects: &ObjectMap) -> StaticInit {
+/// 聚合（数组/结构体）可容纳的标量初始化器槽总数；标量类型为 1。
+/// 联合体/位域按成员数近似。types 缺省时返回 None（不检查）。
+fn scalar_slot_count(ty: &Type, types: Option<&TypeTable>) -> Option<usize> {
+    match ty.unqualified() {
+        Type::Array(elem, Some(len)) => scalar_slot_count(elem, types).map(|inner| inner * len),
+        Type::Array(_, None) => None,
+        Type::Struct(tag) => types.and_then(|tt| tt.structs.get(tag)).map(|def| {
+            def.members
+                .iter()
+                .map(|m| scalar_slot_count(&m.ty, types).unwrap_or(1))
+                .sum()
+        }),
+        _ => Some(1),
+    }
+}
+
+/// C89 §3.5.7 花括号省略：初始化器列表是否超出聚合容量。
+/// 分组 InitList 项按子聚合边界对齐推进；标量项逐个推进标量槽。
+fn init_list_fits(ty: &Type, items: &[Node], types: Option<&TypeTable>) -> bool {
+    let total = match scalar_slot_count(ty, types) {
+        Some(n) => n,
+        None => return true, // 无法判定（不完整/无类型表）时不拦
+    };
+    let mut pos = 0usize;
+    for item in items {
+        match item.inner() {
+            Node::InitList(_) => {
+                let elem = match ty.unqualified() {
+                    Type::Array(elem, _) => elem,
+                    // 结构体目标下的分组列表：按成员近似推进，不做边界对齐
+                    _ => {
+                        pos += 1;
+                        if pos > total {
+                            return false;
+                        }
+                        continue;
+                    }
+                };
+                let sub = match scalar_slot_count(elem, types) {
+                    Some(n) if n > 0 => n,
+                    _ => {
+                        pos += 1;
+                        if pos > total {
+                            return false;
+                        }
+                        continue;
+                    }
+                };
+                let rem = pos % sub;
+                pos = pos + (sub - rem) % sub + sub;
+            }
+            _ => pos += 1,
+        }
+        if pos > total {
+            return false;
+        }
+    }
+    true
+}
+
+/// 数组类型的最内层元素类型（仅当整条链都是数组时）。
+fn innermost_array_elem(ty: &Type) -> Option<&Type> {
+    match ty.unqualified() {
+        Type::Array(elem, _) => match elem.unqualified() {
+            Type::Array(_, _) => innermost_array_elem(elem),
+            other => Some(other),
+        },
+        _ => None,
+    }
+}
+
+/// 逐项检查初始化器元素类型（C89 §3.5.7）：标量项与最内层标量元素
+/// 类型比较；分组子列表按元素类型递归。结构体成员链不逐项检查。
+fn check_init_elem_types(
+    ty: &Type,
+    items: &[Node],
+    objects: &ObjectMap,
+    types: Option<&TypeTable>,
+) -> Option<StaticInit> {
+    match ty.unqualified() {
+        Type::Array(elem, _) => {
+            let scalar = innermost_array_elem(ty).unwrap_or(elem);
+            // 结构体元素的花括号省略不做逐项检查（成员顺序依赖 TypeTable）
+            let check_scalars = scalar.is_arithmetic();
+            for item in items {
+                match item.inner() {
+                    Node::InitList(sub) => {
+                        if let Some(bad) = check_init_elem_types(elem, sub, objects, types) {
+                            return Some(bad);
+                        }
+                    }
+                    _ => {
+                        if check_scalars {
+                            if let Some(actual) = expression_type(item, objects) {
+                                if !assignment_compatible(scalar, &actual, item) {
+                                    return Some(StaticInit::ElemType);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn check_static_initializer(
+    ty: &Type,
+    node: &Node,
+    objects: &ObjectMap,
+    types: Option<&TypeTable>,
+) -> StaticInit {
     match ty.unqualified() {
         Type::Array(elem, length) => match node.inner() {
             Node::Str(value) => {
@@ -439,18 +571,11 @@ fn check_static_initializer(ty: &Type, node: &Node, objects: &ObjectMap) -> Stat
                 }
             }
             Node::InitList(items) => {
-                if let Some(len) = length {
-                    if items.len() > *len {
-                        return StaticInit::TooMany;
-                    }
+                if length.is_some() && !init_list_fits(ty, items, types) {
+                    return StaticInit::TooMany;
                 }
-                // 逐元素校验类型（C89 §3.5.7）：元素须与数组元素类型赋值兼容
-                for item in items {
-                    if let Some(actual) = expression_type(item, objects) {
-                        if !assignment_compatible(elem, &actual, item) {
-                            return StaticInit::ElemType;
-                        }
-                    }
+                if let Some(bad) = check_init_elem_types(ty, items, objects, types) {
+                    return bad;
                 }
                 if items
                     .iter()
@@ -463,8 +588,14 @@ fn check_static_initializer(ty: &Type, node: &Node, objects: &ObjectMap) -> Stat
             }
             _ => StaticInit::NotConstant,
         },
-        Type::Struct(_) => match node.inner() {
+        Type::Struct(tag) => match node.inner() {
             Node::InitList(items) => {
+                // 成员数量检查（C89 §3.5.7）：多出的初始化器是约束违规
+                if let Some(def) = types.and_then(|tt| tt.structs.get(tag)) {
+                    if items.len() > def.members.len() {
+                        return StaticInit::TooMany;
+                    }
+                }
                 if items.iter().all(|item| is_static_init_constant(item, objects)) {
                     StaticInit::Ok
                 } else {
@@ -540,7 +671,14 @@ fn is_static_init_constant(node: &Node, objects: &ObjectMap) -> bool {
 fn block_initializer_too_many(ty: &Type, node: &Node, types: Option<&TypeTable>) -> bool {
     match ty.unqualified() {
         Type::Array(elem, Some(len)) => match node.inner() {
-            Node::InitList(items) => items.len() > *len,
+            Node::InitList(items) => {
+                // 花括号省略：标量可平铺填满嵌套子聚合（C89 §3.5.7）
+                if scalar_slot_count(ty, types).is_some() {
+                    !init_list_fits(ty, items, types)
+                } else {
+                    items.len() > *len
+                }
+            }
             Node::Str(value) => {
                 if matches!(elem.unqualified(), Type::Char | Type::UChar) {
                     // 按转义解码后的实际字节数 + NUL 检查长度
@@ -593,6 +731,19 @@ fn validate_object_type(
             validate_nested_object_type(element, context, node)
         }
         Type::Function { .. } => context.error(node, None, "对象不能具有函数类型"),
+        Type::Struct(tag) => {
+            // C89 §3.1.2.5：对象必须是完整类型（前向声明 struct S; 未定义不可用）
+            if let Some(tt) = context.types {
+                if !tt.structs.contains_key(tag) {
+                    return context.error(
+                        node,
+                        None,
+                        format!("对象使用了不完整类型 struct '{}'（未定义）", tag),
+                    );
+                }
+            }
+            Ok(())
+        }
         _ => Ok(()),
     }
 }
@@ -727,7 +878,7 @@ fn validate_file_scope_objects(items: &[Node], context: &Context<'_>) -> Compile
                 validate_object_type(&specs.ty, specs.storage, context, item, true)?;
             }
             if let Some(init) = init {
-                match check_static_initializer(&specs.ty, init, &objects) {
+                match check_static_initializer(&specs.ty, init, &objects, context.types) {
                     StaticInit::Ok => {}
                     StaticInit::StringArray => {
                         return context.error(init, None, "字符串字面量只能初始化字符数组")
@@ -814,7 +965,7 @@ fn validate_block_objects(
                 }
                 if specs.storage == crate::ast::Storage::Static {
                     if let Some(init) = init {
-                        match check_static_initializer(&specs.ty, init, globals) {
+                        match check_static_initializer(&specs.ty, init, globals, context.types) {
                             StaticInit::Ok => {}
                             StaticInit::StringArray => {
                                 return context
@@ -852,7 +1003,7 @@ fn validate_block_objects(
                     }
                 }
             }
-            Node::Block(nodes) => {
+            Node::Block(nodes) | Node::DeclBlock(nodes) => {
                 for child in nodes {
                     collect(child, context, const_objects, register_objects, globals)?;
                 }
@@ -944,7 +1095,7 @@ fn validate_block_objects(
                 }
                 _ => {}
             },
-            Node::Block(nodes) | Node::InitList(nodes) => {
+            Node::Block(nodes) | Node::DeclBlock(nodes) | Node::InitList(nodes) => {
                 for child in nodes {
                     recurse(child)?;
                 }
@@ -1003,11 +1154,15 @@ fn validate_block_objects(
                 {
                     return context.error(init, None, "初始化器数量超过数组长度或结构体成员数");
                 }
-                if !matches!(init.inner(), Node::InitList(_)) {
-                    if let Some(actual) = expression_type(init, types) {
-                        if !assignment_compatible(&specs.ty, &actual, init) {
-                            return context.error(init, None, "初始化器类型与对象类型不兼容");
-                        }
+                if let Node::InitList(items) = init.inner() {
+                    // 块内数组初始化器逐元素类型检查（C89 §3.5.7）
+                    if check_init_elem_types(&specs.ty, items, types, context.types).is_some() {
+                        return context
+                            .error(init, None, "初始化器元素类型与数组元素类型不兼容");
+                    }
+                } else if let Some(actual) = expression_type(init, types) {
+                    if !assignment_compatible(&specs.ty, &actual, init) {
+                        return context.error(init, None, "初始化器类型与对象类型不兼容");
                     }
                 }
                 recurse(init)?;
@@ -1065,7 +1220,7 @@ fn collect_locals(node: &Node, locals: &mut HashSet<String>) {
         Node::Decl { name, .. } => {
             locals.insert(name.clone());
         }
-        Node::Block(nodes) => {
+        Node::Block(nodes) | Node::DeclBlock(nodes) => {
             for node in nodes {
                 collect_locals(node, locals);
             }
@@ -1092,7 +1247,7 @@ fn collect_local_types(node: &Node, types: &mut HashMap<String, Type>) {
         Node::Decl { specs, name, .. } => {
             types.insert(name.clone(), specs.ty.clone());
         }
-        Node::Block(nodes) => {
+        Node::Block(nodes) | Node::DeclBlock(nodes) => {
             for child in nodes {
                 collect_local_types(child, types);
             }
@@ -1276,7 +1431,7 @@ fn validate_expression_types(
                 }
             }
         }
-        Node::Block(nodes) | Node::InitList(nodes) => {
+        Node::Block(nodes) | Node::DeclBlock(nodes) | Node::InitList(nodes) => {
             for child in nodes {
                 check(child)?;
             }
@@ -1371,11 +1526,57 @@ fn validate_expression_types(
                 check(arg)?;
             }
         }
-        Node::Member(o, _, _)
-        | Node::Unary(_, o)
-        | Node::SizeofExpr(o)
-        | Node::Cast(_, o)
-        | Node::ExprStmt(o) => check(o)?,
+        Node::Unary(UnaryOp::Addr, value) => {
+            check(value)?;
+            // C89 §3.3.3.2：& 操作数必须是左值或函数指示符
+            let lvalue = matches!(
+                value.inner(),
+                Node::Ident(_)
+                    | Node::Member(_, _, _)
+                    | Node::Subscript(_, _)
+                    | Node::Str(_)
+                    | Node::Unary(UnaryOp::Deref, _)
+            );
+            if !lvalue {
+                return context.error(node, Some("&"), "取地址操作数必须是左值或函数指示符");
+            }
+        }
+        Node::Member(o, name, is_arrow) => {
+            check(o)?;
+            if let Some(ty) = expression_type(o, types) {
+                let base = if *is_arrow {
+                    match ty.unqualified() {
+                        Type::Ptr(inner) => inner.as_ref().clone(),
+                        _ => {
+                            return context
+                                .error(node, Some(name), "-> 左侧必须是指向结构体/联合体的指针")
+                        }
+                    }
+                } else {
+                    ty
+                };
+                match base.unqualified() {
+                    Type::Struct(tag) => {
+                        // 无类型表时跳过成员存在性检查（仅校验聚合类型）
+                        let missing = match context.types.and_then(|tt| tt.structs.get(tag)) {
+                            Some(def) => !def.members.iter().any(|m| m.name == *name),
+                            None => false,
+                        };
+                        if missing {
+                            return context
+                                .error(node, Some(name), format!("结构体没有成员 '{}'", name));
+                        }
+                    }
+                    _ => {
+                        return context
+                            .error(node, Some(name), "成员访问的左侧不是结构体或联合体")
+                    }
+                }
+            }
+        }
+        Node::Unary(_, o) | Node::SizeofExpr(o) | Node::Cast(_, o) | Node::ExprStmt(o) => {
+            check(o)?
+        }
         Node::Return(Some(value))
         | Node::Decl {
             init: Some(value), ..
@@ -1491,7 +1692,7 @@ fn validate_calls(
         }
     }
     match node.inner() {
-        Node::Block(nodes) | Node::InitList(nodes) => {
+        Node::Block(nodes) | Node::DeclBlock(nodes) | Node::InitList(nodes) => {
             for child in nodes {
                 validate_calls(child, context, types, signatures)?;
             }
@@ -1570,7 +1771,7 @@ fn collect_labels(
             }
             collect_labels(body, context, labels, gotos)?;
         }
-        Node::Block(nodes) => {
+        Node::Block(nodes) | Node::DeclBlock(nodes) => {
             for node in nodes {
                 collect_labels(node, context, labels, gotos)?;
             }
@@ -1592,53 +1793,92 @@ fn collect_labels(
     Ok(())
 }
 
-fn eval_integer_constant(node: &Node) -> Option<i64> {
+/// 整型常量表达式求值（携带符号性，按 C89 §3.2.1.5 通常算术转换运算）。
+/// 供静态初始化器 / case 标签 / 数组界等上下文使用。
+fn eval_ic(node: &Node) -> Option<crate::expr_eval::ICVal> {
+    use crate::expr_eval::{ic_add, ic_cmp, ic_div, ic_mul, ic_rem, ic_shl, ic_shr, ic_sub, ICVal};
     match node.inner() {
-        Node::Num(value) => Some(*value),
+        Node::Num(value) => Some(ICVal::S(*value)),
         Node::Unary(op, value) => {
-            let value = eval_integer_constant(value)?;
+            let value = eval_ic(value)?;
             match op {
-                UnaryOp::Neg => Some(value.wrapping_neg()),
-                UnaryOp::Not => Some((value == 0) as i64),
-                UnaryOp::BitNot => Some(!value),
+                UnaryOp::Neg => Some(match value {
+                    ICVal::S(v) => ICVal::S(v.wrapping_neg()),
+                    ICVal::U(v) => ICVal::U(0u64.wrapping_sub(v) & 0xFFFF_FFFF),
+                }),
+                UnaryOp::Not => Some(ICVal::S((!value.is_true()) as i64)),
+                UnaryOp::BitNot => Some(match value {
+                    ICVal::S(v) => ICVal::S(!v),
+                    ICVal::U(v) => ICVal::U((!v) & 0xFFFF_FFFF),
+                }),
                 _ => None,
             }
         }
         Node::Binary(op, left, right) => {
-            let left = eval_integer_constant(left)?;
-            let right = eval_integer_constant(right)?;
+            let left = eval_ic(left)?;
+            let right = eval_ic(right)?;
             match op {
-                BinaryOp::Add => Some(left.wrapping_add(right)),
-                BinaryOp::Sub => Some(left.wrapping_sub(right)),
-                BinaryOp::Mul => Some(left.wrapping_mul(right)),
-                BinaryOp::Div if right != 0 => left.checked_div(right),
-                BinaryOp::Mod if right != 0 => left.checked_rem(right),
-                BinaryOp::Shl if (0..64).contains(&right) => Some(left.wrapping_shl(right as u32)),
-                BinaryOp::Shr if (0..64).contains(&right) => Some(left.wrapping_shr(right as u32)),
-                BinaryOp::Lt => Some((left < right) as i64),
-                BinaryOp::Gt => Some((left > right) as i64),
-                BinaryOp::Le => Some((left <= right) as i64),
-                BinaryOp::Ge => Some((left >= right) as i64),
-                BinaryOp::Eq => Some((left == right) as i64),
-                BinaryOp::Ne => Some((left != right) as i64),
-                BinaryOp::BitAnd => Some(left & right),
-                BinaryOp::BitXor => Some(left ^ right),
-                BinaryOp::BitOr => Some(left | right),
-                BinaryOp::LogAnd => Some((left != 0 && right != 0) as i64),
-                BinaryOp::LogOr => Some((left != 0 || right != 0) as i64),
+                BinaryOp::Add => Some(ic_add(left, right)),
+                BinaryOp::Sub => Some(ic_sub(left, right)),
+                BinaryOp::Mul => Some(ic_mul(left, right)),
+                BinaryOp::Div => ic_div(left, right).ok(),
+                BinaryOp::Mod => ic_rem(left, right).ok(),
+                BinaryOp::Shl if (0..64).contains(&right.bits()) => {
+                    Some(ic_shl(left, right.bits() as u32))
+                }
+                BinaryOp::Shr if (0..64).contains(&right.bits()) => {
+                    Some(ic_shr(left, right.bits() as u32))
+                }
+                BinaryOp::Lt => Some(ICVal::S(ic_cmp(left, right).0 as i64)),
+                BinaryOp::Gt => Some(ICVal::S(ic_cmp(left, right).1 as i64)),
+                BinaryOp::Le => Some(ICVal::S(ic_cmp(left, right).2 as i64)),
+                BinaryOp::Ge => Some(ICVal::S(ic_cmp(left, right).3 as i64)),
+                BinaryOp::Eq => Some(ICVal::S(ic_cmp(left, right).4 as i64)),
+                BinaryOp::Ne => Some(ICVal::S(ic_cmp(left, right).5 as i64)),
+                BinaryOp::BitAnd => Some(match (left, right) {
+                    (ICVal::S(x), ICVal::S(y)) => ICVal::S(x & y),
+                    _ => ICVal::U(left.to_u64() & right.to_u64()),
+                }),
+                BinaryOp::BitXor => Some(match (left, right) {
+                    (ICVal::S(x), ICVal::S(y)) => ICVal::S(x ^ y),
+                    _ => ICVal::U(left.to_u64() ^ right.to_u64()),
+                }),
+                BinaryOp::BitOr => Some(match (left, right) {
+                    (ICVal::S(x), ICVal::S(y)) => ICVal::S(x | y),
+                    _ => ICVal::U(left.to_u64() | right.to_u64()),
+                }),
+                BinaryOp::LogAnd => Some(ICVal::S((left.is_true() && right.is_true()) as i64)),
+                BinaryOp::LogOr => Some(ICVal::S((left.is_true() || right.is_true()) as i64)),
                 _ => None,
             }
         }
         Node::Cond(condition, yes, no) => {
-            if eval_integer_constant(condition)? != 0 {
-                eval_integer_constant(yes)
+            if eval_ic(condition)?.is_true() {
+                eval_ic(yes)
             } else {
-                eval_integer_constant(no)
+                eval_ic(no)
             }
         }
-        Node::Cast(_, value) => eval_integer_constant(value),
+        // 整数强转按目标类型取模/窄化（C89 §3.3.4）；char 有符号（本实现约定）
+        Node::Cast(ty, value) => {
+            let v = eval_ic(value)?;
+            Some(match ty.unqualified() {
+                Type::UInt | Type::ULong => ICVal::U(v.to_u64()),
+                Type::UChar => ICVal::S(v.to_u64() as u8 as i64),
+                Type::UShort => ICVal::S(v.to_u64() as u16 as i64),
+                Type::Char => ICVal::S(v.to_u64() as u8 as i8 as i64),
+                Type::Short => ICVal::S(v.to_u64() as u16 as i16 as i64),
+                Type::Int | Type::Long => ICVal::S(v.bits() as i32 as i64),
+                // 浮点强转不在此折叠（教学模型），值透传
+                _ => v,
+            })
+        }
         _ => None,
     }
+}
+
+fn eval_integer_constant(node: &Node) -> Option<i64> {
+    eval_ic(node).map(|value| value.bits())
 }
 
 /// 求值浮点常量表达式（静态初始化器/数据段用）。
@@ -1730,7 +1970,7 @@ fn validate_switch_cases(
             *has_default = true;
             validate_switch_cases(body, context, values, has_default)?;
         }
-        Node::Block(nodes) => {
+        Node::Block(nodes) | Node::DeclBlock(nodes) => {
             for node in nodes {
                 validate_switch_cases(node, context, values, has_default)?;
             }
@@ -1827,7 +2067,7 @@ fn walk(
         Node::Continue if loop_depth == 0 => {
             return context.error(node, Some("continue"), "continue 只能出现在循环中")
         }
-        Node::Block(nodes) | Node::InitList(nodes) => {
+        Node::Block(nodes) | Node::DeclBlock(nodes) | Node::InitList(nodes) => {
             for node in nodes {
                 recurse(node, loop_depth, switch_depth)?;
             }

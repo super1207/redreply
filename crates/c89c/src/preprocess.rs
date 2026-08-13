@@ -10,7 +10,7 @@
 
 use crate::expr_eval::eval_expr;
 use crate::lexer::{tokenize, TokKind, Token};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
 /// 条件编译栈的一层（#if/#ifdef/#ifndef）
@@ -441,11 +441,19 @@ impl Preprocessor {
                             if t2.kind == TokKind::Ident {
                                 name = Some(t2.text.clone());
                                 next += 1;
-                                if let Some(t3) = toks.get(next) {
-                                    if t3.kind == TokKind::Punct && t3.text == ")" {
-                                        next += 1;
-                                    }
+                                // ( 形式必须闭合，否则是 defined 语法错误
+                                //（§3.8.1）：不得把剩余 token 泄漏给表达式求值器
+                                let close = toks.get(next);
+                                if !matches!(
+                                    close,
+                                    Some(t3) if t3.kind == TokKind::Punct && t3.text == ")"
+                                ) {
+                                    return Err(format!(
+                                        "第 {} 行: defined( 缺少右括号 )",
+                                        toks[i].line
+                                    ));
                                 }
+                                next += 1;
                             }
                         }
                     } else if t.kind == TokKind::Ident {
@@ -769,47 +777,50 @@ impl Preprocessor {
 
     /// 带 #line 偏移的展开：__LINE__ 的取值需叠加偏移
     fn expand_with_shift(&self, toks: &[Token], line_shift: i64) -> Result<Vec<Token>, String> {
-        let mut disabling = Vec::new();
-        self.expand_inner(toks, &mut disabling, None, line_shift)
+        let queue: VecDeque<QToken> = toks.iter().cloned().map(QToken::plain).collect();
+        Ok(self
+            .expand_queue(queue, line_shift)?
+            .into_iter()
+            .map(|qt| qt.tok)
+            .collect())
     }
 
-    /// 展开核心：对象宏 + 函数宏 + 递归抑制
+    /// 展开核心（C89 §3.8.3.4 重扫描 + 隐藏集）。
     ///
-    /// `loc_override` 用于预定义宏 `__FILE__`/`__LINE__`：
-    /// 宏体 token 自带定义处的行列，但标准要求它们展开为"调用处"的位置，
-    /// 因此宏展开时把最外层调用点位置传入并覆盖。
-    fn expand_inner(
+    /// 采用记号队列：宏替换产生的记号压回队首，与后续源记号一同重扫描，
+    /// 因此替换结果末尾的宏名能与后面的 ( 组成新的函数宏调用
+    /// （#define A F 之后 A(1) 应展开为 1）。每个记号携带隐藏集：
+    /// 宏 M 的替换列表产生的记号加入 M 自身，扫描时名字在其隐藏集中的
+    /// 宏不再展开——等价于标准 §3.8.3.4 的不可用标记，且天然处理
+    /// 跨边界重扫描。参数记号保留自身隐藏集（§3.8.3.1 参数先展开）。
+    fn expand_queue(
         &self,
-        toks: &[Token],
-        disabling: &mut Vec<String>,
-        loc_override: Option<(&str, u32)>,
+        mut queue: VecDeque<QToken>,
         line_shift: i64,
-    ) -> Result<Vec<Token>, String> {
+    ) -> Result<Vec<QToken>, String> {
         let mut out = Vec::new();
-        let mut i = 0;
-        while i < toks.len() {
-            let t = &toks[i];
-
+        while let Some(qt) = queue.pop_front() {
+            let t = qt.tok.clone();
             if t.kind == TokKind::Ident {
-                // 预定义宏 __FILE__ / __LINE__（未出现在宏表中时）
+                // 预定义宏 __FILE__ / __LINE__（未在宏表中定义时）
                 if !self.macros.contains_key(&t.text) {
                     if t.text == "__LINE__" {
-                        let (file, raw_line) = loc_override.unwrap_or((t.file.as_str(), t.line));
-                        // #line 偏移对 __LINE__ 的值生效（token.line 字段留给外层统一偏移）
+                        let (file, raw_line) = match &qt.loc {
+                            Some((file, line)) => (file.clone(), *line),
+                            None => (t.file.clone(), t.line),
+                        };
                         let value = (raw_line as i64 + line_shift).max(0) as u32;
-                        let mut tok = Token::new(
-                            TokKind::Number,
-                            value.to_string(),
-                            t.line,
-                            t.has_space,
-                        );
+                        let mut tok =
+                            Token::new(TokKind::Number, value.to_string(), t.line, t.has_space);
                         tok.set_file(file);
-                        out.push(tok);
-                        i += 1;
+                        out.push(QToken::plain(tok));
                         continue;
                     }
                     if t.text == "__FILE__" {
-                        let (file, _) = loc_override.unwrap_or((t.file.as_str(), t.line));
+                        let file = match &qt.loc {
+                            Some((file, _)) => file.clone(),
+                            None => t.file.clone(),
+                        };
                         let escaped = file.replace('\\', "\\\\").replace('"', "\\\"");
                         let mut tok = Token::new(
                             TokKind::String,
@@ -818,38 +829,48 @@ impl Preprocessor {
                             t.has_space,
                         );
                         tok.set_file(file);
-                        out.push(tok);
-                        i += 1;
+                        out.push(QToken::plain(tok));
                         continue;
                     }
                 }
                 // 宏名后紧跟 ( 且无空白 → 函数宏调用。C89 §3.8.3 的
                 // "无空白"要求对调用点同样成立：F (1) / F\n(1) / F /*c*/ (1)
                 // 都不是函数宏调用，保留为普通标识符（GCC/Clang 行为）。
-                let is_func_call = toks
-                    .get(i + 1)
-                    .map(|n| n.kind == TokKind::Punct && n.text == "(" && !n.has_space)
+                let is_func_call = queue
+                    .front()
+                    .map(|n| {
+                        n.tok.kind == TokKind::Punct && n.tok.text == "(" && !n.tok.has_space
+                    })
                     .unwrap_or(false);
 
                 if let Some(m) = self.macros.get(&t.text) {
-                    if !disabling.contains(&t.text) {
+                    // 名字在其隐藏集中的宏不展开（§3.8.3.4 递归抑制）
+                    if !qt.hide.contains(&t.text) {
                         match m {
                             Macro::Object(body) => {
-                                // 宏体里的 __FILE__/__LINE__ 指向调用点（已有 override 则保持最外层调用点）
-                                let call_loc = loc_override.or(Some((t.file.as_str(), t.line)));
-                                disabling.push(t.text.clone());
-                                let expanded = self.expand_inner(body, disabling, call_loc, line_shift)?;
-                                disabling.pop();
-                                out.extend(expanded);
-                                i += 1;
+                                // 宏体里的 __FILE__/__LINE__ 指向调用点
+                                let call_loc =
+                                    qt.loc.clone().or(Some((t.file.clone(), t.line)));
+                                let hide = extend_hide(&qt.hide, &t.text);
+                                let produced: Vec<QToken> = body
+                                    .iter()
+                                    .map(|bt| {
+                                        self.resolve_predefined(
+                                            bt.clone(),
+                                            hide.clone(),
+                                            call_loc.clone(),
+                                            line_shift,
+                                        )
+                                    })
+                                    .collect();
+                                Self::push_front(&mut queue, produced);
                                 continue;
                             }
                             Macro::Function { params, body } => {
                                 if is_func_call {
-                                    let (mut args, next) = collect_args(toks, i + 1)?;
-                                    // collect_args 把 F() 记为一个空实参：零参数宏
-                                    // 视为无实参（C89 §3.8.3）；带参数宏则由下方
-                                    // 数量检查报"参数个数不匹配"（GCC/Clang 行为）。
+                                    let mut args = collect_args_q(&mut queue)?;
+                                    // F() 记为一个空实参：零参数宏视为无实参
+                                    //（C89 §3.8.3）；带参数宏报个数不匹配。
                                     if args.len() == 1 && args[0].is_empty() {
                                         args.clear();
                                     }
@@ -862,12 +883,17 @@ impl Preprocessor {
                                             args.len()
                                         ));
                                     }
-                                    // 函数宏调用点位置：宏体里的 __FILE__/__LINE__ 指向这里
-                                    // （嵌套宏展开时保持最外层调用点，与 GCC 行为一致）
-                                    let call_loc = loc_override.or(Some((t.file.as_str(), t.line)));
-                                    disabling.push(t.text.clone());
-                                    let mut new_body = Vec::new();
-                                    // 参数替换（§3.8.3.1 参数先展开；# 不展开；## 相邻不展开）
+                                    // 调用点：宏体里的 __FILE__/__LINE__ 指向这里
+                                    let call_loc =
+                                        qt.loc.clone().or(Some((t.file.clone(), t.line)));
+                                    let body_hide = extend_hide(&qt.hide, &t.text);
+                                    // 参数替换前，把调用宏名加入参数记号的隐藏集：
+                                    // 参数展开与随后的重扫描中，调用宏自身不可用
+                                    //（#define f(x) x+x / f(f(1)) → f(1)+f(1)，
+                                    //   GNU CPP 自引用宏一节的规范行为）。
+                                    let mut new_body: Vec<QToken> = Vec::new();
+                                    // 参数替换（§3.8.3.1 参数先展开；
+                                    // # 不展开；## 相邻不展开）
                                     let mut j = 0;
                                     while j < body.len() {
                                         let bt = &body[j];
@@ -879,19 +905,30 @@ impl Preprocessor {
                                                         .iter()
                                                         .position(|p| p == &next_tok.text)
                                                     {
-                                                        let s = stringize(&args[pi]);
-                                                        new_body.push(Token::new(
+                                                        let s = stringize_q(&args[pi]);
+                                                        let tok = Token::new(
                                                             TokKind::String,
                                                             s,
                                                             bt.line,
                                                             false,
+                                                        );
+                                                        new_body.push(self.resolve_predefined(
+                                                            tok,
+                                                            body_hide.clone(),
+                                                            call_loc.clone(),
+                                                            line_shift,
                                                         ));
                                                         j += 2; // 跳过 # 和参数名
                                                         continue;
                                                     }
                                                 }
                                             }
-                                            new_body.push(bt.clone());
+                                            new_body.push(self.resolve_predefined(
+                                                bt.clone(),
+                                                body_hide.clone(),
+                                                call_loc.clone(),
+                                                line_shift,
+                                            ));
                                             j += 1;
                                             continue;
                                         }
@@ -906,31 +943,41 @@ impl Preprocessor {
                                                 let right_paste = body
                                                     .get(j + 1)
                                                     .map(|x| {
-                                                        x.kind == TokKind::Punct && x.text == "##"
+                                                        x.kind == TokKind::Punct
+                                                            && x.text == "##"
                                                     })
                                                     .unwrap_or(false);
                                                 if left_paste || right_paste {
-                                                    new_body.extend(args[pi].clone());
+                                                    new_body.extend(args[pi].iter().map(|a| {
+                                                        mark_hide(a.clone(), &body_hide)
+                                                    }));
                                                 } else {
-                                                    // 参数先展开
-                                                    new_body.extend(self.expand_inner(
-                                                        &args[pi], disabling, call_loc, line_shift,
-                                                    )?);
+                                                    // 参数先展开（调用宏在参数中不可用）
+                                                    let arg_queue: VecDeque<QToken> = args[pi]
+                                                        .iter()
+                                                        .map(|a| mark_hide(a.clone(), &body_hide))
+                                                        .collect();
+                                                    let expanded =
+                                                        self.expand_queue(arg_queue, line_shift)?;
+                                                    // 展开结果的隐藏集原样保留（调用宏
+                                                    // 在后续重扫描中依旧不可用）
+                                                    new_body.extend(expanded);
                                                 }
                                                 j += 1;
                                                 continue;
                                             }
                                         }
-                                        new_body.push(bt.clone());
+                                        new_body.push(self.resolve_predefined(
+                                            bt.clone(),
+                                            body_hide.clone(),
+                                            call_loc.clone(),
+                                            line_shift,
+                                        ));
                                         j += 1;
                                     }
-                                    // ## 粘贴（§3.8.3.3）
-                                    let new_body = self.apply_paste(new_body)?;
-                                    let expanded =
-                                        self.expand_inner(&new_body, disabling, call_loc, line_shift)?;
-                                    disabling.pop();
-                                    out.extend(expanded);
-                                    i = next;
+                                    // ## 粘贴（§3.8.3.3）后压回队首与后续记号重扫描
+                                    let pasted = apply_paste_q(new_body)?;
+                                    Self::push_front(&mut queue, pasted);
                                     continue;
                                 }
                                 // 函数宏但没有 ( → 不展开（标准行为）
@@ -939,68 +986,63 @@ impl Preprocessor {
                     }
                 }
             }
-            out.push(t.clone());
-            i += 1;
+            out.push(qt);
         }
         Ok(out)
     }
 
-    /// ## 记号粘贴：左右 token 文本拼接后重新 tokenize（§3.8.3.3）。
-    /// 空操作数（CAT(x, )）时粘贴结果即另一侧操作数（标准行为）。
-    fn apply_paste(&self, toks: Vec<Token>) -> Result<Vec<Token>, String> {
-        let mut out: Vec<Token> = Vec::new();
-        let mut i = 0;
-        while i < toks.len() {
-            if toks[i].kind == TokKind::Punct && toks[i].text == "##" {
-                let left = out.pop();
-                let right = toks.get(i + 1);
-                match (left, right) {
-                    (Some(left), Some(right)) => {
-                        let joined = format!("{}{}", left.text, right.text);
-                        let new_toks = tokenize(&joined)
-                            .map_err(|e| format!("## 粘贴结果无效: {} ({})", joined, e))?;
-                        let mut real: Vec<Token> = new_toks
-                            .into_iter()
-                            .filter(|t| t.kind != TokKind::Newline && t.kind != TokKind::Eof)
-                            .collect();
-                        if real.len() != 1 {
-                            // 宽松 pp-number：主流编译器允许粘贴结果以符号结尾（如 1 ## + → 1+）
-                            if !is_lenient_pp_number(&joined) {
-                                return Err(format!("## 粘贴必须产生单个记号: {}", joined));
-                            }
-                            let mut merged =
-                                Token::new(TokKind::Number, joined, left.line, left.has_space);
-                            merged.column = left.column;
-                            out.push(merged);
-                            i += 2;
-                            continue;
-                        }
-                        let mut merged = real.remove(0);
-                        merged.line = left.line;
-                        out.push(merged);
-                        i += 2;
-                    }
-                    (Some(left), None) => {
-                        // CAT(x, )：右操作数为空 → 粘贴结果即 x
-                        out.push(left);
-                        i += 1;
-                    }
-                    (None, Some(right)) => {
-                        // CAT(, y)：左操作数为空 → 粘贴结果即 y
-                        out.push(right.clone());
-                        i += 2;
-                    }
-                    (None, None) => {
-                        // CAT(, )：两侧皆空 → 结果为空
-                        i += 1;
-                    }
-                }
-            } else {
-                out.push(toks[i].clone());
-                i += 1;
+    /// 宏替换列表记号进入队列前的预处理：__FILE__/__LINE__ 在此即刻解析
+    /// 为调用点值（其后续展开不再有旧版递归调用携带调用点，必须先行固化）。
+    fn resolve_predefined(
+        &self,
+        t: Token,
+        hide: HashSet<String>,
+        loc: Option<(String, u32)>,
+        line_shift: i64,
+    ) -> QToken {
+        if t.kind == TokKind::Ident && !self.macros.contains_key(&t.text) {
+            if t.text == "__LINE__" {
+                let (file, raw_line) = match &loc {
+                    Some((file, line)) => (file.clone(), *line),
+                    None => (t.file.clone(), t.line),
+                };
+                let value = (raw_line as i64 + line_shift).max(0) as u32;
+                let mut tok = Token::new(TokKind::Number, value.to_string(), t.line, t.has_space);
+                tok.set_file(file);
+                return QToken {
+                    tok,
+                    hide,
+                    loc: None,
+                };
+            }
+            if t.text == "__FILE__" {
+                let file = match &loc {
+                    Some((file, _)) => file.clone(),
+                    None => t.file.clone(),
+                };
+                let escaped = file.replace('\\', "\\\\").replace('"', "\\\"");
+                let mut tok = Token::new(
+                    TokKind::String,
+                    format!("\"{}\"", escaped),
+                    t.line,
+                    t.has_space,
+                );
+                tok.set_file(file);
+                return QToken {
+                    tok,
+                    hide,
+                    loc: None,
+                };
             }
         }
-        Ok(out)
+        QToken { tok: t, hide, loc }
+    }
+
+    /// 把展开产物压回队首（保持原有顺序），使其与后续记号一同重扫描。
+    fn push_front(queue: &mut VecDeque<QToken>, produced: Vec<QToken>) {
+        for qt in produced.into_iter().rev() {
+            queue.push_front(qt);
+        }
     }
 }
 
@@ -1034,38 +1076,136 @@ fn is_lenient_pp_number(s: &str) -> bool {
     true
 }
 
-/// 收集宏调用的参数（处理嵌套括号），返回 (参数列表, 下一个 token 下标)
-fn collect_args(toks: &[Token], open: usize) -> Result<(Vec<Vec<Token>>, usize), String> {
-    let mut args: Vec<Vec<Token>> = Vec::new();
-    let mut cur: Vec<Token> = Vec::new();
-    let mut depth = 0usize;
-    let mut i = open;
+/// 展开队列中的记号：tok 自身 + 隐藏集（该记号由哪些宏的替换列表产生，
+/// C89 §3.8.3.4 不可用标记）+ 调用点覆盖（__FILE__/__LINE__ 用）。
+#[derive(Clone)]
+struct QToken {
+    tok: Token,
+    hide: HashSet<String>,
+    loc: Option<(String, u32)>,
+}
+
+impl QToken {
+    fn plain(tok: Token) -> Self {
+        QToken {
+            tok,
+            hide: HashSet::new(),
+            loc: None,
+        }
+    }
+}
+
+/// 隐藏集并上宏名：宏 M 的替换列表记号在扫描时对 M 不可用。
+fn extend_hide(hide: &HashSet<String>, name: &str) -> HashSet<String> {
+    let mut result = hide.clone();
+    result.insert(name.to_string());
+    result
+}
+
+/// 给记号追加额外隐藏名（参数替换时把调用宏名标为不可用）。
+fn mark_hide(mut qt: QToken, extra: &HashSet<String>) -> QToken {
+    qt.hide.extend(extra.iter().cloned());
+    qt
+}
+
+/// ## 记号粘贴：左右 token 文本拼接后重新 tokenize（§3.8.3.3）。
+/// 空操作数（CAT(x, )）时粘贴结果即另一侧操作数（标准行为）。
+/// 结果记号的隐藏集取两侧并集、位置取左侧（更保守的抑制，无害）。
+fn apply_paste_q(toks: Vec<QToken>) -> Result<Vec<QToken>, String> {
+    let mut out: Vec<QToken> = Vec::new();
+    let mut i = 0;
     while i < toks.len() {
-        let t = &toks[i];
+        if toks[i].tok.kind == TokKind::Punct && toks[i].tok.text == "##" {
+            let left = out.pop();
+            let right = toks.get(i + 1);
+            match (left, right) {
+                (Some(left), Some(right)) => {
+                    let joined = format!("{}{}", left.tok.text, right.tok.text);
+                    let new_toks = tokenize(&joined)
+                        .map_err(|e| format!("## 粘贴结果无效: {} ({})", joined, e))?;
+                    let mut real: Vec<Token> = new_toks
+                        .into_iter()
+                        .filter(|t| t.kind != TokKind::Newline && t.kind != TokKind::Eof)
+                        .collect();
+                    if real.len() != 1 {
+                        // 宽松 pp-number：主流编译器允许粘贴结果以符号结尾（如 1 ## + → 1+）
+                        if !is_lenient_pp_number(&joined) {
+                            return Err(format!("## 粘贴必须产生单个记号: {}", joined));
+                        }
+                        let mut merged = Token::new(
+                            TokKind::Number,
+                            joined,
+                            left.tok.line,
+                            left.tok.has_space,
+                        );
+                        merged.column = left.tok.column;
+                        out.push(QToken {
+                            tok: merged,
+                            hide: left.hide.clone(),
+                            loc: left.loc.clone(),
+                        });
+                        i += 2;
+                        continue;
+                    }
+                    let mut merged = real.remove(0);
+                    merged.line = left.tok.line;
+                    out.push(QToken {
+                        tok: merged,
+                        hide: left.hide.clone(),
+                        loc: left.loc.clone(),
+                    });
+                    i += 2;
+                }
+                (Some(left), None) => {
+                    // CAT(x, )：右操作数为空 → 粘贴结果即 x
+                    out.push(left);
+                    i += 1;
+                }
+                (None, Some(right)) => {
+                    // CAT(, y)：左操作数为空 → 粘贴结果即 y
+                    out.push(right.clone());
+                    i += 2;
+                }
+                (None, None) => {
+                    // CAT(, )：两侧皆空 → 结果为空
+                    i += 1;
+                }
+            }
+        } else {
+            out.push(toks[i].clone());
+            i += 1;
+        }
+    }
+    Ok(out)
+}
+
+/// 收集宏调用的参数（队首必须是 "("，消费到匹配的 ")"），
+/// 返回参数列表；队列停在 ")" 之后。
+fn collect_args_q(queue: &mut VecDeque<QToken>) -> Result<Vec<Vec<QToken>>, String> {
+    queue.pop_front(); // 消耗 (
+    let mut args: Vec<Vec<QToken>> = Vec::new();
+    let mut cur: Vec<QToken> = Vec::new();
+    let mut depth = 0usize;
+    while let Some(qt) = queue.pop_front() {
+        let t = &qt.tok;
         if t.kind == TokKind::Punct && t.text == "(" {
             depth += 1;
-            if depth > 1 {
-                cur.push(t.clone());
-            }
+            cur.push(qt);
         } else if t.kind == TokKind::Punct && t.text == ")" {
             if depth == 0 {
-                break;
+                // F() 收集为一个空实参；零参数宏按空列表、带参数宏按
+                // 个数不匹配处理（由调用方 expand_queue 决定）
+                args.push(cur);
+                return Ok(args);
             }
             depth -= 1;
-            if depth == 0 {
-                // F() 收集为一个空实参；零参数宏按空列表、带参数宏按
-                // 个数不匹配处理（由调用方 expand_inner 决定）
-                args.push(cur);
-                return Ok((args, i + 1));
-            }
-            cur.push(t.clone());
-        } else if t.kind == TokKind::Punct && t.text == "," && depth == 1 {
+            cur.push(qt);
+        } else if t.kind == TokKind::Punct && t.text == "," && depth == 0 {
             args.push(cur);
             cur = Vec::new();
         } else {
-            cur.push(t.clone());
+            cur.push(qt);
         }
-        i += 1;
     }
     Err("宏调用缺少右括号 )".into())
 }
@@ -1152,8 +1292,8 @@ fn detect_include_guard(src: &str) -> Option<String> {
 }
 
 /// # 字符串化：参数 token → 带引号字符串（§3.8.3.2）
-fn stringize(toks: &[Token]) -> String {
-    let inner: Vec<String> = toks.iter().map(|t| t.text.clone()).collect();
+fn stringize_q(toks: &[QToken]) -> String {
+    let inner: Vec<String> = toks.iter().map(|t| t.tok.text.clone()).collect();
     let joined = inner.join(" ");
     let escaped = joined.replace('\\', "\\\\").replace('"', "\\\"");
     format!("\"{}\"", escaped)

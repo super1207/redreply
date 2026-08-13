@@ -300,6 +300,10 @@ pub enum Node {
 
     // ---- 语句（§3.6）----
     Block(Vec<Node>),
+    /// 多声明符声明（int a = 1, b = 2;）被解析器展开成的纯声明块。
+    /// 与 Block 的语义区别：其声明属于外层块作用域（C 中同一声明语句
+    /// 的所有声明符处于同一作用域），shadow pass 据此不新开作用域。
+    DeclBlock(Vec<Node>),
     If(Box<Node>, Box<Node>, Option<Box<Node>>),
     While(Box<Node>, Box<Node>),
     DoWhile(Box<Node>, Box<Node>),
@@ -424,6 +428,12 @@ impl Node {
                     .map(|n| n.with_fallback_span(span.clone()))
                     .collect(),
             ),
+            Self::DeclBlock(items) => Self::DeclBlock(
+                items
+                    .into_iter()
+                    .map(|n| n.with_fallback_span(span.clone()))
+                    .collect(),
+            ),
             Self::If(c, a, b) => Self::If(
                 Box::new(c.with_fallback_span(span.clone())),
                 Box::new(a.with_fallback_span(span.clone())),
@@ -516,6 +526,9 @@ impl Node {
                 Self::InitList(items.into_iter().map(Self::without_spans).collect())
             }
             Self::Block(items) => Self::Block(items.into_iter().map(Self::without_spans).collect()),
+            Self::DeclBlock(items) => {
+                Self::DeclBlock(items.into_iter().map(Self::without_spans).collect())
+            }
             Self::If(c, a, b) => Self::If(
                 Box::new(c.without_spans()),
                 Box::new(a.without_spans()),
@@ -620,6 +633,10 @@ impl fmt::Display for Node {
                 write!(f, "{{ {} }}", inner.join(", "))
             }
             Node::Block(stmts) => {
+                let inner: Vec<String> = stmts.iter().map(|s| s.to_string()).collect();
+                write!(f, "{{ {} }}", inner.join(" "))
+            }
+            Node::DeclBlock(stmts) => {
                 let inner: Vec<String> = stmts.iter().map(|s| s.to_string()).collect();
                 write!(f, "{{ {} }}", inner.join(" "))
             }

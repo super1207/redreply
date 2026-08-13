@@ -55,23 +55,29 @@ pub struct Program {
     pub symbols: HashMap<String, u32>,
 }
 
-/// 去掉注释：跳过 # 及之后内容（忽略字符串内的 #）
+/// 去掉注释：跳过 # 及之后内容（忽略字符串与字符字面量内的 #）
 fn strip_comment(line: &str) -> String {
     let mut in_str = false;
+    let mut in_char = false;
     let mut esc = false;
     let mut out = String::new();
     for c in line.chars() {
-        if in_str {
+        if in_str || in_char {
             out.push(c);
             if esc {
                 esc = false;
             } else if c == '\\' {
                 esc = true;
-            } else if c == '"' {
+            } else if c == '"' && in_str {
                 in_str = false;
+            } else if c == '\'' && in_char {
+                in_char = false;
             }
         } else if c == '"' {
             in_str = true;
+            out.push(c);
+        } else if c == '\'' {
+            in_char = true;
             out.push(c);
         } else if c == '#' {
             break;
@@ -294,10 +300,11 @@ fn preprocess(source: &str) -> Result<(Vec<RawLine>, Vec<String>), String> {
         if trimmed.is_empty() {
             continue;
         }
-        // 段切换
+        // 段切换（段名大小写不敏感，与指令助记符一致）
         if let Some(rest) = trimmed.strip_prefix('.') {
-            if rest == "text" || rest == "data" {
-                section = rest.to_string();
+            let directive = rest.to_ascii_lowercase();
+            if directive == "text" || directive == "data" {
+                section = directive;
                 continue;
             }
         }
@@ -369,7 +376,7 @@ pub fn assemble(source: &str) -> Result<Program, String> {
                 } else {
                     // 同行数据指令会先按其自然大小对齐，标签应落在对齐后的地址
                     let mnem = l.text.split_whitespace().next().unwrap_or("");
-                    let align = match mnem {
+                    let align = match mnem.to_ascii_lowercase().as_str() {
                         ".word" | ".float" => 4,
                         ".half" => 2,
                         ".double" => 8,
@@ -420,9 +427,9 @@ pub fn assemble(source: &str) -> Result<Program, String> {
                     continue;
                 }
                 let parts: Vec<&str> = l.text.splitn(2, char::is_whitespace).collect();
-                let mnem = parts[0];
+                let mnem = parts[0].to_ascii_lowercase();
                 let args = if parts.len() > 1 { parts[1].trim() } else { "" };
-                match mnem {
+                match mnem.as_str() {
                     ".globl" => {} // 符号导出指令段无关，忽略
                     ".float" => {
                         // 单精度浮点常量（4 字节，自动对齐到 4）
@@ -557,7 +564,12 @@ pub fn assemble(source: &str) -> Result<Program, String> {
         let mut changed = false;
 
         for (line_index, l) in lines.iter().enumerate() {
-            if l.section != "text" || l.text.is_empty() || l.text.starts_with(".globl") {
+            // .globl 段无关且大小写不敏感（与第一遍一致）
+            let first_word = l.text.split_whitespace().next().unwrap_or("");
+            if l.section != "text"
+                || l.text.is_empty()
+                || first_word.to_ascii_lowercase() == ".globl"
+            {
                 continue;
             }
             let parts: Vec<&str> = l.text.splitn(2, char::is_whitespace).collect();
@@ -648,8 +660,10 @@ fn parse_instruction(
             | "fnmadd.d" | "fnmsub.d" => (4, 4),
             "fsqrt.s" | "fsqrt.d" | "fclass.s" | "fclass.d" | "fmv.x.w" | "fmv.w.x"
             | "lui" | "auipc" | "fneg.d" | "neg" | "not" | "seqz" | "snez" | "sltz"
-            | "sgtz" | "beqz" | "bnez" | "bgt" | "ble" | "bgtu" | "bleu" | "li" | "la"
+            | "sgtz" | "beqz" | "bnez" | "li" | "la"
             | "mv" => (2, 2),
+            // bgt/ble/bgtu/bleu ≡ blt/bge（操作数交换）的三操作数形式
+            "bgt" | "ble" | "bgtu" | "bleu" => (3, 3),
             "fcvt.w.s" | "fcvt.wu.s" | "fcvt.s.w" | "fcvt.s.wu" | "fcvt.d.s" | "fcvt.s.d"
             | "fcvt.w.d" | "fcvt.wu.d" | "fcvt.d.w" | "fcvt.d.wu" | "jalr" => (2, 3),
             "jal" => (1, 2),
@@ -1797,5 +1811,58 @@ main: nop
             .contains("移位立即数必须在 0..=31"));
         assert!(assemble(".text\nmain: srai t0, t1, 31\n").is_ok());
         assert!(assemble(".text\nmain: slli t0, t1, 0\n").is_ok());
+    }
+
+    #[test]
+    fn test_bgt_ble_three_operand_pseudo() {
+        // bgt a, b, L ≡ blt b, a, L；ble a, b, L ≡ bge b, a, L（操作数交换）
+        let p = assemble(".text\nstart: bgt t0, t1, start\n").unwrap();
+        assert_eq!(p.instructions.len(), 1);
+        assert_eq!(p.instructions[0].op, Op::Blt);
+        assert_eq!(p.instructions[0].rs1, 6); // t1
+        assert_eq!(p.instructions[0].rs2, 5); // t0
+        assert_eq!(p.instructions[0].imm, 0);
+        let p = assemble(".text\nstart: ble t0, t1, start\n").unwrap();
+        assert_eq!(p.instructions[0].op, Op::Bge);
+        assert_eq!(p.instructions[0].rs1, 6);
+        assert_eq!(p.instructions[0].rs2, 5);
+        let p = assemble(".text\nstart: bgtu t0, t1, start\n").unwrap();
+        assert_eq!(p.instructions[0].op, Op::Bltu);
+        let p = assemble(".text\nstart: bleu t0, t1, start\n").unwrap();
+        assert_eq!(p.instructions[0].op, Op::Bgeu);
+        // 远距离同样走松弛（操作数交换保持一致）
+        let mut far = String::from(".text\nstart: bgt t0, t1, far\n");
+        for _ in 0..1030 {
+            far.push_str("nop\n");
+        }
+        far.push_str("far: nop\n");
+        let p = assemble(&far).unwrap();
+        assert_eq!(p.instructions.len(), 2 + 1030 + 1);
+        assert_eq!(p.instructions[0].op, Op::Bge); // 反转：bge t1, t0, +8
+        assert_eq!(p.instructions[0].rs1, 6);
+        assert_eq!(p.instructions[0].rs2, 5);
+        assert_eq!(p.instructions[1].op, Op::Jal);
+    }
+
+    #[test]
+    fn test_uppercase_directives() {
+        // 段切换、数据指令、.globl 大小写不敏感且两遍一致
+        let src = ".TEXT\nmain: nop\n.GLOBL main\n.DATA\nval: .WORD 0x1234\nbuf: .ASCIIZ \"hi\"\n";
+        let p = assemble(src).unwrap();
+        assert_eq!(p.instructions.len(), 1);
+        assert!(p.symbols.contains_key("main"));
+        assert_eq!(p.symbols["val"], DATA_BASE);
+        let word = u32::from_le_bytes(p.data_segments[0].1[..4].try_into().unwrap());
+        assert_eq!(word, 0x1234);
+        assert_eq!(p.data_segments[1].1, b"hi\0");
+    }
+
+    #[test]
+    fn test_char_literal_hash() {
+        // '#' 在字符字面量内不是注释起始
+        let p = assemble(".text\nmain:\n    li a0, '#'\n").unwrap();
+        assert_eq!(p.instructions.len(), 1);
+        assert_eq!(p.instructions[0].op, Op::Addi);
+        assert_eq!(p.instructions[0].imm, 35);
     }
 }

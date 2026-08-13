@@ -133,7 +133,7 @@ impl Codegen {
                 labels.push(node);
                 Self::collect_switch_labels(body, labels);
             }
-            Node::Block(nodes) => {
+            Node::Block(nodes) | Node::DeclBlock(nodes) => {
                 for node in nodes {
                     Self::collect_switch_labels(node, labels);
                 }
@@ -237,7 +237,7 @@ impl Codegen {
                     }
                 }
                 Node::FuncDef { body, .. } => walk(body, globals, strings, true, prefix),
-                Node::Block(stmts) => {
+                Node::Block(stmts) | Node::DeclBlock(stmts) => {
                     for s in stmts {
                         walk(s, globals, strings, in_func, prefix);
                     }
@@ -338,7 +338,7 @@ impl Codegen {
                     inits.insert(name.clone(), (*init.clone()).clone());
                 }
                 Node::FuncDef { body, .. } => collect_inits(body, true, inits),
-                Node::Block(nodes) => {
+                Node::Block(nodes) | Node::DeclBlock(nodes) => {
                     for node in nodes {
                         collect_inits(node, in_func, inits);
                     }
@@ -365,7 +365,7 @@ impl Codegen {
                     let mut local_counter = 0usize;
                     walk(body, name, out, &mut local_counter, prefix);
                 }
-                Node::Block(nodes) => {
+                Node::Block(nodes) | Node::DeclBlock(nodes) => {
                     for child in nodes {
                         walk(child, function, out, counter, prefix);
                     }
@@ -452,7 +452,7 @@ impl Codegen {
                         floats.push((lbl, *v));
                     }
                 }
-                Node::Block(stmts) | Node::InitList(stmts) => {
+                Node::Block(stmts) | Node::DeclBlock(stmts) | Node::InitList(stmts) => {
                     for s in stmts {
                         walk(s, floats, prefix);
                     }
@@ -536,7 +536,7 @@ impl Codegen {
             tt: &TypeTable,
         ) {
             match node {
-                Node::Block(stmts) => {
+                Node::Block(stmts) | Node::DeclBlock(stmts) => {
                     for s in stmts {
                         walk(s, locals, n, tt);
                     }
@@ -602,7 +602,7 @@ impl Codegen {
                 }
             }
             match node.inner() {
-                Node::Block(nodes) | Node::InitList(nodes) => {
+                Node::Block(nodes) | Node::DeclBlock(nodes) | Node::InitList(nodes) => {
                     for child in nodes {
                         walk(child, codegen, next);
                     }
@@ -712,7 +712,7 @@ impl Codegen {
             prefix: &str,
         ) {
             match node.inner() {
-                Node::Block(nodes) => {
+                Node::Block(nodes) | Node::DeclBlock(nodes) => {
                     for child in nodes {
                         collect_current(child, statics, function, index, prefix);
                     }
@@ -1064,7 +1064,7 @@ impl Codegen {
                 }
             }
             match node.inner() {
-                Node::Block(nodes) | Node::InitList(nodes) => {
+                Node::Block(nodes) | Node::DeclBlock(nodes) | Node::InitList(nodes) => {
                     for child in nodes {
                         walk(child, cg, out, counter, errors, prefix);
                     }
@@ -1530,7 +1530,8 @@ impl Codegen {
                 self.gen_expr(init);
                 // 源指针压栈保存：gen_addr 在槽偏移 >2047 时会用 t2 做寻址
                 // scratch，直接 mv t2, a0 会在那时被破坏，导致从错地址拷贝。
-                self.emit("    addi sp, sp, -4");
+                // 压 8 字节保持 sp 恒 8 对齐（双精度访存依赖该不变式）。
+                self.emit("    addi sp, sp, -8");
                 self.emit("    sw a0, 0(sp)");
                 self.gen_addr(&Node::Ident(name.to_owned()));
                 if base != 0 {
@@ -1539,7 +1540,7 @@ impl Codegen {
                 }
                 self.emit("    mv t3, a0");
                 self.emit("    lw t2, 0(sp)");
-                self.emit("    addi sp, sp, 4");
+                self.emit("    addi sp, sp, 8");
                 self.emit_aggregate_copy("t3", "t2", self.tt.size_of(ty).unwrap_or(0));
                 self.emit("    mv a0, t3");
             }
@@ -1594,7 +1595,7 @@ impl Codegen {
     /// 生成语句
     fn gen_stmt(&mut self, node: &Node) {
         match node {
-            Node::Block(stmts) => {
+            Node::Block(stmts) | Node::DeclBlock(stmts) => {
                 for s in stmts {
                     self.gen_stmt(s);
                 }
@@ -1883,7 +1884,8 @@ impl Codegen {
             }
             Node::Unary(UnaryOp::Deref, expr) => match self.type_of(expr) {
                 Some(ty) => match ty.unqualified() {
-                    Type::Ptr(inner) => Some((**inner).clone()),
+                    // *数组名：数组先退化为指针，再按元素类型取值（C89 §3.3.3.2）
+                    Type::Ptr(inner) | Type::Array(inner, _) => Some((**inner).clone()),
                     _ => None,
                 },
                 _ => None,
@@ -2526,6 +2528,17 @@ impl Codegen {
                             self.emit_integer_conversion(ty);
                         }
                         self.store_to_address("t3", lhs_type.as_ref());
+                        // C89 §3.3.16：赋值表达式的值等于转换到左值类型后的值。
+                        // store 只窄化存入内存的副本，f10 仍是未舍入的 double，
+                        // 这里把 f10 收敛到 (double)(float)f10。
+                        if lhs_type
+                            .as_ref()
+                            .map(|ty| matches!(ty.unqualified(), Type::Float))
+                            .unwrap_or(false)
+                        {
+                            self.emit("    fcvt.s.d f10, f10");
+                            self.emit("    fcvt.d.s f10, f10");
+                        }
                     } else if lhs_float {
                         self.emit("    fsgnj.d f12, f10, f10");
                         self.emit("    mv a0, t3");
@@ -2538,6 +2551,15 @@ impl Codegen {
                             _ => self.emit("    fadd.d f10, f10, f12"),
                         }
                         self.store_to_address("t3", lhs_type.as_ref());
+                        // 复合赋值的表达式值同样收敛到 float（同普通赋值）
+                        if lhs_type
+                            .as_ref()
+                            .map(|ty| matches!(ty.unqualified(), Type::Float))
+                            .unwrap_or(false)
+                        {
+                            self.emit("    fcvt.s.d f10, f10");
+                            self.emit("    fcvt.d.s f10, f10");
+                        }
                     } else {
                         self.emit("    mv t2, a0");
                         self.emit("    mv a0, t3");
@@ -3514,7 +3536,7 @@ fn collect_automatic_objects(node: &Node, objects: &mut HashSet<String>) {
         {
             objects.insert(name.clone());
         }
-        Node::Block(nodes) => {
+        Node::Block(nodes) | Node::DeclBlock(nodes) => {
             for child in nodes {
                 collect_automatic_objects(child, objects);
             }
@@ -3616,7 +3638,7 @@ fn validate_codegen_stmt(
     tokens: &[Token],
 ) -> CompileResult<()> {
     match node.inner() {
-        Node::Block(nodes) => {
+        Node::Block(nodes) | Node::DeclBlock(nodes) => {
             for child in nodes {
                 validate_codegen_stmt(child, context, tt, file, tokens)?;
             }
@@ -3699,7 +3721,7 @@ fn collect_backend_declarations(node: &Node, symbols: &mut BackendSymbols) {
                 symbols.declared_objects.insert(name.clone());
             }
         }
-        Node::Block(nodes) => {
+        Node::Block(nodes) | Node::DeclBlock(nodes) => {
             for child in nodes {
                 collect_backend_declarations(child, symbols);
             }
@@ -3728,7 +3750,7 @@ fn collect_local_names(node: &Node, names: &mut HashSet<String>) {
         {
             names.insert(name.clone());
         }
-        Node::Block(nodes) => {
+        Node::Block(nodes) | Node::DeclBlock(nodes) => {
             for child in nodes {
                 collect_local_names(child, names);
             }
@@ -3806,7 +3828,7 @@ fn validate_backend_reference(
             }
             Ok(())
         }
-        Node::InitList(items) | Node::Block(items) => {
+        Node::InitList(items) | Node::Block(items) | Node::DeclBlock(items) => {
             for child in items {
                 recurse(child)?;
             }

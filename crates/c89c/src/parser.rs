@@ -8,7 +8,7 @@
 
 use crate::ast::{AssignOp, BinaryOp, DeclSpec, Node, Param, Storage, Type, UnaryOp};
 use crate::expr_eval::eval_expr_strict;
-use crate::expr_eval::{parse_char_value, parse_int_value};
+use crate::expr_eval::{parse_char_value, parse_int_literal};
 use crate::lexer::{is_keyword, TokKind, Token};
 use crate::types::TypeTable;
 use std::collections::HashMap;
@@ -43,6 +43,8 @@ pub struct Parser {
     pub tt: TypeTable,
     /// 枚举常量表（RED → 0）
     enum_constants: HashMap<String, i64>,
+    /// 表达式/声明符递归深度（防御深度嵌套栈溢出）
+    expr_depth: usize,
 }
 
 impl Parser {
@@ -53,7 +55,18 @@ impl Parser {
             typedefs: HashMap::new(),
             tt: TypeTable::new(),
             enum_constants: HashMap::new(),
+            expr_depth: 0,
         }
+    }
+
+    /// 递归深度护栏：cast/一元链、括号声明符各自经此计数。
+    fn enter_depth(&mut self) -> Result<(), String> {
+        self.expr_depth += 1;
+        if self.expr_depth > 1024 {
+            self.expr_depth -= 1;
+            return Err(self.err("表达式或声明符嵌套过深（超过 1024 层）"));
+        }
+        Ok(())
     }
 
     // ---- token 工具 ----
@@ -263,6 +276,14 @@ impl Parser {
 
     /// 类型转换（§3.3.4）：( type-name ) cast-expression
     fn parse_cast(&mut self) -> Result<Node, String> {
+        // 深度护栏包一层：cast/unary 相互递归，括号嵌套也会经过这里
+        self.enter_depth()?;
+        let result = self.parse_cast_guarded();
+        self.expr_depth -= 1;
+        result
+    }
+
+    fn parse_cast_guarded(&mut self) -> Result<Node, String> {
         if self.is_punct("(") && self.peek2_is_type_start() {
             self.pos += 1; // (
             let ty = self.parse_cast_type()?;
@@ -450,20 +471,16 @@ impl Parser {
                     })?;
                     Ok(Node::FNum(v))
                 } else {
-                    let parsed = parse_int_value(&t.text)?;
+                    // 后缀按 C89 §3.1.3.2 合法集合校验（ll/uu/lul 等非法）
+                    let (parsed, suff_u, suff_l) =
+                        parse_int_literal(&t.text).map_err(|e| self.err(&e))?;
                     let value = Node::Num(parsed);
-                    let lower = t.text.to_ascii_lowercase();
                     if parsed > u32::MAX as i64 {
                         return Err(self.err("整数常量超出教学型 32 位数据模型范围"));
                     }
-                    let unsigned = lower.ends_with('u')
-                        || lower.ends_with("ul")
-                        || lower.ends_with("lu")
-                        || parsed > i32::MAX as i64;
-                    let long = lower.ends_with('l')
-                        || lower.ends_with("ul")
-                        || lower.ends_with("lu")
-                        || (!unsigned && parsed > i32::MAX as i64);
+                    // 无后缀常量超出 int 范围自动升为无符号（§3.1.3.2）
+                    let unsigned = suff_u || parsed > i32::MAX as i64;
+                    let long = suff_l || (!unsigned && parsed > i32::MAX as i64);
                     let ty = match (unsigned, long) {
                         (true, true) => Some(Type::ULong),
                         (true, false) => Some(Type::UInt),
@@ -632,7 +649,11 @@ impl Parser {
                     specs.ty = Type::Array(inner.clone(), Some(items.len()))
                 }
                 Some(Node::Str(value)) => {
-                    specs.ty = Type::Array(inner.clone(), Some(value.len() + 1))
+                    // 数组大小按转义解码后的实际字节数 + NUL（"\x41" 是 1 字节）
+                    let len = crate::expr_eval::decode_string_escapes(value)
+                        .map(|bytes| bytes.len() + 1)
+                        .unwrap_or(value.len() + 1);
+                    specs.ty = Type::Array(inner.clone(), Some(len))
                 }
                 _ => {}
             }
@@ -663,7 +684,10 @@ impl Parser {
                         item_specs.ty = Type::Array(inner.clone(), Some(items.len()))
                     }
                     Some(Node::Str(value)) => {
-                        item_specs.ty = Type::Array(inner.clone(), Some(value.len() + 1))
+                        let len = crate::expr_eval::decode_string_escapes(value)
+                            .map(|bytes| bytes.len() + 1)
+                            .unwrap_or(value.len() + 1);
+                        item_specs.ty = Type::Array(inner.clone(), Some(len))
                     }
                     _ => {}
                 }
@@ -805,7 +829,9 @@ impl Parser {
                             // 立即登记：后续枚举项可引用本项（enum { A=5, B=A+1 }）
                             self.enum_constants.insert(name.clone(), val);
                             values.push((name, val));
-                            next_val = val + 1;
+                            next_val = val
+                                .checked_add(1)
+                                .ok_or_else(|| self.err("枚举常量隐式值溢出"))?;
                             if !self.eat(",") {
                                 break;
                             }
@@ -813,6 +839,10 @@ impl Parser {
                         self.expect_punct("}")?;
                         if tag.is_empty() {
                             tag = format!("__enum_{}", self.tt.enums.len());
+                        }
+                        // 同作用域 tag 不得重定义（C89 §3.5.2.3）
+                        if self.tt.enums.contains_key(&tag) {
+                            return Err(self.err(&format!("枚举 tag '{}' 重复定义", tag)));
                         }
                         let def = crate::types::EnumDef {
                             name: tag.clone(),
@@ -895,6 +925,14 @@ impl Parser {
                                 } else {
                                     mty.clone()
                                 };
+                                // 成员名不得重复（C89 §3.5.2.1）；匿名位域（空名）不受限
+                                if !mname.is_empty() && members.iter().any(|(n, _, _)| *n == mname)
+                                {
+                                    return Err(format!(
+                                        "第 {} 行: 成员 '{}' 重复定义",
+                                        struct_line, mname
+                                    ));
+                                }
                                 members.push((mname, final_ty, bit_width));
                                 if !self.eat(",") {
                                     break;
@@ -913,6 +951,14 @@ impl Parser {
                                        // 匿名结构体：自动命名
                         if tag.is_empty() {
                             tag = format!("__anon_{}", self.tt.structs.len());
+                        }
+                        // 同作用域 tag 不得重定义（C89 §3.5.2.3）；
+                        // 前向声明 struct S; 不插入类型表，不受此检查影响
+                        if self.tt.structs.contains_key(&tag) {
+                            return Err(format!(
+                                "第 {} 行: struct/union tag '{}' 重复定义",
+                                struct_line, tag
+                            ));
                         }
                         let def = self.tt.layout_struct(&tag, members, is_union)?;
                         self.tt.structs.insert(tag.clone(), def);
@@ -959,6 +1005,14 @@ impl Parser {
     }
 
     fn parse_declarator_tree(&mut self) -> Result<DeclNode, String> {
+        // 深度护栏：***** 指针链与括号声明符递归
+        self.enter_depth()?;
+        let result = self.parse_declarator_tree_guarded();
+        self.expr_depth -= 1;
+        result
+    }
+
+    fn parse_declarator_tree_guarded(&mut self) -> Result<DeclNode, String> {
         // * 修饰整个后续声明符（§3.5.4.1）
         if self.eat("*") {
             let mut is_const = false;
@@ -1173,6 +1227,10 @@ impl Parser {
         if starts_identifier_list {
             loop {
                 let name = self.expect_ident()?;
+                // 参数名不得重复（C89 §3.7.1 约束）
+                if params.iter().any(|p| p.name == name) {
+                    return Err(self.err(&format!("参数 '{}' 重复声明", name)));
+                }
                 params.push(Param {
                     ty: Type::Int,
                     name,
@@ -1425,7 +1483,10 @@ impl Parser {
                     specs.ty = Type::Array(inner.clone(), Some(items.len()))
                 }
                 Some(Node::Str(value)) => {
-                    specs.ty = Type::Array(inner.clone(), Some(value.len() + 1))
+                    let len = crate::expr_eval::decode_string_escapes(value)
+                        .map(|bytes| bytes.len() + 1)
+                        .unwrap_or(value.len() + 1);
+                    specs.ty = Type::Array(inner.clone(), Some(len))
                 }
                 _ => {}
             }
@@ -1469,7 +1530,8 @@ impl Parser {
         if declarations.len() == 1 {
             Ok(declarations.pop().unwrap())
         } else {
-            Ok(Node::Block(declarations))
+            // 多声明符展开块：属于外层块作用域（与用户花括号区分）
+            Ok(Node::DeclBlock(declarations))
         }
     }
 

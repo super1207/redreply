@@ -98,8 +98,17 @@ fn rewrite(
             for scope in scopes.iter().rev() {
                 if let Some((_, visible)) = scope.iter().rev().find(|(orig, _)| orig == name) {
                     *name = visible.clone();
-                    break;
+                    return Ok(());
                 }
+            }
+            // 不在任何活动作用域：若该名字是函数内出现过的局部变量（且不是
+            // 文件作用域实体），说明引用发生在声明的作用域之外 → 未声明。
+            // 与文件作用域实体同名时按文件作用域解析（遮蔽块结束后应回到外层）。
+            if used_names.contains(name) && !file_scope_names.contains(name) {
+                return Err(CompileError::semantic(
+                    entry_span.clone(),
+                    format!("标识符 '{name}' 未声明（其声明所在作用域已结束）"),
+                ));
             }
         }
         Node::Decl {
@@ -158,18 +167,13 @@ fn rewrite(
         Node::Block(stmts) => {
             scopes.push(Vec::new());
             // C89 约束：块内声明必须位于所有语句之前。
-            // 注意：多声明符声明（int a = 1, b = 2;）会被解析器展开成
-            // 全由 Decl 组成的 Block，它本身仍是声明，不算是语句。
+            // 多声明符声明被解析器展开为 DeclBlock，仍属于声明。
             let mut seen_statement = false;
             for statement in stmts.iter_mut() {
-                let is_decl_like = matches!(statement.inner(), Node::Decl { .. })
-                    || matches!(
-                        statement.inner(),
-                        Node::Block(children)
-                            if children
-                                .iter()
-                                .all(|child| matches!(child.inner(), Node::Decl { .. }))
-                    );
+                let is_decl_like = matches!(
+                    statement.inner(),
+                    Node::Decl { .. } | Node::DeclBlock(_)
+                );
                 if is_decl_like && seen_statement {
                     return Err(CompileError::semantic(
                         statement
@@ -185,6 +189,12 @@ fn rewrite(
                 }
             }
             scopes.pop();
+        }
+        Node::DeclBlock(decls) => {
+            // 多声明符声明：各声明符同属外层块作用域（不新开作用域）
+            for decl in decls.iter_mut() {
+                rewrite(decl, scopes, used_names, counter, file_scope_names)?;
+            }
         }
         Node::If(cond, yes, no) => {
             rewrite(cond, scopes, used_names, counter, file_scope_names)?;
@@ -336,5 +346,30 @@ mod tests {
     fn declaration_at_block_start_is_allowed() {
         parse_source("int main(void) { int x = 1; int y = 2; x = x + y; return x; }")
             .expect("块首声明合法");
+    }
+
+    #[test]
+    fn use_after_scope_end_is_rejected() {
+        let error = match parse_source("int main(void) { { int x = 1; } return x; }") {
+            Err(error) => error,
+            Ok(_) => panic!("作用域结束后的引用应报错"),
+        };
+        assert!(error.message.contains("未声明"), "{}", error);
+    }
+
+    #[test]
+    fn sibling_scope_variable_not_visible() {
+        let error = match parse_source("int main(void) { { int x = 1; } { return x; } }") {
+            Err(error) => error,
+            Ok(_) => panic!("兄弟作用域的变量不可见"),
+        };
+        assert!(error.message.contains("未声明"), "{}", error);
+    }
+
+    #[test]
+    fn file_scope_name_still_resolves_after_block() {
+        // 局部变量遮蔽全局同名实体，块结束后应回到文件作用域实体
+        parse_source("int g; int main(void) { { int g = 1; } return g; }")
+            .expect("块结束后应解析到文件作用域 g");
     }
 }

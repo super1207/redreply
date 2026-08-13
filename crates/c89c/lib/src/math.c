@@ -164,9 +164,9 @@ double frexp(double x, int *exp) {
         *exp = 0;
         return x; /* NaN 直通 */
     }
-    if (x > 1.7976931348623157e308) {
+    if (x > 1.7976931348623157e308 || x < -1.7976931348623157e308) {
         *exp = 0;
-        return x; /* +inf 防御：归一化循环在 inf 上死循环 */
+        return x; /* ±inf 防御：归一化循环在 inf 上死循环 */
     }
     if (x < 0.0) {
         neg = 1;
@@ -263,6 +263,9 @@ double log(double x) {
     if (x == 0.0) {
         errno = ERANGE;
         return -HUGE_VAL;
+    }
+    if (x > 1.7976931348623157e308) {
+        return HUGE_VAL; /* +inf：log(+inf) = +inf */
     }
     m = frexp(x, &e);
     t = (m - 1.0) / (m + 1.0);
