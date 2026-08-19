@@ -210,7 +210,47 @@ pub fn str_msg_to_arr(js: &serde_json::Value) -> crate::AdapterResult<serde_json
         jsonarr.push(serde_json::json!(node));
     }
 
-    Ok(serde_json::Value::Array(jsonarr))
+    let mut ret = serde_json::Value::Array(jsonarr);
+    cq_fix_image_file_in_arr(&mut ret);
+    Ok(ret)
+}
+
+/// 遍历消息数组中的所有 image 节点：
+/// 若 file 指向本地文件且文件不存在，则将 url 字段(如果有)当作 file。
+pub fn cq_fix_image_file_in_arr(arr: &mut serde_json::Value) {
+    let Some(nodes) = arr.as_array_mut() else {
+        return;
+    };
+    for node in nodes.iter_mut() {
+        if node.get("type").and_then(|v| v.as_str()) != Some("image") {
+            continue;
+        }
+        let Some(data) = node.get_mut("data").and_then(|v| v.as_object_mut()) else {
+            continue;
+        };
+        let Some(file) = data.get("file").and_then(|v| v.as_str()).map(str::to_owned) else {
+            continue;
+        };
+        if file.is_empty() {
+            continue;
+        }
+        // URL/base64等远程资源不属于本地文件，跳过检查
+        if file.starts_with("http")
+            || file.starts_with("base64://")
+            || file.starts_with("file://")
+            || file.contains("://")
+        {
+            continue;
+        }
+        if std::path::Path::new(&file).is_file() {
+            continue;
+        }
+        if let Some(url) = data.get("url").and_then(|v| v.as_str()) {
+            if !url.is_empty() {
+                data.insert("file".to_owned(), serde_json::json!(url));
+            }
+        }
+    }
 }
 
 pub fn read_json_str(root: &serde_json::Value, key: &str) -> String {

@@ -29,8 +29,9 @@ fn change_msg_id_to_i32(root: &mut serde_json::Value) {
 }
 
 fn mycrc64(data: &str) -> i64 {
-    let ret = crc64::crc64(0, data.as_bytes()) as i64;
-    ret.abs()
+    // 不取 abs：i64::MIN.abs() 会 panic(debug)/保持负数(release)，
+    // 且负值键在 remember_uid/red_uid 两侧一致使用，无需取正
+    crc64::crc64(0, data.as_bytes()) as i64
 }
 
 fn change_uid_to_i64(root: &mut serde_json::Value) {
@@ -86,7 +87,11 @@ fn change_event_at_and_reply(
         }
         (*msg) = r.unwrap();
     }
-    for node in msg.as_array_mut().unwrap() {
+    // message 字段可能为 null/数字等非法类型，不能假定必为数组
+    let msg_arr = msg
+        .as_array_mut()
+        .ok_or("message field is not string or array")?;
+    for node in msg_arr {
         let tp = node.get_mut("type").ok_or("type not in node")?;
         if tp == "at" {
             let data = node.get_mut("data").ok_or("no data in at node")?;
@@ -184,26 +189,39 @@ fn change_params_at_and_reply(
         }
         (*msg) = r.unwrap();
     }
-    for node in msg.as_array_mut().unwrap() {
+    // message 字段可能为 null/数字等非法类型，不能假定必为数组
+    let msg_arr = msg
+        .as_array_mut()
+        .ok_or("message field is not string or array")?;
+    for node in msg_arr {
         let tp = node.get_mut("type").ok_or("type not in node")?;
         if tp == "at" {
             let data = node.get_mut("data").ok_or("no data in at node")?;
             let qq_str = read_json_str(data, "qq");
-            let qq_int = qq_str.parse::<i64>()?;
-            let red_id_opt = crate::runtime_context().onebot.red_uid(qq_int);
+            // qq 可能是非数字的 red_uid(跨平台用户ID)，解析失败时保持原样，
+            // 不能因 `?` 让整条 API 请求失败
+            let qq_int_opt = qq_str.parse::<i64>().ok();
+            let red_id_opt = qq_int_opt
+                .as_ref()
+                .and_then(|qq_int| crate::runtime_context().onebot.red_uid(*qq_int));
             let qq = data.get_mut("qq").ok_or("no qq in at data node")?;
             if let Some(red_id) = red_id_opt.as_deref() {
                 (*qq) = serde_json::json!(red_id);
-            } else {
+            } else if let Some(qq_int) = qq_int_opt {
                 (*qq) = serde_json::json!(qq_int.to_string());
+            } else {
+                (*qq) = serde_json::json!(qq_str);
             }
         } else if tp == "reply" {
             let data = node.get_mut("data").ok_or("no data in reply node")?;
             let id_str = read_json_str(data, "id");
-            let id_int = id_str.parse::<i32>()?;
-            let red_id = ob_id_to_red(id_int).ok_or("id in reply node not found")?;
-            let id = data.get_mut("id").ok_or("no id in data reply node")?;
-            (*id) = serde_json::json!(red_id);
+            // id 可能是非数字的 red 消息ID，解析失败或查不到映射时保持原样
+            if let Ok(id_int) = id_str.parse::<i32>() {
+                if let Some(red_id) = ob_id_to_red(id_int) {
+                    let id = data.get_mut("id").ok_or("no id in data reply node")?;
+                    (*id) = serde_json::json!(red_id);
+                }
+            }
         }
     }
     Ok(())
@@ -241,7 +259,9 @@ pub fn event_to_onebot(
     let platform = read_json_str(&root, "platform");
     let self_id = read_json_str(&root, "self_id");
     // 处理passive_id
-    root.as_object_mut().unwrap().remove("platform");
+    root.as_object_mut()
+        .ok_or("event root is not object")?
+        .remove("platform");
     if !passive_id.is_empty() {
         let group_id = read_json_str(&root, "group_id");
         let user_id = read_json_str(&root, "user_id");
@@ -252,9 +272,12 @@ pub fn event_to_onebot(
             key = user_id;
         }
         if !key.is_empty() {
-            crate::runtime_context()
-                .onebot
-                .remember_passive_id(key.parse()?, passive_id);
+            // key 可能是非数字的跨平台ID，解析失败时跳过记忆而非让整条事件转换失败
+            if let Ok(key_int) = key.parse::<i64>() {
+                crate::runtime_context()
+                    .onebot
+                    .remember_passive_id(key_int, passive_id);
+            }
         }
     }
     Ok((root, platform, self_id))

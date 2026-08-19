@@ -14,7 +14,7 @@ use tokio_tungstenite::{connect_async, tungstenite};
 
 use crate::{
     cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory1},
-    mytool::{read_json_str, str_msg_to_arr},
+    mytool::{cq_fix_image_file_in_arr, read_json_str, str_msg_to_arr},
 };
 
 use super::BotConnectTrait;
@@ -125,11 +125,15 @@ impl OneBot11Connect {
         &self,
         json: &mut serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        
         let platform = self.get_platform().await?;
+        cq_add_log(&format!("111使用`{platform}`进行音乐卡片签名")).unwrap();
         if !(platform == "lagrange"
             || platform == "llonebot"
             || platform == "cqhttp"
-            || platform == "napcat")
+            || platform == "napcat"
+            || platform == "lunacore"
+            || platform == "revqq")
         {
             return Ok(());
         }
@@ -149,7 +153,8 @@ impl OneBot11Connect {
                 {
                     continue;
                 }
-
+                
+                
                 if music_card_sign.is_empty() {
                     let plus_dir = cq_get_app_directory1()?;
                     let config = plus_dir + "adapter_onebot11_config.json";
@@ -379,7 +384,11 @@ impl OneBot11Connect {
                 *self.real_platform.write().unwrap() = Some("cqhttp".to_string());
             } else if platform.contains("napcat") {
                 *self.real_platform.write().unwrap() = Some("napcat".to_string());
-            } else {
+            } else if platform.contains("revqq") {
+                *self.real_platform.write().unwrap() = Some("revqq".to_string());
+            }else if platform.contains("lunacore") {
+                *self.real_platform.write().unwrap() = Some("lunacore".to_string());
+            }else {
                 *self.real_platform.write().unwrap() = Some("".to_string());
             }
         }
@@ -684,6 +693,7 @@ impl BotConnectTrait for OneBot11Connect {
                         .map_err(|x| format!("str_msg_to_arr err:{:?}", x))?;
                     *message = message_arr;
                 }
+                cq_fix_image_file_in_arr(message);
             }
             self.deal_music_segment(json).await?;
             self.deal_record_segment(json).await?;

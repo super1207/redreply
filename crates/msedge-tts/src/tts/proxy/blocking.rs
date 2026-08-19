@@ -292,7 +292,23 @@ fn http_proxy(
     let mut buf = [0u8; 1024];
     let mut n = 0;
     loop {
-        n += stream.read(&mut buf[n..])?;
+        // 缓冲写满仍未见头部结束符：头部过长；read 返回 0：代理提前断开。
+        // 两种情况都必须报错，否则 read(&mut buf[n..]) 永远读到空切片
+        // 返回 Ok(0)，循环变成 100% CPU 死转
+        if n == buf.len() {
+            return Err(HttpProxyError::BadResponse(
+                0,
+                "代理响应头过长".to_string(),
+            ));
+        }
+        let got = stream.read(&mut buf[n..])?;
+        if got == 0 {
+            return Err(HttpProxyError::BadResponse(
+                0,
+                "代理提前断开连接".to_string(),
+            ));
+        }
+        n += got;
         if n >= 4 && &buf[n - 4..n] == b"\r\n\r\n" {
             break;
         }

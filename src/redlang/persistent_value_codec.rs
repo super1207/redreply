@@ -72,11 +72,12 @@ pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::e
                 let spos_num = spos_opt.unwrap();
                 let num_str = arr.get(0..spos_num).ok_or("不能获得数组类型")?;
                 let num = num_str.parse::<usize>()?;
-                let str_val = arr
-                    .get(spos_num + 1..spos_num + 1 + num)
-                    .ok_or("不能获得数组类型")?;
+                // checked_add 防止恶意长度前缀造成 usize 溢出(debug panic)
+                let start = spos_num.checked_add(1).ok_or("不能获得数组类型")?;
+                let end = start.checked_add(num).ok_or("不能获得数组类型")?;
+                let str_val = arr.get(start..end).ok_or("不能获得数组类型")?;
                 ret_arr.push(Rc::new(from_persistent_legacy_string(str_val)?));
-                arr = arr.get(spos_num + 1 + num..).ok_or("不能获得数组类型")?;
+                arr = arr.get(end..).ok_or("不能获得数组类型")?;
             }
             Ok(RedValue::Array(ret_arr))
         }
@@ -92,11 +93,12 @@ pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::e
                 let spos_num = spos_opt.unwrap();
                 let num_str = arr.get(0..spos_num).ok_or("不能获得对象类型")?;
                 let num = num_str.parse::<usize>()?;
-                let str_val = arr
-                    .get(spos_num + 1..spos_num + 1 + num)
-                    .ok_or("不能获得对象类型")?;
+                // checked_add 防止恶意长度前缀造成 usize 溢出(debug panic)
+                let start = spos_num.checked_add(1).ok_or("不能获得对象类型")?;
+                let end = start.checked_add(num).ok_or("不能获得对象类型")?;
+                let str_val = arr.get(start..end).ok_or("不能获得对象类型")?;
                 arr_strs.push(str_val);
-                arr = arr.get(spos_num + 1 + num..).ok_or("不能获得对象类型")?;
+                arr = arr.get(end..).ok_or("不能获得对象类型")?;
             }
             if !arr_strs.len().is_multiple_of(2) {
                 return Err(RedLang::make_err("不能获得对象类型"));
@@ -118,21 +120,17 @@ pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::e
             }
             let mut content2: Vec<u8> = vec![];
             for pos in 0..(content_text.len() / 2) {
-                let mut ch1 = content_text[pos * 2];
-                let mut ch2 = content_text[pos * 2 + 1];
-                if ch1 < 0x3A {
-                    ch1 -= 0x30;
-                } else {
-                    ch1 -= 0x41;
-                    ch1 += 10;
-                }
-                if ch2 < 0x3A {
-                    ch2 -= 0x30;
-                } else {
-                    ch2 -= 0x41;
-                    ch2 += 10;
-                }
-                content2.push((ch1 << 4) + ch2);
+                // 用 to_digit 解析：既兼容大小写，非法字符(如 ':'、'@'、非hex符号)
+                // 也不会因 u8 下溢 panic(debug)/静默解错(release)
+                let ch1 = content_text[pos * 2] as char;
+                let ch2 = content_text[pos * 2 + 1] as char;
+                let h1 = ch1
+                    .to_digit(16)
+                    .ok_or_else(|| RedLang::make_err(&format!("不能获得字节集类型:非法十六进制字符`{ch1}`")))?;
+                let h2 = ch2
+                    .to_digit(16)
+                    .ok_or_else(|| RedLang::make_err(&format!("不能获得字节集类型:非法十六进制字符`{ch2}`")))?;
+                content2.push(((h1 as u8) << 4) + h2 as u8);
             }
             Ok(RedValue::Bin(Rc::new(content2)))
         }

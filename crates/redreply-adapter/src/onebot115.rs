@@ -255,6 +255,29 @@ impl BotConnectTrait for OneBot115Connect {
         _passive_id: &str,
         json: &mut serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+        let action = read_json_str(json, "action");
+        if action == "send_msg" || action == "send_group_msg" || action == "send_private_msg" {
+            if let Some(message) = json
+                .get_mut("params")
+                .and_then(|params| params.get_mut("message"))
+            {
+                if message.is_array() {
+                    crate::mytool::cq_fix_image_file_in_arr(message);
+                } else if message
+                    .as_str()
+                    .is_some_and(|s| s.contains("[CQ:image"))
+                {
+                    if let Ok(arr) = crate::mytool::str_msg_to_arr(message) {
+                        if let Ok(s) = crate::mytool::json_to_cq_str(&serde_json::json!({
+                            "message": arr
+                        })) {
+                            *message = serde_json::json!(s);
+                        }
+                    }
+                }
+            }
+        }
+
         let json_obj = json.as_object_mut().ok_or("json is not object")?;
         json_obj.insert("self_id".to_string(), serde_json::to_value(self_id)?);
         json_obj.insert("platform".to_string(), serde_json::to_value(platform)?);

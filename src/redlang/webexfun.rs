@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::rc::Rc;
 
 use crate::{
-    redlang::{add_fun, rv_bin, rv_empty, rv_object, rv_text, RedValue},
+    redlang::{add_fun, rv_bin, rv_empty, rv_object, rv_text, RedLang, RedValue},
     runtime,
 };
 
@@ -40,13 +40,19 @@ pub fn init_web_ex_fun_map() {
         if self_t.req_tx.is_none() || self_t.req_rx.is_none() {
             return Ok(Some(self_t.get_coremap_value("网络-访问体")));
         }
-        let ret_vec: Vec<u8> = runtime().block_on(async {
-            self_t.req_tx.clone().unwrap().send(true).await.unwrap();
-            let k = self_t.req_rx.as_mut().unwrap().recv().await.unwrap();
-            k
+        let ret_vec: Option<Vec<u8>> = runtime().block_on(async {
+            // 客户端断开后后台任务已退出，send 会失败；recv 会返回 None
+            if self_t.req_tx.clone().unwrap().send(true).await.is_err() {
+                return None;
+            }
+            self_t.req_rx.as_mut().unwrap().recv().await
         });
+        // 无论成败都清空通道，避免重复访问一个已断开的请求体
         self_t.req_rx = None;
         self_t.req_tx = None;
+        let Some(ret_vec) = ret_vec else {
+            return Err(RedLang::make_err("网络-访问体获取失败:请求方已断开连接"));
+        };
         let ret = rv_bin(ret_vec);
         self_t.set_coremap_value("网络-访问体", ret.clone());
         Ok(Some(ret))

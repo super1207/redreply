@@ -6,7 +6,13 @@ fn readn<T>(reader: T, nbytes: u32) -> Result<Vec<u8>, Box<dyn std::error::Error
 where
     T: Read,
 {
-    let mut buf = Vec::with_capacity(nbytes.try_into()?);
+    // 头字段完全不可信：with_capacity 会按声明大小立即分配(最大约4GiB)，
+    // 分配失败会直接 abort 整个进程。改为随读随长，并限制总量上限。
+    const MAX_AUDIO_BYTES: u64 = 256 * 1024 * 1024;
+    if u64::from(nbytes) > MAX_AUDIO_BYTES {
+        return Err(format!("音频块大小超出限制: {nbytes}").into());
+    }
+    let mut buf = Vec::new();
     let mut chunk = reader.take(u64::from(nbytes));
     let _val = chunk.read_to_end(&mut buf);
     Ok(buf)
@@ -53,7 +59,8 @@ pub fn deal_wav(mut bufr: BufReader<&[u8]>) -> Result<PCMStruct, Box<dyn std::er
     let _fmt_chunk_size = readn(&mut bufr, 4)?;
     let fmt_code = read2(&mut bufr);
     let fmt_code_num = u16::from_le_bytes(fmt_code);
-    if fmt_code_num != 1 {
+    // 1 = 整数 PCM，3 = IEEE float；其余格式（如压缩 WAV）不支持
+    if fmt_code_num != 1 && fmt_code_num != 3 {
         return Err(format!("not a support wav file,fmt_code={fmt_code_num}").into());
     }
     let num_channels = read2(&mut bufr);
@@ -116,12 +123,19 @@ pub fn deal_wav(mut bufr: BufReader<&[u8]>) -> Result<PCMStruct, Box<dyn std::er
             if index + 3 >= data.len() {
                 return Err("not a wav file".into());
             }
-            let d = f32::from_le_bytes([
+            let byte_arr = [
                 data[index],
                 data[index + 1],
                 data[index + 2],
                 data[index + 3],
-            ]) as f64;
+            ];
+            // fmt_code=1 是 32 位整数 PCM，fmt_code=3 才是 IEEE float；
+            // 整数样本误按 float 解码会得到无意义的杂音数据
+            let d = if fmt_code_num == 3 {
+                f32::from_le_bytes(byte_arr) as f64
+            } else {
+                i32::from_le_bytes(byte_arr) as f64
+            };
             pcm.data.push(d);
             index += 4;
         } else {

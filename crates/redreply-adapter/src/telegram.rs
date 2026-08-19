@@ -10,7 +10,9 @@ use std::time::SystemTime;
 
 use super::BotConnectTrait;
 use crate::cqapi::{cq_add_log, cq_add_log_w};
-use crate::mytool::{cq_params_encode, cq_text_encode, read_json_str, str_msg_to_arr};
+use crate::mytool::{
+    cq_fix_image_file_in_arr, cq_params_encode, cq_text_encode, read_json_str, str_msg_to_arr,
+};
 use async_trait::async_trait;
 use uuid::Uuid;
 
@@ -997,7 +999,7 @@ impl TeleTramConnect {
         echo: &serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let group_id = read_json_str(params, "group_id");
-        let message_arr: serde_json::Value;
+        let mut message_arr: serde_json::Value;
         let message_rst = params.get("message").ok_or("message not found")?;
 
         if message_rst.is_string() {
@@ -1014,6 +1016,7 @@ impl TeleTramConnect {
         } else {
             message_arr = params.get("message").ok_or("message not found")?.to_owned();
         }
+        cq_fix_image_file_in_arr(&mut message_arr);
 
         let (to_send_data, quote) = self.make_telegram_msg(&message_arr, &group_id).await?;
 
@@ -1038,7 +1041,7 @@ impl TeleTramConnect {
         echo: &serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let user_id = read_json_str(params, "user_id");
-        let message_arr: serde_json::Value;
+        let mut message_arr: serde_json::Value;
         let message_rst = params.get("message").ok_or("message not found")?;
 
         if message_rst.is_string() {
@@ -1055,6 +1058,7 @@ impl TeleTramConnect {
         } else {
             message_arr = params.get("message").ok_or("message not found")?.to_owned();
         }
+        cq_fix_image_file_in_arr(&mut message_arr);
 
         let (to_send_data, quote) = self.make_telegram_msg(&message_arr, "").await?;
 

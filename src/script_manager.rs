@@ -4,9 +4,25 @@ use crate::{
     cqapi::{cq_add_log_w, cq_get_app_directory1, cq_get_app_directory2},
     initevent,
     mytool::{path_to_os_str, read_json_str},
-    redlang::RedLang,
     runtime_context,
 };
+
+/// 串行化所有“保存/删除/改名/上传”类写操作，避免并发保存交错写损坏 script.json
+static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub(crate) fn lock_save(
+) -> Result<std::sync::MutexGuard<'static, ()>, Box<dyn Error + Send + Sync>> {
+    SAVE_LOCK.lock().map_err(|_| "保存锁已毒化".into())
+}
+
+/// 原子写入：先写临时文件再重命名，避免并发或崩溃留下半截文件
+fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let mut tmp_path = path.as_os_str().to_owned();
+    tmp_path.push(".tmp");
+    fs::write(&tmp_path, content)?;
+    fs::rename(tmp_path, path)?;
+    Ok(())
+}
 
 pub fn get_all_pkg_name_by_cache() -> Result<Vec<String>, Box<dyn Error>> {
     Ok(runtime_context().scripts.package_names())
@@ -23,7 +39,8 @@ fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
         }
     }
     if pkg_names.iter().any(|name| name == "默认包") {
-        panic!("{}", RedLang::make_err("附加包的包名不可以为`默认包`!"));
+        // 返回错误而不是 panic：release 下 panic=abort 会让整个进程退出
+        return Err("附加包的包名不可以为`默认包`!".into());
     }
     Ok(pkg_names)
 }
@@ -181,6 +198,7 @@ pub fn get_gobal_init_code() -> Result<String, Box<dyn Error>> {
 }
 
 pub fn save_code(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // 先解析校验，再进入临界区，减少持锁时间
     let parsed: Vec<serde_json::Value> = serde_json::from_str(contents)?;
     let scripts = parsed.get(2..).ok_or("save_code err 1")?;
     let package_names = parsed
@@ -224,6 +242,8 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     let pkg_dir = PathBuf::from_str(&cq_get_app_directory1()?).map(|path| path.join("pkg_dir"))?;
+    // 文件与内存缓存的写操作全部在保存锁内进行
+    let _save_guard = lock_save()?;
     runtime_context().control.set_quit(true);
     // 在文件操作结束后显式 drop，确保 quit_flag 在 init_code() 调用前已恢复 false
     let quit_guard = scopeguard::guard((), |_| runtime_context().control.set_quit(false));
@@ -246,7 +266,7 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
             .cloned()
             .map(serde_json::Value::Array)
             .unwrap_or_else(|| serde_json::json!([]));
-        fs::write(path.join("script.json"), content.to_string())?;
+        atomic_write(&path.join("script.json"), &content.to_string())?;
     }
 
     let default_path = cq_get_app_directory2()? + "script.json";
@@ -255,7 +275,7 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         .cloned()
         .map(serde_json::Value::Array)
         .unwrap_or_else(|| serde_json::json!([]));
-    fs::write(default_path, default_content.to_string())?;
+    atomic_write(std::path::Path::new(&default_path), &default_content.to_string())?;
 
     for pkg_name in get_all_pkg_name()? {
         if !package_names.contains(&pkg_name) {
@@ -285,19 +305,9 @@ pub fn save_one_pkg(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> 
         .as_array()
         .ok_or("script is not arr")?;
 
-    if pkg_name.is_empty() {
-        fs::write(
-            cq_get_app_directory2()? + "script.json",
-            json["data"].to_string(),
-        )?;
-    } else {
-        let path = PathBuf::from_str(&cq_get_app_directory1()?)?
-            .join("pkg_dir")
-            .join(&pkg_name);
-        fs::create_dir_all(&path)?;
-        fs::write(path.join("script.json"), json["data"].to_string())?;
-    }
-
+    // 先解析校验，再进入临界区，减少持锁时间
+    let _save_guard = lock_save()?;
+    // 先等该包脚本退出，成功后才写盘：超时失败时磁盘与内存保持一致
     runtime_context()
         .control
         .set_loading_script(&pkg_name, true);
@@ -308,6 +318,17 @@ pub fn save_one_pkg(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> 
     });
     if !crate::lifecycle::wait_one_pkg_quit(&pkg_name, 15000) {
         return Err("有脚本不愿意退出,所以无法保存".into());
+    }
+
+    if pkg_name.is_empty() {
+        let default_path = cq_get_app_directory2()? + "script.json";
+        atomic_write(std::path::Path::new(&default_path), &json["data"].to_string())?;
+    } else {
+        let path = PathBuf::from_str(&cq_get_app_directory1()?)?
+            .join("pkg_dir")
+            .join(&pkg_name);
+        fs::create_dir_all(&path)?;
+        atomic_write(&path.join("script.json"), &json["data"].to_string())?;
     }
 
     let current = runtime_context().scripts.read_scripts();
@@ -339,6 +360,8 @@ pub fn rename_one_pkg(
     old_pkg_name: &str,
     new_pkg_name: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // 与保存操作互斥，防止并发修改同一批文件
+    let _save_guard = lock_save()?;
     runtime_context()
         .control
         .set_package_quit(old_pkg_name, true);
@@ -395,6 +418,8 @@ pub fn rename_one_pkg(
 }
 
 pub fn del_one_pkg(pkg_name: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
+    // 与保存操作互斥，防止并发修改同一批文件
+    let _save_guard = lock_save()?;
     runtime_context().control.set_package_quit(pkg_name, true);
     let _guard = scopeguard::guard((), |_| {
         runtime_context().control.set_package_quit(pkg_name, false);
@@ -467,4 +492,6 @@ pub fn del_pkg_memory(pkg_name: &str) {
     runtime_context()
         .session
         .remove_package_related_messages(pkg_name);
+    // 清理该包的延迟触发任务，避免重建同名包后被旧任务误触发
+    runtime_context().scheduler.remove_pkg_runs(pkg_name);
 }

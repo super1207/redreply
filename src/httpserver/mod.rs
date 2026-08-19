@@ -531,14 +531,15 @@ async fn deal_api(
             .collect::<Vec<&str>>();
         let github_url = sp_ret.get(1).ok_or("url error")?;
         let git_proxy = crate::mytool::get_github_proxy().await?;
+        // 不再禁用证书校验：代理地址是动态获取的外部服务，关闭校验等于
+        // 允许中间人替换下载内容；同时加请求超时
         let client = reqwest::Client::builder()
-            .danger_accept_invalid_certs(true)
             .no_proxy()
-            .build()
-            .unwrap();
+            .timeout(std::time::Duration::from_secs(60))
+            .build()?;
         let uri =
             <reqwest::Url as std::str::FromStr>::from_str(&(git_proxy.to_owned() + github_url))?;
-        let req = client.get(uri).build().unwrap();
+        let req = client.get(uri).build()?;
         if let Ok(ret) = client.execute(req).await {
             if ret.status() == reqwest::StatusCode::OK {
                 let ct = ret
@@ -546,10 +547,32 @@ async fn deal_api(
                     .get("Content-Type")
                     .ok_or("content type error")?
                     .to_owned();
-                let ret2 = ret.bytes().await?.to_vec();
-                let mut res = hyper::Response::new(crate::httpserver::full(ret2));
-                res.headers_mut().insert("Content-Type", ct);
-                return Ok(res);
+                // 流式接收并限制总量，避免大文件把内存吃爆
+                use futures_util::StreamExt;
+                const MAX_PROXY_BODY: usize = 64 * 1024 * 1024;
+                let mut buf: Vec<u8> = Vec::new();
+                let mut intact = true;
+                let mut stream = ret.bytes_stream();
+                while let Some(chunk) = stream.next().await {
+                    match chunk {
+                        Ok(bytes) => {
+                            if buf.len() + bytes.len() > MAX_PROXY_BODY {
+                                intact = false;
+                                break;
+                            }
+                            buf.extend_from_slice(&bytes);
+                        }
+                        Err(_) => {
+                            intact = false;
+                            break;
+                        }
+                    }
+                }
+                if intact {
+                    let mut res = hyper::Response::new(crate::httpserver::full(buf));
+                    res.headers_mut().insert("Content-Type", ct);
+                    return Ok(res);
+                }
             }
         }
         let res = hyper::Response::new(full("access github error"));
@@ -1144,11 +1167,22 @@ async fn deal_api(
             body_reader.read_to_end(&mut body)?;
             //let body = hyper::body::to_bytes(request.into_body()).await?;
             *res.status_mut() = hyper::StatusCode::MOVED_PERMANENTLY;
-            let pass_cookie = format!("{};Max-Age=31536000", String::from_utf8(body.to_vec())?);
-            res.headers_mut().append(
-                hyper::header::SET_COOKIE,
-                HeaderValue::from_str(&pass_cookie)?,
-            );
+            let body_str = String::from_utf8(body.to_vec())?;
+            // 从表单体中取出 password 字段并解码（表单编码中 + 表示空格），
+            // 再按认证侧 http_auth 相同的 byte_serialize 编码写入 Cookie：
+            // 之前直接回写原始 body，含空格/符号/中文的密码永远无法通过比对
+            if let Some((_, pass)) = url::form_urlencoded::parse(body_str.as_bytes())
+                .into_iter()
+                .find(|(k, _)| k == "password")
+            {
+                let encoded: String =
+                    url::form_urlencoded::byte_serialize(pass.as_bytes()).collect();
+                let pass_cookie = format!("password={encoded};Max-Age=31536000");
+                res.headers_mut().append(
+                    hyper::header::SET_COOKIE,
+                    HeaderValue::from_str(&pass_cookie)?,
+                );
+            }
         }
         res.headers_mut()
             .insert("Location", HeaderValue::from_static("/index.html"));
@@ -1344,45 +1378,49 @@ async fn deal_api(
         let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
         let real_pkg_dir = pkg_dir.join(&name);
 
-        // 判断 real_pkg_dir目前是否存在，存在则报错
-        if real_pkg_dir.exists() {
+        // 与保存/删除/改名共用同一把保存锁：上传对脚本缓存做读-改-写，
+        // 不加锁会与并发保存互相丢数据。整个临界区放进阻塞线程执行，
+        // 避免在异步上下文持有非 Send 的 std MutexGuard
+        let real_pkg_dir_for_install = real_pkg_dir.clone();
+        let name_for_install = name.to_owned();
+        let installed = tokio::task::spawn_blocking(
+            move || -> Result<bool> {
+                let _save_guard = crate::script_manager::lock_save()?;
+                if real_pkg_dir_for_install.exists() {
+                    return Ok(false);
+                }
+                sevenz_rust2::decompress_file(&tmp_file_path, &real_pkg_dir_for_install)?;
+                let mut new_script = vec![];
+                let current_scripts = runtime_context().scripts.read_scripts();
+                for it in current_scripts.as_array().ok_or("read script cache err")? {
+                    let it_name = read_json_str(it, "pkg_name");
+                    if it_name != name_for_install {
+                        new_script.push(it.to_owned());
+                    }
+                }
+                let scripts_str =
+                    std::fs::read_to_string(real_pkg_dir_for_install.join("script.json"))?;
+                let mut scripts: serde_json::Value = serde_json::from_str(&scripts_str)?;
+                for it in scripts.as_array_mut().ok_or("script.json not array")? {
+                    let obj_mut = it.as_object_mut().ok_or("script obj not object")?;
+                    obj_mut.insert(
+                        "pkg_name".to_owned(),
+                        serde_json::json!(name_for_install.as_str()),
+                    );
+                    new_script.push(it.to_owned());
+                }
+                runtime_context()
+                    .scripts
+                    .replace_scripts(serde_json::Value::Array(new_script));
+                runtime_context().scripts.add_package_name(name_for_install);
+                Ok(true)
+            },
+        )
+        .await??;
+        if !installed {
             let res = hyper::Response::new(full("插件已经存在，无法重复安装"));
             return Ok(res);
         }
-
-        // 将文件移动到 real_pkg_dir
-        let real_pkg_dir_clone = real_pkg_dir.clone();
-        tokio::task::spawn_blocking(move || -> Result<()> {
-            sevenz_rust2::decompress_file(tmp_file_path, real_pkg_dir_clone)?;
-            Ok(())
-        })
-        .await??;
-
-        let mut new_script = vec![];
-        // 读取已有脚本
-        {
-            let current_scripts = runtime_context().scripts.read_scripts();
-            for it in current_scripts.as_array().ok_or("read script cache err")? {
-                let it_name = read_json_str(it, "pkg_name");
-                if it_name != name {
-                    new_script.push(it.to_owned());
-                }
-            }
-        }
-        // 更新新增脚本
-        let ret_scripts = real_pkg_dir.join("script.json");
-        let scripts_str = tokio::fs::read_to_string(ret_scripts).await?;
-        let mut scripts: serde_json::Value = serde_json::from_str(&scripts_str)?;
-        for it in scripts.as_array_mut().ok_or("script.json not array")? {
-            let obj_mut = it.as_object_mut().ok_or("script obj not object")?;
-            obj_mut.insert("pkg_name".to_owned(), serde_json::json!(name));
-            new_script.push(it.to_owned());
-        }
-        runtime_context()
-            .scripts
-            .replace_scripts(serde_json::Value::Array(new_script));
-        // 添加新脚本名
-        runtime_context().scripts.add_package_name(name.to_owned());
 
         // 执行初始化脚本，不用等待
         let name_t = name.to_owned();
@@ -2218,6 +2256,7 @@ pub fn init_http_server() -> Result<()> {
 /// 事件：
 ///   event: reasoning  data: {"delta":"..."}
 ///   event: content    data: {"delta":"..."}
+///   event: tool_call  data: {"slot":0,"name":"...","delta":"..."}
 ///   event: done       data: {"type":"final"|"tool_calls", ...}
 ///   event: error      data: {"message":"..."}
 const LIVE2D_STREAM_SEND_TIMEOUT: Duration = Duration::from_secs(30);
@@ -2338,10 +2377,16 @@ async fn deal_live2d_chat_append(append_request: Live2dAppendRequest) -> std::re
                 crate::ai_client::COMPRESSED_SUMMARY_PREFIX,
                 reply
             );
+            let estimated_tokens = crate::ai_client::estimate_context_tokens(&[serde_json::json!({
+                "role": "system",
+                "content": summary.clone()
+            })]);
             let compressed_messages = vec![serde_json::json!({
                 "role": "system",
                 "content": summary,
-                "timestamp": crate::ai_client::now_timestamp()
+                "timestamp": crate::ai_client::now_timestamp(),
+                "context_tokens": estimated_tokens,
+                "context_tokens_estimated": true
             })];
             replace_all_live2d_agent_messages(compressed_messages).await?;
             save_generation = generation;
@@ -2502,6 +2547,18 @@ async fn run_live2d_stream_agent(
                     json!({
                         "context_tokens": tokens,
                         "context_tokens_estimated": true
+                    }),
+                ),
+                crate::ai_client::StreamEvent::ToolCallDelta {
+                    slot,
+                    name,
+                    arguments,
+                } => (
+                    "tool_call",
+                    json!({
+                        "slot": slot,
+                        "name": name,
+                        "delta": arguments
                     }),
                 ),
             };

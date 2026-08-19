@@ -68,17 +68,71 @@ fn shell_command(command: &str) -> Command {
     process
 }
 
-fn run_system(command: &str) -> (Vec<u8>, i32) {
-    match shell_command(command).output() {
-        Ok(result) => {
-            let mut data = result.stdout;
-            data.extend_from_slice(&result.stderr);
-            #[cfg(windows)]
-            let data = normalize_windows_shell_output(data);
-            (data, result.status.code().unwrap_or(-1))
+/// 执行宿主命令并捕获输出。轮询取消标志并限制总运行时长，
+/// 避免一条 guest 指令让执行线程永久阻塞：
+/// - 取消/超时前结束：行为与 Command::output 一致
+/// - 超时（10 分钟）：杀掉子进程，返回已收到的输出，退出码 -3
+/// - 取消：杀掉子进程，返回已收到的输出，退出码 -2
+fn run_system(command: &str, is_cancelled: &dyn Fn() -> bool) -> (Vec<u8>, i32) {
+    use std::io::Read;
+    const MAX_RUNTIME: std::time::Duration = std::time::Duration::from_secs(600);
+    let spawned = shell_command(command)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+    let mut child = match spawned {
+        Ok(c) => c,
+        Err(_) => return (Vec::new(), -1),
+    };
+    // 两个读线程并发收管道，避免子进程写满管道缓冲后互相等待
+    let mut stdout_pipe = child.stdout.take();
+    let mut stderr_pipe = child.stderr.take();
+    let out_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(p) = stdout_pipe.as_mut() {
+            let _ = p.read_to_end(&mut buf);
         }
-        Err(_) => (Vec::new(), -1),
+        buf
+    });
+    let err_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(p) = stderr_pipe.as_mut() {
+            let _ = p.read_to_end(&mut buf);
+        }
+        buf
+    });
+    let start = std::time::Instant::now();
+    let mut exit_code: i32 = -1;
+    let mut interrupted = None;
+    loop {
+        if is_cancelled() {
+            interrupted = Some(-2);
+            break;
+        }
+        if start.elapsed() > MAX_RUNTIME {
+            interrupted = Some(-3);
+            break;
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                exit_code = status.code().unwrap_or(-1);
+                break;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(20)),
+            Err(_) => break,
+        }
     }
+    if let Some(code) = interrupted {
+        // 杀掉子进程让读线程随管道关闭返回
+        let _ = child.kill();
+        exit_code = code;
+    }
+    let _ = child.wait();
+    let mut data = out_handle.join().unwrap_or_default();
+    data.extend_from_slice(&err_handle.join().unwrap_or_default());
+    #[cfg(windows)]
+    let data = normalize_windows_shell_output(data);
+    (data, exit_code)
 }
 
 /// Windows：cmd 重定向输出使用 OEM 代码页而非控制台代码页。
@@ -240,6 +294,9 @@ pub struct Cpu {
     tz_name: String,
     /// fd 1/2 逐字节输出时尚未组成完整 UTF-8 字符的字节。
     pending_output: Vec<u8>,
+    /// 外部取消标志：阻塞型 ecall（sleep/system）分片轮询该标志，
+    /// 置位后尽快返回，由 step 调用方在循环顶部终止执行
+    pub cancel_flag: Option<std::sync::Arc<std::sync::atomic::AtomicBool>>,
 }
 
 /// 单步执行的结果：用于展示
@@ -292,7 +349,16 @@ impl Cpu {
             tz_dst,
             tz_name: tz_name_buf,
             pending_output: Vec::new(),
+            cancel_flag: None,
         }
+    }
+
+    /// 外部取消标志是否已置位（未设置标志时恒为 false）
+    fn cancelled(&self) -> bool {
+        self.cancel_flag
+            .as_ref()
+            .map(|f| f.load(std::sync::atomic::Ordering::Relaxed))
+            .unwrap_or(false)
     }
 
     /// 将 CPU 恢复到刚创建时的状态，并清空全部内存。
@@ -1335,8 +1401,19 @@ impl Cpu {
                 // RARS：MIDI out（a0 音高 a1 时长 a2 乐器 a3 音量），无音频后端，空操作
             }
             32 => {
-                // RARS：sleep（a0 毫秒），按宿主时间真实休眠
-                std::thread::sleep(std::time::Duration::from_millis(a0 as u64));
+                // RARS：sleep（a0 毫秒），按宿主时间真实休眠。
+                // 分片休眠并轮询取消标志，且对单次休眠设上限，
+                // 防止一条 guest 指令把执行线程冻结几十天
+                const MAX_SLEEP_MS: u64 = 10 * 60 * 1000;
+                let mut remain = (a0 as u64).min(MAX_SLEEP_MS);
+                while remain > 0 {
+                    if self.cancelled() {
+                        break;
+                    }
+                    let slice = remain.min(50);
+                    std::thread::sleep(std::time::Duration::from_millis(slice));
+                    remain -= slice;
+                }
             }
             33 => {
                 // RARS：MIDI out sync，无音频后端，空操作
@@ -1556,7 +1633,7 @@ impl Cpu {
                     addr = addr.wrapping_add(1);
                 }
                 let command = String::from_utf8_lossy(&command_bytes);
-                let (data, status) = run_system(&command);
+                let (data, status) = run_system(&command, &|| self.cancelled());
                 output.push_str(&self.flush_pending_output());
                 output.push_str(&String::from_utf8_lossy(&data));
                 self.regs[10] = status as u32;
@@ -2317,6 +2394,32 @@ mod tests {
         assert_eq!(result.syscall_output, "A");
         assert!(cpu.exited);
         assert_eq!(result.steps, 6);
+    }
+
+    /// sleep ecall 必须分片轮询取消标志：外部置位后一次长休眠要能
+    /// 立即返回，而不是按 a0 的毫秒数睡满
+    #[test]
+    fn test_sleep_ecall_is_cancellable() {
+        use std::sync::atomic::AtomicBool;
+        let program = crate::assembler::assemble(
+            ".text\nmain:\n  li a0, 600000\n  li a7, 32\n  ecall\n  li a0, 0\n  li a7, 10\n  ecall\n",
+        )
+        .unwrap();
+        let cancel = std::sync::Arc::new(AtomicBool::new(false));
+        let mut cpu = Cpu::new();
+        cpu.cancel_flag = Some(cancel.clone());
+        cpu.load_program(&program).unwrap();
+        // 先执行到 ecall 前一条，随后置位取消再单步触发休眠
+        cpu.step(&program.instructions).unwrap();
+        cpu.step(&program.instructions).unwrap();
+        cancel.store(true, std::sync::atomic::Ordering::Relaxed);
+        let start = std::time::Instant::now();
+        let _ = cpu.step(&program.instructions).unwrap();
+        assert!(
+            start.elapsed() < std::time::Duration::from_secs(5),
+            "取消后 sleep 仍阻塞了 {:?}",
+            start.elapsed()
+        );
     }
 
     /// 通过 open/write/read/close/lseek ecall 验证文件 I/O 闭环。

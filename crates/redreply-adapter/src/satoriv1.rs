@@ -12,8 +12,8 @@ use tokio_tungstenite::{connect_async, tungstenite};
 use crate::{
     cqapi::cq_add_log_w,
     mytool::{
-        cq_params_encode, cq_text_encode, read_json_obj, read_json_obj_or_null, read_json_str,
-        str_msg_to_arr,
+        cq_fix_image_file_in_arr, cq_params_encode, cq_text_encode, read_json_obj,
+        read_json_obj_or_null, read_json_str, str_msg_to_arr,
     },
 };
 
@@ -116,7 +116,7 @@ fn pre_parse_satori_msg(
     html: &str,
 ) -> Result<Vec<SatoriNode>, Box<dyn std::error::Error + Send + Sync>> {
     let mut to_ret = vec![];
-    let mut deep = 0;
+    let mut deep: usize = 0;
     for Ok(token) in html5gum::Tokenizer::new(html) {
         match token {
             html5gum::Token::StartTag(tag) => {
@@ -147,7 +147,9 @@ fn pre_parse_satori_msg(
                 }
             }
             html5gum::Token::EndTag(_tag) => {
-                deep -= 1;
+                // 用户消息里的多余闭合标签会导致 usize 下溢
+                // (debug panic 丢整条消息 / release 回绕后丢弃后续全部文本)
+                deep = deep.saturating_sub(1);
             }
             _ => {}
         }
@@ -682,7 +684,9 @@ impl Satoriv1Connect {
         let message = params.get("message").ok_or("message is not exist")?;
         let to_send;
         if message.is_array() {
-            let mut satori_content = Self::cq_msg_to_satori(message, platform)?;
+            let mut message_t = message.clone();
+            cq_fix_image_file_in_arr(&mut message_t);
+            let mut satori_content = Self::cq_msg_to_satori(&message_t, platform)?;
             if !passive_id.is_empty() {
                 satori_content = format!(
                     "<passive id={} />{}",
@@ -772,7 +776,9 @@ impl Satoriv1Connect {
         let message = params.get("message").ok_or("message is not exist")?;
         let to_send;
         if message.is_array() {
-            let mut satori_content = Self::cq_msg_to_satori(message, platform)?;
+            let mut message_t = message.clone();
+            cq_fix_image_file_in_arr(&mut message_t);
+            let mut satori_content = Self::cq_msg_to_satori(&message_t, platform)?;
             if !passive_id.is_empty() {
                 satori_content = format!(
                     "<passive id={} />{}",

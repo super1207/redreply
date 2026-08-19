@@ -114,8 +114,23 @@ impl Payload {
             }
             tungstenite::Message::Binary(bytes) => {
                 if *turn_start || *response {
+                    // 服务端帧不可信：不足2字节会下标越界 panic，
+                    // 头声明长度超过帧实际长度会在调用方切片时 panic，必须先校验
+                    if bytes.len() < 2 {
+                        return Err(Error::UnexpectedMessage(
+                            "binary audio frame too short".to_owned(),
+                        ));
+                    }
                     let header_len = u16::from_be_bytes([bytes[0], bytes[1]]) as usize;
-                    Ok(Some(Payload::AudioBytes((bytes, header_len + 2))))
+                    let total = header_len.checked_add(2).ok_or_else(|| {
+                        Error::UnexpectedMessage("binary audio header overflow".to_owned())
+                    })?;
+                    if total > bytes.len() {
+                        return Err(Error::UnexpectedMessage(
+                            "binary audio frame header exceeds frame length".to_owned(),
+                        ));
+                    }
+                    Ok(Some(Payload::AudioBytes((bytes, total))))
                 } else {
                     Ok(None)
                 }

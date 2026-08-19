@@ -23,6 +23,7 @@ use uuid::Uuid;
 
 use crate::cqapi::cq_add_log;
 use crate::cqapi::cq_add_log_w;
+use crate::mytool::cq_fix_image_file_in_arr;
 use crate::mytool::cq_params_encode;
 use crate::mytool::cq_text_encode;
 use crate::mytool::json_to_cq_str;
@@ -188,7 +189,7 @@ impl KookConnect {
         echo: &serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let user_id = read_json_str(params, "user_id");
-        let message_arr: serde_json::Value;
+        let mut message_arr: serde_json::Value;
         let message_rst = params.get("message").ok_or("message not found")?;
 
         if message_rst.is_string() {
@@ -205,6 +206,7 @@ impl KookConnect {
         } else {
             message_arr = params.get("message").ok_or("message not found")?.to_owned();
         }
+        cq_fix_image_file_in_arr(&mut message_arr);
 
         let (to_send_data, mut quote) = self.make_kook_msg(&message_arr, true).await?;
 
@@ -1434,7 +1436,7 @@ impl KookConnect {
         echo: &serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let group_id = read_json_str(params, "group_id");
-        let message_arr: serde_json::Value;
+        let mut message_arr: serde_json::Value;
         let message_rst = params.get("message").ok_or("message not found")?;
 
         if message_rst.is_string() {
@@ -1451,6 +1453,7 @@ impl KookConnect {
         } else {
             message_arr = params.get("message").ok_or("message not found")?.to_owned();
         }
+        cq_fix_image_file_in_arr(&mut message_arr);
 
         let (to_send_data, mut quote) = self.make_kook_msg(&message_arr, true).await?;
 
@@ -1942,7 +1945,9 @@ impl KookConnect {
             .ok_or("page_total not found")?
             .as_i64()
             .ok_or("page_total not i32")?;
-        for page in 1..page_total {
+        // 首次请求未带 page 参数，默认返回第1页；
+        // 原 1..page_total 会漏拉最后一页，应从第2页拉到 page_total(含)
+        for page in 2..=page_total {
             let friend_list = self
                 .http_get_json_t(&format!("/user-chat/list?page={page}"), false)
                 .await?;
@@ -2083,7 +2088,9 @@ impl KookConnect {
             .ok_or("page_total not found")?
             .as_i64()
             .ok_or("page_total not i32")?;
-        for page in 1..page_total {
+        // 首次请求未带 page 参数，默认返回第1页；
+        // 原 1..page_total 会漏拉最后一页，应从第2页拉到 page_total(含)
+        for page in 2..=page_total {
             let ret_json = self
                 .http_get_json_t(
                     &format!("/guild/user-list?guild_id={guild_id}&page={page}"),

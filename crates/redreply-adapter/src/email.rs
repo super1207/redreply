@@ -7,7 +7,7 @@ use std::{
 use uuid::Uuid;
 
 use super::BotConnectTrait;
-use crate::mytool::str_msg_to_arr;
+use crate::mytool::{cq_fix_image_file_in_arr, str_msg_to_arr};
 use crate::{async_trait, cqapi::cq_add_log, cqapi::cq_add_log_w, mytool::read_json_str};
 use lettre::Tokio1Executor;
 use lettre::{
@@ -111,13 +111,11 @@ impl EmailConnect {
             },
             "platform":"email"
         });
-        tokio::task::spawn_blocking(move || {
-            let json_str = event_json.to_string();
-            cq_add_log(&format!("EMAIL_OB_EVENT:{json_str}")).unwrap();
-            if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
-            }
-        });
+        let json_str = event_json.to_string();
+        cq_add_log(&format!("EMAIL_OB_EVENT:{json_str}")).unwrap();
+        if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
+            crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+        }
         Ok(())
     }
 
@@ -360,7 +358,7 @@ impl EmailConnect {
         params: &serde_json::Value,
         echo: &serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let message_arr: serde_json::Value;
+        let mut message_arr: serde_json::Value;
         let message_rst = params.get("message").ok_or("message not found")?;
         if message_rst.is_string() {
             if self.get_auto_escape_from_params(params) {
@@ -376,6 +374,7 @@ impl EmailConnect {
         } else {
             message_arr = params.get("message").ok_or("message not found")?.to_owned();
         }
+        cq_fix_image_file_in_arr(&mut message_arr);
 
         let user_id = read_json_str(params, "user_id");
         let bot_id = self.self_id.read().unwrap().to_owned();

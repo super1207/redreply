@@ -7,7 +7,7 @@ use crate::{
     lifecycle::pkg_can_run,
     pyserver::call_py_block,
     redlang::{add_fun, get_random, rv_array, rv_bin, rv_empty, rv_object, rv_text, RedValue},
-    resource_manager::{add_file_lock, del_file_lock, get_python_cmd_name},
+    resource_manager::{add_file_lock, del_file_lock},
     runtime, runtime_context, RED_PY_DECODE,
 };
 use base64::{
@@ -53,6 +53,47 @@ use std::sync::Arc;
 
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose =
     engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
+
+/// 解压炸弹防护：限制解码输出总大小，超出上限返回错误而不是把内存耗尽
+fn read_decompress_limited<R: std::io::Read>(
+    mut r: R,
+) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+    const MAX_DECOMPRESSED: usize = 256 * 1024 * 1024;
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 65536];
+    loop {
+        let n = r.read(&mut chunk)?;
+        if n == 0 {
+            return Ok(buf);
+        }
+        if buf.len() + n > MAX_DECOMPRESSED {
+            return Err(RedLang::make_err("解压输出超过大小上限"));
+        }
+        buf.extend_from_slice(&chunk[..n]);
+    }
+}
+
+/// 获取 python 命令名，并把错误类型转换为 RedLang 命令通用的错误类型，
+/// 避免环境异常时 panic，而是向脚本返回错误
+fn get_python_cmd_name() -> Result<String, Box<dyn std::error::Error>> {
+    crate::resource_manager::get_python_cmd_name().map_err(|err| err.to_string().into())
+}
+
+/// 脚本参数/SVG 属性提供的图片尺寸可被恶意构造为超大值，
+/// 统一限制单边与总像素数，避免多 GB 分配把进程直接 abort
+fn check_image_dims(width: usize, height: usize) -> Result<(), Box<dyn std::error::Error>> {
+    const MAX_SIDE: usize = 32768;
+    const MAX_PIXELS: usize = 64 * 1024 * 1024;
+    if width > MAX_SIDE
+        || height > MAX_SIDE
+        || width
+            .checked_mul(height)
+            .map_or(true, |px| px > MAX_PIXELS)
+    {
+        return Err(RedLang::make_err("图片尺寸过大"));
+    }
+    Ok(())
+}
 
 fn get_param_text_array(
     self_t: &mut RedLang,
@@ -674,7 +715,8 @@ pub fn init_ex_fun_map() {
             } else {
                 sub_len = len.parse::<usize>()?;
             }
-            let mut end_pos = begen_pos + sub_len;
+            // 长度参数来自消息文本，begen_pos + sub_len 可能超出 usize，用饱和加法
+            let mut end_pos = begen_pos.saturating_add(sub_len);
             if end_pos > chs.len() {
                 end_pos = chs.len();
             }
@@ -705,7 +747,8 @@ pub fn init_ex_fun_map() {
             } else {
                 sub_len = len.parse::<usize>()?;
             }
-            let mut end_pos = begen_pos + sub_len;
+            // 长度参数来自消息文本，begen_pos + sub_len 可能超出 usize，用饱和加法
+            let mut end_pos = begen_pos.saturating_add(sub_len);
             if end_pos > arr.len() {
                 end_pos = arr.len();
             }
@@ -976,13 +1019,14 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["GZIP解码"], |self_t, params| {
         let gzip_bin = self_t.get_param_bin(params, 0)?;
-        let mut d = GzDecoder::new(gzip_bin.as_slice());
-        let mut buf = vec![];
-        if d.read_to_end(&mut buf).is_err() {
-            // 解码出错返回空字节集
-            return Ok(Some(rv_bin(Vec::new())));
+        let d = GzDecoder::new(gzip_bin.as_slice());
+        match read_decompress_limited(d) {
+            Ok(buf) => Ok(Some(rv_bin(buf))),
+            Err(_) => {
+                // 解码出错/输出超限返回空字节集
+                Ok(Some(rv_bin(Vec::new())))
+            }
         }
-        Ok(Some(rv_bin(buf)))
     });
     add_fun(vec!["GZIP编码"], |self_t, params| {
         let gzip_bin = self_t.get_param_bin(params, 0)?;
@@ -993,13 +1037,14 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["ZLIB解码"], |self_t, params| {
         let zlib_bin = self_t.get_param_bin(params, 0)?;
-        let mut d = ZlibDecoder::new(zlib_bin.as_slice());
-        let mut buf = vec![];
-        if d.read_to_end(&mut buf).is_err() {
-            // 解码出错返回空字节集
-            return Ok(Some(rv_bin(Vec::new())));
+        let d = ZlibDecoder::new(zlib_bin.as_slice());
+        match read_decompress_limited(d) {
+            Ok(buf) => Ok(Some(rv_bin(buf))),
+            Err(_) => {
+                // 解码出错/输出超限返回空字节集
+                Ok(Some(rv_bin(Vec::new())))
+            }
         }
-        Ok(Some(rv_bin(buf)))
     });
     add_fun(vec!["ZLIB编码"], |self_t, params| {
         let zlib_bin = self_t.get_param_bin(params, 0)?;
@@ -1010,12 +1055,11 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["BR解码"], |self_t, params| {
         let br_bin = self_t.get_param_bin(params, 0)?;
-        let mut d = brotli::Decompressor::new(br_bin.as_slice(), 4096);
-        let mut buf = vec![];
-        if d.read_to_end(&mut buf).is_err() {
-            return Ok(Some(rv_bin(Vec::new())));
+        let d = brotli::Decompressor::new(br_bin.as_slice(), 4096);
+        match read_decompress_limited(d) {
+            Ok(buf) => Ok(Some(rv_bin(buf))),
+            Err(_) => Ok(Some(rv_bin(Vec::new()))),
         }
-        Ok(Some(rv_bin(buf)))
     });
     add_fun(vec!["BR编码"], |self_t, params| {
         let br_bin = self_t.get_param_bin(params, 0)?;
@@ -1288,10 +1332,11 @@ pub fn init_ex_fun_map() {
         if x >= img1.width() || y >= img1.height() {
             return Err("图片截取原点超出图片范围".into());
         }
-        if x + width > img1.width() {
+        // x + width 可能溢出 u32，改为反向比较；上方已保证 x < 宽、y < 高
+        if width > img1.width() - x {
             width = img1.width() - x;
         }
-        if y + height > img1.height() {
+        if height > img1.height() - y {
             height = img1.height() - y;
         }
         let img2 = img1.view(x, y, width, height);
@@ -1494,12 +1539,27 @@ pub fn init_ex_fun_map() {
         let left_bottom_t = self_t.get_param_text(params, 4)?.parse::<u32>()?;
         let width = img.width();
         let height = img.height();
+        // 全部用 i64/i128 计算，避免 x<r 时 (x-r) 的 u32 下溢(debug 直接 panic)，
+        // 半径超过图片尺寸时按整图取圆处理
+        let lt = left_top_t as i64;
+        let rt = right_top_t as i64;
+        let rb = right_bottom_t as i64;
+        let lb = left_bottom_t as i64;
+        let w = width as i64;
+        let h = height as i64;
+        let corner_check = |x: u32, y: u32, r: i64, cx: i64, cy: i64| {
+            if r <= 0 {
+                return false;
+            }
+            let dx = x as i64 - cx;
+            let dy = y as i64 - cy;
+            let dist = dx as i128 * dx as i128 + dy as i128 * dy as i128;
+            dist > r as i128 * r as i128
+        };
 
         for x in 0..left_top_t {
             for y in 0..left_top_t {
-                let r = left_top_t;
-                let ranoud = (x - r) * (x - r) + (y - r) * (y - r);
-                if ranoud > r * r {
+                if corner_check(x, y, lt, 0, 0) {
                     if let Some(pix) = img.get_pixel_mut_checked(x, y) {
                         pix.0[0] = 0; //r
                         pix.0[1] = 0; //g
@@ -1510,11 +1570,9 @@ pub fn init_ex_fun_map() {
             }
         }
 
-        for x in (width - right_top_t)..width {
+        for x in width.saturating_sub(right_top_t)..width {
             for y in 0..right_top_t {
-                let r = right_top_t;
-                let ranoud = (x - (width - r)) * (x - (width - r)) + (y - r) * (y - r);
-                if ranoud > r * r {
+                if corner_check(x, y, rt, w - rt, 0) {
                     if let Some(pix) = img.get_pixel_mut_checked(x, y) {
                         pix.0[0] = 0; //r
                         pix.0[1] = 0; //g
@@ -1525,12 +1583,9 @@ pub fn init_ex_fun_map() {
             }
         }
 
-        for x in (width - right_bottom_t)..width {
-            for y in (height - right_bottom_t)..height {
-                let r = right_bottom_t;
-                let ranoud =
-                    (x - (width - r)) * (x - (width - r)) + (y - (height - r)) * (y - (height - r));
-                if ranoud > r * r {
+        for x in width.saturating_sub(right_bottom_t)..width {
+            for y in height.saturating_sub(right_bottom_t)..height {
+                if corner_check(x, y, rb, w - rb, h - rb) {
                     if let Some(pix) = img.get_pixel_mut_checked(x, y) {
                         pix.0[0] = 0; //r
                         pix.0[1] = 0; //g
@@ -1542,10 +1597,8 @@ pub fn init_ex_fun_map() {
         }
 
         for x in 0..left_bottom_t {
-            for y in (height - left_bottom_t)..height {
-                let r = left_bottom_t;
-                let ranoud = (x - r) * (x - r) + (y - (height - r)) * (y - (height - r));
-                if ranoud > r * r {
+            for y in height.saturating_sub(left_bottom_t)..height {
+                if corner_check(x, y, lb, 0, h - lb) {
                     if let Some(pix) = img.get_pixel_mut_checked(x, y) {
                         pix.0[0] = 0; //r
                         pix.0[1] = 0; //g
@@ -1938,6 +1991,7 @@ pub fn init_ex_fun_map() {
                 cur_x += max_x + line_sep as i32;
                 image_width = cur_x;
             }
+            check_image_dims(image_width as usize, image_height as usize)?;
             let mut img = ImageBuffer::new(image_width as u32, image_height);
             {
                 let mut max_x = 0;
@@ -2004,8 +2058,7 @@ pub fn init_ex_fun_map() {
         |self_t, params| {
             let image_width = self_t.get_param_text(params, 0)?.parse::<u32>()?;
             let text = self_t.get_param_text(params, 1)?;
-            let text_size = self_t.get_param_text(params, 2)?.parse::<f32>()?;
-            let text_color = get_param_text_array(self_t, params, 3)?;
+            let text_size = self_t.get_param_text(params, 2)?.parse::<f32>()?;            let text_color = get_param_text_array(self_t, params, 3)?;
             let mut color = Rgba::<u8>([0, 0, 0, 255]);
             color.0[0] = text_color
                 .first()
@@ -2079,6 +2132,7 @@ pub fn init_ex_fun_map() {
                 cur_y += max_y + line_sep as i32;
                 image_height = cur_y;
             }
+            check_image_dims(image_width as usize, image_height.max(0) as usize)?;
             let mut img = ImageBuffer::new(image_width, image_height as u32);
             {
                 let mut max_y = 0;
@@ -2249,6 +2303,7 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["创建图片", "创建图像"], |self_t, params| {
         let image_width = self_t.get_param_text(params, 0)?.parse::<u32>()?;
         let image_height = self_t.get_param_text(params, 1)?.parse::<u32>()?;
+        check_image_dims(image_width as usize, image_height as usize)?;
         let text_color = get_param_text_array(self_t, params, 2)?;
         let mut color = Rgba::<u8>([0, 0, 0, 0]);
         color.0[0] = text_color
@@ -2361,6 +2416,7 @@ pub fn init_ex_fun_map() {
             } else if width == 0 && height == 0 {
                 return Err(RedLang::make_err("目标图片高和宽均为0，无法调整大小"));
             }
+            check_image_dims(width as usize, height as usize)?;
             let img_out =
                 image::imageops::resize(&img, width, height, image::imageops::FilterType::Nearest);
             let ret = self_t.build_bin_raw_from_img(&img_out)?;
@@ -3268,7 +3324,7 @@ pub fn init_ex_fun_map() {
                     // 应该转化为无限加骰池
                     des += "检测到a参数,转化为`无限加骰池`\n";
                     let a = mp["d"].0.unwrap_or(1);
-                    let bb = mp["d"].1.ok_or("err1")? + 1;
+                    let bb = mp["d"].1.ok_or("err1")?.checked_add(1).ok_or("err1")?;
                     let b = bb - 1;
                     let e = mp["a"].1.ok_or("err2")?;
                     let zhjg = format!("{a}a{bb}k{e}m{b}");
@@ -3399,19 +3455,26 @@ pub fn init_ex_fun_map() {
                 let a2 = mp["a"].1.ok_or("err9")?;
                 let mut m = 10;
                 if mp.contains_key("m") {
-                    m = mp["m"].1.unwrap();
+                    m = mp["m"].1.ok_or("骰子表达式错误:m参数缺少右值")?;
                 }
                 let mut cgx = 8;
                 if mp.contains_key("k") {
-                    cgx = mp["k"].1.unwrap();
+                    cgx = mp["k"].1.ok_or("骰子表达式错误:k参数缺少右值")?;
                 }
                 let mut fxcgx = m;
                 if mp.contains_key("q") {
-                    fxcgx = mp["q"].1.unwrap();
+                    fxcgx = mp["q"].1.ok_or("骰子表达式错误:q参数缺少右值")?;
                 }
                 let mut ls: i32 = 1;
                 let mut ret = 0;
+                // 阈值<=1 时每轮全部骰子都"成功"，循环永不退出且 des 无限增长，
+                // 必须限制最大轮数
+                const MAX_ROUNDS: i32 = 1000;
                 loop {
+                    if ls > MAX_ROUNDS {
+                        des.push_str("(已达到最大轮数上限，强制结束)\n");
+                        break;
+                    }
                     let mut tou_vec: Vec<i64> = vec![];
                     for _i in 0..a1 {
                         tou_vec.push(rand_faces(m)?);
@@ -3442,15 +3505,22 @@ pub fn init_ex_fun_map() {
             } else if mp.contains_key("c") {
                 // 双重十字加骰池
                 des += "检测到c参数,所以为`双重十字加骰池`\n";
-                let mut a = mp["c"].0.unwrap();
-                let b = mp["c"].1.unwrap();
+                let mut a = mp["c"].0.ok_or("骰子表达式错误:c参数缺少左值")?;
+                let b = mp["c"].1.ok_or("骰子表达式错误:c参数缺少右值")?;
                 let mut m = 10;
                 if mp.contains_key("m") {
-                    m = mp["m"].1.unwrap();
+                    m = mp["m"].1.ok_or("骰子表达式错误:m参数缺少右值")?;
                 }
                 let mut ls = 1;
                 let mut ret = 0;
+                // 阈值<=1 时每轮全部骰子都"成功"，循环永不退出且 des 无限增长，
+                // 必须限制最大轮数
+                const MAX_ROUNDS: i32 = 1000;
                 loop {
+                    if ls > MAX_ROUNDS {
+                        des.push_str("(已达到最大轮数上限，强制结束)\n");
+                        break;
+                    }
                     let mut tou_vec: Vec<i64> = vec![];
                     for _i in 0..a {
                         tou_vec.push(rand_faces(m)?);
@@ -3775,7 +3845,7 @@ def red_out(sw):
 
         if !python_env_is_create {
             #[cfg(windows)]
-            let python_env_status = std::process::Command::new(get_python_cmd_name().unwrap())
+            let python_env_status = std::process::Command::new(get_python_cmd_name()?)
                 .creation_flags(0x08000000)
                 .current_dir(python_dir.clone())
                 .arg("-m")
@@ -3784,7 +3854,7 @@ def red_out(sw):
                 .status();
 
             #[cfg(not(windows))]
-            let python_env_status = std::process::Command::new(get_python_cmd_name().unwrap())
+            let python_env_status = std::process::Command::new(get_python_cmd_name()?)
                 .current_dir(python_dir.clone())
                 .arg("-m")
                 .arg("venv")
@@ -3819,7 +3889,7 @@ def red_out(sw):
         let red_py_decode = RED_PY_DECODE.to_owned();
 
         #[cfg(windows)]
-        let mut p = std::process::Command::new(get_python_cmd_name().unwrap())
+        let mut p = std::process::Command::new(get_python_cmd_name()?)
             .creation_flags(0x08000000)
             .stdin(pip_in)
             .stdout(std::process::Stdio::piped())
@@ -3831,7 +3901,7 @@ def red_out(sw):
             .spawn()?;
 
         #[cfg(not(windows))]
-        let mut p = std::process::Command::new(get_python_cmd_name().unwrap())
+        let mut p = std::process::Command::new(get_python_cmd_name()?)
             .stdin(pip_in)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -3892,7 +3962,7 @@ def red_out(sw):
         use std::os::windows::process::CommandExt;
 
         #[cfg(not(windows))]
-        let mut p = std::process::Command::new(get_python_cmd_name().unwrap())
+        let mut p = std::process::Command::new(get_python_cmd_name()?)
             .stdin(pip_in)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -3902,7 +3972,7 @@ def red_out(sw):
             .spawn()?;
 
         #[cfg(windows)]
-        let mut p = std::process::Command::new(get_python_cmd_name().unwrap())
+        let mut p = std::process::Command::new(get_python_cmd_name()?)
             .creation_flags(0x08000000)
             .stdin(pip_in)
             .stdout(std::process::Stdio::piped())
@@ -3981,7 +4051,7 @@ def red_out(sw):
         use std::os::windows::process::CommandExt;
 
         #[cfg(not(windows))]
-        let mut p = std::process::Command::new(get_python_cmd_name().unwrap())
+        let mut p = std::process::Command::new(get_python_cmd_name()?)
             .stdin(pip_in)
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
@@ -3992,7 +4062,7 @@ def red_out(sw):
             .spawn()?;
 
         #[cfg(windows)]
-        let mut p = std::process::Command::new(get_python_cmd_name().unwrap())
+        let mut p = std::process::Command::new(get_python_cmd_name()?)
             .creation_flags(0x08000000)
             .stdin(pip_in)
             .stdout(std::process::Stdio::piped())
@@ -4237,8 +4307,12 @@ def red_out(sw):
         // tree.fontdb().load_system_fonts();
         let width = (tree.size().width() + 0.5) as usize;
         let height = (tree.size().height() + 0.5) as usize;
+        check_image_dims(width, height)?;
         let transform = resvg::tiny_skia::Transform::identity();
-        let sz = width * height * resvg::tiny_skia::BYTES_PER_PIXEL;
+        let sz = width
+            .checked_mul(height)
+            .and_then(|px| px.checked_mul(resvg::tiny_skia::BYTES_PER_PIXEL))
+            .ok_or_else(|| RedLang::make_err("SVG尺寸过大"))?;
         let mut pix = vec![0; sz];
         let mut pixmapmut = resvg::tiny_skia::PixmapMut::from_bytes(
             pix.as_mut_slice(),
@@ -4530,7 +4604,10 @@ def red_out(sw):
         let now_time = SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_millis() as i64;
-        tm += now_time;
+        // checked_add 避免延迟值接近 i64::MAX 时溢出(debug panic/release 回绕成立即触发)
+        tm = tm
+            .checked_add(now_time)
+            .ok_or_else(|| RedLang::make_err("设置延迟触发：延迟时间溢出"))?;
         runtime_context()
             .scheduler
             .add_one_time_run(OneTimeRunStruct {

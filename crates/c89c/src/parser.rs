@@ -49,6 +49,8 @@ pub struct Parser {
     abstract_declarator: bool,
     /// 表达式/声明符递归深度（防御深度嵌套栈溢出）
     expr_depth: usize,
+    /// 语句嵌套深度（{{{{…/if(1) if(1) … 防御原生栈溢出）
+    stmt_depth: usize,
 }
 
 impl Parser {
@@ -62,6 +64,7 @@ impl Parser {
             obj_types: HashMap::new(),
             abstract_declarator: false,
             expr_depth: 0,
+            stmt_depth: 0,
         }
     }
 
@@ -1190,6 +1193,11 @@ impl Parser {
         if v < 0 {
             return Err(self.err("数组大小为负"));
         }
+        // 限制数组界上限，配合 TypeTable::size_of 的总大小检查，
+        // 防止多维数组各维合法但乘积溢出
+        if v > (1 << 28) {
+            return Err(self.err("数组大小过大"));
+        }
         Ok(Some(v as usize))
     }
 
@@ -1400,6 +1408,19 @@ impl Parser {
     }
 
     fn parse_statement_inner(&mut self, allow_decl: bool) -> Result<Node, String> {
+        // 语句嵌套护栏：块/if/循环互相嵌套每层一次原生递归，
+        // 深度嵌套输入必须转成可报告的编译错误而不是栈溢出
+        self.stmt_depth += 1;
+        if self.stmt_depth > 256 {
+            self.stmt_depth -= 1;
+            return Err(self.err("语句嵌套过深（超过 256 层）"));
+        }
+        let result = self.parse_statement_inner_impl(allow_decl);
+        self.stmt_depth -= 1;
+        result
+    }
+
+    fn parse_statement_inner_impl(&mut self, allow_decl: bool) -> Result<Node, String> {
         // 复合语句（块）：块内 typedef/枚举常量遮蔽外层，块结束恢复
         if self.eat("{") {
             let saved_enums = self.enum_constants.clone();
@@ -1598,8 +1619,19 @@ impl Parser {
             let mut item_specs = specs.clone();
             item_specs.ty = ty;
             if let Type::Array(inner, None) = &item_specs.ty {
-                if let Some(Node::InitList(items)) = init.as_deref() {
-                    item_specs.ty = Type::Array(inner.clone(), Some(items.len()));
+                // 与首个声明符一致：字符串字面量也要推断数组大小
+                // （char a[] = "p", b[] = "q"; 的 b）
+                match init.as_deref().map(Node::inner) {
+                    Some(Node::InitList(items)) => {
+                        item_specs.ty = Type::Array(inner.clone(), Some(items.len()));
+                    }
+                    Some(Node::Str(value)) => {
+                        let len = crate::expr_eval::decode_string_escapes(value)
+                            .map(|bytes| bytes.len() + 1)
+                            .unwrap_or(value.len() + 1);
+                        item_specs.ty = Type::Array(inner.clone(), Some(len));
+                    }
+                    _ => {}
                 }
             }
             if item_specs.storage == Storage::Typedef {

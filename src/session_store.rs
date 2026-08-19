@@ -39,7 +39,8 @@ impl SessionStore {
         group_id: String,
         message_id: String,
     ) -> Result<(), Box<dyn Error>> {
-        let flag = self_id + &group_id;
+        // 用分隔符拼接，避免 "12"+"3" 与 "1"+"23" 这类无分隔拼接的键冲突
+        let flag = format!("{self_id}|{group_id}");
         let mut message_ids = self.message_ids.write().unwrap();
         let messages = message_ids.entry(flag).or_default();
         messages.push_front((user_id, message_id));
@@ -54,7 +55,7 @@ impl SessionStore {
         self_id: &str,
         group_id: &str,
     ) -> Result<VecDeque<(String, String)>, Box<dyn Error>> {
-        let flag = self_id.to_owned() + group_id;
+        let flag = format!("{self_id}|{group_id}");
         Ok(self
             .message_ids
             .read()
@@ -91,7 +92,8 @@ impl SessionStore {
                 && group_id == input_stream.group_id
             {
                 if let Some(sender) = &input_stream.tx {
-                    sender.lock().unwrap().send(message.to_owned())?;
+                    // 单个接收端关闭不应中断其余输入流的投递
+                    let _ = sender.lock().unwrap().send(message.to_owned());
                 }
             } else if input_stream.stream_type != "输入流"
                 && self_id == input_stream.self_id
@@ -103,7 +105,7 @@ impl SessionStore {
                     "消息ID": message_id,
                 });
                 if let Some(sender) = &input_stream.tx {
-                    sender.lock().unwrap().send(value.to_string())?;
+                    let _ = sender.lock().unwrap().send(value.to_string());
                 }
             }
         }
@@ -124,7 +126,8 @@ impl SessionStore {
                 && input_stream.group_id.is_empty()
             {
                 if let Some(sender) = &input_stream.tx {
-                    sender.lock().unwrap().send(message.to_owned())?;
+                    // 单个接收端关闭不应中断其余输入流的投递
+                    let _ = sender.lock().unwrap().send(message.to_owned());
                 }
             }
         }
@@ -218,15 +221,22 @@ impl SessionStore {
     }
 
     pub(crate) async fn broadcast_log(&self, message: String) {
-        let senders = self
-            .log_sessions
-            .read()
-            .await
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
-        for sender in senders {
-            let _ = sender.send(message.clone()).await;
+        // 用 try_send 避免单个卡死的 /watch_log 客户端(通道满)让每条日志
+        // 都永久阻塞一个任务；通道已满或已断开的慢客户端直接剔除
+        let mut to_remove: Vec<String> = Vec::new();
+        {
+            let sessions = self.log_sessions.read().await;
+            for (uid, sender) in sessions.iter() {
+                if sender.try_send(message.clone()).is_err() {
+                    to_remove.push(uid.clone());
+                }
+            }
+        }
+        if !to_remove.is_empty() {
+            let mut sessions = self.log_sessions.write().await;
+            for uid in to_remove {
+                sessions.remove(&uid);
+            }
         }
     }
 

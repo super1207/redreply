@@ -231,8 +231,13 @@
             openWebTriggerUrl() {
                 const protocol = window.location.protocol; 
                 const host = window.location.host; 
-                const keyword = this.script_keyword || ""; 
+                // 后端匹配串是路径中包名之后的剩余部分(以 / 开头)，
+                // 缺少前导 / 时补上；逐段编码但保留 "/" 分隔
+                let keyword = this.script_keyword || ""; 
+                if (!keyword.startsWith("/")) keyword = "/" + keyword;
+                keyword = keyword.split("/").map(encodeURIComponent).join("/");
                 let urlPath;
+                // 默认包的包名为空段：/user/ + /关键词 => /user//关键词
                 if (this.pkg_name === "默认包") urlPath = `/user/${keyword}`;
                 else urlPath = `/user/${encodeURIComponent(this.pkg_name)}${keyword}`;
                 window.open(`${protocol}//${host}${urlPath}`, '_blank');

@@ -162,6 +162,20 @@ fn deal_remote_event(
     let remote_client_id = topic_parts[1];
     let platform = topic_parts[2];
     let self_id = topic_parts[3];
+    // 远程载荷可能是任意 JSON(数字/数组/字符串)，对非对象做下标会 panic，
+    // release 下 panic=abort 会直接杀死整个进程，必须先校验
+    if !playload.is_object() {
+        crate::cqapi::cq_add_log_w(
+            format!(
+                "收到非对象MQTT事件载荷，已忽略: topic={}, payload={}",
+                topic,
+                playload
+            )
+            .as_str(),
+        )
+        .unwrap();
+        return Ok(());
+    }
     playload["platform"] = serde_json::json!(platform);
     playload["self_id"] = serde_json::json!(self_id);
     playload["mqtt_client_id"] = serde_json::json!(remote_client_id);
@@ -192,7 +206,11 @@ fn deal_publish_api(
     // api:4
     let platform = topic_parts[2];
     let self_id = topic_parts[3];
-    let passive_id = playload["message_id"].as_str().unwrap_or("");
+    // 远程载荷可能是任意 JSON，对非对象做下标会 panic，与 deal_remote_event 同理
+    let passive_id = playload
+        .get("message_id")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
     let resp = cq_call_api(platform, self_id, passive_id, playload_str, "");
     let response_topic;
     let correlation_data;
@@ -346,25 +364,66 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
                     let code: rumqttc::v5::mqttbytes::v5::ConnectReturnCode = p.code;
                     if code == rumqttc::v5::mqttbytes::v5::ConnectReturnCode::Success {
                         let mqtt_client_id = get_mqtt_client_id();
-                        if let Err(err) = client.try_subscribe(
-                            format!("bot/{mqtt_client_id}/+/+/api"),
-                            QoS::ExactlyOnce,
-                        ) {
+                        // 请求通道容量有限：满时短暂重试，避免订阅静默丢失
+                        // （丢失后远端事件直到下次重连都不会到达）
+                        let mut last_err = None;
+                        for _ in 0..100 {
+                            match client.try_subscribe(
+                                format!("bot/{mqtt_client_id}/+/+/api"),
+                                QoS::ExactlyOnce,
+                            ) {
+                                Ok(()) => {
+                                    last_err = None;
+                                    break;
+                                }
+                                Err(err) => {
+                                    last_err = Some(err);
+                                    std::thread::sleep(Duration::from_millis(20));
+                                }
+                            }
+                        }
+                        if let Some(err) = last_err {
                             cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
                         }
-                        if let Err(err) = client.try_subscribe(
-                            format!("plus/{mqtt_client_id}/response"),
-                            QoS::ExactlyOnce,
-                        ) {
+                        let mut last_err = None;
+                        for _ in 0..100 {
+                            match client.try_subscribe(
+                                format!("plus/{mqtt_client_id}/response"),
+                                QoS::ExactlyOnce,
+                            ) {
+                                Ok(()) => {
+                                    last_err = None;
+                                    break;
+                                }
+                                Err(err) => {
+                                    last_err = Some(err);
+                                    std::thread::sleep(Duration::from_millis(20));
+                                }
+                            }
+                        }
+                        if let Some(err) = last_err {
                             cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
                         }
                         let remote_clients = { runtime_context().services.mqtt_remote_clients() };
                         for remote_client in remote_clients {
                             let topic = format!("bot/{remote_client}/+/+/event");
-                            let mut filter = Filter::new(topic, QoS::ExactlyOnce);
-                            filter.nolocal = true;
-                            let subscribe = Subscribe::new(filter, None);
-                            if let Err(err) = client.client.request_tx.try_send(subscribe.into()) {
+                            let mut last_err = None;
+                            for _ in 0..100 {
+                                let mut filter = Filter::new(topic.clone(), QoS::ExactlyOnce);
+                                filter.nolocal = true;
+                                let subscribe = Subscribe::new(filter, None);
+                                match client.client.request_tx.try_send(subscribe.into()) {
+                                    Ok(()) => {
+                                        last_err = None;
+                                        break;
+                                    }
+                                    Err(err) => {
+                                        last_err = Some(err);
+                                        std::thread::sleep(Duration::from_millis(20));
+                                    }
+                                }
+                            }
+                            if let Some(err) = last_err {
                                 cq_add_log_w(&format!("MQTT Client subscribe error: {}", err))
                                     .unwrap();
                             }

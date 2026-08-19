@@ -11,7 +11,9 @@ use tokio_tungstenite::tungstenite;
 
 use crate::{
     cqapi::cq_add_log_w,
-    mytool::{read_json_obj_or_null, read_json_or_default, read_json_str},
+    mytool::{
+        cq_fix_image_file_in_arr, read_json_obj_or_null, read_json_or_default, read_json_str,
+    },
     qq_guild_all::{get_gateway, get_json_dat, token_refresh, SelfData},
 };
 
@@ -40,6 +42,10 @@ pub struct QQGuildPublicConnect {
     pub id_event_map:
         Arc<std::sync::RwLock<std::collections::HashMap<String, (u64, serde_json::Value)>>>,
     pub bot_id: Arc<std::sync::RwLock<String>>,
+    // 审核结果通道必须是连接级共享：call_api 注册等待者、WS 事件路径投递结果，
+    // 两边要看到同一张 map，各自 new 会导致等待者永远收不到通知
+    pub qqgroup_audit_map:
+        Arc<tokio::sync::RwLock<std::collections::HashMap<String, tokio::sync::mpsc::Sender<serde_json::Value>>>>,
 }
 
 impl QQGuildPublicConnect {
@@ -56,6 +62,7 @@ impl QQGuildPublicConnect {
             sn: Arc::new(RwLock::new(None)),
             id_event_map: Arc::new(RwLock::new(std::collections::HashMap::new())),
             bot_id: Arc::new(RwLock::new("".to_owned())),
+            qqgroup_audit_map: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
         }
     }
 }
@@ -1009,6 +1016,7 @@ pub async fn send_group_msg(
     if message.is_string() {
         message = str_msg_to_arr_safe(&message)?;
     }
+    cq_fix_image_file_in_arr(&mut message);
 
     if msg_target_type == MsgTargetType::QQGroup {
         // 群
@@ -1173,7 +1181,7 @@ impl BotConnectTrait for QQGuildPublicConnect {
                 std::sync::RwLock<HashMap<std::string::String, (u64, serde_json::Value)>>,
             >::downgrade(&self.id_event_map),
             bot_id: Arc::<std::sync::RwLock<std::string::String>>::downgrade(&self.bot_id),
-            qqgroup_audit_map: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            qqgroup_audit_map: Arc::clone(&self.qqgroup_audit_map),
         };
 
         tokio::spawn(async move {
@@ -1330,7 +1338,7 @@ impl BotConnectTrait for QQGuildPublicConnect {
                 std::sync::RwLock<HashMap<std::string::String, (u64, serde_json::Value)>>,
             >::downgrade(&self.id_event_map),
             bot_id: Arc::<std::sync::RwLock<std::string::String>>::downgrade(&self.bot_id),
-            qqgroup_audit_map: Arc::new(tokio::sync::RwLock::new(HashMap::new())),
+            qqgroup_audit_map: Arc::clone(&self.qqgroup_audit_map),
         };
         if action == "send_group_msg" {
             return send_group_msg(&self_data, json, passive_id, platform).await;

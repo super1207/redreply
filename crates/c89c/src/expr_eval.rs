@@ -212,9 +212,10 @@ pub(crate) fn parse_char_value(text: &str) -> Result<i64, String> {
         }
     } else if !inner.is_empty() {
         // 多字符常量（实现定义值）：按 GCC 约定，各字节依次左移 8 位拼接。
+        // 用 wrapping_shl 避免 8 字节以上常量移位溢出(debug panic)，与 GCC 截断行为一致
         let mut value: i64 = 0;
         for b in inner.bytes() {
-            value = (value << 8) | b as i64;
+            value = (value.wrapping_shl(8)) | b as i64;
         }
         Ok(value)
     } else {

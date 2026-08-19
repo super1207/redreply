@@ -344,6 +344,56 @@
 .pio-agent-entry.result{
     opacity: .78;
 }
+/* 思维链/工具调用/工具结果：箭头标题 + 默认收起的内容区 */
+.pio-agent-entry.pio-collapsible{
+    white-space: normal;
+}
+.pio-agent-entry.pio-collapsible::before{
+    content: none;
+}
+.pio-agent-toggle{
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    width: 100%;
+    padding: 2px 0;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-weight: 600;
+    text-align: left;
+    color: var(--text-secondary, #b43f31);
+    cursor: pointer;
+}
+.pio-agent-entry.user .pio-agent-toggle{
+    color: #285f91;
+}
+.pio-agent-entry.answer .pio-agent-toggle{
+    color: #9b352c;
+}
+.pio-agent-entry.tool .pio-agent-toggle{
+    color: #267567;
+}
+.pio-agent-toggle:hover{
+    opacity: .8;
+}
+.pio-agent-toggle-arrow{
+    flex: 0 0 auto;
+    font-size: 10px;
+    line-height: 1;
+    transition: transform .15s ease;
+}
+.pio-agent-toggle[aria-expanded="true"] .pio-agent-toggle-arrow{
+    transform: rotate(90deg);
+}
+.pio-agent-body{
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    padding-top: 2px;
+}
+.pio-agent-body[hidden]{
+    display: none;
+}
 .pio-chat-form{
     margin-top:auto;padding: 7px;
     gap: 6px;

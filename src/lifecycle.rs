@@ -41,19 +41,17 @@ pub fn set_start_time(start_time: String) {
 fn kill_all_sub_process() {
     let current_pid = std::process::id();
     let mut system = sysinfo::System::new();
-    let current_exe_path = std::env::current_exe().unwrap();
     system.refresh_processes_specifics(
         sysinfo::ProcessesToUpdate::All,
         true,
         sysinfo::ProcessRefreshKind::everything(),
     );
+    // 直接子进程一律清理：脚本启动的辅助进程既可能是本程序自身
+    // (浏览器/工具模式，见 browserbridge/lib.rs 以 current_exe 启动)，
+    // 也可能是 python/ffmpeg 等外部程序，退出时都不应残留。
+    // 原实现跳过同 exe 的子进程，导致这类辅助进程永远不被清理。
     for process in system.processes().values() {
         if let Some(parent_pid) = process.parent() {
-            if let Some(child_exe_path) = process.exe() {
-                if child_exe_path == current_exe_path.as_path() {
-                    continue;
-                }
-            }
             if parent_pid.as_u32() == current_pid {
                 process.kill();
             }

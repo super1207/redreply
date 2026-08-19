@@ -113,6 +113,10 @@ impl Codegen {
         }
     }
 
+    /// 结构体按值传参/返回时的尺寸上限：拷贝序列按字节逐条展开，
+    /// 超过该值会导致汇编体积与编译时间失控
+    const MAX_STRUCT_BYVAL: usize = 4096;
+
     fn user_label(&mut self, name: &str) -> String {
         if let Some(label) = self.user_labels.get(name) {
             return label.clone();
@@ -529,16 +533,18 @@ impl Codegen {
     /// 收集函数体内的局部变量，分配栈偏移
     fn collect_locals(&mut self, body: &Node, base: i32) {
         let mut n = base;
+        // 单函数栈帧上限：超过即报编译错误，防止帧大小回绕和 VM 无法容纳的帧
+        const MAX_FRAME: i64 = 1 << 28;
         fn walk(
             node: &Node,
             locals: &mut HashMap<String, (i32, Type)>,
             n: &mut i32,
             tt: &TypeTable,
-        ) {
+        ) -> Result<(), String> {
             match node {
                 Node::Block(stmts) | Node::DeclBlock(stmts) => {
                     for s in stmts {
-                        walk(s, locals, n, tt);
+                        walk(s, locals, n, tt)?;
                     }
                 }
                 Node::Decl { specs, name, .. }
@@ -551,42 +557,61 @@ impl Codegen {
                         // 数组按实际大小分配（TypeTable.size_of）
                         let sz = tt.size_of(&specs.ty).unwrap_or(4).max(4);
                         let align = tt.align_of(&specs.ty).unwrap_or(4).min(8) as i32;
-                        *n = (*n + align - 1) & !(align - 1);
+                        // 巨型局部数组(如 int a[0x7fffffff])会让 i32 栈偏移回绕，
+                        // 用 checked 运算把它变成可报告的编译错误
+                        let aligned = (*n as i64)
+                            .checked_add(align as i64 - 1)
+                            .map(|v| v & !(align as i64 - 1))
+                            .ok_or_else(|| format!("局部变量`{name}`栈偏移溢出"))?;
+                        let next = aligned
+                            .checked_add(sz as i64)
+                            .ok_or_else(|| format!("局部变量`{name}`过大，栈帧溢出"))?;
+                        if next > MAX_FRAME {
+                            return Err(format!("局部变量`{name}`过大，栈帧超过上限"));
+                        }
+                        let next_i32: i32 = next
+                            .try_into()
+                            .map_err(|_| format!("局部变量`{name}`过大，栈帧溢出"))?;
+                        *n = aligned as i32;
                         locals.insert(name.clone(), (*n, specs.ty.clone()));
-                        *n += sz as i32;
+                        *n = next_i32;
                     }
                 }
                 Node::If(_, t, e) => {
-                    walk(t, locals, n, tt);
+                    walk(t, locals, n, tt)?;
                     if let Some(e) = e {
-                        walk(e, locals, n, tt);
+                        walk(e, locals, n, tt)?;
                     }
                 }
-                Node::While(_, b) | Node::DoWhile(b, _) => walk(b, locals, n, tt),
-                Node::For(_, _, _, b) => walk(b, locals, n, tt),
-                Node::Switch(_, b) => walk(b, locals, n, tt),
-                Node::Case(_, s) => walk(s, locals, n, tt),
-                Node::Default(s) => walk(s, locals, n, tt),
-                Node::Label(_, s) => walk(s, locals, n, tt),
-                Node::ExprStmt(e) | Node::Return(Some(e)) => walk(e, locals, n, tt),
+                Node::While(_, b) | Node::DoWhile(b, _) => walk(b, locals, n, tt)?,
+                Node::For(_, _, _, b) => walk(b, locals, n, tt)?,
+                Node::Switch(_, b) => walk(b, locals, n, tt)?,
+                Node::Case(_, s) => walk(s, locals, n, tt)?,
+                Node::Default(s) => walk(s, locals, n, tt)?,
+                Node::Label(_, s) => walk(s, locals, n, tt)?,
+                Node::ExprStmt(e) | Node::Return(Some(e)) => walk(e, locals, n, tt)?,
                 Node::Assign(_, l, r) | Node::Binary(_, l, r) | Node::Cond(l, r, _) => {
-                    walk(l, locals, n, tt);
-                    walk(r, locals, n, tt);
+                    walk(l, locals, n, tt)?;
+                    walk(r, locals, n, tt)?;
                 }
                 Node::Unary(_, e) | Node::Subscript(e, _) | Node::Comma(e, _) => {
-                    walk(e, locals, n, tt)
+                    walk(e, locals, n, tt)?
                 }
                 Node::Call(f, args) => {
-                    walk(f, locals, n, tt);
+                    walk(f, locals, n, tt)?;
                     for a in args {
-                        walk(a, locals, n, tt);
+                        walk(a, locals, n, tt)?;
                     }
                 }
-                Node::Member(e, _, _) | Node::SizeofExpr(e) => walk(e, locals, n, tt),
+                Node::Member(e, _, _) | Node::SizeofExpr(e) => walk(e, locals, n, tt)?,
                 _ => {}
             }
+            Ok(())
         }
-        walk(body, &mut self.locals, &mut n, &self.tt);
+        if let Err(message) = walk(body, &mut self.locals, &mut n, &self.tt) {
+            self.fail_codegen(message);
+            return;
+        }
         self.frame_size = n;
     }
     fn collect_struct_call_temps(&mut self, body: &Node) {
@@ -751,6 +776,17 @@ impl Codegen {
         for p in &params {
             let size = if Self::is_struct_ty(&p.ty) {
                 let size = self.tt.size_of(&p.ty).unwrap_or(8);
+                // 按值传递的结构体会被逐字节展开成拷贝指令，过大的结构体
+                // 会让汇编体积与编译时间爆炸（且尺寸截断为 i32 后破坏帧布局），
+                // 超限时直接报编译错误并中止，请改用指针传递
+                if size > Self::MAX_STRUCT_BYVAL {
+                    self.fail_codegen(format!(
+                        "结构体参数`{}`按值传递过大({size}字节，上限{}字节)，请改用指针传递",
+                        p.name,
+                        Self::MAX_STRUCT_BYVAL
+                    ));
+                    return;
+                }
                 struct_params.push((p.name.clone(), size));
                 size
             } else {
@@ -1491,6 +1527,13 @@ impl Codegen {
     }
 
     fn emit_aggregate_copy(&mut self, destination: &str, source: &str, size: usize) {
+        if size > Self::MAX_STRUCT_BYVAL {
+            self.fail_codegen(format!(
+                "聚合赋值对象过大({size}字节，上限{}字节)，请改用 memcpy/指针",
+                Self::MAX_STRUCT_BYVAL
+            ));
+            return;
+        }
         for offset in 0..size {
             // 偏移可能超出 ±2047：经 address_parts 生成 li+add 寻址
             let (rb, ro) = self.address_parts(source, offset as i32, "t4");
@@ -1624,6 +1667,13 @@ impl Codegen {
                         self.emit("    mv t2, a0");
                         self.emit("    lw t3, 0(s0)");
                         let size = self.tt.size_of(&self.current_ret).unwrap_or(0);
+                        if size > Self::MAX_STRUCT_BYVAL {
+                            self.fail_codegen(format!(
+                                "结构体按值返回过大({size}字节，上限{}字节)，请改用指针返回",
+                                Self::MAX_STRUCT_BYVAL
+                            ));
+                            return;
+                        }
                         for offset in 0..size {
                             // 大结构体：偏移超出 ±2047 时经 li+add 寻址
                             let (rb, ro) = self.address_parts("t2", offset as i32, "t4");
@@ -2463,6 +2513,23 @@ impl Codegen {
                     self.emit("    addi sp, sp, -8");
                     self.emit("    sw a0, 0(sp)");
                     self.gen_expr(rhs);
+                    // 位域基底类型必为整型：浮点 RHS 需先转换到 a0，
+                    // 否则 store 会把求值后残留的旧 a0（如浮点常量地址）写进字段
+                    if self
+                        .type_of(rhs)
+                        .map(|ty| Self::is_float_ty(&ty))
+                        .unwrap_or(false)
+                    {
+                        let unsigned = lhs_type
+                            .as_ref()
+                            .map(Type::is_unsigned_integer)
+                            .unwrap_or(false);
+                        if unsigned {
+                            self.emit("    fcvt.wu.d a0, f10, rtz");
+                        } else {
+                            self.emit("    fcvt.w.d a0, f10, rtz");
+                        }
+                    }
                     if *op != AssignOp::Plain {
                         self.emit("    addi sp, sp, -8");
                         self.emit("    sw a0, 0(sp)");
@@ -3046,6 +3113,13 @@ impl Codegen {
                         .tt
                         .size_of(&self.type_of(a).unwrap_or(Type::Int))
                         .unwrap_or(8);
+                    if sz > Self::MAX_STRUCT_BYVAL {
+                        self.fail_codegen(format!(
+                            "结构体按值传参过大({sz}字节，上限{}字节)，请改用指针传递",
+                            Self::MAX_STRUCT_BYVAL
+                        ));
+                        return;
+                    }
                     // 压栈 sz 字节（8 对齐）；大结构体经 li+sub 调整 sp
                     let align = (sz + 7) & !7;
                     if align <= 2047 {

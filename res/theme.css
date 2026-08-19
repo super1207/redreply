@@ -72,7 +72,7 @@
   position: fixed;
   top: 20px;
   right: 20px;
-  z-index: 9999;
+  z-index: 51; /* 低于看板娘对话框所在容器(52)，被对话框遮挡 */
   background: var(--bg-button);
   border: 2px solid var(--border-secondary);
   border-radius: 50%;

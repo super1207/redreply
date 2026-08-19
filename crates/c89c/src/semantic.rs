@@ -442,7 +442,10 @@ enum StaticInit {
 /// 联合体/位域按成员数近似。types 缺省时返回 None（不检查）。
 fn scalar_slot_count(ty: &Type, types: Option<&TypeTable>) -> Option<usize> {
     match ty.unqualified() {
-        Type::Array(elem, Some(len)) => scalar_slot_count(elem, types).map(|inner| inner * len),
+        Type::Array(elem, Some(len)) => {
+            // 槽位数乘法可能溢出，checked_mul 失败时返回 None（调用方按"不检查"处理）
+            scalar_slot_count(elem, types).and_then(|inner| inner.checked_mul(*len))
+        }
         Type::Array(_, None) => None,
         Type::Struct(tag) => types.and_then(|tt| tt.structs.get(tag)).map(|def| {
             def.members

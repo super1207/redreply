@@ -1524,7 +1524,11 @@ pub fn init_core_fun_map() {
             ));
         }
         let rand_num = get_random()?;
-        let num = num2 + 1 - num1;
+        // num2 + 1 在 num2 == usize::MAX 时会溢出，使用 checked 运算并返回错误
+        let num = num2
+            .checked_sub(num1)
+            .and_then(|v| v.checked_add(1))
+            .ok_or_else(|| RedLang::make_err("生成随机数失败:随机数范围过大导致整数溢出"))?;
         let ret_num = (rand_num % num) + num1;
         let ret_str = ret_num.to_string();
         Ok(Some(rv_text(ret_str)))
@@ -1722,7 +1726,10 @@ pub fn init_core_fun_map() {
             if let Some(val) = v_opt {
                 let v_str = (**val).borrow().text_or_empty().to_string();
                 let mut v_num = v_str.parse::<i64>()?;
-                v_num += number;
+                // checked_add 避免 i64 溢出(debug panic/release 静默回绕)
+                v_num = v_num
+                    .checked_add(number)
+                    .ok_or_else(|| RedLang::make_err("自增：数值溢出"))?;
                 *(**val).borrow_mut() = Rc::new(RedValue::Text(Rc::new(v_num.to_string())));
                 return Ok(Some(rv_empty()));
             }
@@ -1763,7 +1770,7 @@ pub fn init_core_fun_map() {
         let to = self_t.get_param_text_rc(params, 2)?.parse::<u32>()?;
         // 你好，这是Bing。我可以尝试用Rust语言写一个函数，实现任意进制的转化。请看下面的代码：
         // 定义一个函数，接受一个十进制数和一个目标进制，返回一个字符串表示转换后的结果
-        fn convert_base(num: u32, base: u32) -> String {
+        fn convert_base(num: u64, base: u32) -> String {
             // 定义一个字符数组，用于表示不同的数字
             let digits = [
                 '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
@@ -1785,51 +1792,49 @@ pub fn init_core_fun_map() {
             // 循环进行除法，直到商为0
             while quotient > 0 {
                 // 计算余数
-                remainder = quotient % base;
+                remainder = quotient % base as u64;
                 // 将余数对应的字符插入到结果字符串的开头
                 result.insert(0, digits[remainder as usize]);
                 // 计算商
-                quotient /= base;
+                quotient /= base as u64;
             }
             // 返回结果字符串
             result
         }
-        // 我可以用Rust语言写一个函数，实现任意进制转为10进制的功能。请看下面的代码：
-        // 定义一个函数，接受一个字符串和一个基数，返回一个十进制数
-        fn convert_to_base10(num: &str, base: u32) -> u32 {
+        // 定义哈希表，用于存储字符和数字的对应关系
+        fn convert_to_base10(num: &str, base: u32) -> Result<u64, String> {
             // 定义一个字符数组，用于表示不同的数字
             let digits = [
                 '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
             ];
-            // 定义一个哈希表，用于存储字符和数字的对应关系
             let mut map = std::collections::HashMap::new();
             for (i, digit) in digits.iter().enumerate() {
-                map.insert(*digit, i as u32);
+                map.insert(*digit, i as u64);
             }
-            // 定义一个变量，用于存储结果
-            let mut result = 0;
-            // 定义一个变量，用于存储当前的次方
-            let mut power = 0;
-            // 如果基数不在2到16之间，返回0
+            // 如果基数不在2到16之间，报错
             if !(2..=16).contains(&base) {
-                return 0;
+                return Err("进制必须在2到16之间".to_string());
             }
-            // 从最低位开始遍历字符串
+            // 从最低位开始遍历字符串，用 checked 运算避免 u32 溢出(debug panic/release 静默算错)
+            let mut result: u64 = 0;
+            let mut power: u32 = 0;
             for c in num.chars().rev() {
-                // 如果字符不在哈希表中，返回0
-                if let Some(d) = map.get(&c) {
-                    // 将字符对应的数字乘以基数的相应次方，累加到结果中
-                    result += d * base.pow(power);
-                    // 增加次方
-                    power += 1;
-                } else {
-                    return 0;
-                }
+                // 如果字符不在哈希表中，报错
+                let d = *map.get(&c).ok_or_else(|| format!("非法数字字符:{c}"))?;
+                let place = (base as u64)
+                    .checked_pow(power)
+                    .ok_or_else(|| "数字太大,转换溢出".to_string())?;
+                result = result
+                    .checked_add(d * place)
+                    .ok_or_else(|| "数字太大,转换溢出".to_string())?;
+                power += 1;
             }
-            // 返回结果
-            result
+            Ok(result)
         }
-        let ret = convert_base(convert_to_base10(&num_text, from), to);
+        let ret = convert_base(
+            convert_to_base10(&num_text, from).map_err(|err| RedLang::make_err(&err))?,
+            to,
+        );
         if ret == "Invalid base" {
             return Err(RedLang::make_err(&ret));
         }
@@ -2031,15 +2036,15 @@ impl RedLang {
 
         self.fun_ret_vec.push((false, self.xh_vec.len()));
 
-        // 调用函数
-        let ret_str = self.eval_ast_with_stack_guard(&func_ast)?;
+        // 调用函数；错误路径也必须退栈，否则参数/变量栈残留脏帧
+        let ret_str = self.eval_ast_with_stack_guard(&func_ast);
 
         // 变量栈和参数栈退栈
         self.var_vec.pop();
         self.params_vec.pop();
         self.fun_ret_vec.pop();
 
-        Ok(ret_str)
+        Ok(ret_str?)
     }
     fn do_cmd_fun(
         &mut self,
@@ -2076,17 +2081,17 @@ impl RedLang {
                 // 修改参数栈
                 self.params_vec.push(fun_params_t);
 
-                // 调用命令
+                // 调用命令；错误路径也必须退栈，否则参数栈残留脏帧
                 let r = if is_cmd2 {
-                    self.parse(&func[36..])?
+                    self.parse(&func[36..])
                 } else {
-                    self.parse(&func)?
+                    self.parse(&func)
                 };
 
                 // 参数栈退栈
                 self.params_vec.pop();
 
-                ret_rv = Some(r);
+                ret_rv = Some(r?);
             }
         }
         if let Some(rv) = ret_rv {

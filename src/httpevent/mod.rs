@@ -98,10 +98,13 @@ pub fn do_http_event(
 ) -> Result<hyper::Response<BoxBody>, Box<dyn std::error::Error>> {
     // 获取pkg_name和pkg_key
     let url_path = req.uri().path();
-    let true_url = url_path.get(5..).unwrap();
+    // 短路径(如 /、/user、/user/)没有合法的包名和关键词，直接返回错误而不是 panic
+    let true_url = url_path.get(5..).ok_or("无法得到网络触发路径")?;
     let splited_url = true_url.split('/').collect::<Vec<&str>>();
     let pkg_name = splited_url.get(1).ok_or("无法得到包名")?;
-    let pkg_key = true_url.get(pkg_name.len() + 1..).unwrap();
+    let pkg_key = true_url
+        .get(pkg_name.len() + 1..)
+        .ok_or("无法得到网络触发关键词")?;
     let pkg_name_t: String = url::form_urlencoded::parse(pkg_name.as_bytes())
         .map(|(key, val)| [key, val].concat())
         .collect::<String>();

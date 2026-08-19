@@ -835,7 +835,7 @@ impl Preprocessor {
     fn expand_with_shift(&self, toks: &[Token], line_shift: i64) -> Result<Vec<Token>, String> {
         let queue: VecDeque<QToken> = toks.iter().cloned().map(QToken::plain).collect();
         Ok(self
-            .expand_queue(queue, line_shift)?
+            .expand_queue(queue, line_shift, 0)?
             .into_iter()
             .map(|qt| qt.tok)
             .collect())
@@ -853,7 +853,13 @@ impl Preprocessor {
         &self,
         mut queue: VecDeque<QToken>,
         line_shift: i64,
+        depth: usize,
     ) -> Result<Vec<QToken>, String> {
+        // 宏参数预展开按嵌套层级递归，无护栏时 F(F(F(...))) 深嵌套
+        // 会直接打爆原生栈
+        if depth > 256 {
+            return Err("宏参数嵌套展开过深（超过 256 层）".to_string());
+        }
         let mut out = Vec::new();
         while let Some(qt) = queue.pop_front() {
             let t = qt.tok.clone();
@@ -1014,7 +1020,7 @@ impl Preprocessor {
                                                         .map(|a| mark_hide(a.clone(), &body_hide))
                                                         .collect();
                                                     let expanded =
-                                                        self.expand_queue(arg_queue, line_shift)?;
+                                                        self.expand_queue(arg_queue, line_shift, depth + 1)?;
                                                     // 展开结果的隐藏集原样保留（调用宏
                                                     // 在后续重扫描中依旧不可用）
                                                     new_body.extend(expanded);

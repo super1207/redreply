@@ -349,7 +349,7 @@ pub fn stored_context_usage(messages: &[Value]) -> Option<(u64, bool)> {
     let message = messages
         .iter()
         .rev()
-        .find(|message| message.get("role").and_then(Value::as_str) == Some("assistant"))?;
+        .find(|message| token_number(message.get("context_tokens")).is_some())?;
     let tokens = token_number(message.get("context_tokens"))?;
     let estimated = message
         .get("context_tokens_estimated")
@@ -413,6 +413,13 @@ pub enum StreamEvent {
     Content(String),
     /// Character-based context estimate sent before provider completion.
     ContextEstimate(u64),
+    /// 工具调用生成增量：slot 为到达顺序槽位（与最终 calls 数组下标一致），
+    /// name/arguments 为本片新增的函数名与 JSON 参数片段。
+    ToolCallDelta {
+        slot: usize,
+        name: String,
+        arguments: String,
+    },
 }
 
 /// 一次看板娘提问：注入系统消息后把用户消息追加到对话末尾并发起流式请求。
@@ -686,10 +693,30 @@ pub async fn stream_step(
                     if let Some(name) = call.pointer("/function/name").and_then(Value::as_str) {
                         merge_stream_tool_name(&mut tool_calls[index].1, name);
                     }
-                    if let Some(arguments) =
-                        call.pointer("/function/arguments").and_then(Value::as_str)
-                    {
-                        tool_calls[index].2.push_str(arguments);
+                    let arguments_piece = call
+                        .pointer("/function/arguments")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    if !arguments_piece.is_empty() {
+                        tool_calls[index].2.push_str(arguments_piece);
+                    }
+                    // 工具调用是长内容（通常是整段 JS 代码），生成期间必须把
+                    // 增量转发出去，前端才能看到"正在写代码"的过程
+                    let name_piece = call
+                        .pointer("/function/name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("");
+                    if !name_piece.is_empty() || !arguments_piece.is_empty() {
+                        send_stream_event(
+                            &tx,
+                            StreamEvent::ToolCallDelta {
+                                slot: index,
+                                name: name_piece.to_owned(),
+                                arguments: arguments_piece.to_owned(),
+                            },
+                            cancellation,
+                        )
+                        .await?;
                     }
                 }
             }

@@ -363,6 +363,25 @@ fn preprocess(source: &str) -> Result<(Vec<RawLine>, Vec<String>), String> {
     Ok((lines, order.iter().map(|&i| format!("{}", i)).collect()))
 }
 
+/// 数据指令的自然对齐（字节）：.word/.float=4、.double=8、.half=2，
+/// 其余（.byte/.string/.space 等）为 1；.align 取其对齐参数（2 的幂）。
+fn data_line_alignment(text: &str) -> u32 {
+    let mut it = text.split_whitespace();
+    let mnem = it.next().unwrap_or("").to_ascii_lowercase();
+    match mnem.as_str() {
+        ".word" | ".float" => 4,
+        ".double" => 8,
+        ".half" => 2,
+        ".align" => it
+            .next()
+            .and_then(|arg| arg.trim().parse::<u32>().ok())
+            .and_then(|power| 1u32.checked_shl(power))
+            .filter(|align| *align <= 4096)
+            .unwrap_or(1),
+        _ => 1,
+    }
+}
+
 /// 汇编主入口
 pub fn assemble(source: &str) -> Result<Program, String> {
     let (lines, _order) = preprocess(source)?;
@@ -384,16 +403,20 @@ pub fn assemble(source: &str) -> Result<Program, String> {
             if let Some(lb) = &l.label {
                 let addr = if l.section == "text" {
                     text_addr
+                } else if l.text.is_empty() {
+                    // 独立成行的标签绑定到下一条数据指令对齐后的地址（RARS/GAS 语义），
+                    // 否则标签落在其后 .word/.double 等对齐填充字节之前，
+                    // 经它寻址会读到填充字节或触发未对齐错误
+                    let next_align = lines
+                        .iter()
+                        .skip(line_index + 1)
+                        .find(|next| next.section == "data" && !next.text.is_empty())
+                        .map(|next| data_line_alignment(&next.text))
+                        .unwrap_or(1);
+                    align_data_addr(data_addr, next_align)?
                 } else {
                     // 同行数据指令会先按其自然大小对齐，标签应落在对齐后的地址
-                    let mnem = l.text.split_whitespace().next().unwrap_or("");
-                    let align = match mnem.to_ascii_lowercase().as_str() {
-                        ".word" | ".float" => 4,
-                        ".half" => 2,
-                        ".double" => 8,
-                        _ => 1,
-                    };
-                    align_data_addr(data_addr, align)?
+                    align_data_addr(data_addr, data_line_alignment(&l.text))?
                 };
                 if symbols.insert(lb.clone(), addr).is_some() {
                     return Err(format!("重复标签: {}", lb));
@@ -1501,7 +1524,9 @@ fn resolve_label(label: &str, addr: u32, symbols: &HashMap<String, u32>) -> Resu
         .copied()
         .ok_or_else(|| format!("未知标签: {}", label))?;
     let off = target as i32 - addr as i32;
-    if !(-(1 << 20)..(1 << 20)).contains(&off) {
+    // J 型立即数范围 -1048576..=1048575：下界必须包含 -1<<20，
+    // 恰好 -1MiB 的向后跳转是可编码的
+    if !(-(1 << 20)..=(1 << 20) - 1).contains(&off) {
         return Err(format!("跳转目标超出范围: {} (偏移 {})", label, off));
     }
     Ok(off)
@@ -1593,7 +1618,8 @@ fn relaxed_branch(
         .copied()
         .ok_or_else(|| format!("未知标签: {}", label))?;
     let off = target as i32 - addr as i32;
-    if !(-(1 << 20)..(1 << 20)).contains(&off) {
+    // 松弛生成的 jal 位于 addr+4，实际编码的立即数是 off-4，范围检查应针对它
+    if !(-(1 << 20)..=(1 << 20) - 1).contains(&(off - 4)) {
         return Err(format!("跳转目标超出范围: {} (偏移 {})", label, off));
     }
     Ok(vec![
@@ -1907,5 +1933,22 @@ main: nop
         assert_eq!(p.instructions[0].rd, 1);
         assert_eq!(p.instructions[0].rs1, 5);
         assert_eq!(p.instructions[0].imm, 0);
+    }
+
+    #[test]
+    fn standalone_data_label_binds_after_alignment() {
+        // 独立成行的标签必须绑定到其后 .word 对齐后的地址，
+        // 否则经它 lw 会读到对齐填充字节（或直接未对齐报错）
+        let p = assemble(".data\nb: .byte 7\nlbl:\nw: .word 9\n.text\nmain: nop\n").unwrap();
+        assert_eq!(p.symbols["b"], DATA_BASE);
+        assert_eq!(p.symbols["lbl"], DATA_BASE + 4);
+        assert_eq!(p.symbols["w"], DATA_BASE + 4);
+        // 数据本身不受影响
+        let seg = p
+            .data_segments
+            .iter()
+            .find(|(addr, _)| *addr == DATA_BASE + 4)
+            .unwrap();
+        assert_eq!(seg.1, 9u32.to_le_bytes().to_vec());
     }
 }

@@ -44,6 +44,8 @@ pub fn run_c89_with_cancel(source: String, cancel: Arc<AtomicBool>) -> String {
         Err(error) => return format!("汇编错误: {}\n", error),
     };
     let mut cpu = Cpu::new();
+    // 把取消标志交给 CPU：sleep/system 等阻塞型 ecall 才能被中途打断
+    cpu.cancel_flag = Some(cancel.clone());
     if let Err(error) = cpu.load_program(&program) {
         return format!("程序加载错误: {}\n", error);
     }
@@ -137,5 +139,67 @@ int main(void) {
             .to_string(),
         );
         assert_eq!(output, "你好，C89！\n");
+    }
+
+    #[test]
+    fn oversized_array_is_compile_error_not_crash() {
+        let output = run_c89("int a[1 << 62]; int main(void) { return 0; }".to_string());
+        assert!(output.contains("error"), "output: {}", output);
+    }
+
+    #[test]
+    fn oversized_struct_byval_param_is_compile_error() {
+        let output = run_c89(
+            "struct S { char a[100000000]; }; void f(struct S s) { (void)s; } \
+             int main(void) { return 0; }"
+                .to_string(),
+        );
+        assert!(output.contains("按值传递过大"), "output: {}", output);
+    }
+
+    #[test]
+    fn deeply_nested_statements_is_compile_error() {
+        let mut source = String::from("int main(void) { ");
+        for _ in 0..100000 {
+            source.push('{');
+        }
+        for _ in 0..100000 {
+            source.push('}');
+        }
+        source.push_str(" return 0; }");
+        let output = run_c89(source);
+        assert!(output.contains("嵌套过深"), "output: {}", output);
+    }
+
+    #[test]
+    fn second_char_array_decl_from_string_literal_compiles() {
+        let output = run_c89(
+            r#"#include <stdio.h>
+int main(void) {
+    char a[] = "p", b[] = "q";
+    printf("%c%c", b[0], a[0]);
+    return 0;
+}
+"#
+            .to_string(),
+        );
+        assert_eq!(output, "qp");
+    }
+
+    #[test]
+    fn bitfield_assignment_from_float_converts() {
+        let output = run_c89(
+            r#"#include <stdio.h>
+struct S { unsigned f : 4; };
+int main(void) {
+    struct S s;
+    s.f = 3.7;
+    printf("%u", s.f);
+    return 0;
+}
+"#
+            .to_string(),
+        );
+        assert_eq!(output, "3");
     }
 }

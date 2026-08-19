@@ -73,7 +73,15 @@ impl TypeTable {
             Type::Qualified { ty, .. } => self.size_of(ty),
             Type::Ptr(_) => Ok(4),
             Type::Function { .. } => Err("函数类型没有对象大小".into()),
-            Type::Array(elem, Some(n)) => Ok(self.size_of(elem)? * n),
+            Type::Array(elem, Some(n)) => {
+                // 数组总大小必须受限：无界乘法在 debug 下 panic、release 下静默回绕成
+                // 错误的对象尺寸，进而破坏相邻数据布局
+                const MAX_OBJECT_SIZE: usize = 1 << 28;
+                self.size_of(elem)?
+                    .checked_mul(*n)
+                    .filter(|total| *total <= MAX_OBJECT_SIZE)
+                    .ok_or_else(|| "数组过大：对象总大小超过上限".to_string())
+            }
             Type::Array(_, None) => Err("不完整数组类型（缺少大小）".into()),
             Type::Struct(tag) => {
                 let s = self

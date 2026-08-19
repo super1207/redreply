@@ -57,8 +57,8 @@ use base64::{
 use crate::{
     cqapi::cq_add_log_w,
     mytool::{
-        cq_params_encode, cq_text_encode, read_json_obj_or_null, read_json_or_default,
-        read_json_str, str_msg_to_arr,
+        cq_fix_image_file_in_arr, cq_params_encode, cq_text_encode, read_json_obj_or_null,
+        read_json_or_default, read_json_str, str_msg_to_arr,
     },
 };
 
@@ -940,9 +940,10 @@ pub fn qq_content_to_cqstr(
                 i += 1;
             } else if cur_ch == '&' {
                 let t;
-                if i + 5 < cqstr.len() {
+                // 边界用 <=，否则消息恰好以 &amp;/&gt; 结尾时无法解码(留下字面量)
+                if i + 5 <= cqstr.len() {
                     t = &cqstr[i..i + 5];
-                } else if i + 4 < cqstr.len() {
+                } else if i + 4 <= cqstr.len() {
                     t = &cqstr[i..i + 4];
                 } else {
                     t = &cqstr[i..i];
@@ -1725,6 +1726,7 @@ pub async fn send_private_msg(
     if message.is_string() {
         message = str_msg_to_arr_safe(&message)?;
     }
+    cq_fix_image_file_in_arr(&mut message);
 
     // 判断消息类型
     let msg_target_type: MsgTargetType = get_msg_type(self_t, params, passive_id)?;
@@ -2360,6 +2362,10 @@ pub async fn set_group_ban(
     if duration.is_empty() {
         duration = "1800".to_owned();
     }
+    // mute_seconds 必须序列化为数字，之前传字符串会被 QQ API 拒绝导致禁言永远失败
+    let mute_seconds: u64 = duration
+        .parse()
+        .map_err(|_| format!("禁言时长必须是数字: {duration}"))?;
 
     if user_id
         == *self_t
@@ -2428,7 +2434,7 @@ pub async fn set_group_ban(
         .patch(uri)
         .body(
             serde_json::json!({
-                "mute_seconds":duration
+                "mute_seconds":mute_seconds
             })
             .to_string(),
         )

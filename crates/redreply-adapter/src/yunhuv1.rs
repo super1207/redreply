@@ -16,6 +16,7 @@ use uuid::Uuid;
 
 use super::BotConnectTrait;
 use crate::cqapi::{cq_add_log, cq_add_log_w};
+use crate::mytool::cq_fix_image_file_in_arr;
 use crate::mytool::read_json_str;
 use crate::mytool::str_msg_to_arr;
 use async_trait::async_trait;
@@ -367,7 +368,7 @@ impl Yunhuv1Connect {
         };
 
         // let group_id = read_json_str(params, "group_id");
-        let message_arr: serde_json::Value;
+        let mut message_arr: serde_json::Value;
         let message_rst = params.get("message").ok_or("message not found")?;
 
         if message_rst.is_string() {
@@ -384,6 +385,7 @@ impl Yunhuv1Connect {
         } else {
             message_arr = params.get("message").ok_or("message not found")?.to_owned();
         }
+        cq_fix_image_file_in_arr(&mut message_arr);
 
         let (to_send_data, quote) = self.make_yunhu_msg(&message_arr).await?;
 

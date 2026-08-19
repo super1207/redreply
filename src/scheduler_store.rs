@@ -51,6 +51,14 @@ impl SchedulerStore {
         self.one_time_runs.lock().unwrap().push(run);
     }
 
+    /// 移除某包的所有延迟触发任务，避免包删除/重载后旧任务残留
+    pub(crate) fn remove_pkg_runs(&self, pkg_name: &str) {
+        self.one_time_runs
+            .lock()
+            .unwrap()
+            .retain(|run| run.pkg_name != pkg_name);
+    }
+
     pub(crate) fn take_due_runs(&self, now_time: i64) -> Vec<OneTimeRunStruct> {
         let mut runs = self.one_time_runs.lock().unwrap();
         let mut due = Vec::new();
@@ -90,5 +98,23 @@ mod tests {
         assert_eq!(store.take_due_runs(9).len(), 0);
         assert_eq!(store.take_due_runs(10).len(), 1);
         assert_eq!(store.take_due_runs(10).len(), 0);
+    }
+
+    #[test]
+    fn remove_pkg_runs_clears_only_matching_package() {
+        let store = SchedulerStore::new();
+        let run = |pkg: &str| OneTimeRunStruct {
+            run_time: 10,
+            pkg_name: pkg.to_owned(),
+            flag: "flag".to_owned(),
+            sub_data: String::new(),
+            data: HashMap::new(),
+        };
+        store.add_one_time_run(run("demo"));
+        store.add_one_time_run(run("other"));
+        store.remove_pkg_runs("demo");
+        let due = store.take_due_runs(10);
+        assert_eq!(due.len(), 1);
+        assert_eq!(due[0].pkg_name, "other");
     }
 }

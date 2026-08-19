@@ -1441,7 +1441,9 @@ pub fn init_cq_ex_fun_map() {
         }
 
         // 积分变动
-        ret_num += add_score;
+        ret_num = ret_num
+            .checked_add(add_score)
+            .ok_or_else(|| RedLang::make_err("积分-增加：积分溢出"))?;
         if ret_num < 0 {
             ret_num = 0;
         }

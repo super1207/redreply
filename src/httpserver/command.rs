@@ -143,7 +143,9 @@ fn unregister_command(tokens: &[String], pid: u32) {
     for token in tokens {
         let remove = if let Some(state) = generations.get_mut(token) {
             state.pids.remove(&pid);
-            state.pids.is_empty() && state.cancelled_at.is_none()
+            // 与 unregister_c_program 保持一致：cancel_flags 非空时不能删除条目，
+            // 否则同代次还在运行的 C 程序会丢失取消标志，取消按钮失效
+            state.pids.is_empty() && state.cancel_flags.is_empty() && state.cancelled_at.is_none()
         } else {
             false
         };
@@ -279,11 +281,37 @@ fn wait_for_command(child: Child, tokens: &[String]) -> std::result::Result<Outp
     let registration = scopeguard::guard((tokens.to_owned(), pid), |(tokens, pid)| {
         unregister_command(&tokens, pid);
     });
-    let output = child
-        .wait_with_output()
-        .map_err(|error| format!("命令执行失败: {error}"));
+    // 并发读 stdout/stderr：wait_with_output 先读完 stdout 再读 stderr，
+    // 子进程把 stderr 写满管道缓冲而 stdout 迟迟不关闭时会互相等待造成死锁
+    let mut child = child;
+    let mut stdout_pipe = child.stdout.take();
+    let mut stderr_pipe = child.stderr.take();
+    let out_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(pipe) = stdout_pipe.as_mut() {
+            let _ = std::io::Read::read_to_end(pipe, &mut buf);
+        }
+        buf
+    });
+    let err_handle = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        if let Some(pipe) = stderr_pipe.as_mut() {
+            let _ = std::io::Read::read_to_end(pipe, &mut buf);
+        }
+        buf
+    });
+    let status = match child.wait() {
+        Ok(status) => status,
+        Err(error) => return Err(format!("命令执行失败: {error}")),
+    };
+    let stdout = out_handle.join().unwrap_or_default();
+    let stderr = err_handle.join().unwrap_or_default();
     drop(registration);
-    output
+    Ok(Output {
+        status,
+        stdout,
+        stderr,
+    })
 }
 
 fn ok_response(data: serde_json::Value) -> Response<BoxBody> {

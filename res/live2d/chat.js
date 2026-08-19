@@ -66,6 +66,8 @@
         AGENT_STATE.EXECUTING_TOOL,
         AGENT_STATE.STOPPING
     ]);
+    // 默认收起、带展开箭头的记录：思维链、工具调用、工具调用结果
+    const COLLAPSIBLE_AGENT_LABELS = new Set(["看板娘转圈圈", "看板娘搓搓小手", "看板娘战利品+1"]);
 
     function renderMarkdown(text) {
         const source = String(text == null ? "" : text);
@@ -80,13 +82,14 @@
 
     function setEntryContent(entry, text, markdown) {
         if (!entry) return;
+        const target = entry._agentContent || entry;
         const rendered = markdown ? renderMarkdown(text) : null;
         if (rendered !== null) {
-            entry.classList.add("pio-markdown");
-            entry.innerHTML = rendered;
+            target.classList.add("pio-markdown");
+            target.innerHTML = rendered;
         } else {
-            entry.classList.remove("pio-markdown");
-            entry.textContent = String(text == null ? "" : text);
+            target.classList.remove("pio-markdown");
+            target.textContent = String(text == null ? "" : text);
         }
     }
 
@@ -277,13 +280,56 @@ const state = {
         });
     }
 
+    // 为思维链/工具调用/工具结果等记录创建「箭头标题 + 内容」结构，默认收起
+    function makeAgentEntryCollapsible(entry, label) {
+        entry.classList.add("pio-collapsible");
+        const toggle = document.createElement("button");
+        toggle.type = "button";
+        toggle.className = "pio-agent-toggle";
+        toggle.setAttribute("aria-expanded", "false");
+        toggle.setAttribute("aria-label", "展开或收起" + label);
+        const arrow = document.createElement("span");
+        arrow.className = "pio-agent-toggle-arrow";
+        arrow.setAttribute("aria-hidden", "true");
+        arrow.textContent = "▶";
+        toggle.appendChild(arrow);
+        toggle.appendChild(document.createTextNode(label));
+        const body = document.createElement("div");
+        body.className = "pio-agent-body";
+        body.hidden = true;
+        toggle.addEventListener("click", function () {
+            const expanded = toggle.getAttribute("aria-expanded") !== "true";
+            toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+            body.hidden = !expanded;
+        });
+        entry.appendChild(toggle);
+        entry.appendChild(body);
+        // 记录开关，供 setAgentEntryExpanded 程序化控制展开/收起
+        entry._agentToggle = toggle;
+        return body;
+    }
+
+    // 程序化展开/收起一个可折叠条目（非可折叠条目为空操作，幂等）
+    function setAgentEntryExpanded(entry, expanded) {
+        if (!entry || !entry._agentToggle) return;
+        const toggle = entry._agentToggle;
+        if ((toggle.getAttribute("aria-expanded") === "true") === Boolean(expanded)) return;
+        toggle.setAttribute("aria-expanded", expanded ? "true" : "false");
+        if (entry._agentContent) entry._agentContent.hidden = !expanded;
+        scrollAgentLog();
+    }
+
     function appendAgentStatus(label, text, className) {
         if (typeof text !== "string" || !text.trim()) return;
         if (!isAgentBusy()) agentStatus.hidden = false;
         const entry = document.createElement("div");
         entry.className = "pio-agent-entry" + (className ? " " + className : "");
         entry.dataset.label = label;
-        entry.textContent = text.trim();
+        if (COLLAPSIBLE_AGENT_LABELS.has(label)) {
+            makeAgentEntryCollapsible(entry, label).textContent = text.trim();
+        } else {
+            entry.textContent = text.trim();
+        }
         agentLog.appendChild(entry);
         scrollAgentLog();
         requestAnimationFrame(positionPanel);
@@ -554,6 +600,9 @@ const state = {
         const entry = document.createElement("div");
         entry.className = "pio-agent-entry";
         entry.dataset.label = label;
+        if (COLLAPSIBLE_AGENT_LABELS.has(label)) {
+            entry._agentContent = makeAgentEntryCollapsible(entry, label);
+        }
         setEntryContent(entry, text, false);
         agentLog.appendChild(entry);
         scrollAgentLog();
@@ -565,6 +614,37 @@ const state = {
         setEntryContent(entry, text, Boolean(markdown));
         scrollAgentLog();
         requestAnimationFrame(positionPanel);
+    }
+
+    // 工具名增量合并：与后端 merge_stream_tool_name 一致——有的服务商每次
+    // 重发完整函数名，有的只发增量，两种都要正确合并，避免重复拼接
+    function mergeToolName(name, delta) {
+        if (!delta || name === delta) return name;
+        if (!name || delta.indexOf(name) === 0) return delta;
+        if (name.slice(-delta.length) === delta) return name;
+        return name + delta;
+    }
+
+    // 实时预览用宽松反转义：参数 JSON 尚未生成完，JSON.parse 必然失败，
+    // 按字符解常见转义即可；完成后由 done 事件携带的完整代码替换
+    function previewToolArgs(raw) {
+        let out = "";
+        for (let i = 0; i < raw.length; i++) {
+            const ch = raw[i];
+            if (ch === "\\" && i + 1 < raw.length) {
+                const next = raw[++i];
+                if (next === "n") out += "\n";
+                else if (next === "r") out += "\r";
+                else if (next === "t") out += "\t";
+                else if (next === "u"
+                    && i + 4 < raw.length
+                    && /^[0-9a-fA-F]{4}$/.test(raw.slice(i + 1, i + 5))) {
+                    out += String.fromCharCode(parseInt(raw.slice(i + 1, i + 5), 16));
+                    i += 4;
+                } else out += next;
+            } else out += ch;
+        }
+        return out;
     }
 
     async function postAgentStream(payload, signal) {
@@ -652,6 +732,8 @@ const state = {
                 let contentEntry = null;
                 let reasoningText = "";
                 let contentText = "";
+                // 工具调用的实时条目（slot → {entry,name,args}）：生成期间逐片显示
+                let toolLiveEntries = null;
                 let outcome = null;
                 let events;
                 try {
@@ -675,21 +757,42 @@ const state = {
                                 contentText = outcome.content;
                                 updateAgentEntry(contentEntry, contentText);
                             }
+                            // 用完整调用信息收尾实时条目；无实时条目时补建
+                            // （恢复执行等无流式的场景）
+                            if (Array.isArray(outcome.calls)) {
+                                outcome.calls.forEach(function (call, slot) {
+                                    const full = call.name + "\n" + (call.javascript || call.source_code || "");
+                                    const rec = toolLiveEntries && toolLiveEntries[slot];
+                                    if (rec) {
+                                        updateAgentEntry(rec.entry, full);
+                                    } else {
+                                        appendAgentStatus("看板娘搓搓小手", full, "tool");
+                                    }
+                                });
+                            }
                         }
                         if (state.stopRequested) {
                             try { await cancelPendingGeneration(); } catch (_cancelError) {}
                             throw stoppedError();
                         }
+                        // 本轮流结束：无论结果类型，转圈圈都收起（幂等）
+                        setAgentEntryExpanded(reasoningEntry, false);
                         break;
                     }
                     if (state.stopRequested) throw stoppedError();
                     if (event === "reasoning") {
                         reasoningText += data.delta || "";
                         if (reasoningText.trim()) {
-                            if (!reasoningEntry) reasoningEntry = appendAgentEntryLive("看板娘转圈圈", "");
+                            if (!reasoningEntry) {
+                                reasoningEntry = appendAgentEntryLive("看板娘转圈圈", "");
+                                // 生成期间保持展开，思考结束自动折叠
+                                setAgentEntryExpanded(reasoningEntry, true);
+                            }
                             updateAgentEntry(reasoningEntry, reasoningText);
                         }
                     } else if (event === "content") {
+                        // 思考结束（开始输出正文）：转圈圈自动折叠（幂等）
+                        setAgentEntryExpanded(reasoningEntry, false);
                         // ② 首个内容增量 = 思考完成：若有思考，先落库思考快照
                         if (!contentEntry && !reasonSnapshotAppended && reasoningText.trim()) {
                             reasonSnapshotAppended = true;
@@ -708,6 +811,24 @@ const state = {
                             if (!contentEntry) contentEntry = appendAgentEntryLive(usedTool ? "看板娘大彻大悟" : "看板娘碎碎念", "");
                             updateAgentEntry(contentEntry, contentText);
                         }
+                    } else if (event === "tool_call") {
+                        // 工具调用生成增量：实时显示"正在写工具代码"的过程
+                        const slot = Number(data.slot);
+                        if (!Number.isInteger(slot) || slot < 0) continue;
+                        // 思考阶段结束（开始生成工具代码）：转圈圈自动折叠（幂等）
+                        setAgentEntryExpanded(reasoningEntry, false);
+                        if (!toolLiveEntries) toolLiveEntries = {};
+                        let rec = toolLiveEntries[slot];
+                        if (!rec) {
+                            rec = { entry: appendAgentEntryLive("看板娘搓搓小手", ""), name: "", args: "" };
+                            toolLiveEntries[slot] = rec;
+                        }
+                        if (data.name) rec.name = mergeToolName(rec.name, data.name);
+                        if (data.delta) rec.args += data.delta;
+                        updateAgentEntry(
+                            rec.entry,
+                            (rec.name ? rec.name + "\n" : "") + previewToolArgs(rec.args)
+                        );
                     } else if (event === "context_estimate") {
                         if (Number.isFinite(data.context_tokens)) {
                             state.contextUsed = data.context_tokens;
@@ -746,6 +867,18 @@ const state = {
                             clear_generation: true
                         });
                         state.pendingCompress = false;
+                        // 压缩请求的 usage 反映的是压缩前的上下文，压缩落库后立即拉取最新用量
+                        try {
+                            const st = apiResult(await axios.get("/live2d_chat_state"));
+                            if (st && Number.isFinite(st.context_used)) {
+                                state.contextUsed = st.context_used;
+                                state.contextEstimated = st.context_used_estimated !== false;
+                            }
+                            if (st && Number.isFinite(st.context_length)) {
+                                state.contextLimit = st.context_length;
+                            }
+                            updateContextUsage();
+                        } catch (e) {}
                     } else if (reasonSnapshotAppended) {
                         await persistAppend({
                             op: "replace_last",
@@ -798,7 +931,10 @@ const state = {
                     if (state.stopRequested) throw stoppedError();
                     const call = outcome.calls[callIndex];
                     const codeText = call.javascript || call.source_code || "";
-                    appendAgentStatus("看板娘搓搓小手", call.name + "\n" + codeText, "tool");
+                    // done 阶段已收尾的实时条目不再重复创建
+                    if (!(toolLiveEntries && toolLiveEntries[callIndex])) {
+                        appendAgentStatus("看板娘搓搓小手", call.name + "\n" + codeText, "tool");
+                    }
                     const toolResult = await executeJavascriptTool(call);
                     if (state.stopRequested) throw stoppedError();
                     toolResults.push(toolResult);
@@ -919,7 +1055,19 @@ const state = {
             if (role === "user") {
                 appendAgentStatus("主人", content, "user");
             } else if (role === "assistant") {
+                // 思维链：与实时流程一致，折叠显示在内容/工具调用之前
+                const reasoning = message
+                    && typeof message.reasoning_content === "string"
+                    && message.reasoning_content.trim()
+                    ? message.reasoning_content.trim()
+                    : "";
+                if (reasoning) {
+                    appendAgentStatus("看板娘转圈圈", reasoning, "");
+                }
                 if (Array.isArray(message.tool_calls) && message.tool_calls.length) {
+                    if (typeof content === "string" && content.trim()) {
+                        appendAgentStatus("看板娘碎碎念", content, "");
+                    }
                     const names = message.tool_calls.map(function (call) {
                         return (call.function && call.function.name) || "";
                     }).filter(Boolean).join(", ");
@@ -1043,6 +1191,12 @@ const state = {
 
     function positionPanel() {
         if (panel.hidden) return;
+        // 视口变化时自动收窄：面板超出可用视口就缩小（只缩小，不自动放大）
+        const maxPanelW = Math.max(120, window.innerWidth - 24);
+        const maxPanelH = Math.max(120, window.innerHeight - 24);
+        const sizeRect = panel.getBoundingClientRect();
+        if (sizeRect.width > maxPanelW) panel.style.width = maxPanelW + "px";
+        if (sizeRect.height > maxPanelH) panel.style.height = maxPanelH + "px";
         const modelRect = container.getBoundingClientRect();
         const panelRect = panel.getBoundingClientRect();
         const gap = 10;

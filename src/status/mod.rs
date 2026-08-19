@@ -30,11 +30,8 @@ impl StatusStore {
     }
 
     fn flush_cache_to_db(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut cache = self.cache.lock().unwrap();
-        if cache.is_empty() {
-            return Ok(());
-        }
-
+        // 加锁顺序必须与 get_status 一致：先文件锁、后 cache 锁，
+        // 否则与 get_status(cache 锁 ← 文件锁)形成 ABBA 死锁
         let app_dir = crate::cqapi::cq_get_app_directory1().map_err(|err| err.to_string())?;
         let sql_file = app_dir + "reddat.db";
         let sql_file = mytool::path_to_os_str(&sql_file);
@@ -42,6 +39,11 @@ impl StatusStore {
         let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
             del_file_lock(&sql_file);
         });
+
+        let mut cache = self.cache.lock().unwrap();
+        if cache.is_empty() {
+            return Ok(());
+        }
 
         let conn = rusqlite::Connection::open(sql_file)?;
         Self::create_table_without_lock(&conn)?;

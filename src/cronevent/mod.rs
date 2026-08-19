@@ -151,9 +151,19 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
             };
             let upcoming = schedule.after(&dt_baseline);
 
-            // 持续触发期间内所有调度点
+            // 持续触发期间内所有调度点。
+            // 补偿触发数量设上限：时钟大幅回拨（NTP 纠偏、虚拟机快照恢复）时，
+            // 每秒级 CRON 会产生成千上万个漏触发点，逐点开线程会瞬间耗尽线程资源
+            const MAX_CATCHUP: usize = 100;
+            let mut fired = 0usize;
+            let mut skipped_by_cap = false;
             for next_datetime in upcoming {
                 if next_datetime.timestamp() <= trigger_threshold {
+                    if fired >= MAX_CATCHUP {
+                        skipped_by_cap = true;
+                        break;
+                    }
+                    fired += 1;
                     // 触发任务，连续触发多个漏掉的调度点
                     let pkg_name_t = pkg_name.to_string();
                     let name_t = name.to_string();
@@ -173,6 +183,12 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
                     break;
                 }
             }
+            if skipped_by_cap {
+                cq_add_log_w(&format!(
+                    "CRON补偿触发已达上限({MAX_CATCHUP}个)，剩余漏掉的调度点全部跳过 (脚本:{name})"
+                ))
+                .unwrap();
+            }
         }
     }
     Ok(0)
@@ -187,16 +203,35 @@ fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
     // cq_add_log_w(&format!("{:?}",run_vec)).unwrap();
     for it in &run_vec {
         let script_json = runtime_context().scripts.read_scripts();
-        for i in 0..script_json
-            .as_array()
-            .ok_or("script.json文件不是数组格式")?
-            .len()
-        {
-            let (keyword, cffs, code, ppfs, name, pkg_name) = get_script_info2(&script_json[i])?;
+        let Some(script_arr) = script_json.as_array() else {
+            cq_add_log_w("script.json文件不是数组格式,放弃本批延迟触发").unwrap();
+            break;
+        };
+        for i in 0..script_arr.len() {
+            // 单条脚本信息损坏只跳过该条，不再因 `?` 传播导致整批到期任务丢失
+            let (keyword, cffs, code, ppfs, name, pkg_name) =
+                match get_script_info2(&script_arr[i]) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        cq_add_log_w(&format!("读取延迟触发脚本信息失败: {}", err)).unwrap();
+                        continue;
+                    }
+                };
             if cffs == "延迟触发" && it.pkg_name == pkg_name {
                 let mut rl = RedLang::new();
-                if is_key_match(&mut rl, ppfs, keyword, &it.flag)? {
-                    let data = it.data.to_owned();
+                let is_match = match is_key_match(&mut rl, ppfs, keyword, &it.flag) {
+                    Ok(m) => m,
+                    Err(err) => {
+                        cq_add_log_w(&format!("延迟触发匹配失败: {}", err)).unwrap();
+                        continue;
+                    }
+                };
+                if is_match {
+                    let mut data = it.data.to_owned();
+                    // 把匹配阶段得到的子关键词传给执行脚本，修复前缀/正则匹配丢失
+                    if let Some(sub_key) = (*rl.exmap).borrow().get("子关键词").cloned() {
+                        data.insert("子关键词".to_owned(), sub_key);
+                    }
                     let sub_data = it.sub_data.to_owned();
                     let code = code.to_owned();
                     let name = name.to_owned();
