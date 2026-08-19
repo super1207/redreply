@@ -193,28 +193,13 @@ pub(crate) fn write_config(config: &Value) -> ConfigResult<()> {
     Ok(())
 }
 
-/// Create the interactive configuration file used on first startup.
+/// Create the default configuration file used on first startup.
 pub fn init_config() {
     let _write_guard = config_write_lock().lock().unwrap();
     let path = config_path().unwrap();
     if !path.is_file() {
-        let mut line = String::new();
-        println!("请输入端口号(默认1207):");
-        std::io::stdin().read_line(&mut line).unwrap();
-        let web_port = if line.trim().is_empty() {
-            1207
-        } else {
-            line.trim().parse::<u16>().unwrap()
-        };
-
-        line.clear();
-        println!("请输入主机地址(默认127.0.0.1):");
-        std::io::stdin().read_line(&mut line).unwrap();
-        let web_host = if line.trim().is_empty() {
-            "127.0.0.1".to_owned()
-        } else {
-            line.trim().to_owned()
-        };
+        let web_port = 1207u64;
+        let web_host = "127.0.0.1".to_owned();
 
         let config = serde_json::json!({
             "web_port": web_port,

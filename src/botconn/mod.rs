@@ -118,6 +118,17 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                     }
                     let url_t = url.clone();
                     runtime().spawn(async move {
+                        // 无论连接成功、失败还是 panic，任务退出时都必须清除
+                        // connecting 标记，否则该 URL 将永远失去重连机会
+                        let _connect_guard = scopeguard::guard(url_t.clone(), |url| {
+                            runtime().spawn(async move {
+                                runtime_context()
+                                    .services
+                                    .bot_registry()
+                                    .end_connect(&url)
+                                    .await;
+                            });
+                        });
                         let connect_ok = async {
                             if url_t.starts_with("ws://") || url_t.starts_with("wss://") {
                                 let mut bot = OneBot11Connect::build(&url_t);

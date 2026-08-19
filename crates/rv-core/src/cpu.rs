@@ -448,6 +448,82 @@ impl Cpu {
         }
     }
 
+    /// f32 相邻值步进：dir=true 朝 +inf，dir=false 朝 -inf。
+    /// 覆盖 ±0 与 ±inf 边界，NaN 原样返回。
+    fn f32_step(v: f32, dir: bool) -> f32 {
+        if v.is_nan() {
+            return v;
+        }
+        let bits = v.to_bits();
+        let mag = bits & 0x7FFF_FFFF;
+        let sign = bits >> 31;
+        if mag == 0 {
+            return f32::from_bits(if dir { 0x0000_0001 } else { 0x8000_0001 });
+        }
+        if mag == 0x7F80_0000 {
+            return v;
+        }
+        let away = (dir && sign == 0) || (!dir && sign == 1);
+        let new_mag = if away { mag + 1 } else { mag - 1 };
+        f32::from_bits((sign << 31) | new_mag)
+    }
+
+    /// 把 f64 按 rm 舍入到 f32 精度（int→float 与 f64→f32 收窄共用）：
+    /// 0=RNE（默认）1=RTZ 2=RDN 3=RUP 4=RMM 7=DYN（无 fcsr，按 RNE），其余按 RNE。
+    fn round_f64_to_f32(x: f64, rm: u8) -> f32 {
+        if !x.is_finite() {
+            return x as f32;
+        }
+        let rne = x as f32; // Rust as-cast = round to nearest, ties to even
+        let f = rne as f64;
+        if f == x {
+            return rne;
+        }
+        let up = Self::f32_step(rne, true) as f64;
+        let down = Self::f32_step(rne, false) as f64;
+        match rm {
+            1 => {
+                // RTZ：幅值不大于 |x| 且最接近 x 的 f32；rne 超幅值时退回一档
+                if f.abs() <= x.abs() {
+                    rne
+                } else {
+                    Self::f32_step(rne, x < 0.0)
+                }
+            }
+            2 => {
+                // RDN：不大于 x 且最接近 x
+                if f <= x {
+                    rne
+                } else {
+                    Self::f32_step(rne, false)
+                }
+            }
+            3 => {
+                // RUP：不小于 x 且最接近 x
+                if f >= x {
+                    rne
+                } else {
+                    Self::f32_step(rne, true)
+                }
+            }
+            4 => {
+                // RMM：最近，平局离零
+                let d_up = (up - x).abs();
+                let d_down = (x - down).abs();
+                if d_down < d_up {
+                    Self::f32_step(rne, false)
+                } else if d_up < d_down {
+                    Self::f32_step(rne, true)
+                } else if x > 0.0 {
+                    Self::f32_step(rne, true)
+                } else {
+                    Self::f32_step(rne, false)
+                }
+            }
+            _ => rne,
+        }
+    }
+
     /// 运算结果 NaN 收敛为规范 NaN（RISC-V 规范：除另有说明外结果为 canonical NaN）
     fn canonicalize_s(v: f32) -> f32 {
         if v.is_nan() {
@@ -930,11 +1006,11 @@ impl Cpu {
                 self.set_reg(instr.rd, v);
             }
             Op::FCvtSW => {
-                let v = self.regs[instr.rs1 as usize] as i32 as f32;
+                let v = Self::round_f64_to_f32(self.regs[instr.rs1 as usize] as i32 as f64, instr.rs3);
                 self.set_fr(instr.rd, v);
             }
             Op::FCvtSWU => {
-                let v = self.regs[instr.rs1 as usize] as f32;
+                let v = Self::round_f64_to_f32(self.regs[instr.rs1 as usize] as f64, instr.rs3);
                 self.set_fr(instr.rd, v);
             }
             Op::FMvXW => {
@@ -1074,7 +1150,7 @@ impl Cpu {
                 self.set_fr64(instr.rd, v);
             }
             Op::FCvtSD => {
-                let v = self.frv64(instr.rs1) as f32;
+                let v = Self::round_f64_to_f32(self.frv64(instr.rs1), instr.rs3);
                 self.set_fr(instr.rd, v);
             }
             Op::FCvtWD => {

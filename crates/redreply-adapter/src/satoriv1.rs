@@ -40,7 +40,10 @@ async fn http_post(
     json_data: &serde_json::Value,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let uri = reqwest::Url::from_str(url)?;
-    let client = reqwest::Client::builder().no_proxy().build()?;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
     let mut req = client
         .post(uri)
         .body(reqwest::Body::from(json_data.to_string()))
@@ -1281,7 +1284,11 @@ impl BotConnectTrait for Satoriv1Connect {
         let ws_rst;
         if is_ssl {
             let port = request.uri().port().map(Into::into).unwrap_or(443);
-            let addr = format!("{}:{}", request.uri().host().unwrap(), port);
+            let addr = format!(
+                "{}:{}",
+                request.uri().host().ok_or("satori ws地址缺少host")?,
+                port
+            );
             let socket = TcpStream::connect(addr).await?;
             ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
         } else {
@@ -1313,12 +1320,18 @@ impl BotConnectTrait for Satoriv1Connect {
         let group_groups_map =
             Arc::<std::sync::RwLock<HashMap<String, String>>>::downgrade(&self.group_groups_map);
         tokio::spawn(async move {
+            let mut idle = Box::pin(tokio::time::sleep(std::time::Duration::from_secs(60)));
             while let Some(val) = is_stop.upgrade() {
                 if val.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
                 }
                 tokio::select! {
-                    Some(msg) = read_halt.next() => {
+                    msg = read_halt.next() => {
+                        let Some(msg) = msg else {
+                            break;
+                        };
+                        // 只要收到任何数据（含 pong）即认为连接存活
+                        idle.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(60));
                         // 获得json数据
                         let json_dat;
                         if let Some(val) =  get_json_dat(msg) {
@@ -1337,6 +1350,11 @@ impl BotConnectTrait for Satoriv1Connect {
                     },
                     _ = stoprx.recv() => {
 
+                        break;
+                    }
+                    _ = &mut idle => {
+                        // 长时间无任何数据（心跳 pong 无响应），判定连接已死亡
+                        cq_add_log_w("satori 心跳无响应，判定连接已死亡").unwrap();
                         break;
                     }
                 }

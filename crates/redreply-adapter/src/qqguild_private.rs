@@ -334,7 +334,10 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                     break;
                 }
                 tokio::select! {
-                    Some(msg) = read_halt.next() => {
+                    msg = read_halt.next() => {
+                        let Some(msg) = msg else {
+                            break;
+                        };
                         // 获得json数据
                         let json_dat;
                         if let Some(val) =  get_json_dat(msg) {

@@ -519,19 +519,23 @@ pub fn init_core_fun_map() {
                 let tms = s.parse::<usize>()?;
                 self_t.xh_vec.push([false, false]);
                 let xh_len = self_t.xh_vec.len();
-                for i in 0..tms {
-                    self_t.xh_vec[xh_len - 1][0] = false;
-                    let v = self_t.get_param(params, 1)?;
-                    self_t.connect_rv_with_context(
-                        &mut ret_rv,
-                        &v,
-                        &format!("拼接`循环`第{}次结果失败", i + 1),
-                    )?;
-                    if self_t.xh_vec[xh_len - 1][1] {
-                        break;
+                let loop_rst: Result<(), Box<dyn std::error::Error>> = (|| {
+                    for i in 0..tms {
+                        self_t.xh_vec[xh_len - 1][0] = false;
+                        let v = self_t.get_param(params, 1)?;
+                        self_t.connect_rv_with_context(
+                            &mut ret_rv,
+                            &v,
+                            &format!("拼接`循环`第{}次结果失败", i + 1),
+                        )?;
+                        if self_t.xh_vec[xh_len - 1][1] {
+                            break;
+                        }
                     }
-                }
+                    Ok(())
+                })();
                 self_t.xh_vec.pop();
+                loop_rst?;
             }
             RedValue::Array(arr) => {
                 let fun_ast = params.get(1).ok_or("数组循环中参数函数获取失败")?.clone();
@@ -546,30 +550,34 @@ pub fn init_core_fun_map() {
                         .map_err(|e| RedLang::make_err(&e))?,
                 ];
                 let xh_len = self_t.xh_vec.len();
-                for (i, value) in arr_clone.iter().enumerate().take(tms) {
-                    self_t.xh_vec[xh_len - 1][0] = false;
-                    fun_params[1] = astparser::str_to_ast(i.to_string());
-                    {
-                        let var_vec_len = self_t.var_vec.len();
-                        let mp = &mut self_t.var_vec[var_vec_len - 1];
-                        mp.insert(loop_val_var.clone(), Rc::new(RefCell::new(value.clone())));
+                let loop_rst: Result<(), Box<dyn std::error::Error>> = (|| {
+                    for (i, value) in arr_clone.iter().enumerate().take(tms) {
+                        self_t.xh_vec[xh_len - 1][0] = false;
+                        fun_params[1] = astparser::str_to_ast(i.to_string());
+                        {
+                            let var_vec_len = self_t.var_vec.len();
+                            let mp = &mut self_t.var_vec[var_vec_len - 1];
+                            mp.insert(loop_val_var.clone(), Rc::new(RefCell::new(value.clone())));
+                        }
+                        let v = self_t.call_fun(&fun_params)?;
+                        self_t.connect_rv_with_context(
+                            &mut ret_rv,
+                            &v,
+                            &format!("拼接`数组循环`第{}次结果失败", i + 1),
+                        )?;
+                        if self_t.xh_vec[xh_len - 1][1] {
+                            break;
+                        }
                     }
-                    let v = self_t.call_fun(&fun_params)?;
-                    self_t.connect_rv_with_context(
-                        &mut ret_rv,
-                        &v,
-                        &format!("拼接`数组循环`第{}次结果失败", i + 1),
-                    )?;
-                    if self_t.xh_vec[xh_len - 1][1] {
-                        break;
-                    }
-                }
+                    Ok(())
+                })();
                 {
                     let var_vec_len = self_t.var_vec.len();
                     let mp = &mut self_t.var_vec[var_vec_len - 1];
                     mp.remove(&loop_val_var);
                 }
                 self_t.xh_vec.pop();
+                loop_rst?;
             }
             RedValue::Object(obj) => {
                 let fun_ast = params.get(1).ok_or("对象循环中参数函数获取失败")?.clone();
@@ -583,30 +591,34 @@ pub fn init_core_fun_map() {
                         .map_err(|e| RedLang::make_err(&e))?,
                 ];
                 let xh_len = self_t.xh_vec.len();
-                for (k, v) in &obj_clone {
-                    self_t.xh_vec[xh_len - 1][0] = false;
-                    fun_params[1] = astparser::str_to_ast(k.clone());
-                    {
-                        let var_vec_len = self_t.var_vec.len();
-                        let mp = &mut self_t.var_vec[var_vec_len - 1];
-                        mp.insert(loop_val_var.clone(), Rc::new(RefCell::new(v.clone())));
+                let loop_rst: Result<(), Box<dyn std::error::Error>> = (|| {
+                    for (k, v) in &obj_clone {
+                        self_t.xh_vec[xh_len - 1][0] = false;
+                        fun_params[1] = astparser::str_to_ast(k.clone());
+                        {
+                            let var_vec_len = self_t.var_vec.len();
+                            let mp = &mut self_t.var_vec[var_vec_len - 1];
+                            mp.insert(loop_val_var.clone(), Rc::new(RefCell::new(v.clone())));
+                        }
+                        let v = self_t.call_fun(&fun_params)?;
+                        self_t.connect_rv_with_context(
+                            &mut ret_rv,
+                            &v,
+                            &format!("拼接`对象循环`键`{}`的结果失败", k),
+                        )?;
+                        if self_t.xh_vec[xh_len - 1][1] {
+                            break;
+                        }
                     }
-                    let v = self_t.call_fun(&fun_params)?;
-                    self_t.connect_rv_with_context(
-                        &mut ret_rv,
-                        &v,
-                        &format!("拼接`对象循环`键`{}`的结果失败", k),
-                    )?;
-                    if self_t.xh_vec[xh_len - 1][1] {
-                        break;
-                    }
-                }
+                    Ok(())
+                })();
                 {
                     let var_vec_len = self_t.var_vec.len();
                     let mp = &mut self_t.var_vec[var_vec_len - 1];
                     mp.remove(&loop_val_var);
                 }
                 self_t.xh_vec.pop();
+                loop_rst?;
             }
             _ => {}
         }
@@ -616,18 +628,22 @@ pub fn init_core_fun_map() {
         let mut ret_rv: Rc<RedValue> = rv_empty();
         self_t.xh_vec.push([false, false]);
         let xh_len = self_t.xh_vec.len();
-        loop {
-            self_t.xh_vec[xh_len - 1][0] = false;
-            if !self_t.get_param(params, 0)?.is_true() {
-                break;
+        let loop_rst: Result<(), Box<dyn std::error::Error>> = (|| {
+            loop {
+                self_t.xh_vec[xh_len - 1][0] = false;
+                if !self_t.get_param(params, 0)?.is_true() {
+                    break;
+                }
+                let v = self_t.get_param(params, 1)?;
+                self_t.connect_rv_with_context(&mut ret_rv, &v, "拼接`判循`结果失败")?;
+                if self_t.xh_vec[xh_len - 1][1] {
+                    break;
+                }
             }
-            let v = self_t.get_param(params, 1)?;
-            self_t.connect_rv_with_context(&mut ret_rv, &v, "拼接`判循`结果失败")?;
-            if self_t.xh_vec[xh_len - 1][1] {
-                break;
-            }
-        }
+            Ok(())
+        })();
         self_t.xh_vec.pop();
+        loop_rst?;
         Ok(Some(ret_rv))
     });
     add_fun(vec!["跳出"], |self_t, _params| {
@@ -951,18 +967,27 @@ pub fn init_core_fun_map() {
                     let l1 = out_vec2.pop().ok_or("% err")?;
                     let n1 = l1.parse::<f64>()?;
                     let n2 = l2.parse::<f64>()?;
+                    if n2 == 0.0 {
+                        return Err("计算表达式出现除零".into());
+                    }
                     out_vec2.push((n1 % n2).to_string());
                 } else if it == "/" {
                     let l2 = out_vec2.pop().ok_or("/ err")?;
                     let l1 = out_vec2.pop().ok_or("/ err")?;
                     let n1 = l1.parse::<f64>()?;
                     let n2 = l2.parse::<f64>()?;
+                    if n2 == 0.0 {
+                        return Err("计算表达式出现除零".into());
+                    }
                     out_vec2.push((n1 / n2).to_string());
                 } else if it == "//" {
                     let l2 = out_vec2.pop().ok_or("// err")?;
                     let l1 = out_vec2.pop().ok_or("// err")?;
                     let n1 = l1.parse::<f64>()?;
                     let n2 = l2.parse::<f64>()?;
+                    if n2 == 0.0 {
+                        return Err("计算表达式出现除零".into());
+                    }
                     out_vec2.push(((n1 / n2) as i64).to_string());
                 } else if it == "*" {
                     let l2 = out_vec2.pop().ok_or("* err")?;

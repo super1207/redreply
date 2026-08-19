@@ -44,7 +44,10 @@ pub fn call_mqtt_remote(
         let _guard = scopeguard::guard(uuid_t, |echo| {
             runtime_context().services.remove_mqtt_echo(&echo);
         });
-        playload["message_id"] = serde_json::json!(passive_id);
+        let payload_obj = playload
+            .as_object_mut()
+            .ok_or("MQTT远程调用参数必须是JSON对象")?;
+        payload_obj["message_id"] = serde_json::json!(passive_id);
         let payload = playload.to_string();
         cq_add_log(&format!("mqtt client send: {}", payload)).unwrap();
         client.try_publish_with_properties(topic, QoS::ExactlyOnce, false, payload, resp_props)?;

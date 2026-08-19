@@ -490,13 +490,18 @@ impl BotConnectTrait for OneBot11Connect {
         if let Some(access_token) = mp.get("access_token") {
             request.headers_mut().insert(
                 "Authorization",
-                HeaderValue::from_str(&format!("Bearer {}", access_token)).unwrap(),
+                HeaderValue::from_str(&format!("Bearer {}", access_token))
+                    .map_err(|e| format!("access_token 含有非法header字符:{}", e))?,
             );
         }
         let ws_rst;
         if self.url.starts_with("wss://") {
             let port = request.uri().port().map(Into::into).unwrap_or(443);
-            let addr = format!("{}:{}", request.uri().host().unwrap(), port);
+            let addr = format!(
+                "{}:{}",
+                request.uri().host().ok_or("ws地址缺少host")?,
+                port
+            );
             let socket = TcpStream::connect(addr).await?;
             ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
         } else {
@@ -515,12 +520,18 @@ impl BotConnectTrait for OneBot11Connect {
         let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
         let echo_map = Arc::clone(&self.echo_map);
         tokio::spawn(async move {
+            let mut idle = Box::pin(tokio::time::sleep(std::time::Duration::from_secs(90)));
             while let Some(val) = is_stop.upgrade() {
                 if val.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
                 }
                 tokio::select! {
-                    Some(msg) = read_halt.next() => {
+                    msg = read_halt.next() => {
+                        let Some(msg) = msg else {
+                            break;
+                        };
+                        // 只要收到任何数据（含自身心跳的回复）即认为连接存活
+                        idle.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(90));
                         // 获得json数据
                         let mut json_dat;
                         if let Some(val) =  get_json_dat(msg) {
@@ -582,6 +593,11 @@ impl BotConnectTrait for OneBot11Connect {
                     },
                     _ = stoprx.recv() => {
 
+                        break;
+                    }
+                    _ = &mut idle => {
+                        // 长时间无任何数据（自身心跳也无回复），判定连接已死亡
+                        cq_add_log_w("onebot11 心跳无响应，判定连接已死亡").unwrap();
                         break;
                     }
                 }

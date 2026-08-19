@@ -2227,7 +2227,14 @@ pub fn init_http_server() -> Result<()> {
         let listener = socket.listen(20).unwrap();
 
         loop {
-            let (stream, remote_address) = listener.accept().await.unwrap();
+            let (stream, remote_address) = match listener.accept().await {
+                Ok(ok) => ok,
+                Err(err) => {
+                    cq_add_log_w(&format!("HTTP accept 失败:{err}")).unwrap();
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+            };
 
             let io = hyper_util::rt::TokioIo::new(stream);
 

@@ -1547,10 +1547,15 @@ pub fn init_cq_ex_fun_map() {
                 let k = row.get_ref_unwrap(i);
                 let dat = match k.data_type() {
                     rusqlite::types::Type::Null => rv_empty(),
-                    rusqlite::types::Type::Integer => rv_text(k.as_i64().unwrap().to_string()),
-                    rusqlite::types::Type::Real => rv_text(k.as_f64().unwrap().to_string()),
-                    rusqlite::types::Type::Text => rv_text(k.as_str().unwrap().to_owned()),
-                    rusqlite::types::Type::Blob => rv_bin(k.as_blob().unwrap().to_vec()),
+                    rusqlite::types::Type::Integer => rv_text(k.as_i64().unwrap_or(0).to_string()),
+                    rusqlite::types::Type::Real => rv_text(k.as_f64().unwrap_or(0.0).to_string()),
+                    rusqlite::types::Type::Text => rv_text(match k.as_str() {
+                        Ok(s) => s.to_owned(),
+                        Err(_) => {
+                            String::from_utf8_lossy(k.as_bytes().unwrap_or(&[])).to_string()
+                        }
+                    }),
+                    rusqlite::types::Type::Blob => rv_bin(k.as_blob().unwrap_or(&[]).to_vec()),
                 };
                 v.push(dat);
             }

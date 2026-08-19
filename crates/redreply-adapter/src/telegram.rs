@@ -70,10 +70,14 @@ impl TeleTramConnect {
             proxy = lk.to_owned();
         }
         if proxy.is_empty() {
-            Ok(reqwest::Client::builder().no_proxy().build()?)
+            Ok(reqwest::Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(60))
+                .build()?)
         } else {
             Ok(reqwest::Client::builder()
                 .proxy(reqwest::Proxy::all(proxy.as_str())?)
+                .timeout(Duration::from_secs(60))
                 .build()?)
         }
     }
@@ -173,10 +177,13 @@ impl TeleTramConnect {
             let is_automatic_forward =
                 Self::get_json_bool(reply_to_message, "is_automatic_forward");
             if !is_automatic_forward {
-                reply_id = reply_to_message["message_id"]
+                let raw_reply_id = reply_to_message["message_id"]
                     .as_i64()
                     .ok_or("message_id not i64")?
                     .to_string();
+                // 优先映射回内部UUID，插件回传时才能通过 get_msg_id 解析；
+                // 超出映射缓存窗口时回退为 telegram 原生 message_id
+                reply_id = self.get_cq_msg_id(&raw_reply_id).unwrap_or(raw_reply_id);
             }
         }
 
@@ -351,6 +358,14 @@ impl TeleTramConnect {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let is_msg = event.get("message").is_some();
         if is_msg {
+            if let Some(from_id) = event["message"]["from"]["id"]
+                .as_i64()
+                .map(|id| id.to_string())
+            {
+                if from_id == *self.self_id.read().unwrap() {
+                    return Ok(());
+                }
+            }
             let msg_type = event["message"]["chat"]["type"]
                 .as_str()
                 .ok_or("chat type not str")?;
@@ -527,6 +542,19 @@ impl TeleTramConnect {
         vec![]
     }
 
+    /// 由 telegram 原生 message_id 反查内部 UUID（类似 kook 的 get_cq_msg_id）
+    fn get_cq_msg_id(&self, raw_msg_id: &str) -> Option<String> {
+        let lk = self.msg_ids.read().unwrap();
+        for msg_id_pair in lk.iter() {
+            for raw_msg in &msg_id_pair.raw_msg_ids {
+                if raw_msg.msg_id == raw_msg_id {
+                    return Some(msg_id_pair.msg_id.clone());
+                }
+            }
+        }
+        None
+    }
+
     async fn make_telegram_msg(
         &self,
         message_arr: &serde_json::Value,
@@ -590,11 +618,11 @@ impl TeleTramConnect {
                         .ok_or("reply not found")?,
                 );
                 let telegram_id = self.get_msg_id(&cq_id);
-                quote = telegram_id
-                    .first()
-                    .ok_or("get telegram msg_id err")?
-                    .msg_id
-                    .to_owned();
+                quote = match telegram_id.first() {
+                    Some(raw) => raw.msg_id.to_owned(),
+                    // 查不到内部映射：可能是超出缓存窗口的 telegram 原生 message_id
+                    None => cq_id,
+                };
             } else if tp == "at" {
                 if !is_group {
                     continue;

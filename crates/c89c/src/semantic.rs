@@ -593,11 +593,13 @@ fn check_static_initializer(
         },
         Type::Struct(tag) => match node.inner() {
             Node::InitList(items) => {
-                // 成员数量检查（C89 §3.5.7）：多出的初始化器是约束违规
-                if let Some(def) = types.and_then(|tt| tt.structs.get(tag)) {
-                    if items.len() > def.members.len() {
-                        return StaticInit::TooMany;
-                    }
+                // 成员数量检查（C89 §3.5.7）：按标量槽计数支持花括号省略
+                // （struct S{int a[3];int x;} s={1,2,3,4}; 合法），
+                // 超出聚合总容量的初始化器是约束违规
+                if types.and_then(|tt| tt.structs.get(tag)).is_some()
+                    && !init_list_fits(ty, items, types)
+                {
+                    return StaticInit::TooMany;
                 }
                 if items.iter().all(|item| is_static_init_constant(item, objects)) {
                     StaticInit::Ok
@@ -698,7 +700,7 @@ fn block_initializer_too_many(ty: &Type, node: &Node, types: Option<&TypeTable>)
         Type::Struct(tag) => match node.inner() {
             Node::InitList(items) => types
                 .and_then(|tt| tt.structs.get(tag))
-                .is_some_and(|def| items.len() > def.members.len()),
+                .is_some_and(|_| !init_list_fits(ty, items, types)),
             _ => false,
         },
         _ => false,
@@ -1388,7 +1390,15 @@ fn validate_expression_types(
                         (arithmetic(&left) || pointer(&left))
                             && (arithmetic(&right) || pointer(&right))
                     }
-                    _ => true,
+                    // C89 §3.3.8/§3.3.9 约束：结构体/联合体不能比较
+                    // （此前落入通配分支被静默接受，codegen 会退化为比较
+                    // 对象地址，产生错误语义）
+                    BinaryOp::Lt
+                    | BinaryOp::Gt
+                    | BinaryOp::Le
+                    | BinaryOp::Ge
+                    | BinaryOp::Eq
+                    | BinaryOp::Ne => !(left.is_struct() || right.is_struct()),
                 };
                 if !valid {
                     return context.error(

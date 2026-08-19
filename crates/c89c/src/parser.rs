@@ -1361,6 +1361,10 @@ impl Parser {
                     other => other,
                 },
             };
+            // 参数名不得重复（C89 §3.7.1 约束；无名参数除外）
+            if !name.is_empty() && params.iter().any(|p| p.name == name) {
+                return Err(self.err(&format!("参数 '{}' 重复声明", name)));
+            }
             params.push(Param { ty, name });
             if self.eat(",") {
                 continue;
@@ -1607,6 +1611,9 @@ impl Parser {
             self.typedefs.insert(name.clone(), specs.ty.clone());
         } else {
             self.obj_types.insert(name.clone(), specs.ty.clone());
+            // typedef 名与普通标识符同命名空间：块内对象声明遮蔽外层
+            // typedef（C89 §3.1.2.1），否则后续 T = 5; 会被误判为声明
+            self.typedefs.remove(&name);
         }
         self.enum_constants.remove(&name);
         while self.eat(",") {
@@ -1638,6 +1645,8 @@ impl Parser {
                 self.typedefs.insert(name.clone(), item_specs.ty.clone());
             } else {
                 self.obj_types.insert(name.clone(), item_specs.ty.clone());
+                // 与首个声明符一致：块内对象声明遮蔽外层 typedef
+                self.typedefs.remove(&name);
             }
             self.enum_constants.remove(&name);
             declarations.push(Node::Decl {

@@ -895,14 +895,13 @@ impl Preprocessor {
                         continue;
                     }
                 }
-                // 宏名后紧跟 ( 且无空白 → 函数宏调用。C89 §3.8.3 的
-                // "无空白"要求对调用点同样成立：F (1) / F\n(1) / F /*c*/ (1)
-                // 都不是函数宏调用，保留为普通标识符（GCC/Clang 行为）。
+                // 宏名后紧跟 ( 即视为函数宏调用：空白/换行不是预处理记号，
+                // C89 §3.8.3 只要求下一个预处理记号为 (（GCC/Clang 均展开
+                // F (1) 与 F\n(1)）。"无空白"限制仅适用于定义点（见
+                // handle_define 中 #define F (x) 是对象宏）。
                 let is_func_call = queue
                     .front()
-                    .map(|n| {
-                        n.tok.kind == TokKind::Punct && n.tok.text == "(" && !n.tok.has_space
-                    })
+                    .map(|n| n.tok.kind == TokKind::Punct && n.tok.text == "(")
                     .unwrap_or(false);
 
                 if let Some(m) = self.macros.get(&t.text) {

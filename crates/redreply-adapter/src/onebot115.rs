@@ -138,7 +138,7 @@ impl BotConnectTrait for OneBot115Connect {
             request.headers_mut().insert(
                 "Authorization",
                 tungstenite::http::HeaderValue::from_str(&format!("Bearer {}", access_token))
-                    .unwrap(),
+                    .map_err(|e| format!("access_token 含有非法header字符:{}", e))?,
             );
         }
         let ws_rst = connect_async(request).await?;
@@ -158,7 +158,10 @@ impl BotConnectTrait for OneBot115Connect {
                     break;
                 }
                 tokio::select! {
-                    Some(msg) = read_halt.next() => {
+                    msg = read_halt.next() => {
+                        let Some(msg) = msg else {
+                            break;
+                        };
                         // 获得json数据
                         let json_dat;
                         if let Some(val) =  get_json_dat(msg) {

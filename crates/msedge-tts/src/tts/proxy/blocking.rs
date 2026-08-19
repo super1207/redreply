@@ -150,7 +150,11 @@ fn socks5_proxy(
 
     // Client authentication
     if buf[1] == 0x02 {
-        let request = build_socks5_authentication_request(username.unwrap(), password.unwrap());
+        // 客户端未声明凭据时服务器不应选择 0x02；若仍被选择（不合规/被劫持的
+        // 服务器），必须报错而不是 unwrap panic（远程可控数据）
+        let username = username.ok_or(Socks5ProxyError::BadServerChoice(0x02))?;
+        let password = password.ok_or(Socks5ProxyError::BadServerChoice(0x02))?;
+        let request = build_socks5_authentication_request(username, password);
         stream.write_all(&request)?;
         stream.flush()?;
 

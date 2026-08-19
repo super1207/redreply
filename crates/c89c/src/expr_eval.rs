@@ -612,9 +612,11 @@ impl ExprParser {
             TokKind::Number => {
                 self.pos += 1;
                 let (value, unsigned, _long) = parse_int_literal(&t.text)?;
-                // 无后缀常量超出 int 范围时按 C89 §3.1.3.2 自动升为无符号
+                // 无后缀常量超出 int 范围时按 C89 §3.1.3.2 自动升为无符号；
+                // U 值按模 2^32 语义存储（与 ic_add 等运算保持一致，
+                // 否则 #if 4294967296 与 #if 4294967296+0 结果不一致）
                 Ok(if unsigned || value > i32::MAX as i64 {
-                    ICVal::U(value as u64)
+                    ICVal::U(value as u64 & 0xFFFF_FFFF)
                 } else {
                     ICVal::S(value)
                 })

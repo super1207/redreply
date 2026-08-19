@@ -82,6 +82,7 @@ impl KookConnect {
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
             .no_proxy()
+            .timeout(Duration::from_secs(30))
             .build()?;
         let mut req = client.get(uri).build()?;
         let token = &self.token;
@@ -2239,7 +2240,15 @@ impl BotConnectTrait for KookConnect {
         *self.self_id.write().unwrap() = login_info.user_id;
 
         let wss_url = self.get_gateway().await?;
-        let (ws_stream, _) = connect_async(wss_url).await?;
+        let (ws_stream, _) = match tokio::time::timeout(
+            Duration::from_secs(30),
+            connect_async(wss_url),
+        )
+        .await
+        {
+            Ok(ok) => ok?,
+            Err(_) => return Err("kook websocket连接超时(30s)".into()),
+        };
         let (mut write_halt, mut read_halt) = ws_stream.split();
         let sn_ptr = self.sn.clone();
         let is_stop = self.is_stop.clone();
@@ -2317,7 +2326,10 @@ impl BotConnectTrait for KookConnect {
                     break;
                 }
                 tokio::select! {
-                    Some(msg_rst) = read_halt.next() => {
+                    msg_rst = read_halt.next() => {
+                        let Some(msg_rst) = msg_rst else {
+                            break;
+                        };
                         if let Ok(raw_msg) = msg_rst {
                             let bin = raw_msg.into_data();
                             let mut d = ZlibDecoder::new(std::io::Cursor::new(bin));

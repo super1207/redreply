@@ -113,8 +113,8 @@ pub fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             i += 1;
             continue;
         }
-        // 换行：保留（预处理器按行工作）。换行同样是空白——
-        // 其后 token 的 has_space 置位（F\n(1) 不是函数宏调用）。
+        // 换行：保留（预处理器按行工作）。换行同样是空白，
+        // 其后 token 的 has_space 置位（供 #define F (x) 定义点判断使用）。
         if c == '\n' {
             space = true;
             let column = (i - line_start + 1) as u32;

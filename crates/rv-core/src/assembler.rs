@@ -374,9 +374,9 @@ fn data_line_alignment(text: &str) -> u32 {
         ".half" => 2,
         ".align" => it
             .next()
-            .and_then(|arg| arg.trim().parse::<u32>().ok())
-            .and_then(|power| 1u32.checked_shl(power))
-            .filter(|align| *align <= 4096)
+            .and_then(|arg| parse_int(arg.trim()).ok())
+            .filter(|power| (0..=16).contains(power))
+            .map(|power| 1u32 << power)
             .unwrap_or(1),
         _ => 1,
     }
@@ -533,6 +533,10 @@ pub fn assemble(source: &str) -> Result<Program, String> {
                                 .chars()
                                 .all(|c| c == '_' || c == '.' || c.is_ascii_alphanumeric())
                             {
+                                // 以数字开头的记号不可能是符号，是超出解析范围的数字字面量
+                                if v.chars().next().is_some_and(|c| c.is_ascii_digit()) {
+                                    return Err(format!("数据初值超出 32 位范围: {}", v));
+                                }
                                 let index = data_bytes.len();
                                 data_relocations.push((index, v.to_owned(), size));
                                 vec![0; size]
@@ -1506,6 +1510,9 @@ fn parse_mem_operand(s: &str) -> Result<(i32, u8), String> {
     let close = s
         .rfind(')')
         .ok_or_else(|| format!("访存操作数缺少右括号: {}", s))?;
+    if close <= open {
+        return Err(format!("访存操作数格式错误: {}", s));
+    }
     let inside = s[open + 1..close].trim();
     let rs1 = parse_reg(inside)?;
     let imm_str = s[..open].trim();

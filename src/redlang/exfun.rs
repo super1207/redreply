@@ -1380,6 +1380,9 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["图片模糊", "图像模糊"], |self_t, params| {
         let (_, img) = get_param_image(self_t, params, 0)?;
         let sigma = self_t.get_param_text(params, 1)?.parse::<f32>()?;
+        if !sigma.is_finite() {
+            return Err(RedLang::make_err("图片模糊参数sigma必须是有限数值"));
+        }
         let img_out = if sigma <= 0. {
             img
         } else {
@@ -1392,6 +1395,9 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["图片锐化", "图像锐化"], |self_t, params| {
         let (_, img) = get_param_image(self_t, params, 0)?;
         let sigma = self_t.get_param_text(params, 1)?.parse::<f32>()?;
+        if !sigma.is_finite() || sigma <= 0.0 {
+            return Err(RedLang::make_err("图片锐化参数sigma必须是有限正数"));
+        }
         let threshold_text = self_t.get_param_text(params, 2)?;
         let threshold = if threshold_text.is_empty() {
             0
@@ -1695,12 +1701,12 @@ pub fn init_ex_fun_map() {
             .parse::<f32>()
             .unwrap_or(1.0);
 
-        if sigma <= 0. {
-            return Err(RedLang::make_err("图片线稿参数sigma必须大于0"));
+        if !sigma.is_finite() || sigma <= 0. {
+            return Err(RedLang::make_err("图片线稿参数sigma必须是有限正数"));
         }
 
-        if contrast < 0.0 {
-            return Err(RedLang::make_err("对比度参数必须大于等于0"));
+        if !contrast.is_finite() || contrast < 0.0 {
+            return Err(RedLang::make_err("对比度参数必须是有限且大于等于0"));
         }
 
         let (width, height) = img.dimensions();
@@ -2962,10 +2968,20 @@ pub fn init_ex_fun_map() {
                 let k = row.get_ref_unwrap(i);
                 let dat = match k.data_type() {
                     rusqlite::types::Type::Null => rv_empty(),
-                    rusqlite::types::Type::Integer => rv_text(k.as_i64().unwrap().to_string()),
-                    rusqlite::types::Type::Real => rv_text(k.as_f64().unwrap().to_string()),
-                    rusqlite::types::Type::Text => rv_text(k.as_str().unwrap().to_owned()),
-                    rusqlite::types::Type::Blob => rv_bin(k.as_blob().unwrap().to_vec()),
+                    rusqlite::types::Type::Integer => rv_text(k.as_i64().unwrap_or(0).to_string()),
+                    rusqlite::types::Type::Real => rv_text(k.as_f64().unwrap_or(0.0).to_string()),
+                    rusqlite::types::Type::Text => rv_text(
+                        // TEXT 列可能含非法 UTF-8 字节（SQLite 无类型强制），
+                        // as_str 会返回 Err，unwarp 将导致进程崩溃
+                        match k.as_str() {
+                            Ok(s) => s.to_owned(),
+                            Err(_) => String::from_utf8_lossy(k.as_bytes().unwrap_or(&[]))
+                                .to_string(),
+                        },
+                    ),
+                    rusqlite::types::Type::Blob => {
+                        rv_bin(k.as_blob().unwrap_or(&[]).to_vec())
+                    }
                 };
                 v.push(dat);
             }
@@ -3047,7 +3063,7 @@ pub fn init_ex_fun_map() {
             num = num_str.parse::<usize>()?;
         }
         let monitors = xcap::Monitor::all()?;
-        if num + 1 > monitors.len() {
+        if num >= monitors.len() {
             return Ok(Some(rv_bin(vec![])));
         }
         let image = monitors[num].capture_image()?;
@@ -3223,10 +3239,14 @@ pub fn init_ex_fun_map() {
                 for ch in input.chars() {
                     if ch.is_ascii_digit() {
                         tmp.push(ch);
-                    } else if ch.is_ascii_lowercase() && !tmp.is_empty() {
-                        ret_vec.push(tmp.clone());
-                        tmp.clear();
-                        ret_vec.push(ch.to_string());
+                    } else if ch.is_ascii_alphabetic() {
+                        // 字母无论前后是否有数字都应成为 token（兼容 d6/3D6 写法），
+                        // 统一转小写，此前开头的小写字母会被静默丢弃、大写不识别
+                        if !tmp.is_empty() {
+                            ret_vec.push(tmp.clone());
+                            tmp.clear();
+                        }
+                        ret_vec.push(ch.to_ascii_lowercase().to_string());
                     }
                 }
                 if !tmp.is_empty() {
@@ -4543,8 +4563,14 @@ def red_out(sw):
             if let Ok(ret) = ret_rst {
                 // 查询到了,要判断是否过期
                 let v = ret.split("-").collect::<Vec<&str>>();
-                let start_time = v[0].parse::<i64>()?;
-                let r_times = v[1].parse::<i64>()?;
+                let start_time = v
+                    .first()
+                    .ok_or("执行频率记录格式错误(缺少开始时间)")?
+                    .parse::<i64>()?;
+                let r_times = v
+                    .get(1)
+                    .ok_or("执行频率记录格式错误(缺少剩余次数)")?
+                    .parse::<i64>()?;
                 if tm13 - start_time > time {
                     // 过期了
                     can_run = true;
@@ -4709,8 +4735,15 @@ def red_out(sw):
     add_fun(vec!["排列"], |self_t, params| {
         let s = self_t.get_param_array(params, 0)?;
         let n = self_t.get_param_text(params, 1)?.parse::<usize>()?;
+        // n! 全排列数量爆炸增长，无上限将导致挂起/内存耗尽
+        if n > 9 {
+            return Err(RedLang::make_err("排列参数n不能超过9"));
+        }
         let s_len = s.len();
         let out_zhuhe = zhuhe(s_len, n);
+        if out_zhuhe.is_empty() {
+            return Ok(Some(rv_array(vec![])));
+        }
         let quanpai_vec = quanpai(n);
         let mut out_vec_t: Vec<Rc<RedValue>> = Vec::new();
         for it3 in out_zhuhe {
