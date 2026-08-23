@@ -73,6 +73,19 @@ async fn http_post(
     Ok(json_val)
 }
 
+// satori 官方规范成功时直接返回资源本身(无 code 字段，错误靠 HTTP 状态码)；
+// 但部分实现会附带业务 code 字段，此处仅在 code 存在且非 0 时视为失败
+fn check_satori_resp_code(
+    ret: &serde_json::Value,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if let Some(code) = ret.get("code").and_then(|v| v.as_i64()) {
+        if code != 0 {
+            return Err(format!("satori api error code:{code},resp:{ret}").into());
+        }
+    }
+    Ok(())
+}
+
 fn get_json_from_msg(msg: hyper_tungstenite::tungstenite::Message) -> Option<serde_json::Value> {
     if let Ok(msg_text) = msg.to_text() {
         if let Ok(json_dat_t) = serde_json::from_str::<serde_json::Value>(msg_text) {
@@ -502,12 +515,17 @@ impl Satoriv1Connect {
                 } else {
                     //private
                     let key = format!("{platform} {self_id} {user_id}");
-                    user_channel_map
+                    let user_channel_mp = user_channel_map
                         .upgrade()
-                        .ok_or("upgrade user_channel_map失败")?
-                        .write()
-                        .unwrap()
-                        .insert(key, channel_id.clone());
+                        .ok_or("upgrade user_channel_map失败")?;
+                    {
+                        // 简单防膨胀：超过上限先清空
+                        let mut lk = user_channel_mp.write().unwrap();
+                        if lk.len() > 100_000 {
+                            lk.clear();
+                        }
+                        lk.insert(key, channel_id.clone());
+                    }
                     let event_json = serde_json::json!({
                         "time":tm,
                         "self_id":self_id,
@@ -648,12 +666,17 @@ impl Satoriv1Connect {
                     // 私聊消息撤回
                     // 更新 user 和 channel 的对应关系
                     let key = format!("{platform} {self_id} {user_id}");
-                    user_channel_map
+                    let user_channel_mp = user_channel_map
                         .upgrade()
-                        .ok_or("upgrade user_channel_map失败")?
-                        .write()
-                        .unwrap()
-                        .insert(key, channel_id.clone());
+                        .ok_or("upgrade user_channel_map失败")?;
+                    {
+                        // 简单防膨胀：超过上限先清空
+                        let mut lk = user_channel_mp.write().unwrap();
+                        if lk.len() > 100_000 {
+                            lk.clear();
+                        }
+                        lk.insert(key, channel_id.clone());
+                    }
                     let event_json = serde_json::json!({
                         "time":tm,
                         "self_id":self_id,
@@ -888,6 +911,7 @@ impl Satoriv1Connect {
             &to_send,
         )
         .await?;
+        check_satori_resp_code(&ret)?;
 
         let user = read_json_obj_or_null(&ret, "user");
         let mut nickname = read_json_str(&user, "name");
@@ -1023,6 +1047,7 @@ impl Satoriv1Connect {
             &to_send,
         )
         .await?;
+        check_satori_resp_code(&ret)?;
         let card = read_json_str(&ret, "nick");
         let user = read_json_obj_or_null(&ret, "user");
         let join_time_str = read_json_str(&ret, "joined_at");
@@ -1084,15 +1109,14 @@ impl Satoriv1Connect {
             &to_send,
         )
         .await?;
+        check_satori_resp_code(&user)?;
 
         let mut nickname = read_json_str(&user, "name");
         if nickname.is_empty() {
             nickname = read_json_str(&user, "nick");
         }
-        let mut avatar = read_json_str(&user, "avatar");
-        if avatar.is_empty() {
-            avatar = read_json_str(&user, "avatar");
-        }
+        // 修复复制粘贴错误：此处响应对象本身就是 user，无需重复兜底读取
+        let avatar = read_json_str(&user, "avatar");
         Ok(serde_json::json!({
             "retcode":0,
             "status":"ok",
@@ -1289,7 +1313,10 @@ impl BotConnectTrait for Satoriv1Connect {
                 request.uri().host().ok_or("satori ws地址缺少host")?,
                 port
             );
-            let socket = TcpStream::connect(addr).await?;
+            // 显式超时，避免半开连接长时间卡在 connecting
+            let socket = tokio::time::timeout(std::time::Duration::from_secs(15), TcpStream::connect(addr))
+                .await
+                .map_err(|_| "TCP连接超时(15s)")??;
             ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
         } else {
             ws_rst = connect_async(request).await?;

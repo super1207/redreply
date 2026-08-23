@@ -18,6 +18,7 @@
     const settingsBack = document.getElementById("pio-chat-settings-back");
     const clearContextButton = document.getElementById("pio-chat-clear-context");
     const baseUrlInput = document.getElementById("pio-chat-base-url");
+    const apiTypeInput = document.getElementById("pio-chat-api-type");
     const configInput = document.getElementById("pio-chat-config");
     const configAddInput = document.getElementById("pio-chat-config-add");
     const configAddButton = document.getElementById("pio-chat-config-add-btn");
@@ -496,14 +497,16 @@ const state = {
             else signal.addEventListener("abort", cancel, { once: true });
         }
         try {
+            const runCBody = {
+                source_code: call.source_code,
+                command_id: commandId
+            };
+            // generation 尚未建立（null）时省略该字段，避免向后端传 null 代次
+            if (state.generation != null) runCBody.generation = state.generation;
             const response = await fetch("/run_c", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({
-                    source_code: call.source_code,
-                    generation: state.generation,
-                    command_id: commandId
-                }),
+                body: JSON.stringify(runCBody),
                 signal: signal
             });
             const result = await response.json();
@@ -576,11 +579,14 @@ const state = {
                 const block = buffer.slice(0, sep);
                 buffer = buffer.slice(sep + 2);
                 let event = "message";
-                let data = "";
+                const dataLines = [];
                 for (const line of block.split("\n")) {
                     if (line.startsWith("event:")) event = line.slice(6).trim();
-                    else if (line.startsWith("data:")) data += line.slice(5).trim();
+                    else if (line.startsWith("data:")) dataLines.push(line.slice(5).trim());
                 }
+                // SSE 规范：同一事件的多个 data: 行以 "\n" 连接后整体解析，
+                // 遇到事件边界（空行）即整体分发并清空缓冲；单行 data 行为不变
+                const data = dataLines.join("\n");
                 if (data) {
                     let parsed;
                     try {
@@ -1259,6 +1265,7 @@ const state = {
     function applyCurrentConfigToInputs() {
         const current = state.configs.find(function (item) { return item.name === configInput.value; });
         baseUrlInput.value = (current && current.base_url) || "";
+        if (apiTypeInput) apiTypeInput.value = (current && current.api_type) || "chat_completions";
         apiKeyInput.value = (current && current.api_key) || "";
         modelInput.value = (current && current.model) || "";
         if (proxyInput) proxyInput.value = (current && current.proxy) || "";
@@ -1430,6 +1437,7 @@ const state = {
         const current = state.configs.find(function (item) { return item.name === targetName; });
         if (!current) return;
         current.base_url = baseUrlInput.value.trim();
+        if (apiTypeInput) current.api_type = apiTypeInput.value;
         current.api_key = apiKeyInput.value.trim();
         current.model = modelInput.value.trim();
         if (proxyInput) current.proxy = proxyInput.value.trim();
@@ -1463,6 +1471,7 @@ const state = {
                 model: "",
                 context_length: 131072,
                 thinking_level: "high",
+                api_type: "chat_completions",
                 proxy: ""
             });
             const option = document.createElement("option");

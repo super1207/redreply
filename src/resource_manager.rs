@@ -74,12 +74,19 @@ pub fn show_debug_web() -> Result<(), Box<dyn std::error::Error + Send + Sync>> 
     Ok(())
 }
 
+/// 为 SQLite 连接设置并发等待：全工程存在多连接并发访问同一 DB 文件的场景，
+/// 不设置 busy_timeout 时默认立即返回 SQLITE_BUSY 导致操作失败。
+pub(crate) fn configure_conn_busy_timeout(conn: &rusqlite::Connection) {
+    let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+}
+
 pub fn add_egg_click() -> Result<i64, Box<dyn std::error::Error + Send + Sync>> {
     let sql_file = crate::mytool::path_to_os_str(&(cq_get_app_directory1()? + "reddat.db"));
     add_file_lock(&sql_file);
     let _guard = scopeguard::guard(sql_file.clone(), |path| del_file_lock(&path));
 
     let conn = rusqlite::Connection::open(sql_file)?;
+    configure_conn_busy_timeout(&conn);
     conn.execute(
         "CREATE TABLE IF NOT EXISTS EGG_TABLE (EGG_NAME TEXT,VALUE TEXT DEFAULT 0,PRIMARY KEY(EGG_NAME));",
         [],
@@ -89,8 +96,12 @@ pub fn add_egg_click() -> Result<i64, Box<dyn std::error::Error + Send + Sync>> 
         ["CLICK"],
         |row| row.get(0),
     );
-    let mut value = current.unwrap_or_else(|_| "0".to_owned()).parse::<i64>()?;
-    value = (value + 1).max(0);
+    // VALUE 损坏时从 0 重新计数，而不是让整个功能卡死
+    let mut value = current
+        .unwrap_or_else(|_| "0".to_owned())
+        .parse::<i64>()
+        .unwrap_or(0);
+    value = value.saturating_add(1).max(0);
     conn.execute(
         "REPLACE INTO EGG_TABLE (EGG_NAME,VALUE) VALUES (?,?)",
         ["CLICK", &value.to_string()],
@@ -134,6 +145,7 @@ fn open_live2d_db() -> Result<rusqlite::Connection, Box<dyn std::error::Error + 
     add_file_lock(&sql_file);
     let _guard = scopeguard::guard(sql_file.clone(), |path| del_file_lock(&path));
     let conn = rusqlite::Connection::open(sql_file)?;
+    configure_conn_busy_timeout(&conn);
     conn.execute(
         "CREATE TABLE IF NOT EXISTS LIVE2D_CHAT_MESSAGES (ID INTEGER PRIMARY KEY AUTOINCREMENT,MSG TEXT NOT NULL);",
         [],
@@ -372,17 +384,19 @@ pub fn apply_live2d_diary_updates(
     add: &[(String, String)],
     delete: &[String],
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let conn = open_live2d_db()?;
+    let mut conn = open_live2d_db()?;
+    let transaction = conn.transaction()?;
     for key in delete {
-        conn.execute("DELETE FROM LIVE2D_DIARY_TABLE WHERE KEY = ?", [key])?;
+        transaction.execute("DELETE FROM LIVE2D_DIARY_TABLE WHERE KEY = ?", [key])?;
     }
     for (title, content) in add {
-        conn.execute(
+        transaction.execute(
             "INSERT INTO LIVE2D_DIARY_TABLE (KEY,TITLE,CONTENT,CREATE_TIME,UPDATE_TIME) VALUES (?,?,?,datetime('now','localtime'),datetime('now','localtime'))",
             rusqlite::params![live2d_diary_key(), title, content],
         )?;
     }
-    trim_live2d_diaries(&conn)?;
+    trim_live2d_diaries(&transaction)?;
+    transaction.commit()?;
     Ok(())
 }
 
@@ -432,6 +446,7 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn get_version() -> String {
+    // 嵌入资源在编译期保证存在，缺失即属异常，按 fail-fast 直接 panic
     let file = crate::Asset::get("res/version.txt").unwrap();
     String::from_utf8(file.data.to_vec()).unwrap()
 }
@@ -602,31 +617,46 @@ conn_fun()
         #[cfg(windows)]
         use std::os::windows::process::CommandExt;
 
-        #[cfg(windows)]
-        let status = std::process::Command::new(get_python_cmd_name().unwrap())
-            .creation_flags(0x08000000)
-            .env("PATH", new_env)
-            .arg("-c")
-            .arg(code)
-            .env("port", port.to_string())
-            .env("password", password)
-            .status();
+        // 监督循环：python 意外退出后自动重拉（指数退避封顶 60s），
+        // 进程退出中(is_quitting)则停止，避免关机窗口内反复拉起。
+        let mut backoff_secs: u64 = 3;
+        loop {
+            #[cfg(windows)]
+            let status = std::process::Command::new(get_python_cmd_name().unwrap())
+                .creation_flags(0x08000000)
+                .env("PATH", &new_env)
+                .arg("-c")
+                .arg(code)
+                .env("port", port.to_string())
+                .env("password", &password)
+                .status();
 
-        #[cfg(not(windows))]
-        let status = std::process::Command::new(get_python_cmd_name().unwrap())
-            .env("PATH", new_env)
-            .arg("-c")
-            .arg(code)
-            .env("port", port.to_string())
-            .env("password", password)
-            .status();
+            #[cfg(not(windows))]
+            let status = std::process::Command::new(get_python_cmd_name().unwrap())
+                .env("PATH", &new_env)
+                .arg("-c")
+                .arg(code)
+                .env("port", port.to_string())
+                .env("password", &password)
+                .status();
 
-        match status {
-            Err(err) => {
-                crate::cq_add_log_w(&format!("python服务启动失败:{err:?}")).unwrap();
+            match status {
+                Err(err) => {
+                    let _ =
+                        crate::cq_add_log_w(&format!("python服务启动失败:{err:?}"));
+                    backoff_secs = (backoff_secs.saturating_mul(2)).min(60);
+                }
+                Ok(status) => {
+                    let _ =
+                        crate::cq_add_log_w(&format!("python服务退出:{status:?},{}s后重启", backoff_secs));
+                }
             }
-            Ok(status) => {
-                crate::cq_add_log_w(&format!("python服务退出:{status:?}")).unwrap();
+            if runtime_context().control.is_quitting() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_secs(backoff_secs));
+            if runtime_context().control.is_quitting() {
+                break;
             }
         }
     });

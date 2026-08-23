@@ -17,10 +17,25 @@ pub(crate) fn lock_save(
 
 /// 原子写入：先写临时文件再重命名，避免并发或崩溃留下半截文件
 fn atomic_write(path: &std::path::Path, content: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let mut tmp_path = path.as_os_str().to_owned();
-    tmp_path.push(".tmp");
+    // 使用 uuid 后缀避免同名 tmp 竞争
+    let tmp_path = {
+        let mut p = path.as_os_str().to_owned();
+        p.push(format!(".tmp.{}", uuid::Uuid::new_v4()));
+        std::path::PathBuf::from(p)
+    };
     fs::write(&tmp_path, content)?;
-    fs::rename(tmp_path, path)?;
+    // 同目录重命名是原子的；跨文件系统则回退为拷贝
+    if let Err(e) = fs::rename(&tmp_path, path) {
+        // EXDEV 等跨文件系统错误时回退
+        if e.kind() == std::io::ErrorKind::CrossesDevices {
+            let _ = fs::remove_file(path);
+            fs::copy(&tmp_path, path)?;
+            let _ = fs::remove_file(&tmp_path);
+            return Ok(());
+        }
+        let _ = fs::remove_file(&tmp_path);
+        return Err(e.into());
+    }
     Ok(())
 }
 
@@ -35,7 +50,9 @@ fn get_all_pkg_name() -> Result<Vec<String>, Box<dyn Error + Send + Sync>> {
     for entry in fs::read_dir(pkg_dir)? {
         let path = entry?.path();
         if path.is_dir() {
-            pkg_names.push(path.file_name().unwrap().to_string_lossy().into_owned());
+            if let Some(name) = path.file_name() {
+                pkg_names.push(name.to_string_lossy().into_owned());
+            }
         }
     }
     if pkg_names.iter().any(|name| name == "默认包") {
@@ -81,8 +98,13 @@ pub fn init_code() -> Result<(), Box<dyn Error + Send + Sync>> {
         fs::write(&script_path, "[]")?;
     }
 
+    let content = fs::read_to_string(&script_path)?;
+    // 与附加包一致：剥离 BOM，避免 Windows 编辑器写入 BOM 后 JSON 解析失败
+    let content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
     let mut scripts: Vec<serde_json::Value> =
-        serde_json::from_str(&fs::read_to_string(&script_path)?)?;
+        serde_json::from_str(content).map_err(|err| {
+            format!("解析脚本文件`{script_path}`失败(不是合法的json)：{err:?}")
+        })?;
     scripts.extend(get_all_pkg_code()?);
     runtime_context()
         .scripts
@@ -92,7 +114,7 @@ pub fn init_code() -> Result<(), Box<dyn Error + Send + Sync>> {
         .replace_package_names(get_all_pkg_name()?);
 
     if let Err(err) = initevent::do_init_event(None) {
-        cq_add_log_w(&err.to_string()).unwrap();
+        let _ = cq_add_log_w(&err.to_string());
     }
     Ok(())
 }
@@ -107,6 +129,8 @@ fn get_global_code_from_sql(table: &str, key: &str) -> Result<String, Box<dyn Er
     });
 
     let conn = rusqlite::Connection::open(sql_file)?;
+
+    crate::resource_manager::configure_conn_busy_timeout(&conn);
     let create_sql = match table {
         "GOBAL_FILTER_TABLE" => {
             "CREATE TABLE IF NOT EXISTS GOBAL_FILTER_TABLE (GOBAL_FILTER_NAME TEXT,VALUE TEXT DEFAULT '',PRIMARY KEY(GOBAL_FILTER_NAME));"
@@ -158,6 +182,8 @@ fn set_global_code(
     });
 
     let conn = rusqlite::Connection::open(sql_file)?;
+
+    crate::resource_manager::configure_conn_busy_timeout(&conn);
     let create_sql = match table {
         "GOBAL_FILTER_TABLE" => {
             "CREATE TABLE IF NOT EXISTS GOBAL_FILTER_TABLE (GOBAL_FILTER_NAME TEXT,VALUE TEXT DEFAULT '',PRIMARY KEY(GOBAL_FILTER_NAME));"
@@ -242,10 +268,8 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
     }
 
     let pkg_dir = PathBuf::from_str(&cq_get_app_directory1()?).map(|path| path.join("pkg_dir"))?;
-    // 文件与内存缓存的写操作全部在保存锁内进行
-    let _save_guard = lock_save()?;
+    // 先等脚本退出，再持锁写盘，避免持锁空等 10s 阻塞其它包操作
     runtime_context().control.set_quit(true);
-    // 在文件操作结束后显式 drop，确保 quit_flag 在 init_code() 调用前已恢复 false
     let quit_guard = scopeguard::guard((), |_| runtime_context().control.set_quit(false));
     if !crate::lifecycle::wait_all_pkg_quit(10000) {
         return Err(format!(
@@ -254,9 +278,19 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         )
         .into());
     }
+    // 等待成功后再进入临界区，缩短持锁时间
+    let _save_guard = lock_save()?;
 
-    for (old_name, new_name) in rename_process {
-        fs::rename(pkg_dir.join(old_name), pkg_dir.join(new_name))?;
+    // 重命名带回滚：若中途失败，尝试逆向恢复已成功的重命名
+    let mut succeeded_renames: Vec<(String, String)> = Vec::new();
+    for (old_name, new_name) in &rename_process {
+        if let Err(e) = fs::rename(pkg_dir.join(old_name), pkg_dir.join(new_name)) {
+            for (s_old, s_new) in succeeded_renames.iter().rev() {
+                let _ = fs::rename(pkg_dir.join(s_new), pkg_dir.join(s_old));
+            }
+            return Err(e.into());
+        }
+        succeeded_renames.push((old_name.clone(), new_name.clone()));
     }
     for pkg_name in &package_names {
         let path = pkg_dir.join(pkg_name);
@@ -277,12 +311,20 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         .unwrap_or_else(|| serde_json::json!([]));
     atomic_write(std::path::Path::new(&default_path), &default_content.to_string())?;
 
+    // 删除集合 = 磁盘上存在但不在本次提交列表中的包目录；
+    // 本次重命名产生的新名必须保留（客户端列表可能仍用旧名描述改名过程）
+    let mut keep_names: std::collections::HashSet<String> =
+        package_names.iter().cloned().collect();
+    for (_, new_name) in &succeeded_renames {
+        keep_names.insert(new_name.clone());
+    }
     for pkg_name in get_all_pkg_name()? {
-        if !package_names.contains(&pkg_name) {
+        if !keep_names.contains(&pkg_name) {
+            let _ = cq_add_log_w(&format!("保存脚本：删除不在提交列表中的包目录`{pkg_name}`"));
             let _ = fs::remove_dir_all(pkg_dir.join(&pkg_name));
             del_pkg_memory(&pkg_name);
             if let Err(err) = crate::config_manager::set_ban_pkg(&pkg_name, false) {
-                cq_add_log_w(&format!("从禁用列表删除包`{pkg_name}`失败:{err}")).unwrap();
+                let _ = cq_add_log_w(&format!("从禁用列表删除包`{pkg_name}`失败:{err}"));
             }
         }
     }
@@ -291,7 +333,7 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
     // 再调用 init_code()，否则 add_running_script_num 会因 quit_flag==true 跳过初始化脚本
     drop(quit_guard);
     if let Err(err) = init_code() {
-        cq_add_log_w(&format!("can't call init evt:{err}")).unwrap();
+        let _ = cq_add_log_w(&format!("can't call init evt:{err}"));
     }
     Ok(())
 }
@@ -305,9 +347,7 @@ pub fn save_one_pkg(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> 
         .as_array()
         .ok_or("script is not arr")?;
 
-    // 先解析校验，再进入临界区，减少持锁时间
-    let _save_guard = lock_save()?;
-    // 先等该包脚本退出，成功后才写盘：超时失败时磁盘与内存保持一致
+    // 先等该包脚本退出，再持锁写盘，避免持锁空等 15s
     runtime_context()
         .control
         .set_loading_script(&pkg_name, true);
@@ -319,6 +359,7 @@ pub fn save_one_pkg(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> 
     if !crate::lifecycle::wait_one_pkg_quit(&pkg_name, 15000) {
         return Err("有脚本不愿意退出,所以无法保存".into());
     }
+    let _save_guard = lock_save()?;
 
     if pkg_name.is_empty() {
         let default_path = cq_get_app_directory2()? + "script.json";
@@ -351,7 +392,7 @@ pub fn save_one_pkg(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> 
         runtime_context().scripts.add_package_name(pkg_name.clone());
     }
     if let Err(err) = initevent::do_init_event(Some(&pkg_name)) {
-        cq_add_log_w(&err.to_string()).unwrap();
+        let _ = cq_add_log_w(&err.to_string());
     }
     Ok(())
 }
@@ -360,8 +401,6 @@ pub fn rename_one_pkg(
     old_pkg_name: &str,
     new_pkg_name: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // 与保存操作互斥，防止并发修改同一批文件
-    let _save_guard = lock_save()?;
     runtime_context()
         .control
         .set_package_quit(old_pkg_name, true);
@@ -379,8 +418,10 @@ pub fn rename_one_pkg(
     if !crate::lifecycle::wait_one_pkg_quit(old_pkg_name, 15000) {
         return Err("有脚本不愿意退出,所以无法保存".into());
     }
+    // 等待成功后再持锁，避免长时间占用
+    let _save_guard = lock_save()?;
     if old_pkg_name.is_empty() || new_pkg_name.is_empty() {
-        cq_add_log_w("改名错误：old_pkg_name 或 new_pkg_name为空").unwrap();
+        let _ = cq_add_log_w("改名错误：old_pkg_name 或 new_pkg_name为空");
         return Err("rename err".into());
     }
 
@@ -392,7 +433,7 @@ pub fn rename_one_pkg(
         .scripts
         .add_package_name(new_pkg_name.to_owned());
     if let Err(err) = crate::config_manager::rename_ban_pkg(old_pkg_name, new_pkg_name) {
-        cq_add_log_w(&format!("同步禁用列表失败:{err}")).unwrap();
+        let _ = cq_add_log_w(&format!("同步禁用列表失败:{err}"));
     }
 
     let scripts = runtime_context().scripts.read_scripts();
@@ -412,14 +453,12 @@ pub fn rename_one_pkg(
         .scripts
         .replace_scripts(serde_json::Value::Array(scripts));
     if let Err(err) = initevent::do_init_event(Some(new_pkg_name)) {
-        cq_add_log_w(&err.to_string()).unwrap();
+        let _ = cq_add_log_w(&err.to_string());
     }
     Ok(())
 }
 
 pub fn del_one_pkg(pkg_name: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
-    // 与保存操作互斥，防止并发修改同一批文件
-    let _save_guard = lock_save()?;
     runtime_context().control.set_package_quit(pkg_name, true);
     let _guard = scopeguard::guard((), |_| {
         runtime_context().control.set_package_quit(pkg_name, false);
@@ -427,6 +466,7 @@ pub fn del_one_pkg(pkg_name: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
     if !crate::lifecycle::wait_one_pkg_quit(pkg_name, 15000) {
         return Err("有脚本不愿意退出,所以无法保存".into());
     }
+    let _save_guard = lock_save()?;
     if pkg_name.is_empty() {
         return Err("default_pkg can't be deleted".into());
     }
@@ -436,7 +476,7 @@ pub fn del_one_pkg(pkg_name: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
     runtime_context().scripts.remove_package_name(pkg_name);
     del_pkg_memory(pkg_name);
     if let Err(err) = crate::config_manager::set_ban_pkg(pkg_name, false) {
-        cq_add_log_w(&format!("从禁用列表删除包`{pkg_name}`失败:{err}")).unwrap();
+        let _ = cq_add_log_w(&format!("从禁用列表删除包`{pkg_name}`失败:{err}"));
     }
 
     let scripts = runtime_context().scripts.read_scripts();
@@ -466,6 +506,29 @@ pub fn backup_code() -> Result<(), Box<dyn Error>> {
         backup_path.join(format!("{time_str}.json")),
         runtime_context().scripts.read_scripts().to_string(),
     )?;
+    prune_old_backups(&backup_path, MAX_BACKUP_FILES)?;
+    Ok(())
+}
+
+/// 最多保留的脚本备份文件数量，防止 backup 目录无限增长
+const MAX_BACKUP_FILES: usize = 50;
+
+/// 按文件名（时间戳格式）排序删除最旧的备份
+fn prune_old_backups(backup_path: &std::path::Path, max_keep: usize) -> Result<(), Box<dyn Error>> {
+    let mut backups: Vec<PathBuf> = fs::read_dir(backup_path)?
+        .filter_map(|entry| entry.ok())
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && path.extension().map(|ext| ext == "json").unwrap_or(false))
+        .collect();
+    if backups.len() <= max_keep {
+        return Ok(());
+    }
+    // 文件名为 %Y-%m-%d-%H-%M-%S.json，字典序即时间序
+    backups.sort();
+    let delete_count = backups.len() - max_keep;
+    for path in backups.into_iter().take(delete_count) {
+        let _ = fs::remove_file(path);
+    }
     Ok(())
 }
 

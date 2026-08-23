@@ -59,6 +59,8 @@ pub fn str_msg_to_arr(js: &serde_json::Value) -> crate::AdapterResult<serde_json
     let mut cqcode: HashMap<String, serde_json::Value> = HashMap::new();
     let mut stat = 0;
     let mut i = 0usize;
+    // 记录未闭合 CQ 码的起始位置，用于结尾回退
+    let mut code_start = 0usize;
 
     while i < cqstr.len() {
         let cur_ch = cqstr[i];
@@ -75,6 +77,7 @@ pub fn str_msg_to_arr(js: &serde_json::Value) -> crate::AdapterResult<serde_json
                             text.clear();
                         }
                         stat = 1;
+                        code_start = i;
                         i += 3;
                     } else {
                         text.push(cqstr[i]);
@@ -201,6 +204,12 @@ pub fn str_msg_to_arr(js: &serde_json::Value) -> crate::AdapterResult<serde_json
             }
         }
         i += 1;
+    }
+
+    if stat != 0 {
+        // 未闭合的 CQ 码：把已消费的原文回退为普通文本，避免尾部内容静默丢失
+        let tail: String = cqstr[code_start..].iter().collect();
+        text.push_str(&tail);
     }
 
     if !text.is_empty() {

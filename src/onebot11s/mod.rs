@@ -235,10 +235,12 @@ fn deal_request_groups(
         return Ok(());
     }
     let group_id_int = group_id.parse::<i64>()?;
-    let Some((group_id, groups_id)) = crate::runtime_context().onebot.group(group_id_int) else {
-        return Ok(());
+    let Some((real_group_id, groups_id)) = crate::runtime_context().onebot.group(group_id_int)
+    else {
+        // 映射缺失/过期时不能把内部哈希值原样发给协议端，直接报错让调用方感知
+        return Err(format!("群组ID映射不存在或已过期:{group_id}").into());
     };
-    (*root.get_mut("group_id").unwrap()) = serde_json::json!(group_id);
+    (*root.get_mut("group_id").unwrap()) = serde_json::json!(real_group_id);
     root.as_object_mut()
         .unwrap()
         .insert("groups_id".to_owned(), serde_json::json!(groups_id));

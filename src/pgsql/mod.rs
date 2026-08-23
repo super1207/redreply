@@ -6,10 +6,14 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio_postgres::NoTls;
 
-async fn manage_connection(conn_str: &str) {
+async fn manage_connection(config: tokio_postgres::Config, display: &str) {
     let mut backoff = 1u64;
     loop {
-        match tokio_postgres::connect(conn_str, NoTls).await {
+        // 用 Config 构建器逐字段设置，密码中的空格/引号等特殊字符不会再破坏解析，
+        // 也杜绝通过字段内容注入额外连接参数
+        // 用 Config 构建器逐字段设置，密码中的空格/引号等特殊字符不会再破坏解析，
+        // 也杜绝通过字段内容注入额外连接参数
+        match config.connect(NoTls).await {
             Ok((client, connection)) => {
                 {
                     runtime_context()
@@ -17,12 +21,12 @@ async fn manage_connection(conn_str: &str) {
                         .set_pgsql_client(Some(Arc::new(client)))
                         .await;
                 }
-                cq_add_log(&format!("数据库连接成功:{}", conn_str)).unwrap();
+                let _ = cq_add_log(&format!("数据库连接成功:{display}"));
                 // 等待 connection 结束，结束后清理 client 并重试
                 if let Err(e) = connection.await {
-                    cq_add_log_w(&format!("数据库连接错误：{}", e)).unwrap();
+                    let _ = cq_add_log_w(&format!("数据库连接错误：{}", e));
                 } else {
-                    cq_add_log("数据库连接已断开").unwrap();
+                    let _ = cq_add_log("数据库连接已断开");
                 }
                 {
                     runtime_context().services.set_pgsql_client(None).await;
@@ -32,11 +36,21 @@ async fn manage_connection(conn_str: &str) {
                 tokio::time::sleep(Duration::from_secs(backoff)).await;
             }
             Err(e) => {
-                cq_add_log_w(&format!("连接数据库失败：{}，{}秒后重试", e, backoff)).unwrap();
+                let _ = cq_add_log_w(&format!("连接数据库失败：{}，{}秒后重试", e, backoff));
                 tokio::time::sleep(Duration::from_secs(backoff)).await;
                 backoff = std::cmp::min(backoff * 2, 60); // 指数退避上限 60s
             }
         }
+    }
+}
+
+/// 数字型 ID（OneBot11 标准里 message_id/group_id 常为数字）统一转字符串，
+/// 否则 as_str() 取不到导致 NOT NULL 列插入失败
+fn json_id_string(value: &serde_json::Value) -> Option<String> {
+    match value {
+        serde_json::Value::String(s) => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
     }
 }
 
@@ -58,12 +72,11 @@ async fn get_client(timeout_secs: u64) -> Option<Arc<tokio_postgres::Client>> {
 }
 
 async fn init_postgresql_db_async(
-    conn_str: &str,
+    config: tokio_postgres::Config,
+    display: String,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let conn_str = conn_str.to_string();
-
     tokio::spawn(async move {
-        manage_connection(&conn_str).await;
+        manage_connection(config, &display).await;
     });
 
     let create_table_sql = r#"
@@ -86,11 +99,10 @@ async fn init_postgresql_db_async(
     // 有限等待客户端可用，超时则返回错误
     if let Some(client) = get_client(10).await {
         if let Err(e) = client.batch_execute(create_table_sql).await {
-            cq_add_log_w(&format!(
+            let _ = cq_add_log_w(&format!(
                 "数据库初始化失败，创建或检查 message 表失败：{}",
                 e
-            ))
-            .unwrap();
+            ));
             return Err(Box::new(e));
         }
         Ok(())
@@ -112,7 +124,7 @@ pub fn do_insert(root: &serde_json::Value) -> Result<(), Box<dyn std::error::Err
 
     runtime().spawn(async move {
         if let Err(err) = do_insert_async(&root).await {
-            cq_add_log_w(&format!("插入消息记录失败：{}", err)).unwrap();
+            let _ = cq_add_log_w(&format!("插入消息记录失败：{}", err));
         }
     });
     Ok(())
@@ -127,12 +139,12 @@ async fn do_insert_async(
         return Ok(());
     }
     let msg_type: i16 = if message_type == "group" { 0 } else { 1 };
-    let group_id = root["group_id"].as_str();
-    let groups_id = root["groups_id"].as_str();
+    let group_id = json_id_string(&root["group_id"]);
+    let groups_id = json_id_string(&root["groups_id"]);
     let platform = root["platform"].as_str().unwrap_or("");
     let self_id = root["self_id"].as_str().unwrap_or("");
-    let user_id = root["user_id"].as_str();
-    let msg_id = root["message_id"].as_str().unwrap_or("");
+    let user_id = json_id_string(&root["user_id"]);
+    let msg_id = json_id_string(&root["message_id"]).unwrap_or_default();
     let card = root["sender"]["card"].as_str();
     let nickname = root["sender"]["nickname"].as_str();
     let time_t = root["time"].as_i64().unwrap_or(0); // 10 位时间戳
@@ -196,15 +208,21 @@ pub fn init_postgresql_db() -> Result<(), Box<dyn std::error::Error + Send + Syn
     let user = postgresql_cfg["user"].as_str().unwrap_or("postgres");
     let password = postgresql_cfg["password"].as_str().unwrap_or("");
     let dbname = postgresql_cfg["dbname"].as_str().unwrap_or("postgres");
-    let conn_str = format!(
-        "host={} port={} user={} password={} dbname={}",
-        host, port, user, password, dbname
-    );
+
+    let mut pg_config = tokio_postgres::Config::new();
+    pg_config.host(host);
+    pg_config.port(u16::try_from(port).unwrap_or(5432));
+    pg_config.user(user);
+    pg_config.password(password);
+    pg_config.dbname(dbname);
+
+    // 日志只输出非敏感字段，密码不落日志
+    let display = format!("host={host} port={port} user={user} dbname={dbname}");
     runtime().spawn(async move {
-        if let Err(err) = init_postgresql_db_async(&conn_str).await {
-            cq_add_log_w(&format!("初始化PostgreSQL数据库失败：{}", err)).unwrap();
+        if let Err(err) = init_postgresql_db_async(pg_config, display).await {
+            let _ = cq_add_log_w(&format!("初始化PostgreSQL数据库失败：{}", err));
         } else {
-            cq_add_log("PostgreSQL数据库初始化成功！").unwrap();
+            let _ = cq_add_log("PostgreSQL数据库初始化成功！");
         }
     });
     Ok(())

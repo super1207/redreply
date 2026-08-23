@@ -23,14 +23,37 @@ use crate::{
 
 type ScriptInfo<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, &'a str);
 
+/// 事件幂等去重表：同一 (self_id, message_id) 在 TTL 内只处理一次，
+/// 防止双通道投递（本地反向 WS + MQTT）或协议端重发导致脚本重复执行
+static EVENT_DEDUP: std::sync::OnceLock<std::sync::Mutex<HashMap<String, i64>>> =
+    std::sync::OnceLock::new();
+
+const EVENT_DEDUP_TTL_SECS: i64 = 300;
+
+fn is_duplicate_event(root: &serde_json::Value) -> bool {
+    let message_id = read_json_str(root, "message_id");
+    if message_id.is_empty() {
+        return false;
+    }
+    let self_id = read_json_str(root, "self_id");
+    let key = format!("{self_id}|{message_id}");
+    let now = chrono::Local::now().timestamp();
+    let mut map = match EVENT_DEDUP.get_or_init(|| std::sync::Mutex::new(HashMap::new())).lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    // 惰性清理过期条目，防止表无限增长
+    map.retain(|_, ts| now - *ts < EVENT_DEDUP_TTL_SECS);
+    map.insert(key, now).is_some()
+}
+
 // 处理1207号事件
 pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::Error>> {
     if onebot_json_str.contains(crate::PERSISTENT_VALUE_MARKER) {
-        cq_add_log_w(&format!(
+        let _ = cq_add_log_w(&format!(
             "输入出现内部字符，放弃处理本条消息：`{}`",
             onebot_json_str
-        ))
-        .unwrap();
+        ));
         return Ok(0);
     }
 
@@ -54,32 +77,51 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
         if let Some(time) = time.as_i64() {
             if time < (chrono::Local::now().timestamp() - crate::config_manager::skip_msg_time()) {
                 // 打印日志
-                cq_add_log_w(&format!(
+                let _ = cq_add_log_w(&format!(
                     "10分钟前的消息，放弃处理本条消息：`{}`",
                     onebot_json_str
-                ))
-                .unwrap();
+                ));
                 return Ok(0);
             }
         }
     }
 
-    // 存储数据库
-    if let Err(err) = crate::pgsql::do_insert(&root) {
-        cq_add_log_w(&format!("插入消息记录失败：{}", err)).unwrap();
+    // 事件幂等去重（message_id 已强制补齐）
+    if is_duplicate_event(&root) {
+        return Ok(0);
     }
 
-    // 全局过滤器
+    // 存储数据库
+    if let Err(err) = crate::pgsql::do_insert(&root) {
+        let _ = cq_add_log_w(&format!("插入消息记录失败：{}", err));
+    }
+
+    // 全局过滤器 - 单脚本错误不阻断整条事件
     {
-        let code: String = get_gobal_filter_code()?;
+        let code: String = match get_gobal_filter_code() {
+            Ok(c) => c,
+            Err(e) => {
+                let _ = cq_add_log_w(&format!("读取全局过滤器失败: {e}"));
+                String::new()
+            }
+        };
         if !code.is_empty() {
             let mut rl = RedLang::new();
-            set_normal_evt_info(&mut rl, &root)?;
-            rl.pkg_name = "".to_owned();
-            rl.script_name = "全局过滤器".to_owned();
-            let ret = rl.parse_to_string(&code)?;
-            if ret == "真" {
-                return Ok(0);
+            if let Err(e) = set_normal_evt_info(&mut rl, &root) {
+                let _ = cq_add_log_w(&format!("全局过滤器设置上下文失败: {e}"));
+            } else {
+                rl.pkg_name = "".to_owned();
+                rl.script_name = "全局过滤器".to_owned();
+                match rl.parse_to_string(&code) {
+                    Ok(ret) => {
+                        if ret == "真" {
+                            return Ok(0);
+                        }
+                    }
+                    Err(e) => {
+                        let _ = cq_add_log_w(&format!("全局过滤器执行失败: {e}"));
+                    }
+                }
             }
         }
     }
@@ -92,7 +134,7 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
 
     // 发布mqtt事件
     if let Err(err) = publish_mqtt_event(&root) {
-        cq_add_log_w(&format!("mqtt publish error:{}", err)).unwrap();
+        let _ = cq_add_log_w(&format!("mqtt publish error:{}", err));
     }
 
     // 读取被禁用的包
@@ -109,30 +151,47 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
             }
         }
         Err(err) => {
-            cq_add_log_w(&format!("读取禁用包列表失败:{}", err)).unwrap();
+            let _ = cq_add_log_w(&format!("读取禁用包列表失败:{}", err));
         }
     }
 
-    // 预处理脚本
+    // 预处理脚本 - 单条内容过滤错误不阻断后续
     let script_json = runtime_context().scripts.read_scripts();
-    for i in 0..script_json
-        .as_array()
-        .ok_or("script.json文件不是数组格式")?
-        .len()
-    {
-        let (_keyword, cffs, code, _ppfs, name, pkg_name) = get_script_info(&script_json[i])?;
+    let Some(arr) = script_json.as_array() else {
+        let _ = cq_add_log_w("script.json文件不是数组格式");
+        return Ok(0);
+    };
+    for item in arr {
+        let (_keyword, cffs, code, _ppfs, name, pkg_name) = match get_script_info(item) {
+            Ok(v) => v,
+            Err(e) => {
+                let _ = cq_add_log_w(&format!("解析脚本信息失败: {e}"));
+                continue;
+            }
+        };
         if cffs == "内容过滤" {
             // 如果包已经在禁用列表中，内容过滤不需要执行(等同已被过滤)
             if ban_pkgs.contains(pkg_name) {
                 continue;
             }
             let mut rl = RedLang::new();
-            set_normal_evt_info(&mut rl, &root)?;
+            if let Err(e) = set_normal_evt_info(&mut rl, &root) {
+                let _ = cq_add_log_w(&format!("内容过滤设置上下文失败: {e}"));
+                continue;
+            }
             rl.pkg_name = pkg_name.to_owned();
             rl.script_name = name.to_owned();
-            let ret = rl.parse_to_string(code)?;
-            if ret == "真" {
-                ban_pkgs.insert(pkg_name.to_owned());
+            match rl.parse_to_string(code) {
+                Ok(ret) => {
+                    if ret == "真" {
+                        ban_pkgs.insert(pkg_name.to_owned());
+                    }
+                }
+                Err(e) => {
+                    let _ = cq_add_log_w(&format!(
+                        "包`{pkg_name}`内容过滤脚本`{name}`执行失败: {e}"
+                    ));
+                }
             }
         }
     }
@@ -279,14 +338,14 @@ pub fn do_script(
                             if let Err(err) =
                                 crate::cqevent::do_script(&mut rl2, code, "normal", false)
                             {
-                                cq_add_log_w(&format!("{}", err)).unwrap();
+                                let _ = cq_add_log_w(&format!("{}", err));
                             }
                         }
                     }
                     Ok(0)
                 }
                 if let Err(e) = fun(err_str_t, exmap, pkg_name, script_name) {
-                    crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                    let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
                 }
             });
         }

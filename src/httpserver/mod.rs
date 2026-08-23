@@ -170,6 +170,7 @@ async fn deal_api(
             config.thinking_level = current.thinking_level.clone();
             config.context_length = current.context_length;
             config.proxy = current.proxy.clone();
+            config.api_type = current.api_type.clone();
             config.system_prompt = update.system_prompt.trim().to_owned();
             let config_to_save = config.clone();
             match tokio::task::spawn_blocking(move || {
@@ -668,7 +669,7 @@ async fn deal_api(
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             } else {
                 let ret = json!({
@@ -676,7 +677,7 @@ async fn deal_api(
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             }
         })
@@ -780,14 +781,14 @@ async fn deal_api(
                         "retcode":-1,
                     });
                     let rst = tx.send(ret);
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 } else {
                     let ret = json!({
                         "retcode":0,
                     });
                     let rst = tx.send(ret);
                     if rst.is_err() {
-                        cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                        let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                     }
                 }
             } else {
@@ -796,7 +797,7 @@ async fn deal_api(
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             }
         })
@@ -824,14 +825,14 @@ async fn deal_api(
                         "retcode":-1,
                     });
                     let rst = tx.send(ret);
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 } else {
                     let ret = json!({
                         "retcode":0,
                     });
                     let rst = tx.send(ret);
                     if rst.is_err() {
-                        cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                        let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                     }
                 }
             } else {
@@ -840,7 +841,7 @@ async fn deal_api(
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             }
         })
@@ -910,16 +911,16 @@ async fn deal_api(
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             } else {
-                cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 let ret = json!({
                     "retcode":-1,
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             }
         })
@@ -945,7 +946,7 @@ async fn deal_api(
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             } else {
                 let ret = json!({
@@ -953,7 +954,7 @@ async fn deal_api(
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             }
         })
@@ -981,7 +982,7 @@ async fn deal_api(
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             } else {
                 let ret = json!({
@@ -989,7 +990,7 @@ async fn deal_api(
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             }
         })
@@ -1016,7 +1017,7 @@ async fn deal_api(
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             } else {
                 let ret = json!({
@@ -1024,7 +1025,7 @@ async fn deal_api(
                 });
                 let rst = tx.send(ret);
                 if rst.is_err() {
-                    cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
                 }
             }
         })
@@ -1063,7 +1064,7 @@ async fn deal_api(
             rl.script_name = "网页调试".to_owned();
             rl.can_wrong = true;
             if let Err(err) = do_script(&mut rl, &code, "normal", false) {
-                cq_add_log_w(&format!("{}", err)).unwrap();
+                let _ = cq_add_log_w(&format!("{}", err));
             }
         });
         let mut res = hyper::Response::new(full(
@@ -1125,7 +1126,7 @@ async fn deal_api(
             }
             let rst = tx.send(res);
             if rst.is_err() {
-                cq_add_log_w(&format!("Error:{:?}", rst.err())).unwrap();
+                let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));
             }
         });
         let ret_str = rx.await?;
@@ -1138,7 +1139,7 @@ async fn deal_api(
             let res = hyper::Response::new(full("api not found"));
             return Ok(res);
         }
-        cq_add_log_w("收到退出指令，正在退出").unwrap();
+        let _ = cq_add_log_w("收到退出指令，正在退出");
         wait_for_quit();
     } else if url_path == "/get_version" {
         if !can_read {
@@ -1214,7 +1215,7 @@ async fn deal_api(
         tokio::task::spawn_blocking(move || match do_http_event(request, can_write, can_read) {
             Ok(response) => {
                 if let Err(err) = tx.send(response) {
-                    cq_add_log_w(&format!("Error:{err:?}")).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{err:?}"));
                 }
             }
             Err(err) => {
@@ -1224,7 +1225,7 @@ async fn deal_api(
                     HeaderValue::from_static("text/html; charset=utf-8"),
                 );
                 if let Err(send_err) = tx.send(res) {
-                    cq_add_log_w(&format!("Error:{send_err:?}")).unwrap();
+                    let _ = cq_add_log_w(&format!("Error:{send_err:?}"));
                 }
             }
         })
@@ -1245,21 +1246,26 @@ async fn deal_api(
             .ok_or("/upload_pkg 中没有content-length")?;
         let content_len = content_len.to_str()?.parse::<usize>()?;
 
-        // 如果 content_len > 10MB，就拒绝上传
+        // 如果 content_len > 11MB，就拒绝上传
         if content_len > 11 * 1024 * 1024 {
-            // 读取前1KB数据（避免完全预读）
+            // 排空剩余 body 以复用 keep-alive 连接；但设置排空总量上限，
+            // 超过则直接放弃（hyper 会关闭该连接），防止恶意慢速大上传占用资源
+            const MAX_DRAIN_BYTES: usize = 32 * 1024 * 1024;
             let mut body_stream = request.into_body();
-            let mut received = 0;
-            while received < 1024 {
-                if let Some(frame_result) = body_stream.frame().await {
-                    let frame = frame_result?;
-                    if let Some(data) = frame.data_ref() {
-                        received += data.len();
+            let mut drained = 0usize;
+            while let Some(frame_result) = body_stream.frame().await {
+                if drained > MAX_DRAIN_BYTES {
+                    break;
+                }
+                match frame_result {
+                    Ok(frame) => {
+                        drained += frame.data_ref().map(|data| data.len()).unwrap_or(0);
                     }
+                    Err(_) => break,
                 }
             }
-            cq_add_log_w("文件太大,请上传小于10MB的文件".to_string().as_str()).unwrap();
-            let res = hyper::Response::new(full("文件太大,请上传小于10MB的文件"));
+            let _ = cq_add_log_w("文件太大,请上传小于11MB的文件");
+            let res = hyper::Response::new(full("文件太大,请上传小于11MB的文件"));
             return Ok(res);
         }
 
@@ -1272,8 +1278,9 @@ async fn deal_api(
                 body.extend_from_slice(data);
 
                 if body.len() > content_len {
-                    cq_add_log_w("Client sent more data than content-length header specified.")
-                        .unwrap();
+                    let _ = cq_add_log_w(
+                        "Client sent more data than content-length header specified.",
+                    );
                     let res =
                         hyper::Response::new(full("Bad request: body size exceeds content-length"));
                     return Ok(res);
@@ -1426,11 +1433,11 @@ async fn deal_api(
         let name_t = name.to_owned();
         tokio::task::spawn_blocking(move || {
             if let Err(err) = initevent::do_init_event(Some(&name_t)) {
-                cq_add_log_w(&err.to_string()).unwrap();
+                let _ = cq_add_log_w(&err.to_string());
             }
         });
 
-        cq_add_log_w(&format!("上传文件大小为{}", content_len)).unwrap();
+        let _ = cq_add_log_w(&format!("上传文件大小为{}", content_len));
 
         let res = hyper::Response::new(full("ok"));
         Ok(res)
@@ -1468,7 +1475,7 @@ async fn deal_api(
 
         // 大于20MB，报错
         if size > 20 * 1024 * 1024 {
-            let res = hyper::Response::new(full("文件大小超过10MB"));
+            let res = hyper::Response::new(full("文件大小超过20MB"));
             return Ok(res);
         }
 
@@ -1629,8 +1636,9 @@ async fn serve_websocket(
 async fn serve_py_websocket(
     websocket: hyper_tungstenite::HyperWebsocket,
     mut rx: tokio::sync::mpsc::Receiver<String>,
+    generation: u64,
 ) -> Result<()> {
-    cq_add_log("connect to pyserver").unwrap();
+    let _ = cq_add_log("connect to pyserver");
 
     // 获得升级后的ws流
     let ws_stream = websocket.await?;
@@ -1639,61 +1647,89 @@ async fn serve_py_websocket(
     tokio::spawn(async move {
         while let Some(msg) = rx.recv().await {
             // 当所有tx被释放时,tx.recv会返回None
-            // log::info!("recive:{}",msg);
             let rst = write_half
                 .send(hyper_tungstenite::tungstenite::Message::Text(msg.into()))
                 .await;
             if rst.is_err() {
                 runtime_context().session.clear_python_handler().await;
-                cq_add_log_w(&format!(
-                    "serve send1 of python err:{:?}",
-                    rst.err().unwrap()
-                ))
-                .unwrap();
+                let _ = cq_add_log_w(&format!("serve send1 of python err:{:?}", rst.err()));
                 break;
             }
         }
-        cq_add_log_w("serve send2 of python err").unwrap();
+        let _ = cq_add_log_w("serve send2 of python err");
     });
 
     async fn deal_py_msg(
         mut read_half: futures_util::stream::SplitStream<
             tokio_tungstenite::WebSocketStream<hyper_util::rt::TokioIo<hyper::upgrade::Upgraded>>,
         >,
+        generation: u64,
     ) -> Result<()> {
+        let mut consecutive_errors = 0u32;
         while let Some(msg_t) = read_half.next().await {
             {
                 if !runtime_context().session.has_python_handler().await {
                     break;
                 }
+                // 被新连接替换时主动退出，避免旧连接成为孤儿会话
+                if runtime_context().session.python_handler_generation().await != Some(generation)
+                {
+                    break;
+                }
             }
-            let msg_text = msg_t?.to_text()?.to_owned();
+            let msg_text = match msg_t {
+                Ok(msg) => match msg.to_text() {
+                    Ok(text) => text.to_owned(),
+                    Err(e) => {
+                        // 单个坏帧只记录并跳过，连续出错才断开，
+                        // 不让一条畸形消息杀死整条 python 桥接
+                        consecutive_errors += 1;
+                        let _ = cq_add_log_w(&format!("pyserver 坏帧({consecutive_errors}):{e}"));
+                        if consecutive_errors >= 10 {
+                            return Err("连续收到过多坏帧".into());
+                        }
+                        continue;
+                    }
+                },
+                Err(e) => return Err(Box::new(e)),
+            };
+            consecutive_errors = 0;
 
             if msg_text == "opened" {
-                cq_add_log("python环境已经连接！").unwrap();
+                let _ = cq_add_log("python环境已经连接！");
                 continue;
             }
 
-            let js: serde_json::Value = serde_json::from_str(&msg_text)?;
+            let js: serde_json::Value = match serde_json::from_str(&msg_text) {
+                Ok(js) => js,
+                Err(e) => {
+                    consecutive_errors += 1;
+                    let _ = cq_add_log_w(&format!(
+                        "pyserver 消息解析失败({consecutive_errors}):{e}"
+                    ));
+                    if consecutive_errors >= 10 {
+                        return Err("连续收到过多无法解析的消息".into());
+                    }
+                    continue;
+                }
+            };
+            consecutive_errors = 0;
             let echo = read_json_str(&js, "echo");
             let data = js
                 .get("data")
                 .cloned()
                 .unwrap_or(serde_json::Value::String(String::new()));
-            runtime_context()
+            let _ = runtime_context()
                 .session
                 .send_python_echo(&echo, data)
-                .await?;
+                .await;
         }
         Ok(())
     }
-    let ret = deal_py_msg(read_half).await;
+    let ret = deal_py_msg(read_half, generation).await;
     if ret.is_err() {
-        cq_add_log_w(&format!(
-            "serve recv of python err:{:?}",
-            ret.err().unwrap()
-        ))
-        .unwrap();
+        let err = ret.err().unwrap_or_else(|| "unknown".into());
+        let _ = cq_add_log_w(&format!("serve recv of python err:{err:?}"));
     }
     runtime_context().session.clear_python_handler().await;
 
@@ -1703,21 +1739,11 @@ async fn serve_py_websocket(
 pub async fn send_onebot_event(root: serde_json::Value) {
     let rst = event_to_onebot(&root);
     if rst.is_err() {
-        cq_add_log_w(&format!(
-            "convert to onebot event err:{:?}",
-            rst.err().unwrap()
-        ))
-        .unwrap();
+        let err = rst.err().unwrap_or_else(|| "unknown".into());
+        let _ = cq_add_log_w(&format!("convert to onebot event err:{err:?}"));
         return;
     }
     let (root, platform, self_id) = rst.unwrap();
-    runtime_context()
-        .session
-        .send_onebot_event(root.to_string(), &platform, &self_id)
-        .await;
-}
-
-pub async fn send_onebot_api_ret(root: serde_json::Value, platform: String, self_id: String) {
     runtime_context()
         .session
         .send_onebot_event(root.to_string(), &platform, &self_id)
@@ -1730,8 +1756,9 @@ async fn serve_onebot_websocket(
     mut rx: tokio::sync::mpsc::Receiver<String>,
     platform: String,
     self_id: String,
+    ws_uid: String,
 ) -> Result<()> {
-    cq_add_log("connect to onebot").unwrap();
+    let _ = cq_add_log("connect to onebot");
 
     // 获得升级后的ws流
     let ws_stream = websocket.await?;
@@ -1765,11 +1792,11 @@ async fn serve_onebot_websocket(
                 .send(hyper_tungstenite::tungstenite::Message::Text(msg.into()))
                 .await;
             if rst.is_err() {
-                cq_add_log_w("serve send1 of onebot err").unwrap();
+                let _ = cq_add_log_w("serve send1 of onebot err");
                 break;
             }
         }
-        cq_add_log_w("serve send2 of onebot err").unwrap();
+        let _ = cq_add_log_w("serve send2 of onebot err");
     });
 
     async fn deal_msg(
@@ -1778,30 +1805,29 @@ async fn serve_onebot_websocket(
         >,
         platform: String,
         self_id: String,
+        ws_uid: String,
     ) -> Result<()> {
         while let Some(msg_t) = read_half.next().await {
             // 转json
             let msg_text = msg_t?.to_text()?.to_owned();
             let req_json_rst = serde_json::from_str(&msg_text);
             if req_json_rst.is_err() {
-                cq_add_log_w(&format!("req json err:{:?}", req_json_rst.err().unwrap())).unwrap();
+                let _ = cq_add_log_w(&format!("req json err:{:?}", req_json_rst.err()));
                 continue;
             }
             // 转red请求
             let req_json = req_json_rst.unwrap();
             let root_rst = crate::onebot11s::request_to_red(&req_json);
             if root_rst.is_err() {
-                cq_add_log_w(&format!(
-                    "can't convert to red req:{:?}",
-                    root_rst.err().unwrap()
-                ))
-                .unwrap();
+                let err = root_rst.err().unwrap_or_else(|| "unknown".into());
+                let _ = cq_add_log_w(&format!("can't convert to red req:{err:?}"));
                 continue;
             }
             let (root, passive_id) = root_rst.unwrap();
 
             let self_id_t = self_id.clone();
             let platform_t = platform.clone();
+            let ws_uid_t = ws_uid.clone();
 
             tokio::spawn(async move {
                 let self_id = self_id_t.clone();
@@ -1818,29 +1844,42 @@ async fn serve_onebot_websocket(
                         &root_str,
                         "",
                     );
-                    let ret_red_json: serde_json::Value = serde_json::from_str(&ret).unwrap();
-                    crate::onebot11s::red_ret_to_ob(ret_red_json, echo)
+                    let ret_red_json: serde_json::Value = serde_json::from_str(&ret)
+                        .map_err(|err| format!("onebot api返回了无效的JSON:{err}\n原始内容:{ret}"))?;
+                    Ok::<serde_json::Value, String>(crate::onebot11s::red_ret_to_ob(
+                        ret_red_json,
+                        echo,
+                    ))
                 })
                 .await;
                 match ret {
-                    Ok(response) => {
-                        send_onebot_api_ret(response, platform_t, self_id_t).await;
+                    Ok(Ok(response)) => {
+                        // 定向回包给发起请求的这个会话，避免多客户端接入时互相干扰
+                        runtime_context()
+                            .session
+                            .send_onebot_api_ret(
+                                &ws_uid_t,
+                                response.to_string(),
+                                &platform_t,
+                                &self_id_t,
+                            )
+                            .await;
+                    }
+                    Ok(Err(err)) => {
+                        let _ = cq_add_log_w(&format!("err:{err}"));
                     }
                     Err(err) => {
-                        cq_add_log_w(&format!("err:{err:?}")).unwrap();
+                        let _ = cq_add_log_w(&format!("err:{err:?}"));
                     }
                 }
             });
         }
         Ok(())
     }
-    let ret = deal_msg(read_half, platform, self_id).await;
+    let ret = deal_msg(read_half, platform, self_id, ws_uid).await;
     if ret.is_err() {
-        cq_add_log_w(&format!(
-            "serve recv of onebot err:{:?}",
-            ret.err().unwrap()
-        ))
-        .unwrap();
+        let err = ret.err().unwrap_or_else(|| "unknown".into());
+        let _ = cq_add_log_w(&format!("serve recv of onebot err:{err:?}"));
     }
 
     Ok(())
@@ -2021,8 +2060,10 @@ async fn connect_handle(
                         )
                         .await;
                 }
-                if let Err(e) = serve_onebot_websocket(websocket, rx, platform, self_id).await {
-                    cq_add_log_w(&format!("onebots Error in websocket connection: {}", e)).unwrap();
+                if let Err(e) =
+                    serve_onebot_websocket(websocket, rx, platform, self_id, ws_uid.clone()).await
+                {
+                    let _ = cq_add_log_w(&format!("onebots Error in websocket connection: {}", e));
                 }
                 {
                     runtime_context()
@@ -2103,17 +2144,18 @@ async fn connect_handle(
             }
             // ws协议升级返回
             let mut conf = tungstenite::protocol::WebSocketConfig::default();
-            conf.max_frame_size = Some(1024 * 1024 * 100); // 100MB
+            // 保持 100MB：pyserver 需要传输文件等大块数据
+            conf.max_frame_size = Some(1024 * 1024 * 100);
 
             let (response, websocket) = hyper_tungstenite::upgrade(request, Some(conf))?;
 
             // 开启一个线程来处理ws
             tokio::spawn(async move {
                 let (tx, rx) = tokio::sync::mpsc::channel::<String>(60);
-                {
-                    runtime_context().session.set_python_handler(tx).await;
-                }
-                if let Err(e) = serve_py_websocket(websocket, rx).await {
+                // 注册处理器并拿到代次号：第二个 python 客户端接入时，
+                // 旧连接凭代次号变化感知被替换并主动退出，避免孤儿连接残留
+                let generation = runtime_context().session.set_python_handler(tx).await;
+                if let Err(e) = serve_py_websocket(websocket, rx, generation).await {
                     cq_add_log_w(&format!("pyserver Error in websocket connection: {}", e))
                         .unwrap();
                 }
@@ -2169,28 +2211,6 @@ async fn connect_handle(
     }
 }
 
-#[cfg(target_os = "windows")]
-fn bind_port_with_retry(addr: &str) {
-    let mut retries = 0;
-    loop {
-        match std::net::TcpListener::bind(addr) {
-            Ok(_listener) => return, // 成功绑定
-            Err(e) => {
-                if retries > 20 {
-                    panic!("端口一直被占用，放弃启动: {}", e);
-                }
-                cq_add_log_w(&format!(
-                    "端口被占用，等待旧进程退出... (尝试 {}/20)",
-                    retries + 1
-                ))
-                .unwrap();
-                thread::sleep(std::time::Duration::from_millis(500)); // 等待 0.5 秒
-                retries += 1;
-            }
-        }
-    }
-}
-
 pub fn init_http_server() -> Result<()> {
     let config = crate::config_manager::startup_config()?;
     let mut host = config.web_host.as_str();
@@ -2199,38 +2219,63 @@ pub fn init_http_server() -> Result<()> {
         host = "127.0.0.1";
     }
     let web_uri = format!("{host}:{port}");
-    cq_add_log(&format!("webui访问地址：http://{web_uri}")).unwrap();
-    let addr1 = web_uri.parse::<std::net::SocketAddr>().unwrap();
+    let _ = cq_add_log(&format!("webui访问地址：http://{web_uri}"));
+    let addr1: std::net::SocketAddr = web_uri.parse().map_err(|e| {
+        let msg = format!("web_host/web_port 配置无效 `{web_uri}`: {e}");
+        let _ = crate::cqapi::cq_add_log_w(&msg);
+        Box::<dyn std::error::Error + Send + Sync>::from(msg)
+    })?;
 
-    // 这里等待端口释放
-    #[cfg(target_os = "windows")]
-    {
-        let lock_name = std::env::var("REDREPLY_LOCK_NAME").unwrap_or_else(|_| "".to_string());
-        if !lock_name.is_empty() {
-            cq_add_log("重启中....").unwrap();
-            bind_port_with_retry(&web_uri);
+    // 同步完成 socket 创建/绑定/监听（带重试）。失败时退出进程：
+    // WebUI 永久缺失而机器人继续运行的"僵尸"状态比干净退出更难排查。
+    let listener = {
+        const MAX_BIND_RETRIES: u32 = 120; // 每 0.5s 重试一次，约 1 分钟
+        let mut retries = 0u32;
+        loop {
+            let socket = if addr1.is_ipv4() {
+                tokio::net::TcpSocket::new_v4()
+            } else {
+                tokio::net::TcpSocket::new_v6()
+            };
+            let socket = match socket {
+                Ok(s) => s,
+                Err(e) => {
+                    return Err(format!("创建监听 socket 失败: {e}").into());
+                }
+            };
+
+            // win 下不需要设置这个
+            #[cfg(not(windows))]
+            if let Err(e) = socket.set_reuseaddr(true) {
+                return Err(format!("设置 reuseaddr 失败: {e}").into());
+            }
+
+            match socket.bind(addr1).and_then(|_| socket.listen(1024)) {
+                Ok(l) => break l,
+                Err(e) => {
+                    retries += 1;
+                    if retries > MAX_BIND_RETRIES {
+                        let msg =
+                            format!("绑定端口失败 {addr1}(重试{MAX_BIND_RETRIES}次后仍失败)，退出进程: {e}");
+                        let _ = cq_add_log_w(&msg);
+                        eprintln!("{msg}");
+                        std::process::exit(1);
+                    }
+                    let _ = cq_add_log_w(&format!(
+                        "绑定端口失败 {addr1}: {e} (尝试 {retries}/{MAX_BIND_RETRIES})"
+                    ));
+                    thread::sleep(Duration::from_millis(500));
+                }
+            }
         }
-    }
+    };
 
     runtime().spawn(async move {
-        let socket = if addr1.is_ipv4() {
-            tokio::net::TcpSocket::new_v4().unwrap()
-        } else {
-            tokio::net::TcpSocket::new_v6().unwrap()
-        };
-
-        // win 下不需要设置这个
-        #[cfg(not(windows))]
-        socket.set_reuseaddr(true).unwrap();
-
-        socket.bind(addr1).unwrap();
-        let listener = socket.listen(20).unwrap();
-
         loop {
             let (stream, remote_address) = match listener.accept().await {
                 Ok(ok) => ok,
                 Err(err) => {
-                    cq_add_log_w(&format!("HTTP accept 失败:{err}")).unwrap();
+                    let _ = cq_add_log_w(&format!("HTTP accept 失败:{err}"));
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
@@ -2247,12 +2292,13 @@ pub fn init_http_server() -> Result<()> {
                     .with_upgrades()
                     .await
                 {
-                    cq_add_log_w(&format!("Error serving connection: {:?}", err)).unwrap();
+                    let _ = cq_add_log_w(&format!("Error serving connection: {:?}", err));
                 }
             });
         }
     });
 
+    // 监听已就绪后再打开浏览器，避免竞态
     if !config.not_open_browser {
         crate::resource_manager::show_ctrl_web()?;
     }
@@ -2681,7 +2727,7 @@ async fn run_live2d_chat_stream(
     let step = match run_live2d_stream_agent(&config, call, &diaries, &tx, &cancellation).await {
         Ok(step) => step,
         Err(error) => {
-            cq_add_log_w(&format!("Live2D对话失败: {error}")).unwrap();
+            let _ = cq_add_log_w(&format!("Live2D对话失败: {error}"));
             live2d_stream_send_error(&tx, error);
             return;
         }
@@ -2689,6 +2735,6 @@ async fn run_live2d_chat_stream(
     if let Err(error) = emit_live2d_stream_step(step, ctx.completed_steps, config.context_length, &tx, &cancellation)
         .await
     {
-        cq_add_log_w(&format!("Live2D完成事件发送失败: {error}")).unwrap();
+        let _ = cq_add_log_w(&format!("Live2D完成事件发送失败: {error}"));
     }
 }

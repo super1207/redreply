@@ -97,6 +97,38 @@ fn test_structured_runtime_operations() {
     assert_eq!(result.unwrap(), "2|乙|2|乙");
 }
 
+#[test]
+fn test_parse_deep_nesting_returns_err_not_crash() {
+    init_redlang_test_funs();
+    let deep = format!("{}{}", "【甲@".repeat(1000), "】".repeat(1000));
+    let mut rl = crate::redlang::RedLang::new();
+    let ret = rl.parse(&deep);
+    assert!(
+        ret.is_err(),
+        "深嵌套输入应返回错误而不是栈溢出崩溃"
+    );
+}
+
+#[test]
+fn test_run_script_shares_call_depth_counter() {
+    init_redlang_test_funs();
+    // 自递归脚本：所有实参都读取“参数@1”，子实例帧大小恒定且 code 永远取到 body 本身，
+    // 递归无衰减。共享深度计数后应在 501 层报错，而不是栈溢出崩溃。
+    let body = "【运行脚本@【参数@1】@【参数@1】@【参数@1】】";
+    let esc_body = body
+        .replace('\\', "\\\\")
+        .replace('【', "\\【")
+        .replace('】', "\\】")
+        .replace('@', "\\@");
+    let code = format!("【运行脚本@{esc_body}@{esc_body}】");
+    let mut rl = crate::redlang::RedLang::new();
+    let ret = rl.parse(&code);
+    assert!(
+        ret.is_err(),
+        "嵌套“运行脚本”应受共享深度计数保护，返回错误而不是栈溢出崩溃"
+    );
+}
+
 // #[test]
 // fn test_wav_to_pcm() {
 //     let wav_info = crate::mytool::wav_to_pcm::WavFormat::decode("D:\\青雀语音\\71201001_cn.wav").unwrap();
@@ -127,3 +159,4 @@ fn test_structured_runtime_operations() {
 //     let output = silk_rs::encode_silk(input, 32000, 32000, true).unwrap();
 //     std::fs::write("D:\\青雀语音\\71201001_cn.silk", output).unwrap();
 // }
+

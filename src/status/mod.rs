@@ -40,16 +40,20 @@ impl StatusStore {
             del_file_lock(&sql_file);
         });
 
-        let mut cache = self.cache.lock().unwrap();
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         if cache.is_empty() {
             return Ok(());
         }
 
         let conn = rusqlite::Connection::open(sql_file)?;
+
+        crate::resource_manager::configure_conn_busy_timeout(&conn);
         Self::create_table_without_lock(&conn)?;
 
+        let mut conn = conn;
+        let transaction = conn.transaction()?;
         for ((platform, bot_id, field), delta) in cache.drain() {
-            let ret_rst: Result<i64, rusqlite::Error> = conn.query_row(
+            let ret_rst: Result<i64, rusqlite::Error> = transaction.query_row(
                 &format!("SELECT {field} FROM STATUS_TABLE WHERE PLATFORM = ? AND BOT_ID = ?"),
                 [&platform, &bot_id],
                 |row| row.get(0),
@@ -62,19 +66,20 @@ impl StatusStore {
             }
 
             if ret_rst.is_ok() {
-                conn.execute(
+                transaction.execute(
                     &format!(
                         "UPDATE STATUS_TABLE SET {field} = ? WHERE PLATFORM = ? AND BOT_ID = ?"
                     ),
                     [&value.to_string(), &platform, &bot_id],
                 )?;
             } else {
-                conn.execute(
+                transaction.execute(
                     &format!("INSERT INTO STATUS_TABLE (PLATFORM,BOT_ID,{field}) VALUES (?,?,?)"),
                     [&platform, &bot_id, &value.to_string()],
                 )?;
             }
         }
+        transaction.commit()?;
         Ok(())
     }
 
@@ -117,6 +122,7 @@ impl StatusStore {
             del_file_lock(&sql_file);
         });
         let conn = rusqlite::Connection::open(sql_file)?;
+        crate::resource_manager::configure_conn_busy_timeout(&conn);
         Self::create_table_without_lock(&conn)?;
 
         // 使用HashMap存储合并后的数据

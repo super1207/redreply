@@ -41,6 +41,37 @@ pub enum RedValue {
     Fun(astparser::Ast),
 }
 
+/// 运行期值树最大嵌套深度。
+///
+/// 脚本可用循环反复包裹旧值（如 `a = [a]`）以极低成本构造任意深的嵌套数组，
+/// 深树会让所有递归遍历（转文本/序列化/转换/Drop）耗尽线程栈直接 abort 进程。
+/// 消费路径统一以此上限报错；隐式析构由下方迭代式 Drop 保证栈安全。
+pub const MAX_VALUE_DEPTH: usize = 256;
+
+impl Drop for RedValue {
+    fn drop(&mut self) {
+        // 深嵌套值树的默认递归析构会耗尽线程栈。这里把子节点移入待处理队列，
+        // 迭代拆解：只拆解独占引用(Rc 引用计数为 1)的节点，共享引用交给
+        // 最后一个持有者按同样方式迭代处理。
+        let mut pending: Vec<Rc<RedValue>> = match self {
+            RedValue::Array(arr) => std::mem::take(arr),
+            RedValue::Object(obj) => std::mem::take(obj).into_values().collect(),
+            _ => return,
+        };
+        while let Some(child) = pending.pop() {
+            let Ok(mut value) = Rc::try_unwrap(child) else {
+                continue;
+            };
+            match &mut value {
+                RedValue::Array(arr) => pending.extend(std::mem::take(arr)),
+                RedValue::Object(obj) => pending.extend(std::mem::take(obj).into_values()),
+                _ => {}
+            }
+            // value 此时必为叶子或空容器，drop 不会继续深入
+        }
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum RedValueData {
     Text(String),
@@ -135,47 +166,65 @@ impl RedValue {
 
 impl RedValueData {
     pub fn from_red_value(value: &RedValue) -> Result<RedValueData, Box<dyn std::error::Error>> {
-        match value {
-            RedValue::Text(s) => Ok(RedValueData::Text(s.as_ref().clone())),
-            RedValue::Array(arr) => {
-                let mut out = Vec::with_capacity(arr.len());
-                for item in arr {
-                    out.push(RedValueData::from_red_value(item)?);
-                }
-                Ok(RedValueData::Array(out))
+        fn convert(
+            value: &RedValue,
+            depth: usize,
+        ) -> Result<RedValueData, Box<dyn std::error::Error>> {
+            if depth > MAX_VALUE_DEPTH {
+                return Err(RedLang::make_err("值嵌套过深，无法转换"));
             }
-            RedValue::Object(obj) => {
-                let mut out = BTreeMap::new();
-                for (k, v) in obj {
-                    out.insert(k.clone(), RedValueData::from_red_value(v)?);
+            match value {
+                RedValue::Text(s) => Ok(RedValueData::Text(s.as_ref().clone())),
+                RedValue::Array(arr) => {
+                    let mut out = Vec::with_capacity(arr.len());
+                    for item in arr {
+                        out.push(convert(item, depth + 1)?);
+                    }
+                    Ok(RedValueData::Array(out))
                 }
-                Ok(RedValueData::Object(out))
+                RedValue::Object(obj) => {
+                    let mut out = BTreeMap::new();
+                    for (k, v) in obj {
+                        out.insert(k.clone(), convert(v, depth + 1)?);
+                    }
+                    Ok(RedValueData::Object(out))
+                }
+                RedValue::Bin(bin) => Ok(RedValueData::Bin(bin.as_ref().clone())),
+                RedValue::Fun(ast) => Ok(RedValueData::Fun(RedAstData::from_ast(ast))),
             }
-            RedValue::Bin(bin) => Ok(RedValueData::Bin(bin.as_ref().clone())),
-            RedValue::Fun(ast) => Ok(RedValueData::Fun(RedAstData::from_ast(ast))),
         }
+        convert(value, 1)
     }
 
     pub fn into_rc_value(self) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
-        match self {
-            RedValueData::Text(s) => Ok(rv_text(s)),
-            RedValueData::Array(arr) => {
-                let mut out = Vec::with_capacity(arr.len());
-                for item in arr {
-                    out.push(item.into_rc_value()?);
-                }
-                Ok(rv_array(out))
+        fn convert(
+            value: RedValueData,
+            depth: usize,
+        ) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
+            if depth > MAX_VALUE_DEPTH {
+                return Err(RedLang::make_err("值嵌套过深，无法转换"));
             }
-            RedValueData::Object(obj) => {
-                let mut out = BTreeMap::new();
-                for (k, v) in obj {
-                    out.insert(k, v.into_rc_value()?);
+            match value {
+                RedValueData::Text(s) => Ok(rv_text(s)),
+                RedValueData::Array(arr) => {
+                    let mut out = Vec::with_capacity(arr.len());
+                    for item in arr {
+                        out.push(convert(item, depth + 1)?);
+                    }
+                    Ok(rv_array(out))
                 }
-                Ok(Rc::new(RedValue::Object(out)))
+                RedValueData::Object(obj) => {
+                    let mut out = BTreeMap::new();
+                    for (k, v) in obj {
+                        out.insert(k, convert(v, depth + 1)?);
+                    }
+                    Ok(Rc::new(RedValue::Object(out)))
+                }
+                RedValueData::Bin(bin) => Ok(rv_bin(bin)),
+                RedValueData::Fun(ast) => Ok(Rc::new(RedValue::Fun(ast.into_ast()))),
             }
-            RedValueData::Bin(bin) => Ok(rv_bin(bin)),
-            RedValueData::Fun(ast) => Ok(Rc::new(RedValue::Fun(ast.into_ast()))),
         }
+        convert(self, 1)
     }
 }
 
@@ -218,25 +267,47 @@ impl RedAstNodeData {
 
 impl PartialEq for RedValue {
     fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (RedValue::Text(a), RedValue::Text(b)) => a == b,
-            (RedValue::Array(a), RedValue::Array(b)) => {
-                a.len() == b.len() && a.iter().zip(b.iter()).all(|(a, b)| **a == **b)
+        // 迭代式比较：深嵌套值树的递归比较会耗尽线程栈，改用显式工作栈
+        let mut work: Vec<(&RedValue, &RedValue)> = vec![(self, other)];
+        while let Some((a, b)) = work.pop() {
+            let matched = match (a, b) {
+                (RedValue::Text(a), RedValue::Text(b)) => a == b,
+                (RedValue::Array(a), RedValue::Array(b)) => {
+                    if a.len() != b.len() {
+                        false
+                    } else {
+                        work.extend(a.iter().zip(b.iter()).map(|(x, y)| (&**x, &**y)));
+                        true
+                    }
+                }
+                (RedValue::Object(a), RedValue::Object(b)) => {
+                    if a.len() != b.len() {
+                        false
+                    } else {
+                        let mut all_matched = true;
+                        for (k, a_value) in a.iter() {
+                            match b.get(k) {
+                                Some(b_value) => work.push((&**a_value, &**b_value)),
+                                None => {
+                                    all_matched = false;
+                                    break;
+                                }
+                            }
+                        }
+                        all_matched
+                    }
+                }
+                (RedValue::Bin(a), RedValue::Bin(b)) => a == b,
+                (RedValue::Fun(a), RedValue::Fun(b)) => {
+                    astparser::ast_to_string(a) == astparser::ast_to_string(b)
+                }
+                _ => false,
+            };
+            if !matched {
+                return false;
             }
-            (RedValue::Object(a), RedValue::Object(b)) => {
-                a.len() == b.len()
-                    && a.iter().all(|(k, a_value)| {
-                        b.get(k)
-                            .map(|b_value| **a_value == **b_value)
-                            .unwrap_or(false)
-                    })
-            }
-            (RedValue::Bin(a), RedValue::Bin(b)) => a == b,
-            (RedValue::Fun(a), RedValue::Fun(b)) => {
-                astparser::ast_to_string(a) == astparser::ast_to_string(b)
-            }
-            _ => false,
         }
+        true
     }
 }
 
@@ -337,6 +408,14 @@ pub struct RedLang {
     pub can_wrong: bool,
     stack: VecDeque<Rc<RedValue>>,
     scriptcallstackdeep: Rc<RefCell<usize>>, // 记录脚本调用栈的深度
+}
+
+impl RedLang {
+    /// 循环体取消检查：进程退出/脚本包退出时中断长循环，
+    /// 防止恶意脚本（如超大次数空循环）永久占死工作线程。
+    fn loop_can_continue(&self) -> bool {
+        pkg_can_run(&self.pkg_name, "延时")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -521,6 +600,9 @@ pub fn init_core_fun_map() {
                 let xh_len = self_t.xh_vec.len();
                 let loop_rst: Result<(), Box<dyn std::error::Error>> = (|| {
                     for i in 0..tms {
+                        if i % 1024 == 1023 && !self_t.loop_can_continue() {
+                            return Err(RedLang::make_err("循环终止，因用户要求退出"));
+                        }
                         self_t.xh_vec[xh_len - 1][0] = false;
                         let v = self_t.get_param(params, 1)?;
                         self_t.connect_rv_with_context(
@@ -552,6 +634,9 @@ pub fn init_core_fun_map() {
                 let xh_len = self_t.xh_vec.len();
                 let loop_rst: Result<(), Box<dyn std::error::Error>> = (|| {
                     for (i, value) in arr_clone.iter().enumerate().take(tms) {
+                        if i % 1024 == 1023 && !self_t.loop_can_continue() {
+                            return Err(RedLang::make_err("循环终止，因用户要求退出"));
+                        }
                         self_t.xh_vec[xh_len - 1][0] = false;
                         fun_params[1] = astparser::str_to_ast(i.to_string());
                         {
@@ -592,7 +677,12 @@ pub fn init_core_fun_map() {
                 ];
                 let xh_len = self_t.xh_vec.len();
                 let loop_rst: Result<(), Box<dyn std::error::Error>> = (|| {
+                    let mut iter_count: usize = 0;
                     for (k, v) in &obj_clone {
+                        iter_count += 1;
+                        if iter_count.is_multiple_of(1024) && !self_t.loop_can_continue() {
+                            return Err(RedLang::make_err("循环终止，因用户要求退出"));
+                        }
                         self_t.xh_vec[xh_len - 1][0] = false;
                         fun_params[1] = astparser::str_to_ast(k.clone());
                         {
@@ -629,7 +719,12 @@ pub fn init_core_fun_map() {
         self_t.xh_vec.push([false, false]);
         let xh_len = self_t.xh_vec.len();
         let loop_rst: Result<(), Box<dyn std::error::Error>> = (|| {
+            let mut iter_count: usize = 0;
             loop {
+                iter_count += 1;
+                if iter_count.is_multiple_of(1024) && !self_t.loop_can_continue() {
+                    return Err(RedLang::make_err("循环终止，因用户要求退出"));
+                }
                 self_t.xh_vec[xh_len - 1][0] = false;
                 if !self_t.get_param(params, 0)?.is_true() {
                     break;
@@ -1012,17 +1107,18 @@ pub fn init_core_fun_map() {
                     let l1 = out_vec2.pop().ok_or("== err")?;
                     if l1 == l2 {
                         out_vec2.push("真".to_string());
+                    } else if (l1 == "真" && l2 == "假") || (l1 == "假" && l2 == "真") {
+                        out_vec2.push("假".to_string());
                     } else {
-                        if (l1 == "真" && l2 == "假") || (l1 == "假" && l2 == "真") {
-                            out_vec2.push("假".to_string());
-                        } else {
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            if (n1 - n2).abs() < 0.0000001f64 {
-                                out_vec2.push("真".to_string());
-                            } else {
-                                out_vec2.push("假".to_string());
+                        match (l1.parse::<f64>(), l2.parse::<f64>()) {
+                            (Ok(n1), Ok(n2)) => {
+                                if (n1 - n2).abs() < 0.0000001f64 {
+                                    out_vec2.push("真".to_string());
+                                } else {
+                                    out_vec2.push("假".to_string());
+                                }
                             }
+                            _ => out_vec2.push("假".to_string()),
                         }
                     }
                 } else if it == "!=" {
@@ -1030,17 +1126,18 @@ pub fn init_core_fun_map() {
                     let l1 = out_vec2.pop().ok_or("!= err")?;
                     if l1 == l2 {
                         out_vec2.push("假".to_string());
+                    } else if (l1 == "真" && l2 == "假") || (l1 == "假" && l2 == "真") {
+                        out_vec2.push("真".to_string());
                     } else {
-                        if (l1 == "真" && l2 == "假") || (l1 == "假" && l2 == "真") {
-                            out_vec2.push("真".to_string());
-                        } else {
-                            let n1 = l1.parse::<f64>()?;
-                            let n2 = l2.parse::<f64>()?;
-                            if (n1 - n2).abs() < 0.0000001f64 {
-                                out_vec2.push("假".to_string());
-                            } else {
-                                out_vec2.push("真".to_string());
+                        match (l1.parse::<f64>(), l2.parse::<f64>()) {
+                            (Ok(n1), Ok(n2)) => {
+                                if (n1 - n2).abs() < 0.0000001f64 {
+                                    out_vec2.push("假".to_string());
+                                } else {
+                                    out_vec2.push("真".to_string());
+                                }
                             }
+                            _ => out_vec2.push("真".to_string()),
                         }
                     }
                 } else if it == ">" {
@@ -1153,7 +1250,11 @@ pub fn init_core_fun_map() {
             self_t: &mut RedLang,
             data: &BTreeMap<String, Rc<RedValue>>,
             params: &[astparser::Ast],
+            depth: usize,
         ) -> Result<String, Box<dyn std::error::Error>> {
+            if depth > MAX_VALUE_DEPTH {
+                return Err(RedLang::make_err("值嵌套过深，无法转文本"));
+            }
             let mut ret_str = String::new();
             ret_str.push('{');
             let mut vec_t: Vec<String> = vec![];
@@ -1161,7 +1262,7 @@ pub fn init_core_fun_map() {
                 let mut temp_str = String::new();
                 temp_str.push_str(&str_to_text(k)?);
                 temp_str.push(':');
-                temp_str.push_str(&value_to_text(self_t, v, params)?);
+                temp_str.push_str(&value_to_text(self_t, v, params, depth + 1)?);
                 vec_t.push(temp_str);
             }
             ret_str.push_str(&vec_t.join(","));
@@ -1176,10 +1277,14 @@ pub fn init_core_fun_map() {
             self_t: &mut RedLang,
             data: &[Rc<RedValue>],
             params: &[astparser::Ast],
+            depth: usize,
         ) -> Result<String, Box<dyn std::error::Error>> {
+            if depth > MAX_VALUE_DEPTH {
+                return Err(RedLang::make_err("值嵌套过深，无法转文本"));
+            }
             let mut vec_t: Vec<String> = vec![];
             for v in data {
-                vec_t.push(value_to_text(self_t, v, params)?);
+                vec_t.push(value_to_text(self_t, v, params, depth + 1)?);
             }
             Ok(format!("[{}]", vec_t.join(",")))
         }
@@ -1206,18 +1311,19 @@ pub fn init_core_fun_map() {
             self_t: &mut RedLang,
             data: &RedValue,
             params: &[astparser::Ast],
+            depth: usize,
         ) -> Result<String, Box<dyn std::error::Error>> {
             match data {
                 RedValue::Text(s) => str_to_text(s),
-                RedValue::Array(arr) => arr_to_text(self_t, arr, params),
-                RedValue::Object(obj) => obj_to_text(self_t, obj, params),
+                RedValue::Array(arr) => arr_to_text(self_t, arr, params, depth),
+                RedValue::Object(obj) => obj_to_text(self_t, obj, params, depth),
                 RedValue::Bin(bin) => bin_to_text(self_t, bin, params),
                 _ => Err(RedLang::make_err(
                     &("对应类型不能转文本:".to_owned() + data.get_type_name()),
                 )),
             }
         }
-        let ret_str = value_to_text(self_t, &data, params)?;
+        let ret_str = value_to_text(self_t, &data, params, 1)?;
         Ok(Some(rv_text(ret_str)))
     });
     add_fun(vec!["增加元素"], |self_t, params| {
@@ -1571,6 +1677,8 @@ pub fn init_core_fun_map() {
         rl.pkg_name = self_t.pkg_name.clone();
         rl.script_name = self_t.script_name.clone();
         rl.can_wrong = self_t.can_wrong;
+        // 与父实例共享调用深度计数，防止嵌套“运行脚本”绕过栈深保护
+        rl.scriptcallstackdeep = self_t.scriptcallstackdeep.clone();
         let code = self_t.get_param_text_rc(params, 0)?.to_string();
         let params_len = params.len();
         for i in 1..params_len {
@@ -1600,25 +1708,30 @@ pub fn init_core_fun_map() {
             let param = self_t.get_param(params, i)?;
             params_vec.push(RedValueData::from_red_value(&param)?);
         }
-        thread::spawn(move || {
-            let mut rl = RedLang::new();
-            rl.exmap = Rc::new(RefCell::new(exmap));
-            rl.pkg_name = pkg_name;
-            rl.script_name = script_name;
-            rl.can_wrong = can_wrong;
-            for item in params_vec {
-                match item.into_rc_value() {
-                    Ok(v) => rl.params_vec[0].push(v),
-                    Err(err) => {
-                        cq_add_log_w(&format!("{}", err)).unwrap();
-                        rl.params_vec[0].push(rv_empty());
+        // 脚本递归每层消耗约 7 个原生栈帧，默认 2MB 线程栈在病态深递归下
+        // 可能在触发 500 层限制前先栈溢出，加大到 16MB（虚拟预留，按需提交）
+        let _ = thread::Builder::new()
+            .name("redlang-background".into())
+            .stack_size(16 * 1024 * 1024)
+            .spawn(move || {
+                let mut rl = RedLang::new();
+                rl.exmap = Rc::new(RefCell::new(exmap));
+                rl.pkg_name = pkg_name;
+                rl.script_name = script_name;
+                rl.can_wrong = can_wrong;
+                for item in params_vec {
+                    match item.into_rc_value() {
+                        Ok(v) => rl.params_vec[0].push(v),
+                        Err(err) => {
+                            let _ = cq_add_log_w(&format!("{}", err));
+                            rl.params_vec[0].push(rv_empty());
+                        }
                     }
                 }
-            }
-            if let Err(err) = do_script(&mut rl, &code, "normal", false) {
-                cq_add_log_w(&format!("{}", err)).unwrap();
-            }
-        });
+                if let Err(err) = do_script(&mut rl, &code, "normal", false) {
+                    let _ = cq_add_log_w(&format!("{}", err));
+                }
+            });
         Ok(Some(rv_empty()))
     });
     add_fun(vec!["选择"], |self_t, params| {
@@ -1638,7 +1751,10 @@ pub fn init_core_fun_map() {
             let _foo = select_num_str.parse::<i64>()?;
             select_num = 0;
         } else {
-            select_num = select_num_str.parse::<usize>()? + 1;
+            select_num = select_num_str
+                .parse::<usize>()?
+                .checked_add(1)
+                .ok_or("选择序号超出范围")?;
         }
         if select_num == 0 || select_num > params_len {
             Ok(Some(rv_empty()))
@@ -1652,10 +1768,17 @@ pub fn init_core_fun_map() {
     add_fun(vec!["加锁"], |self_t, params| {
         let lock_name = self_t.get_param_text_rc(params, 0)?;
         if !self_t.lock_vec.contains(&*lock_name) {
-            // 锁被其它脚本持有时挂起等待，每1s复查一次，防止意外丢失唤醒。
-            crate::runtime_context()
-                .sync
-                .acquire_lock(&self_t.pkg_name, &lock_name);
+            let pkg_name = self_t.pkg_name.clone();
+            // 锁被其它脚本持有时挂起等待，每1s复查一次，防止意外丢失唤醒；
+            // 等待期间响应退出请求，避免脚本间死锁永久占死线程。
+            let acquired = crate::runtime_context().sync.acquire_lock(
+                &self_t.pkg_name,
+                &lock_name,
+                || pkg_can_run(&pkg_name, "等待信号"),
+            );
+            if !acquired {
+                return Err("加锁终止，因用户要求退出".into());
+            }
             self_t.lock_vec.insert(lock_name.to_string());
         }
         Ok(Some(rv_empty()))

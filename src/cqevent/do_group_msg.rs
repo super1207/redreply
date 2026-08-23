@@ -76,7 +76,9 @@ fn do_redlang(
                 )?;
             }
             {
-                let sender = root.get("sender").ok_or("sender not exists")?;
+                // sender 字段缺失时降级为默认值，不让整条群消息的脚本处理中断
+                let default_sender = serde_json::Value::Object(serde_json::Map::new());
+                let sender = root.get("sender").unwrap_or(&default_sender);
                 {
                     let role = read_json_str(sender, "role");
                     let role_str = match role.as_str() {
@@ -105,8 +107,10 @@ fn do_redlang(
                     rl.pkg_name = pkg_name_t.to_owned();
                     rl.script_name = script_name_t.to_owned();
                     if let Err(e) = super::do_script(&mut rl, &code_t, "normal", false) {
-                        cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e).as_str())
-                            .unwrap();
+                        let _ = cq_add_log_w(format!(
+                            "err in do_group_msg:do_redlang:{}",
+                            e
+                        ).as_str());
                     }
                 });
             }
@@ -118,6 +122,6 @@ fn do_redlang(
 // 处理群聊事件
 pub fn do_group_msg(root: &serde_json::Value, ban_pkgs: &HashSet<String>) {
     if let Err(e) = do_redlang(root, ban_pkgs) {
-        cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e).as_str()).unwrap();
+        let _ = cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e).as_str());
     }
 }

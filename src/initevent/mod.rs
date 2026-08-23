@@ -40,7 +40,7 @@ pub fn do_gobal_init_event(pkg_name_opt: Option<&str>) -> Result<i32, Box<dyn st
         rl.pkg_name = pkg_name.to_owned();
         let ret = crate::cqevent::do_script(&mut rl, &code, "init", false);
         if let Err(err) = ret {
-            cq_add_log_w(&format!("{}", err)).unwrap();
+            let _ = cq_add_log_w(&format!("{}", err));
         }
     } else {
         // 为所有包执行预初始化
@@ -52,7 +52,7 @@ pub fn do_gobal_init_event(pkg_name_opt: Option<&str>) -> Result<i32, Box<dyn st
             rl.pkg_name = pkg_name.to_owned();
             let ret = crate::cqevent::do_script(&mut rl, &code, "init", false);
             if let Err(err) = ret {
-                cq_add_log_w(&format!("{}", err)).unwrap();
+                let _ = cq_add_log_w(&format!("{}", err));
             }
         }
     }
@@ -78,7 +78,7 @@ pub fn do_init_event(pkg_name_opt: Option<&str>) -> Result<i32, Box<dyn std::err
                 rl.script_name = name.to_owned();
                 let ret = crate::cqevent::do_script(&mut rl, code, "init", false);
                 if let Err(err) = ret {
-                    cq_add_log_w(&format!("{}", err)).unwrap();
+                    let _ = cq_add_log_w(&format!("{}", err));
                 }
             }
         }

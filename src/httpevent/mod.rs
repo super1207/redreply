@@ -1,9 +1,7 @@
 use crate::cqevent::do_script;
 use http_body_util::BodyExt;
 use hyper::http::{HeaderName, HeaderValue};
-use std::io::Read;
 use std::{collections::BTreeMap, str::FromStr};
-use tokio_util::bytes::Buf;
 
 use crate::cqapi::cq_add_log_w;
 use crate::runtime;
@@ -115,7 +113,10 @@ pub fn do_http_event(
     let method = req.method().to_string();
     let mut req_headers = BTreeMap::new();
     for it in req.headers() {
-        req_headers.insert(it.0.as_str().to_owned(), it.1.to_str()?.to_owned());
+        // 单个非法（非 UTF-8）头跳过即可，不让整个网络触发请求失败
+        if let Ok(header_value) = it.1.to_str() {
+            req_headers.insert(it.0.as_str().to_owned(), header_value.to_owned());
+        }
     }
     let uri = req.uri();
     let req_params = get_params_from_uri(uri);
@@ -124,20 +125,36 @@ pub fn do_http_event(
     runtime().spawn(async move {
         let ret = body_rx1.recv().await;
         if ret.is_some() {
-            let bt_rst = req.collect().await;
-            if let Ok(bt) = bt_rst {
-                let mut body_reader = bt.aggregate().reader();
-                let mut body = Vec::new();
-                let bt2_rst = body_reader.read_to_end(&mut body);
-                if bt2_rst.is_err() {
-                    cq_add_log_w(&format!("获取访问体失败:{bt2_rst:?}")).unwrap();
-                    let _foo = body_tx2.send(vec![]).await;
-                } else {
-                    let _foo = body_tx2.send(body).await;
+            let mut req = req;
+            // 网络触发请求体无大小上限会被恶意大 body 打爆内存(OOM 即 abort 进程)。
+            // 注意不能先 collect() 再截断（那已经全量进内存了），必须逐帧流式累计。
+            const MAX_HTTP_EVENT_BODY: usize = 32 * 1024 * 1024;
+            let mut body: Vec<u8> = Vec::new();
+            let mut over_limit = false;
+            loop {
+                match req.body_mut().frame().await {
+                    Some(Ok(frame)) => {
+                        if let Ok(data) = frame.into_data() {
+                            if body.len() + data.len() > MAX_HTTP_EVENT_BODY {
+                                over_limit = true;
+                                break;
+                            }
+                            body.extend_from_slice(&data);
+                        }
+                    }
+                    Some(Err(e)) => {
+                        let _ = cq_add_log_w(&format!("获取访问体失败:{e}"));
+                        body.clear();
+                        break;
+                    }
+                    None => break,
                 }
-            } else {
-                cq_add_log_w(&format!("获取访问体失败:{bt_rst:?}")).unwrap();
+            }
+            if over_limit {
+                let _ = cq_add_log_w("网络触发请求体超出大小限制(32MB)");
                 let _foo = body_tx2.send(vec![]).await;
+            } else {
+                let _foo = body_tx2.send(body).await;
             }
         }
     });

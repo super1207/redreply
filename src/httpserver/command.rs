@@ -70,7 +70,7 @@ fn register_command(tokens: &[String], pid: u32) -> bool {
     if tokens.is_empty() {
         return true;
     }
-    let mut generations = command_generations().lock().unwrap();
+    let mut generations = command_generations().lock().unwrap_or_else(|e| e.into_inner());
     prune_command_generations(&mut generations);
     if tokens.iter().any(|token| {
         generations
@@ -98,7 +98,7 @@ fn register_c_program(tokens: &[String]) -> Option<Arc<AtomicBool>> {
     if tokens.is_empty() {
         return Some(cancel);
     }
-    let mut generations = command_generations().lock().unwrap();
+    let mut generations = command_generations().lock().unwrap_or_else(|e| e.into_inner());
     prune_command_generations(&mut generations);
     if tokens.iter().any(|token| {
         generations
@@ -122,7 +122,7 @@ fn register_c_program(tokens: &[String]) -> Option<Arc<AtomicBool>> {
 }
 
 fn unregister_c_program(tokens: &[String], cancel: &Arc<AtomicBool>) {
-    let mut generations = command_generations().lock().unwrap();
+    let mut generations = command_generations().lock().unwrap_or_else(|e| e.into_inner());
     for token in tokens {
         let remove = if let Some(state) = generations.get_mut(token) {
             state.cancel_flags.retain(|item| !Arc::ptr_eq(item, cancel));
@@ -139,7 +139,7 @@ fn unregister_c_program(tokens: &[String], cancel: &Arc<AtomicBool>) {
 }
 
 fn unregister_command(tokens: &[String], pid: u32) {
-    let mut generations = command_generations().lock().unwrap();
+    let mut generations = command_generations().lock().unwrap_or_else(|e| e.into_inner());
     for token in tokens {
         let remove = if let Some(state) = generations.get_mut(token) {
             state.pids.remove(&pid);
@@ -200,7 +200,7 @@ pub async fn cancel_generation(generation: &str) -> std::result::Result<(), Stri
         return Err("取消请求缺少有效的对话代次".to_owned());
     }
     let pids = {
-        let mut generations = command_generations().lock().unwrap();
+        let mut generations = command_generations().lock().unwrap_or_else(|e| e.into_inner());
         prune_command_generations(&mut generations);
         let state = generations
             .entry(generation.to_owned())
@@ -271,6 +271,33 @@ pub async fn run_c(
     }))
 }
 
+/// 命令输出单流上限：持续排水但只保留前段，防止 `yes` 之类的命令把宿主内存打爆
+const MAX_COMMAND_OUTPUT_BYTES: usize = 32 * 1024 * 1024;
+/// 单条命令最长执行时间，超时后强杀整棵进程树
+const COMMAND_TIMEOUT_SECS: u64 = 600;
+
+fn read_pipe_capped(
+    pipe: &mut dyn std::io::Read,
+) -> Vec<u8> {
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        match pipe.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                // 超限后继续读（保持管道排空，子进程才不会被写阻塞到永不退出），只是不再保留
+                let remaining = MAX_COMMAND_OUTPUT_BYTES.saturating_sub(buf.len());
+                if remaining > 0 {
+                    let keep = n.min(remaining);
+                    buf.extend_from_slice(&chunk[..keep]);
+                }
+            }
+            Err(_) => break,
+        }
+    }
+    buf
+}
+
 fn wait_for_command(child: Child, tokens: &[String]) -> std::result::Result<Output, String> {
     let pid = child.id();
     if !register_command(tokens, pid) {
@@ -286,26 +313,37 @@ fn wait_for_command(child: Child, tokens: &[String]) -> std::result::Result<Outp
     let mut child = child;
     let mut stdout_pipe = child.stdout.take();
     let mut stderr_pipe = child.stderr.take();
-    let out_handle = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(pipe) = stdout_pipe.as_mut() {
-            let _ = std::io::Read::read_to_end(pipe, &mut buf);
-        }
-        buf
+    let out_handle = std::thread::spawn(move || match stdout_pipe.as_mut() {
+        Some(pipe) => read_pipe_capped(pipe),
+        None => Vec::new(),
     });
-    let err_handle = std::thread::spawn(move || {
-        let mut buf = Vec::new();
-        if let Some(pipe) = stderr_pipe.as_mut() {
-            let _ = std::io::Read::read_to_end(pipe, &mut buf);
-        }
-        buf
+    let err_handle = std::thread::spawn(move || match stderr_pipe.as_mut() {
+        Some(pipe) => read_pipe_capped(pipe),
+        None => Vec::new(),
     });
-    let status = match child.wait() {
-        Ok(status) => status,
-        Err(error) => return Err(format!("命令执行失败: {error}")),
+    let start = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Ok(status),
+            Ok(None) => {
+                if start.elapsed() > std::time::Duration::from_secs(COMMAND_TIMEOUT_SECS) {
+                    let _ = kill_process_tree(child.id());
+                    let _ = child.wait();
+                    break Err(format!(
+                        "命令执行超时({COMMAND_TIMEOUT_SECS}秒)，已强制终止"
+                    ));
+                }
+                std::thread::sleep(std::time::Duration::from_millis(100));
+            }
+            Err(error) => break Err(format!("命令执行失败: {error}")),
+        }
     };
-    let stdout = out_handle.join().unwrap_or_default();
+    let status = status?;
+    let mut stdout = out_handle.join().unwrap_or_default();
     let stderr = err_handle.join().unwrap_or_default();
+    if stdout.len() >= MAX_COMMAND_OUTPUT_BYTES {
+        stdout.truncate(MAX_COMMAND_OUTPUT_BYTES);
+    }
     drop(registration);
     Ok(Output {
         status,
@@ -486,13 +524,24 @@ fn run_command(request: &CommandRequest) -> std::result::Result<serde_json::Valu
         wait_for_command(child, &command_tokens)?
     };
 
-    let stdout = decode_output(&output.stdout, &encoding, "stdout")?;
-    let stderr = decode_output(&output.stderr, &encoding, "stderr")?;
+    let stdout = truncate_text(&decode_output(&output.stdout, &encoding, "stdout")?);
+    let stderr = truncate_text(&decode_output(&output.stderr, &encoding, "stderr")?);
     Ok(json!({
         "stdout": stdout,
         "stderr": stderr,
         "exit_code": output.status.code()
     }))
+}
+
+/// 返回给前端的单字段输出文本上限（JSON 传输与 UI 渲染保护）
+const MAX_OUTPUT_TEXT_CHARS: usize = 512 * 1024;
+fn truncate_text(text: &str) -> String {
+    if text.chars().count() > MAX_OUTPUT_TEXT_CHARS {
+        let head: String = text.chars().take(MAX_OUTPUT_TEXT_CHARS).collect();
+        format!("{head}\n...(输出过长已截断)")
+    } else {
+        text.to_owned()
+    }
 }
 
 fn decode_output(bytes: &[u8], encoding: &str, what: &str) -> std::result::Result<String, String> {

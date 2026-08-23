@@ -29,7 +29,11 @@ pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error + Sen
     let curdir = curexedir.parent().ok_or("无法获得当前可执行文件的父目录")?;
     let path = curdir.join("plus_dir");
     std::fs::create_dir_all(&path)?;
-    let path_str = format!("{}{}", path.to_str().unwrap(), std::path::MAIN_SEPARATOR);
+    let path_str = format!(
+        "{}{}",
+        path.to_string_lossy(),
+        std::path::MAIN_SEPARATOR
+    );
     Ok(crate::mytool::deal_path_str(&path_str).to_string())
 }
 
@@ -44,7 +48,11 @@ pub fn cq_get_app_directory2() -> Result<String, Box<dyn std::error::Error + Sen
     let curdir = curexedir.parent().ok_or("无法获得当前可执行文件的父目录")?;
     let path = curdir.join("plus_dir").join("default_pkg_dir");
     std::fs::create_dir_all(&path)?;
-    let path_str = format!("{}{}", path.to_str().unwrap(), std::path::MAIN_SEPARATOR);
+    let path_str = format!(
+        "{}{}",
+        path.to_string_lossy(),
+        std::path::MAIN_SEPARATOR
+    );
     Ok(crate::mytool::deal_path_str(&path_str).to_string())
 }
 
@@ -73,7 +81,7 @@ pub fn cq_call_api(
             return ret.to_string();
         } else {
             let err = ret_rsp.err().unwrap();
-            cq_add_log_w(&format!("调用mqtt远程失败:{:?}", err)).unwrap();
+            let _ = cq_add_log_w(&format!("调用mqtt远程失败:{:?}", err));
             return serde_json::json!({
                 "retcode":-1,
                 "status":"failed",
@@ -87,7 +95,7 @@ pub fn cq_call_api(
         if let Ok(ret) = ret {
             return ret.to_string();
         } else {
-            cq_add_log_w(&format!("调用api失败:{:?}", ret)).unwrap();
+            let _ = cq_add_log_w(&format!("调用api失败:{:?}", ret));
         }
         serde_json::json!({
             "retcode":-1,

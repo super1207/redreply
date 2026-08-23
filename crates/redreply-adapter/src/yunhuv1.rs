@@ -230,12 +230,49 @@ impl Yunhuv1Connect {
                 break;
             }
             let url_proxy = self.url_proxy.read().unwrap().to_owned();
-            let ret = self.proxyrequest(&url_proxy).await?;
+            // 容错处理：单次请求/解析失败只记录日志并稍后重试，不直接断开
+            let ret = match self.proxyrequest(&url_proxy).await {
+                Ok(ret) => ret,
+                Err(err) => {
+                    cq_add_log_w(&format!(
+                        "yunhu bot {} recv warning:{}",
+                        self.self_id.read().unwrap(),
+                        err
+                    ))
+                    .unwrap();
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
             if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
-            let event_json: serde_json::Value = serde_json::from_str(&ret)?;
-            let eventarr = event_json.as_array().ok_or("eventarr not array")?;
+            let event_json: serde_json::Value = match serde_json::from_str(&ret) {
+                Ok(val) => val,
+                Err(err) => {
+                    cq_add_log_w(&format!(
+                        "yunhu bot {} recv warning:{}",
+                        self.self_id.read().unwrap(),
+                        err
+                    ))
+                    .unwrap();
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
+            let eventarr = match event_json.as_array() {
+                Some(arr) => arr,
+                None => {
+                    cq_add_log_w(&format!(
+                        "yunhu bot {} recv warning:eventarr not array:{}",
+                        self.self_id.read().unwrap(),
+                        ret
+                    ))
+                    .unwrap();
+                    tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
             for event in eventarr {
                 let event = event.clone();
                 cq_add_log(&format!(
@@ -422,6 +459,7 @@ impl Yunhuv1Connect {
             token
         );
 
+        let mut all_ok = true;
         for msg_id in msg_ids {
             let to_send_json = json!({
                 "chatId":msg_id.chat_id,
@@ -437,6 +475,27 @@ impl Yunhuv1Connect {
             let retbin = ret.bytes().await?.to_vec();
             let ret_str = String::from_utf8(retbin)?;
             cq_add_log(&format!("YUNTU_POST响应:{ret_str}")).unwrap();
+            let ret_json: Value = match serde_json::from_str(&ret_str) {
+                Ok(val) => val,
+                Err(_) => {
+                    all_ok = false;
+                    continue;
+                }
+            };
+            // 云湖业务码 1 为成功，其余视为撤回失败
+            if read_json_str(&ret_json, "code") != "1" {
+                all_ok = false;
+            }
+        }
+
+        if !all_ok {
+            return Ok(json!({
+                "status":"failed",
+                "retcode":-1,
+                "data": {},
+                "message":"yunhu recall failed",
+                "echo":echo
+            }));
         }
 
         let send_json = serde_json::json!({
@@ -499,11 +558,15 @@ impl Yunhuv1Connect {
     ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         let uri = reqwest::Url::from_str(url)?;
         let client = if uri.scheme() == "http" {
-            reqwest::Client::builder().no_proxy().build()?
+            reqwest::Client::builder()
+                .no_proxy()
+                .timeout(std::time::Duration::from_secs(60))
+                .build()?
         } else {
             reqwest::Client::builder()
                 .danger_accept_invalid_certs(true)
                 .no_proxy()
+                .timeout(std::time::Duration::from_secs(60))
                 .build()?
         };
         let mut req;
@@ -668,9 +731,10 @@ impl BotConnectTrait for Yunhuv1Connect {
         url_proxy.query_pairs_mut().append_pair("userKey", self_id);
         url_proxy.query_pairs_mut().append_pair("timeout", "10000");
 
-        self.self_id.write().unwrap().push_str(self_id);
-        self.url_proxy.write().unwrap().push_str(url_proxy.as_str());
-        self.token.write().unwrap().push_str(token);
+        // 先重置再赋值，避免二次 connect 时累积双份数据
+        *self.self_id.write().unwrap() = self_id.to_owned();
+        *self.url_proxy.write().unwrap() = url_proxy.as_str().to_owned();
+        *self.token.write().unwrap() = token.to_owned();
         cq_add_log(&format!("yunhu bot {} connect success", self_id)).unwrap();
         let self_t = self.clone();
         tokio::task::spawn(async move {

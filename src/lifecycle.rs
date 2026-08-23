@@ -63,13 +63,63 @@ pub fn wait_for_quit() -> ! {
     crate::runtime_context().control.set_quit(true);
     std::thread::spawn(|| {
         std::thread::sleep(core::time::Duration::from_secs(5));
-        crate::cq_add_log_w("退出软件超时(5s)，强制退出!").unwrap();
-        crate::cq_add_log_w(&format!("未退出脚本:{:?}", get_running_script_info())).unwrap();
+        // 强退看门狗内绝不能 unwrap：日志链路一旦出错，强退失效会导致进程永远退不出
+        let _ = crate::cq_add_log_w("退出软件超时(5s)，强制退出!");
+        let _ = crate::cq_add_log_w(&format!("未退出脚本:{:?}", get_running_script_info()));
         kill_all_sub_process();
         std::process::exit(-1);
     });
 
     while !wait_all_pkg_quit(5000) {}
-    crate::status::flush_cache_to_db().unwrap();
+    // flush 失败也不能阻止退出（缓存丢失可接受，进程卡死不可接受）
+    if let Err(e) = crate::status::flush_cache_to_db() {
+        let _ = crate::cq_add_log_w(&format!("退出时缓存落盘失败:{e}"));
+    }
     std::process::exit(0);
+}
+
+/// 注册系统信号处理器：Ctrl+C / SIGTERM（docker stop）也能走优雅退出流程。
+pub fn register_signal_handler() {
+    std::thread::Builder::new()
+        .name("signal-handler".into())
+        .spawn(|| {
+            let rt_result = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build();
+            let rt = match rt_result {
+                Ok(rt) => rt,
+                Err(e) => {
+                    let _ = crate::cq_add_log_w(&format!("信号监听 runtime 创建失败:{e}"));
+                    return;
+                }
+            };
+            rt.block_on(async {
+                #[cfg(unix)]
+                {
+                    use tokio::signal::unix::{signal, SignalKind};
+                    let mut sigterm = match signal(SignalKind::terminate()) {
+                        Ok(s) => s,
+                        Err(_) => return,
+                    };
+                    let mut sigint = match signal(SignalKind::interrupt()) {
+                        Ok(s) => s,
+                        Err(_) => return,
+                    };
+                    tokio::select! {
+                        _ = sigterm.recv() => {},
+                        _ = sigint.recv() => {},
+                    }
+                }
+                #[cfg(not(unix))]
+                {
+                    // Windows 下 tokio 内部注册 SetConsoleCtrlHandler，
+                    // GUI 子系统无控制台时不会触发，保持安静即可。
+                    let _ = tokio::signal::ctrl_c().await;
+                }
+            });
+            let _ = crate::cq_add_log_w("收到系统退出信号，开始优雅退出...");
+            wait_for_quit();
+        })
+        .map(|_| ())
+        .ok(); // 线程创建失败只影响信号退出能力，不影响启动
 }

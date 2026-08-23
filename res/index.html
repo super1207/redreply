@@ -197,6 +197,13 @@
                         <input id="pio-chat-base-url" type="url" maxlength="2048" required placeholder="https://api.deepseek.com/v1/chat/completions">
                     </label>
                     <label>
+                        <span>接口类型</span>
+                        <select id="pio-chat-api-type">
+                            <option value="chat_completions">Chat Completions</option>
+                            <option value="responses">Responses</option>
+                        </select>
+                    </label>
+                    <label>
                         <span>模型</span>
                         <input id="pio-chat-model" type="text" maxlength="200" required>
                     </label>
@@ -220,6 +227,7 @@
                         <select id="pio-chat-thinking-level">
                             <option value="none">关闭</option>
                             <option value="low">Low</option>
+                            <option value="medium">Medium</option>
                             <option value="high">High</option>
                             <option value="xhigh">XHigh</option>
                             <option value="max">Max</option>

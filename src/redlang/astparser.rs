@@ -8,6 +8,9 @@ pub enum AstNode {
 
 pub type Ast = Vec<AstNode>;
 
+/// 解析嵌套深度上限：超过即报错，防止深嵌套输入导致递归栈溢出
+pub const MAX_PARSE_DEPTH: usize = 256;
+
 #[derive(Clone, Debug)]
 pub struct AstCommand {
     pub name: Rc<String>,
@@ -68,6 +71,9 @@ impl AstParser {
         }
     }
     fn remove_comment(&mut self) -> Result<(), String> {
+        // 注意：语法文档明确规定"注释的优先级高于原始字符串"
+        // （docs/detailref/README.md），即 ## 注释规则作用于全文，
+        // 包括 【@...】 原始字符串内部。这里必须保持该语义不变。
         let mut read_pos = 0;
         let mut write_pos = 0;
         let mut in_comment = false;
@@ -106,7 +112,7 @@ impl AstParser {
     }
     fn parse(&mut self) -> Result<Ast, String> {
         self.remove_comment()?;
-        let mut parser = AstParserInner::new(&self.chars);
+        let mut parser = AstParserInner::new(&self.chars, 0);
         parser.parse()
     }
 }
@@ -114,13 +120,15 @@ impl AstParser {
 struct AstParserInner<'a> {
     chars: &'a [char],
     pos: usize,
+    depth: usize,
 }
 
 impl<'a> AstParserInner<'a> {
-    fn new(input: &'a [char]) -> Self {
+    fn new(input: &'a [char], depth: usize) -> Self {
         Self {
             chars: input,
             pos: 0,
+            depth,
         }
     }
 
@@ -170,7 +178,7 @@ impl<'a> AstParserInner<'a> {
                     } else if curr_char == '】' {
                         if g_num == 0 {
                             let mut arg_parser =
-                                AstParserInner::new(&self.chars[temp_start..self.pos]);
+                                AstParserInner::new(&self.chars[temp_start..self.pos], self.depth + 1);
                             args.push(arg_parser.parse()?);
                             self.consume_char(1)?;
                             is_normal_break = true;
@@ -181,7 +189,7 @@ impl<'a> AstParserInner<'a> {
                     } else if curr_char == '@' {
                         if g_num == 0 {
                             let mut arg_parser =
-                                AstParserInner::new(&self.chars[temp_start..self.pos]);
+                                AstParserInner::new(&self.chars[temp_start..self.pos], self.depth + 1);
                             args.push(arg_parser.parse()?);
                             self.consume_char(1)?;
                             temp_start = self.pos;
@@ -220,6 +228,9 @@ impl<'a> AstParserInner<'a> {
     }
 
     fn parse(&mut self) -> Result<Ast, String> {
+        if self.depth > MAX_PARSE_DEPTH {
+            return Err(format!("嵌套层级超过最大限制 {MAX_PARSE_DEPTH}"));
+        }
         let mut result = Vec::new();
 
         enum State {

@@ -208,7 +208,11 @@ impl OneBot11Connect {
 
                 cq_add_log(&format!("使用`{music_card_sign}`进行音乐卡片签名")).unwrap();
                 let get_url = format!("{music_card_sign}?url={audio_t}&song={title_t}&singer={content_t}&cover={image_t}&jump={url_t}&format=bilibili");
-                let api_get = reqwest::get(get_url).await?;
+                // reqwest::get 不支持链式 timeout，改用带超时的 Client
+                let client = reqwest::Client::builder()
+                    .timeout(std::time::Duration::from_secs(30))
+                    .build()?;
+                let api_get = client.get(get_url).send().await?;
                 let ret_text = api_get.text().await?;
                 let j: serde_json::Value = serde_json::from_str(&ret_text)?;
                 let code = read_json_str(&j, "code");
@@ -326,6 +330,12 @@ impl OneBot11Connect {
         &self,
         json: &mut serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // params 非对象时先归一化为空对象，避免后续索引赋值 panic
+        if let Some(params) = json.get_mut("params") {
+            if !params.is_object() {
+                *params = serde_json::json!({});
+            }
+        }
         let platform = self.get_platform().await?;
         if platform == "lagrange" {
             let params = json.get_mut("params").ok_or("params is none")?;
@@ -376,20 +386,24 @@ impl OneBot11Connect {
                 .as_str()
                 .unwrap_or("")
                 .to_ascii_lowercase();
-            if platform.contains("lagrange") {
-                *self.real_platform.write().unwrap() = Some("lagrange".to_string());
+            // 只有识别成功才写入缓存；识别失败(含超时空响应)保持 None，下次重试
+            let recognized = if platform.contains("lagrange") {
+                Some("lagrange".to_string())
             } else if platform.contains("llonebot") {
-                *self.real_platform.write().unwrap() = Some("llonebot".to_string());
+                Some("llonebot".to_string())
             } else if platform.contains("cqhttp") {
-                *self.real_platform.write().unwrap() = Some("cqhttp".to_string());
+                Some("cqhttp".to_string())
             } else if platform.contains("napcat") {
-                *self.real_platform.write().unwrap() = Some("napcat".to_string());
+                Some("napcat".to_string())
             } else if platform.contains("revqq") {
-                *self.real_platform.write().unwrap() = Some("revqq".to_string());
-            }else if platform.contains("lunacore") {
-                *self.real_platform.write().unwrap() = Some("lunacore".to_string());
-            }else {
-                *self.real_platform.write().unwrap() = Some("".to_string());
+                Some("revqq".to_string())
+            } else if platform.contains("lunacore") {
+                Some("lunacore".to_string())
+            } else {
+                None
+            };
+            if let Some(p) = recognized {
+                *self.real_platform.write().unwrap() = Some(p);
             }
         }
         let read_platform = self.real_platform.read().unwrap().to_owned();
@@ -502,7 +516,10 @@ impl BotConnectTrait for OneBot11Connect {
                 request.uri().host().ok_or("ws地址缺少host")?,
                 port
             );
-            let socket = TcpStream::connect(addr).await?;
+            // 显式超时，避免半开连接长时间卡在 connecting
+            let socket = tokio::time::timeout(std::time::Duration::from_secs(15), TcpStream::connect(addr))
+                .await
+                .map_err(|_| "TCP连接超时(15s)")??;
             ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
         } else {
             ws_rst = connect_async(request).await?;
@@ -794,7 +811,14 @@ impl BotConnectTrait for OneBot11Connect {
             },
             _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
                 cq_add_log_w(&format!("接收api返回超时(action:{},echo:{})", action, echo_for_log)).unwrap();
-                return Ok(serde_json::json!(""));
+                // 返回结构化失败对象，不再用空串掩盖故障
+                return Ok(serde_json::json!({
+                    "status":"failed",
+                    "retcode":-1,
+                    "wording":"api timeout",
+                    "data":null,
+                    "echo":echo_for_log
+                }));
             }
         }
     }

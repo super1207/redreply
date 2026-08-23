@@ -95,6 +95,9 @@ pub struct SelfData {
     pub bot_id: Weak<std::sync::RwLock<String>>,
     pub qqgroup_audit_map:
         Arc<tokio::sync::RwLock<HashMap<String, tokio::sync::mpsc::Sender<serde_json::Value>>>>,
+    // 审核事件先于 waiter 注册到达时的待领缓存：audit_id -> (时间戳, 事件)
+    pub qqgroup_audit_pending_cache:
+        Arc<tokio::sync::RwLock<HashMap<String, (u64, serde_json::Value)>>>,
 }
 
 pub struct QQMsgNode {
@@ -881,7 +884,7 @@ pub fn get_reply_id(
 
 pub struct AccessTokenStruct {
     pub access_token: String,
-    _expires_in: u64,
+    pub expires_in: u64,
 }
 
 pub async fn token_refresh(
@@ -906,7 +909,8 @@ pub async fn token_refresh(
     let ret_str = ret.text().await?;
     // println!("token_refresh:{}",ret_str);
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
-    let expires_in = read_json_str(&json_val, "expires_in").parse::<u64>()?;
+    // expires_in 缺失或非法时记为 0，由调用方保持现有刷新间隔
+    let expires_in = read_json_str(&json_val, "expires_in").parse::<u64>().unwrap_or(0);
     Ok(AccessTokenStruct {
         access_token: json_val
             .get("access_token")
@@ -914,7 +918,7 @@ pub async fn token_refresh(
             .as_str()
             .ok_or("access_token not str")?
             .to_owned(),
-        _expires_in: expires_in,
+        expires_in,
     })
 }
 
@@ -1014,6 +1018,9 @@ pub fn qq_content_to_cqstr(
                 } else if text.starts_with("<emoji:") {
                     let face_id = text.get(7..text.len() - 1).ok_or("get face id error")?;
                     out_str += &format!("[CQ:face,id={}]", cq_params_encode(face_id));
+                } else {
+                    // 未识别的标签不丢弃，把原文(含尖括号)追加回输出
+                    out_str += &cq_text_encode(&text);
                 }
                 text.clear();
                 i += 1;
@@ -1086,7 +1093,8 @@ pub fn deal_message_reference(
                     .ok_or("no id in msg id_event_map")?
                     .as_str()
                     .ok_or("id not str")?;
-                if id.contains(&raw_id) {
+                // 逐段精确比较(id 可能是多个消息ID用|拼接)，避免子串模糊匹配误判
+                if id.split('|').any(|part| part == raw_id) {
                     return Ok(format!("[CQ:reply,id={key}]"));
                 }
             }
@@ -1230,7 +1238,20 @@ pub async fn do_qq_json_post(
         reqwest::header::HeaderValue::from_str("application/json")?,
     );
     let ret = client.execute(req).await?;
+    let status = ret.status();
     let ret_str = ret.text().await?;
+    if !status.is_success() {
+        // 非 2xx 视为失败，携带状态码与截断的响应体
+        let mut body = ret_str.as_str();
+        if body.len() > 500 {
+            body = &body[..500];
+        }
+        return Err(format!(
+            "do_qq_json_post http error:{} {path} body:{body}",
+            status
+        )
+        .into());
+    }
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
     Ok(json_val)
 }
@@ -1251,6 +1272,22 @@ pub async fn deal_qqgroup_audit_event(
     };
     if let Some(tx) = tx {
         let _foo = tx.send(event).await;
+    } else {
+        // 竞态补偿：waiter 尚未注册，先存入待领缓存（容量上限 64，超过删最旧）
+        let now = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_secs();
+        let mut lk = self_t.qqgroup_audit_pending_cache.write().await;
+        if lk.len() >= 64 {
+            if let Some(oldest) = lk
+                .iter()
+                .min_by_key(|(_, (tm, _))| *tm)
+                .map(|(k, _)| k.clone())
+            {
+                lk.remove(&oldest);
+            }
+        }
+        lk.insert(audit_id, (now, event));
     }
     Ok(())
 }
@@ -1272,13 +1309,21 @@ pub async fn wait_qqgroup_audit_result(
 
     let (tx_ay, mut rx_ay) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
     let audit_map = Arc::clone(&_self_t.qqgroup_audit_map);
-    audit_map.write().await.insert(audit_id.clone(), tx_ay);
+    audit_map.write().await.insert(audit_id.clone(), tx_ay.clone());
     let _guard = scopeguard::guard(audit_id.clone(), |audit_id| {
         let audit_map = Arc::clone(&audit_map);
         tokio::spawn(async move {
             audit_map.write().await.remove(&audit_id);
         });
     });
+
+    // 竞态补偿：先查待领缓存，命中则立即投递给下面的 select 统一处理
+    {
+        let mut lk = _self_t.qqgroup_audit_pending_cache.write().await;
+        if let Some((_, cached)) = lk.remove(&audit_id) {
+            let _foo = tx_ay.send(cached).await;
+        }
+    }
 
     tokio::select! {
         Some(event) = rx_ay.recv() => {

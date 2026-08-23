@@ -126,21 +126,28 @@ pub struct AssetDoc;
 
 /// 主 crate 的启动编排。具体配置、脚本、生命周期和资源操作位于对应模块。
 pub fn initialize() -> i32 {
-    cq_add_log(&format!(
+    let _ = cq_add_log(&format!(
         "欢迎使用`红色问答{}`,正在进行资源初始化...",
         resource_manager::get_version()
-    ))
-    .unwrap();
+    ));
+    // panic hook 内部绝不能再 panic（否则 double-panic 直接 abort，原始崩溃信息丢失）
     panic::set_hook(Box::new(|error| {
-        let executable = std::env::current_exe().unwrap();
-        let path = executable.parent().unwrap().join("crash.log");
-        let mut file = if path.exists() {
-            std::fs::OpenOptions::new().append(true).open(path).unwrap()
-        } else {
-            std::fs::File::create(path).unwrap()
-        };
-        std::io::Write::write_all(&mut file, error.to_string().as_bytes()).unwrap();
-        cq_add_log_w(&error.to_string()).unwrap();
+        let error_text = error.to_string();
+        if let Ok(executable) = std::env::current_exe() {
+            if let Some(dir) = executable.parent() {
+                let path = dir.join("crash.log");
+                let open_result = if path.exists() {
+                    std::fs::OpenOptions::new().append(true).open(&path)
+                } else {
+                    std::fs::File::create(&path)
+                };
+                if let Ok(mut file) = open_result {
+                    use std::io::Write as _;
+                    let _ = file.write_all(format!("{error_text}\n").as_bytes());
+                }
+            }
+        }
+        let _ = cq_add_log_w(&error_text);
     }));
 
     config_manager::init_config();
@@ -154,42 +161,42 @@ pub fn initialize() -> i32 {
     redlang::init_core_fun_map();
 
     if let Err(error) = resource_manager::release_file() {
-        cq_add_log_w(&error.to_string()).unwrap();
+        let _ = cq_add_log_w(&error.to_string());
     }
     if let Err(error) = httpserver::init_http_server() {
-        cq_add_log_w(&error.to_string()).unwrap();
+        let _ = cq_add_log_w(&error.to_string());
     }
     thread::spawn(|| {
         if let Err(error) = resource_manager::init_python() {
-            cq_add_log_w(&error.to_string()).unwrap();
+            let _ = cq_add_log_w(&error.to_string());
         }
     });
     if let Err(error) = script_manager::init_code() {
-        cq_add_log_w(&error.to_string()).unwrap();
+        let _ = cq_add_log_w(&error.to_string());
     }
     if let Err(error) = botconn::do_conn_event() {
-        cq_add_log_w(&error.to_string()).unwrap();
+        let _ = cq_add_log_w(&error.to_string());
     }
     if let Err(error) = cronevent::do_cron_event() {
-        cq_add_log_w(&error.to_string()).unwrap();
+        let _ = cq_add_log_w(&error.to_string());
     }
     if let Err(error) = mqttclient::init_mqttclient() {
-        cq_add_log_w(&error.to_string()).unwrap();
+        let _ = cq_add_log_w(&error.to_string());
     }
     if let Err(error) = pgsql::init_postgresql_db() {
-        cq_add_log_w(&error.to_string()).unwrap();
+        let _ = cq_add_log_w(&error.to_string());
     }
-    cq_add_log("资源初始化完成！").unwrap();
+    let _ = cq_add_log("资源初始化完成！");
 
     if let Ok(startup) = config_manager::startup_config() {
         if startup.auto_close {
             thread::spawn(|| {
-                cq_add_log_w("自动退出已经开启，请每5秒提供一次心跳").unwrap();
+                let _ = cq_add_log_w("自动退出已经开启，请每5秒提供一次心跳");
                 loop {
                     runtime_context().services.set_auto_close(true);
                     std::thread::sleep(std::time::Duration::from_secs(10));
                     if runtime_context().services.auto_close() {
-                        cq_add_log_w("未及时提供心跳，程序退出！").unwrap();
+                        let _ = cq_add_log_w("未及时提供心跳，程序退出！");
                         std::thread::sleep(std::time::Duration::from_secs(1));
                         std::process::exit(-1);
                     }

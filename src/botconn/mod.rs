@@ -50,6 +50,58 @@ fn get_ws_urls() -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>
     crate::config_manager::ws_urls()
 }
 
+/// 连接失败退避状态：连续快速失败时指数拉长重试间隔，
+/// 防止对不可达/拒绝服务的远端形成固定 5 秒一轮的重连风暴（日志洪水+接口配额消耗）
+#[derive(Clone)]
+struct RetryState {
+    fail_count: u32,
+    next_attempt: std::time::Instant,
+}
+
+static RETRY_STATE: std::sync::OnceLock<
+    std::sync::Mutex<std::collections::HashMap<String, RetryState>>,
+> = std::sync::OnceLock::new();
+
+fn retry_state() -> &'static std::sync::Mutex<std::collections::HashMap<String, RetryState>> {
+    RETRY_STATE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
+fn can_attempt_connect_now(url: &str) -> bool {
+    let map = match retry_state().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    match map.get(url) {
+        Some(state) => state.next_attempt <= std::time::Instant::now(),
+        None => true,
+    }
+}
+
+fn record_connect_failure(url: &str) {
+    const BASE_RETRY_DELAY_SECS: u64 = 5;
+    const MAX_RETRY_DELAY_SECS: u64 = 60;
+    let mut map = match retry_state().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    let state = map.entry(url.to_owned()).or_insert(RetryState {
+        fail_count: 0,
+        next_attempt: std::time::Instant::now(),
+    });
+    // 5s → 10s → 20s → 40s → 封顶 60s
+    let delay = (BASE_RETRY_DELAY_SECS << state.fail_count.min(4)).min(MAX_RETRY_DELAY_SECS);
+    state.fail_count = state.fail_count.saturating_add(1);
+    state.next_attempt = std::time::Instant::now() + Duration::from_secs(delay);
+}
+
+fn record_connect_success(url: &str) {
+    let mut map = match retry_state().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    map.remove(url);
+}
+
 pub async fn call_api(
     platform: &str,
     self_id: &str,
@@ -79,7 +131,7 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
             let config_urls = match get_ws_urls() {
                 Ok(urls) => urls,
                 Err(err) => {
-                    cq_add_log_w(&format!("读取连接配置失败，将重试: {}", err)).unwrap();
+                    let _ = cq_add_log_w(&format!("读取连接配置失败，将重试: {}", err));
                     std::thread::sleep(std::time::Duration::from_secs(5));
                     continue;
                 }
@@ -106,8 +158,21 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                         tokio::time::sleep(Duration::from_secs(1)).await;
                     }
                 }
+                // 清理已从配置中移除的 URL 的退避状态，防止表无限增长
+                {
+                    let url_set: std::collections::HashSet<&String> = config_urls.iter().collect();
+                    let mut map = match retry_state().lock() {
+                        Ok(g) => g,
+                        Err(p) => p.into_inner(),
+                    };
+                    map.retain(|url, _| url_set.contains(url));
+                }
                 // 连接未在bot_map中的url（try_begin_connect 保证同一 URL 不会并发重复连接）
                 for url in &config_urls {
+                    // 处于退避冷却期的 URL 本轮跳过（不领取 connecting 标记）
+                    if !can_attempt_connect_now(url) {
+                        continue;
+                    }
                     if !runtime_context()
                         .services
                         .bot_registry()
@@ -266,11 +331,14 @@ pub fn do_conn_event() -> Result<i32, Box<dyn std::error::Error>> {
                         }
                         .await;
                         if !connect_ok {
+                            record_connect_failure(&url_t);
                             runtime_context()
                                 .services
                                 .bot_registry()
                                 .end_connect(&url_t)
                                 .await;
+                        } else {
+                            record_connect_success(&url_t);
                         }
                     });
                 }

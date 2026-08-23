@@ -1,5 +1,5 @@
 use std::{
-    net::TcpStream,
+    net::{TcpStream, ToSocketAddrs},
     sync::{atomic::AtomicBool, Arc},
     thread,
     time::{Duration, SystemTime},
@@ -68,6 +68,21 @@ impl EmailConnect {
         }
     }
 
+    fn strip_html_tags(html: &str) -> String {
+        // 简单去标签：丢弃 <...> 之间的内容，保留纯文本
+        let mut ret = String::with_capacity(html.len());
+        let mut in_tag = false;
+        for ch in html.chars() {
+            match ch {
+                '<' => in_tag = true,
+                '>' => in_tag = false,
+                c if !in_tag => ret.push(c),
+                _ => {}
+            }
+        }
+        ret
+    }
+
     fn deal_fetcharr(
         &self,
         fetch: &imap::types::Fetches,
@@ -89,8 +104,27 @@ impl EmailConnect {
             .first()
             .ok_or("sender can't get2")?;
         let user_id = sender.address().ok_or("user_id can't get1")?;
-        let user_name = sender.name().ok_or("user_name can't get1")?.to_string();
-        let message = message.body_text(0).ok_or("message can't get")?.to_string();
+        // 无显示名时降级用邮箱地址本地部分，避免整封邮件被丢弃
+        let user_name = match sender.name().filter(|s| !s.trim().is_empty()) {
+            Some(name) => name.to_string(),
+            None => {
+                let addr = user_id.to_string();
+                let local = addr.split('@').next().unwrap_or("").to_string();
+                if local.is_empty() {
+                    addr
+                } else {
+                    local
+                }
+            }
+        };
+        // 纯 HTML 邮件降级取 html 正文(简单去标签)，仍缺失时用空串，不再报错
+        let message = match message.body_text(0) {
+            Some(text) => text.to_string(),
+            None => match message.body_html(0) {
+                Some(html) => Self::strip_html_tags(&html),
+                None => String::new(),
+            },
+        };
         if user_id == self_id {
             return Ok(());
         }
@@ -146,7 +180,8 @@ impl EmailConnect {
             }
             // 使用增量拉取：只搜索 UID 大于 last_uid 的未读邮件
             let last_uid = *self.last_uid.read().unwrap();
-            let query = format!("UID {}:* UNSEEN", last_uid + 1);
+            // checked_add 防止 u32 溢出 panic
+            let query = format!("UID {}:* UNSEEN", last_uid.checked_add(1).unwrap_or(u32::MAX));
             let uids = imap_session.uid_search(&query)?;
             // 防御性过滤：某些 IMAP 服务器在指定 UID 不存在时可能返回意外结果
             let uids: Vec<u32> = uids.into_iter().filter(|&uid| uid > last_uid).collect();
@@ -164,9 +199,9 @@ impl EmailConnect {
                     if let Some(m) = size_fetch.iter().next() {
                         if let Some(s) = m.size {
                             cq_add_log(&format!("邮件大小:uid: {}, size: {}", uid, s)).unwrap();
-                            if s > 100 * 1024 * 1024 {
+                            if s > 16 * 1024 * 1024 {
                                 cq_add_log_w(&format!(
-                                    "邮件过大(>100MB)，跳过处理。uid: {}, size: {}",
+                                    "邮件过大(>16MB)，跳过处理。uid: {}, size: {}",
                                     uid, s
                                 ))
                                 .unwrap();
@@ -232,8 +267,15 @@ impl EmailConnect {
         *self.self_id.write().unwrap() = username.to_owned();
         *self.password.write().unwrap() = password.to_owned();
         *self.smtp_ssl.write().unwrap() = smtp_ssl.to_owned();
+        let imap_port_u16 =
+            u16::try_from(imap_port).map_err(|_| "email url格式错误: imap_port 非法")?;
         if imap_ssl {
-            let tcp_stream = TcpStream::connect(format!("{imap_server}:{imap_port}"))?;
+            // 显式连接超时，避免半开连接长时间卡在 connect
+            let addr = (imap_server.as_str(), imap_port_u16)
+                .to_socket_addrs()?
+                .next()
+                .ok_or("IMAP地址解析失败")?;
+            let tcp_stream = TcpStream::connect_timeout(&addr, Duration::from_secs(15))?;
             let _ = rustls::crypto::ring::default_provider().install_default();
             let mut root_store = rustls::RootCertStore::empty();
             root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
@@ -259,7 +301,11 @@ impl EmailConnect {
             imap_session.select("INBOX")?;
             self.run_imap_loop(&mut imap_session)?;
         } else {
-            let stream = TcpStream::connect(format!("{imap_server}:{imap_port}"))?;
+            let addr = (imap_server.as_str(), imap_port_u16)
+                .to_socket_addrs()?
+                .next()
+                .ok_or("IMAP地址解析失败")?;
+            let stream = TcpStream::connect_timeout(&addr, Duration::from_secs(15))?;
             let client = imap::Client::new(stream);
             let mut imap_session = client.login(username, password).map_err(|e| e.0)?;
             let caps = imap_session.capabilities()?;
@@ -291,26 +337,11 @@ impl EmailConnect {
     async fn make_email_msg(
         &self,
         message_arr: &serde_json::Value,
-    ) -> Result<Vec<SinglePart>, Box<dyn std::error::Error + Send + Sync>> {
-        let mut to_ret = vec![];
+    ) -> Result<(String, String), Box<dyn std::error::Error + Send + Sync>> {
+        // 返回 (纯文本, html正文)；图片以 <img> 标签并入 html
         let msg_arr = message_arr.as_array().ok_or("message not arr")?;
-        if msg_arr.len() == 1 {
-            // 只有一个元素，并且类型是文本，就直接发送纯文本邮件
-            let m0 = &msg_arr[0];
-            let tp = m0.get("type").ok_or("type not found")?;
-            if tp == "text" {
-                let t = m0
-                    .get("data")
-                    .ok_or("data not found")?
-                    .get("text")
-                    .ok_or("text not found")?
-                    .as_str()
-                    .ok_or("text not str")?
-                    .to_owned();
-                to_ret.push(SinglePart::plain(t));
-                return Ok(to_ret);
-            }
-        }
+        let mut plain = String::new();
+        let mut html = String::new();
         for it in msg_arr {
             let tp = it.get("type").ok_or("type not found")?;
             if tp == "text" {
@@ -322,10 +353,14 @@ impl EmailConnect {
                     .as_str()
                     .ok_or("text not str")?
                     .to_owned();
-                to_ret.push(SinglePart::html(format!(
+                if !plain.is_empty() {
+                    plain.push('\n');
+                }
+                plain.push_str(&t);
+                html.push_str(&format!(
                     "<p style=\"white-space:pre-line;\">{}</p>",
                     html_escape::encode_double_quoted_attribute(&t)
-                )));
+                ));
             } else if tp == "image" {
                 let uri = it
                     .get("data")
@@ -346,12 +381,10 @@ impl EmailConnect {
                 } else {
                     continue;
                 }
-
-                let t = SinglePart::html(out);
-                to_ret.push(t);
+                html.push_str(&out);
             }
         }
-        Ok(to_ret)
+        Ok((plain, html))
     }
     async fn deal_ob_send_private_msg(
         &self,
@@ -383,17 +416,25 @@ impl EmailConnect {
         let port = self.smtp_port.read().unwrap().to_owned();
         let password = self.password.read().unwrap().to_owned();
 
-        let single_part_vec = self.make_email_msg(&message_arr).await?;
-        let mut multipart;
-        if !single_part_vec.is_empty() {
-            let multipart_builder = MultiPart::alternative();
-            multipart = multipart_builder.singlepart(single_part_vec[0].to_owned());
-            for it in &single_part_vec[1..] {
-                multipart = multipart.singlepart(it.to_owned());
-            }
-        } else {
+        let (plain, html) = self.make_email_msg(&message_arr).await?;
+        if plain.is_empty() && html.is_empty() {
             return Err("message is empty".into());
         }
+        // 纯文本直接发送；否则 alternative(纯文本, related(html正文为根))
+        // 图片已通过远程链接/data URI 内嵌在 html 正文中，不再作为并列 part 丢失
+        let multipart = if html.is_empty() {
+            MultiPart::alternative().singlepart(SinglePart::plain(plain))
+        } else {
+            let related = MultiPart::related().singlepart(SinglePart::html(html));
+            let alt_builder = MultiPart::alternative();
+            if plain.is_empty() {
+                alt_builder.multipart(related)
+            } else {
+                alt_builder
+                    .singlepart(SinglePart::plain(plain))
+                    .multipart(related)
+            }
+        };
         let email = lettre::Message::builder()
             .from(format!("Bot <{bot_id}>").parse()?)
             .to(format!("User <{user_id}>").parse()?)

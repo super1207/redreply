@@ -466,7 +466,7 @@ pub fn init_cq_ex_fun_map() {
         let summary = self_t.get_exmap("图片SUMMARY");
         if let Ok(bin) = pic_rv.expect_bin_value() {
             if bin.is_empty() {
-                cq_add_log_w("图片字节集长度为0").unwrap();
+                let _ = cq_add_log_w("图片字节集长度为0");
                 return Ok(Some(rv_empty()));
             }
             let b64_str = BASE64_CUSTOM_ENGINE.encode(&bin);
@@ -657,7 +657,7 @@ pub fn init_cq_ex_fun_map() {
         } else {
             let emojis = emoji_id.chars().collect::<Vec<char>>();
             if emojis.len() != 1 {
-                cq_add_log_w("表情回应失败，表情ID错误1").unwrap();
+                let _ = cq_add_log_w("表情回应失败，表情ID错误1");
                 return Ok(Some(rv_empty()));
             }
             let emoji: char = emojis[0];
@@ -690,7 +690,7 @@ pub fn init_cq_ex_fun_map() {
         match send_one_msg(self_t, &msg) {
             Ok(msg_id) => Ok(Some(rv_text(msg_id))),
             Err(e) => {
-                cq_add_log_w(&format!("输出流失败，{}", e)).unwrap();
+                let _ = cq_add_log_w(&format!("输出流失败，{}", e));
                 Ok(Some(rv_empty()))
             }
         }
@@ -1062,7 +1062,7 @@ pub fn init_cq_ex_fun_map() {
             Err(e) => {
                 self_t.set_exmap("群ID", &old_group_id); // 还原群ID
                 self_t.set_exmap("发送者ID", &old_user_id); // 还原用户ID
-                cq_add_log_w(&format!("输出流失败，{}", e)).unwrap();
+                let _ = cq_add_log_w(&format!("输出流失败，{}", e));
                 Ok(Some(rv_empty()))
             }
         }
@@ -1272,7 +1272,7 @@ pub fn init_cq_ex_fun_map() {
         let ob_event = self_t.get_param_text(params, 0)?;
         thread::spawn(move || {
             if let Err(e) = crate::cqevent::do_1207_event(&ob_event) {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
         Ok(Some(rv_empty()))
@@ -1425,6 +1425,8 @@ pub fn init_cq_ex_fun_map() {
         });
 
         let conn = rusqlite::Connection::open(sql_file)?;
+
+        crate::resource_manager::configure_conn_busy_timeout(&conn);
         conn.execute("CREATE TABLE IF NOT EXISTS SCORE_TABLE (GROUP_ID TEXT,USER_ID TEXT,VALUE INTEGER DEFAULT 0,PRIMARY KEY(GROUP_ID,USER_ID));", [])?;
 
         // 查询积分
@@ -1474,6 +1476,8 @@ pub fn init_cq_ex_fun_map() {
         });
 
         let conn = rusqlite::Connection::open(sql_file)?;
+
+        crate::resource_manager::configure_conn_busy_timeout(&conn);
         conn.execute("CREATE TABLE IF NOT EXISTS SCORE_TABLE (GROUP_ID TEXT,USER_ID TEXT,VALUE INTEGER DEFAULT 0,PRIMARY KEY(GROUP_ID,USER_ID));", [])?;
 
         // 积分设置
@@ -1501,6 +1505,8 @@ pub fn init_cq_ex_fun_map() {
         });
 
         let conn = rusqlite::Connection::open(sql_file)?;
+
+        crate::resource_manager::configure_conn_busy_timeout(&conn);
         let ret_rst: Result<i64, rusqlite::Error> = conn.query_row(
             "SELECT VALUE FROM SCORE_TABLE WHERE GROUP_ID = ? AND USER_ID = ?",
             [group_id.clone(), user_id.clone()],
@@ -1533,6 +1539,8 @@ pub fn init_cq_ex_fun_map() {
         });
 
         let conn = rusqlite::Connection::open(sql_file)?;
+
+        crate::resource_manager::configure_conn_busy_timeout(&conn);
         let mut stmt = conn.prepare(
             "SELECT USER_ID,VALUE FROM SCORE_TABLE WHERE GROUP_ID = ? ORDER BY VALUE DESC LIMIT ?",
         )?;
@@ -1648,7 +1656,7 @@ pub fn init_cq_ex_fun_map() {
                 rl.pkg_name = pkg_name;
                 rl.script_name = name;
                 if let Err(e) = super::do_script(&mut rl, &code, "normal", false) {
-                    cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e).as_str()).unwrap();
+                    let _ = cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e).as_str());
                 }
             });
         }

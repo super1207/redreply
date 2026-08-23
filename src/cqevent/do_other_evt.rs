@@ -73,7 +73,7 @@ fn do_redlang(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let script_json = runtime_context().scripts.read_scripts();
     let evt_flag = get_evt_flag(root)?;
-    cq_add_log(&format!("收到事件:`{}`", evt_flag.join(":"))).unwrap();
+    let _ = cq_add_log(&format!("收到事件:`{}`", evt_flag.join(":")));
     for i in 0..script_json
         .as_array()
         .ok_or("script.json文件不是数组格式")?
@@ -109,8 +109,7 @@ fn do_redlang(
                     rl.pkg_name = pkg_name_t;
                     rl.script_name = script_name_t;
                     if let Err(e) = super::do_script(&mut rl, &code_t, "normal", false) {
-                        cq_add_log_w(format!("err in do_other_evt:do_redlang:{}", e).as_str())
-                            .unwrap();
+                        let _ = cq_add_log_w(format!("err in do_other_evt:do_redlang:{}", e).as_str());
                     }
                 });
             }
@@ -122,6 +121,6 @@ fn do_redlang(
 // 处理其它事件
 pub fn do_other_evt(root: &serde_json::Value, ban_pkgs: &HashSet<String>) {
     if let Err(e) = do_redlang(root, ban_pkgs) {
-        cq_add_log_w(format!("err in do_other_evt:do_redlang:{}", e).as_str()).unwrap();
+        let _ = cq_add_log_w(format!("err in do_other_evt:do_redlang:{}", e).as_str());
     }
 }

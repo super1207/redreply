@@ -46,6 +46,9 @@ pub struct QQGuildPublicConnect {
     // 两边要看到同一张 map，各自 new 会导致等待者永远收不到通知
     pub qqgroup_audit_map:
         Arc<tokio::sync::RwLock<std::collections::HashMap<String, tokio::sync::mpsc::Sender<serde_json::Value>>>>,
+    // 审核事件先于 waiter 注册到达时的待领缓存
+    pub qqgroup_audit_pending_cache:
+        Arc<tokio::sync::RwLock<HashMap<String, (u64, serde_json::Value)>>>,
 }
 
 impl QQGuildPublicConnect {
@@ -63,6 +66,9 @@ impl QQGuildPublicConnect {
             id_event_map: Arc::new(RwLock::new(std::collections::HashMap::new())),
             bot_id: Arc::new(RwLock::new("".to_owned())),
             qqgroup_audit_map: Arc::new(tokio::sync::RwLock::new(std::collections::HashMap::new())),
+            qqgroup_audit_pending_cache: Arc::new(tokio::sync::RwLock::new(
+                std::collections::HashMap::new(),
+            )),
         }
     }
 }
@@ -1128,7 +1134,10 @@ impl BotConnectTrait for QQGuildPublicConnect {
         let ws_rst;
         let port = request.uri().port().map(Into::into).unwrap_or(443);
         let addr = format!("{}:{}", request.uri().host().unwrap(), port);
-        let socket = TcpStream::connect(addr).await?;
+        // 显式超时，避免半开连接长时间卡在 connecting
+        let socket = tokio::time::timeout(std::time::Duration::from_secs(15), TcpStream::connect(addr))
+            .await
+            .map_err(|_| "TCP连接超时(15s)")??;
         ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
 
         let (mut write_half, mut read_halt) = ws_rst.0.split();
@@ -1144,8 +1153,11 @@ impl BotConnectTrait for QQGuildPublicConnect {
         let appsecret = self.appsecret.clone();
         let access_token = Arc::<std::sync::RwLock<String>>::downgrade(&self.access_token);
         tokio::spawn(async move {
+            // 连续失败达到 3 次才放弃并重建连接，单次失败只重试
+            let mut fail_count = 0u32;
+            let mut refresh_interval = std::time::Duration::from_secs(55);
             loop {
-                tokio::time::sleep(std::time::Duration::from_secs(55)).await;
+                tokio::time::sleep(refresh_interval).await;
                 if let Some(val) = is_stop.upgrade() {
                     if val.load(std::sync::atomic::Ordering::Relaxed) {
                         break;
@@ -1153,14 +1165,33 @@ impl BotConnectTrait for QQGuildPublicConnect {
                 } else {
                     break;
                 }
-                if let Ok(access_token_struct) = token_refresh(&appid, &appsecret).await {
-                    if let Some(access_token) = access_token.upgrade() {
-                        (*access_token.write().unwrap()) = access_token_struct.access_token;
-                    } else {
-                        break;
+                match token_refresh(&appid, &appsecret).await {
+                    Ok(access_token_struct) => {
+                        fail_count = 0;
+                        if access_token_struct.expires_in > 0 {
+                            // 按 min(expires_in-300, 3600) 调整刷新间隔，下限 30s 防止热循环
+                            let secs = access_token_struct
+                                .expires_in
+                                .saturating_sub(300).clamp(30, 3600);
+                            refresh_interval = std::time::Duration::from_secs(secs);
+                        }
+                        if let Some(access_token) = access_token.upgrade() {
+                            (*access_token.write().unwrap()) = access_token_struct.access_token;
+                        } else {
+                            break;
+                        }
                     }
-                } else {
-                    break;
+                    Err(err) => {
+                        fail_count += 1;
+                        cq_add_log_w(&format!(
+                            "刷新access_token失败({fail_count}/3):{err}"
+                        ))
+                        .unwrap();
+                        if fail_count >= 3 {
+                            break;
+                        }
+                        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                    }
                 }
             }
             // 移除conn
@@ -1182,6 +1213,7 @@ impl BotConnectTrait for QQGuildPublicConnect {
             >::downgrade(&self.id_event_map),
             bot_id: Arc::<std::sync::RwLock<std::string::String>>::downgrade(&self.bot_id),
             qqgroup_audit_map: Arc::clone(&self.qqgroup_audit_map),
+            qqgroup_audit_pending_cache: Arc::clone(&self.qqgroup_audit_pending_cache),
         };
 
         tokio::spawn(async move {
@@ -1342,6 +1374,7 @@ impl BotConnectTrait for QQGuildPublicConnect {
             >::downgrade(&self.id_event_map),
             bot_id: Arc::<std::sync::RwLock<std::string::String>>::downgrade(&self.bot_id),
             qqgroup_audit_map: Arc::clone(&self.qqgroup_audit_map),
+            qqgroup_audit_pending_cache: Arc::clone(&self.qqgroup_audit_pending_cache),
         };
         if action == "send_group_msg" {
             return send_group_msg(&self_data, json, passive_id, platform).await;

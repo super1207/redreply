@@ -20,11 +20,11 @@ where
     match tokio::task::spawn_blocking(f).await {
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) => {
-            cq_add_log_w(&format!("{label}失败: {error}")).unwrap();
+            let _ = cq_add_log_w(&format!("{label}失败: {error}"));
             Err(error.to_string())
         }
         Err(error) => {
-            cq_add_log_w(&format!("{label}失败: {error}")).unwrap();
+            let _ = cq_add_log_w(&format!("{label}失败: {error}"));
             Err(error.to_string())
         }
     }
@@ -468,7 +468,7 @@ mod live2d_agent_tests {
     };
     use std::collections::HashSet;
     /// 涉及真实 reddat.db 的测试共享同一数据库文件，串行执行避免相互污染。
-    static DB_TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    static DB_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     fn tool_message(id: &str, done: bool) -> serde_json::Value {
         let mut message = serde_json::json!({
@@ -628,7 +628,7 @@ mod live2d_agent_tests {
 
     #[tokio::test]
     async fn stores_single_conversation_for_next_user_turn() {
-        let _db_guard = DB_TEST_LOCK.lock().unwrap();
+        let _db_guard = DB_TEST_LOCK.lock().await;
         // 测试间共享同一个 reddat.db，先清理隔离
         super::clear_live2d_agent_conversation().await.unwrap();
         let messages = vec![serde_json::json!({
@@ -650,7 +650,7 @@ mod live2d_agent_tests {
 
     #[tokio::test]
     async fn replace_last_persists_generation_for_tool_continue() {
-        let _db_guard = DB_TEST_LOCK.lock().unwrap();
+        let _db_guard = DB_TEST_LOCK.lock().await;
         // 测试间共享同一个 reddat.db，先清理隔离
         super::clear_live2d_agent_conversation().await.unwrap();
         // 模拟前端工具调用落库协议：replace_last + generation（④ 工具调用落库）

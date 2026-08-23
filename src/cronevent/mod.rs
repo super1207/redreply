@@ -124,7 +124,7 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
         let (keyword, cffs, code, name, pkg_name) = match get_script_info(&script_json[i]) {
             Ok(v) => v,
             Err(err) => {
-                cq_add_log_w(&format!("读取CRON脚本信息失败: {}", err)).unwrap();
+                let _ = cq_add_log_w(&format!("读取CRON脚本信息失败: {}", err));
                 continue;
             }
         };
@@ -132,11 +132,10 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
             let schedule = match <cron::Schedule as std::str::FromStr>::from_str(keyword) {
                 Ok(s) => s,
                 Err(err) => {
-                    cq_add_log_w(&format!(
+                    let _ = cq_add_log_w(&format!(
                         "无效的CRON表达式 `{}` (脚本:{}): {}",
                         keyword, name, err
-                    ))
-                    .unwrap();
+                    ));
                     continue;
                 }
             };
@@ -145,7 +144,7 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
             let dt_baseline = match chrono::Local.timestamp_opt(baseline, 0).single() {
                 Some(dt) => dt,
                 None => {
-                    cq_add_log_w("Invalid baseline timestamp").unwrap();
+                    let _ = cq_add_log_w("Invalid baseline timestamp");
                     continue;
                 }
             };
@@ -164,18 +163,19 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
                         break;
                     }
                     fired += 1;
-                    // 触发任务，连续触发多个漏掉的调度点
+                    // 触发任务，连续触发多个漏掉的调度点。
+                    // 用运行时的阻塞线程池复用线程，避免逐点开 OS 线程瞬时耗尽线程资源
                     let pkg_name_t = pkg_name.to_string();
                     let name_t = name.to_string();
                     let code_t = code.to_string();
-                    thread::spawn(move || {
+                    crate::runtime().spawn_blocking(move || {
                         let mut rl = crate::redlang::RedLang::new();
                         rl.pkg_name = pkg_name_t;
                         rl.script_name = name_t;
                         if let Err(err) =
                             crate::cqevent::do_script(&mut rl, &code_t, "normal", false)
                         {
-                            cq_add_log_w(&format!("{}", err)).unwrap();
+                            let _ = cq_add_log_w(&format!("{}", err));
                         }
                     });
                     // 不退出循环，继续检测是否有下一个漏掉的调度点
@@ -184,10 +184,9 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
                 }
             }
             if skipped_by_cap {
-                cq_add_log_w(&format!(
+                let _ = cq_add_log_w(&format!(
                     "CRON补偿触发已达上限({MAX_CATCHUP}个)，剩余漏掉的调度点全部跳过 (脚本:{name})"
-                ))
-                .unwrap();
+                ));
             }
         }
     }
@@ -204,7 +203,7 @@ fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
     for it in &run_vec {
         let script_json = runtime_context().scripts.read_scripts();
         let Some(script_arr) = script_json.as_array() else {
-            cq_add_log_w("script.json文件不是数组格式,放弃本批延迟触发").unwrap();
+            let _ = cq_add_log_w("script.json文件不是数组格式,放弃本批延迟触发");
             break;
         };
         for i in 0..script_arr.len() {
@@ -213,7 +212,7 @@ fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
                 match get_script_info2(&script_arr[i]) {
                     Ok(v) => v,
                     Err(err) => {
-                        cq_add_log_w(&format!("读取延迟触发脚本信息失败: {}", err)).unwrap();
+                        let _ = cq_add_log_w(&format!("读取延迟触发脚本信息失败: {}", err));
                         continue;
                     }
                 };
@@ -222,7 +221,7 @@ fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
                 let is_match = match is_key_match(&mut rl, ppfs, keyword, &it.flag) {
                     Ok(m) => m,
                     Err(err) => {
-                        cq_add_log_w(&format!("延迟触发匹配失败: {}", err)).unwrap();
+                        let _ = cq_add_log_w(&format!("延迟触发匹配失败: {}", err));
                         continue;
                     }
                 };
@@ -248,7 +247,7 @@ fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
                         if let Err(err) =
                             crate::cqevent::do_script(&mut rl, &code_t, "normal", false)
                         {
-                            cq_add_log_w(&format!("{}", err)).unwrap();
+                            let _ = cq_add_log_w(&format!("{}", err));
                         }
                     });
                 }
@@ -261,13 +260,13 @@ fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
 pub fn do_cron_event() -> Result<i32, Box<dyn std::error::Error>> {
     thread::spawn(|| loop {
         if let Err(err) = do_cron_event_t2() {
-            cq_add_log_w(&err.to_string()).unwrap();
+            let _ = cq_add_log_w(&err.to_string());
         }
         if let Err(err) = do_timer_event_t2() {
-            cq_add_log_w(&err.to_string()).unwrap();
+            let _ = cq_add_log_w(&err.to_string());
         }
         if let Err(err) = crate::status::the_500ms_timer() {
-            cq_add_log_w(&err.to_string()).unwrap();
+            let _ = cq_add_log_w(&err.to_string());
         }
         let time_struct = core::time::Duration::from_millis(500);
         std::thread::sleep(time_struct);

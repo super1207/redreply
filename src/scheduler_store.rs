@@ -26,7 +26,7 @@ impl SchedulerStore {
     }
 
     pub(crate) fn cron_window(&self, now_time: i64) -> (i64, i64, Option<(bool, i64)>) {
-        let mut last_run_time = self.last_run_time.lock().unwrap();
+        let mut last_run_time = self.last_run_time.lock().unwrap_or_else(|e| e.into_inner());
         let Some(previous) = *last_run_time else {
             *last_run_time = Some(now_time);
             return (now_time, now_time, None);
@@ -48,7 +48,7 @@ impl SchedulerStore {
     }
 
     pub(crate) fn add_one_time_run(&self, run: OneTimeRunStruct) {
-        self.one_time_runs.lock().unwrap().push(run);
+        self.one_time_runs.lock().unwrap_or_else(|e| e.into_inner()).push(run);
     }
 
     /// 移除某包的所有延迟触发任务，避免包删除/重载后旧任务残留
@@ -60,7 +60,7 @@ impl SchedulerStore {
     }
 
     pub(crate) fn take_due_runs(&self, now_time: i64) -> Vec<OneTimeRunStruct> {
-        let mut runs = self.one_time_runs.lock().unwrap();
+        let mut runs = self.one_time_runs.lock().unwrap_or_else(|e| e.into_inner());
         let mut due = Vec::new();
         runs.retain(|run| {
             if run.run_time <= now_time {

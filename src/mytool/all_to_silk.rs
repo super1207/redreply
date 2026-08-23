@@ -10,6 +10,21 @@ pub struct PCMStruct {
     pub data: Vec<f64>,
 }
 
+/// 解码后样本总数上限（f64 存储，64M 样本约 512MB 内存）。
+/// wav 入口有 256MB 文件上限，其余格式解码无总量限制，
+/// 超大/畸形音频可能把宿主内存打爆（OOM 直接 abort 进程）。
+const MAX_DECODED_SAMPLES: usize = 64_000_000;
+
+pub(crate) fn ensure_sample_limit(actual: usize) -> Result<(), Box<dyn std::error::Error>> {
+    if actual > MAX_DECODED_SAMPLES {
+        return Err(format!(
+            "解码后的音频样本数超出限制({actual} > {MAX_DECODED_SAMPLES})"
+        )
+        .into());
+    }
+    Ok(())
+}
+
 pub fn get_media_type(input: &[u8]) -> &str {
     if input.starts_with(&[82, 73, 70, 70]) {
         "wav"
@@ -47,7 +62,8 @@ pub fn all_to_silk(input: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> 
         return Ok(input.to_owned());
     } else {
         return Err("not support".into());
-    }
+    };
+    ensure_sample_limit(pcm.data.len())?;
     let silk =
         deal_silk::to_qq_silk(&pcm).map_err(|e| -> Box<dyn std::error::Error> { e.into() })?;
     Ok(silk)

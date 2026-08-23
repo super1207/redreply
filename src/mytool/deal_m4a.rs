@@ -1,6 +1,6 @@
 use std::io::{BufReader, Read};
 
-use symphonia::core::audio::SampleBuffer;
+use symphonia::core::audio::{SampleBuffer, SignalSpec};
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::errors::Error as SymphoniaError;
 use symphonia::core::formats::FormatOptions;
@@ -40,7 +40,7 @@ pub fn deal_m4a(mut bufr: BufReader<&[u8]>) -> Result<PCMStruct, Box<dyn std::er
         sample_rate: 24000,
         data: Vec::new(),
     };
-    let mut sample_buf: Option<SampleBuffer<i16>> = None;
+    let mut init_spec: Option<SignalSpec> = None;
 
     loop {
         let packet = match format.next_packet() {
@@ -52,27 +52,37 @@ pub fn deal_m4a(mut bufr: BufReader<&[u8]>) -> Result<PCMStruct, Box<dyn std::er
             continue;
         }
         let decoded = decoder.decode(&packet)?;
-        if sample_buf.is_none() {
-            let spec = *decoded.spec();
-            if spec.rate == 0 || spec.channels.count() == 0 {
-                return Err("invalid m4a stream format".into());
+        let spec = *decoded.spec();
+        match init_spec {
+            None => {
+                if spec.rate == 0 || spec.channels.count() == 0 {
+                    return Err("invalid m4a stream format".into());
+                }
+                pcm.sample_rate = spec.rate as usize;
+                pcm.channel_num = spec.channels.count();
+                init_spec = Some(spec);
             }
-            pcm.sample_rate = spec.rate as usize;
-            pcm.channel_num = spec.channels.count();
-            sample_buf = Some(SampleBuffer::<i16>::new(decoded.capacity() as u64, spec));
-        }
-        if let Some(buf) = &mut sample_buf {
-            buf.copy_interleaved_ref(decoded);
-            for sample in buf.samples() {
-                pcm.data.push(*sample as f64);
+            Some(s) => {
+                // 中途变规格会导致样本率/通道数与已解码数据不一致，
+                // 显式报错而不是触发 SampleBuffer 的容量断言 panic
+                if s != spec {
+                    return Err("m4a stream format changed mid-stream".into());
+                }
             }
         }
+        // 每个包按自身容量分配缓冲，避免中途出现更大帧时触发断言
+        let mut sample_buf = SampleBuffer::<i16>::new(decoded.capacity() as u64, spec);
+        sample_buf.copy_interleaved_ref(decoded);
+        for sample in sample_buf.samples() {
+            pcm.data.push(*sample as f64);
+        }
+        super::all_to_silk::ensure_sample_limit(pcm.data.len())?;
     }
 
     if pcm.data.is_empty() {
         return Err("m4a contains no samples".into());
     }
-    if pcm.data.len() % pcm.channel_num != 0 {
+    if !pcm.data.len().is_multiple_of(pcm.channel_num) {
         return Err("m4a sample count is not channel-aligned".into());
     }
     Ok(pcm)

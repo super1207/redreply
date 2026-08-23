@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+﻿use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     cqapi::cq_add_log_w,
@@ -109,12 +109,12 @@ pub fn init_ai_fun_map() {
                     if let Ok(val) = val_rst {
                         val
                     } else {
-                        cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
+                        let _ = cq_add_log_w(&format!("{:?}",val_rst.err().unwrap()));
                         (vec![],BTreeMap::new())
                     }
                 },
                 _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
-                    cq_add_log_w(&format!("POST访问:`{}`超时",base_url)).unwrap();
+                    let _ = cq_add_log_w(&format!("POST访问:`{}`超时",base_url));
                     (vec![],BTreeMap::new())
                 }
             };

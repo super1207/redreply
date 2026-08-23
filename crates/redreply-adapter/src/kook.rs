@@ -315,7 +315,8 @@ impl KookConnect {
     }
 
     fn reformat_dates(before: &str) -> String {
-        fn kook_msg_f(msg: &str) -> String {
+        // 返回反转义后的文本，以及末尾是否残留未闭合的反斜杠转义
+        fn kook_msg_f(msg: &str) -> (String, bool) {
             let mut ret = String::new();
             let mut is_f = false;
             for ch in msg.chars() {
@@ -328,19 +329,30 @@ impl KookConnect {
                     ret.push(ch);
                 }
             }
-            ret
+            (ret, is_f)
         }
 
         let mut ret = String::new();
-        let sp = before.split("(met)");
-        for (index, it) in sp.enumerate() {
-            if index % 2 == 0 {
-                ret.push_str(&cq_text_encode(&kook_msg_f(it)));
-            } else {
-                if it == "all" {
+        let mut in_marker = false;
+        let mut pending_escape = false;
+        for seg in before.split("(met)") {
+            if in_marker {
+                if seg == "all" {
                     ret.push_str("[CQ:at,qq=all]");
                 } else {
-                    ret.push_str(&format!("[CQ:at,qq={}]", it));
+                    ret.push_str(&format!("[CQ:at,qq={}]", seg));
+                }
+                in_marker = false;
+            } else {
+                if pending_escape {
+                    // 上一个 (met) 被反斜杠转义，属于普通字面文本，原样还原
+                    ret.push_str(&cq_text_encode("(met)"));
+                }
+                let (s, esc) = kook_msg_f(seg);
+                pending_escape = esc;
+                ret.push_str(&cq_text_encode(&s));
+                if !pending_escape {
+                    in_marker = true;
                 }
             }
         }
@@ -1087,11 +1099,15 @@ impl KookConnect {
     ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
         let uri = reqwest::Url::from_str(url)?;
         let client = if uri.scheme() == "http" {
-            reqwest::Client::builder().no_proxy().build()?
+            reqwest::Client::builder()
+                .no_proxy()
+                .timeout(Duration::from_secs(60))
+                .build()?
         } else {
             reqwest::Client::builder()
                 .danger_accept_invalid_certs(true)
                 .no_proxy()
+                .timeout(Duration::from_secs(60))
                 .build()?
         };
         let mut req;
@@ -1138,6 +1154,7 @@ impl KookConnect {
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
             .no_proxy()
+            .timeout(Duration::from_secs(60))
             .build()?;
         let form = reqwest::multipart::Form::new().part(
             "file",
@@ -1387,6 +1404,7 @@ impl KookConnect {
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
             .no_proxy()
+            .timeout(Duration::from_secs(60))
             .build()?;
         let mut req = client
             .post(uri)
@@ -2259,6 +2277,8 @@ impl BotConnectTrait for KookConnect {
         tokio::spawn(async move {
             let mut index = 0;
             let mut index_lost_pong = -1;
+            // 只有发出首个心跳后才开始判死，避免纯应答式 pong 的服务端在心跳前被误杀
+            let mut first_ping_sent = false;
             loop {
                 tokio::time::sleep(Duration::from_secs(1)).await;
                 if is_stop.load(std::sync::atomic::Ordering::Relaxed) {
@@ -2266,7 +2286,7 @@ impl BotConnectTrait for KookConnect {
                 }
                 index += 1;
 
-                if index == 7 {
+                if index == 7 && first_ping_sent {
                     if recieve_pong.load(std::sync::atomic::Ordering::Relaxed) {
                         recieve_pong.store(false, std::sync::atomic::Ordering::Relaxed);
                         index_lost_pong = 0;
@@ -2281,6 +2301,7 @@ impl BotConnectTrait for KookConnect {
 
                 if index == 30 {
                     index = 0;
+                    first_ping_sent = true;
                     let json_str = serde_json::json!({
                         "s": 2,
                         "sn": sn_ptr.load(std::sync::atomic::Ordering::Relaxed)

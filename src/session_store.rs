@@ -14,7 +14,9 @@ pub(crate) struct SessionStore {
     log_sessions: tokio::sync::RwLock<HashMap<String, tokio::sync::mpsc::Sender<String>>>,
     python_echo_sessions:
         tokio::sync::RwLock<HashMap<String, tokio::sync::mpsc::Sender<serde_json::Value>>>,
-    python_handler: tokio::sync::RwLock<Option<tokio::sync::mpsc::Sender<String>>>,
+    /// python 桥接处理器，附带代次号：新连接接入时旧连接凭代次号感知被替换并自行退出
+    python_handler: tokio::sync::RwLock<Option<(u64, tokio::sync::mpsc::Sender<String>)>>,
+    python_handler_generation: std::sync::atomic::AtomicU64,
     onebot_sessions: tokio::sync::RwLock<HashMap<String, OnebotSession>>,
 }
 
@@ -28,6 +30,7 @@ impl SessionStore {
             log_sessions: tokio::sync::RwLock::new(HashMap::new()),
             python_echo_sessions: tokio::sync::RwLock::new(HashMap::new()),
             python_handler: tokio::sync::RwLock::new(None),
+            python_handler_generation: std::sync::atomic::AtomicU64::new(0),
             onebot_sessions: tokio::sync::RwLock::new(HashMap::new()),
         }
     }
@@ -41,7 +44,7 @@ impl SessionStore {
     ) -> Result<(), Box<dyn Error>> {
         // 用分隔符拼接，避免 "12"+"3" 与 "1"+"23" 这类无分隔拼接的键冲突
         let flag = format!("{self_id}|{group_id}");
-        let mut message_ids = self.message_ids.write().unwrap();
+        let mut message_ids = self.message_ids.write().unwrap_or_else(|e| e.into_inner());
         let messages = message_ids.entry(flag).or_default();
         messages.push_front((user_id, message_id));
         if messages.len() > 100 {
@@ -66,7 +69,7 @@ impl SessionStore {
     }
 
     pub(crate) fn add_input_stream(&self, input_stream: InputStream) {
-        self.input_streams.write().unwrap().push(input_stream);
+        self.input_streams.write().unwrap_or_else(|e| e.into_inner()).push(input_stream);
     }
 
     pub(crate) fn remove_input_stream(&self, echo: &str) {
@@ -84,7 +87,7 @@ impl SessionStore {
         message: &str,
         message_id: &str,
     ) -> Result<(), Box<dyn Error>> {
-        let input_streams = self.input_streams.read().unwrap();
+        let input_streams = self.input_streams.read().unwrap_or_else(|e| e.into_inner());
         for input_stream in &*input_streams {
             if input_stream.stream_type == "输入流"
                 && self_id == input_stream.self_id
@@ -93,7 +96,7 @@ impl SessionStore {
             {
                 if let Some(sender) = &input_stream.tx {
                     // 单个接收端关闭不应中断其余输入流的投递
-                    let _ = sender.lock().unwrap().send(message.to_owned());
+                    let _ = sender.lock().unwrap_or_else(|e| e.into_inner()).send(message.to_owned());
                 }
             } else if input_stream.stream_type != "输入流"
                 && self_id == input_stream.self_id
@@ -105,7 +108,7 @@ impl SessionStore {
                     "消息ID": message_id,
                 });
                 if let Some(sender) = &input_stream.tx {
-                    let _ = sender.lock().unwrap().send(value.to_string());
+                    let _ = sender.lock().unwrap_or_else(|e| e.into_inner()).send(value.to_string());
                 }
             }
         }
@@ -118,7 +121,7 @@ impl SessionStore {
         user_id: &str,
         message: &str,
     ) -> Result<(), Box<dyn Error>> {
-        let input_streams = self.input_streams.read().unwrap();
+        let input_streams = self.input_streams.read().unwrap_or_else(|e| e.into_inner());
         for input_stream in &*input_streams {
             if input_stream.stream_type == "输入流"
                 && self_id == input_stream.self_id
@@ -127,7 +130,7 @@ impl SessionStore {
             {
                 if let Some(sender) = &input_stream.tx {
                     // 单个接收端关闭不应中断其余输入流的投递
-                    let _ = sender.lock().unwrap().send(message.to_owned());
+                    let _ = sender.lock().unwrap_or_else(|e| e.into_inner()).send(message.to_owned());
                 }
             }
         }
@@ -142,7 +145,7 @@ impl SessionStore {
         message_id: &str,
         now: u64,
     ) {
-        let mut messages = self.script_related_messages.write().unwrap();
+        let mut messages = self.script_related_messages.write().unwrap_or_else(|e| e.into_inner());
         if !source_message_id.is_empty() {
             let key = format!("{pkg_name}|{self_id}|{source_message_id}");
             messages
@@ -173,7 +176,7 @@ impl SessionStore {
         message_id: String,
         now: u64,
     ) {
-        let mut messages = self.script_related_messages.write().unwrap();
+        let mut messages = self.script_related_messages.write().unwrap_or_else(|e| e.into_inner());
         if let Some(value) = messages.get_mut(&key) {
             value.msg_id_vec.push(message_id);
         } else {
@@ -197,7 +200,7 @@ impl SessionStore {
     }
 
     pub(crate) fn add_history_log(&self, message: &str) {
-        let mut history = self.history_log.write().unwrap();
+        let mut history = self.history_log.write().unwrap_or_else(|e| e.into_inner());
         history.push_back(message.to_owned());
         if history.len() > 50 {
             history.pop_front();
@@ -205,7 +208,7 @@ impl SessionStore {
     }
 
     pub(crate) fn history_log(&self) -> VecDeque<String> {
-        self.history_log.read().unwrap().clone()
+        self.history_log.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub(crate) async fn add_log_session(
@@ -240,8 +243,14 @@ impl SessionStore {
         }
     }
 
-    pub(crate) async fn set_python_handler(&self, sender: tokio::sync::mpsc::Sender<String>) {
-        *self.python_handler.write().await = Some(sender);
+    pub(crate) async fn set_python_handler(&self, sender: tokio::sync::mpsc::Sender<String>) -> u64 {
+        use std::sync::atomic::Ordering;
+        let generation = self
+            .python_handler_generation
+            .fetch_add(1, Ordering::Relaxed)
+            + 1;
+        *self.python_handler.write().await = Some((generation, sender));
+        generation
     }
 
     pub(crate) async fn clear_python_handler(&self) {
@@ -252,8 +261,19 @@ impl SessionStore {
         self.python_handler.read().await.is_some()
     }
 
-    pub(crate) async fn python_handler(&self) -> Option<tokio::sync::mpsc::Sender<String>> {
-        self.python_handler.read().await.clone()
+    /// 当前生效的 python 处理器代次；没有处理器时返回 None。
+    pub(crate) async fn python_handler_generation(&self) -> Option<u64> {
+        self.python_handler.read().await.as_ref().map(|(g, _)| *g)
+    }
+
+    pub(crate) async fn python_handler(
+        &self,
+    ) -> Option<tokio::sync::mpsc::Sender<String>> {
+        self.python_handler
+            .read()
+            .await
+            .as_ref()
+            .map(|(_, sender)| sender.clone())
     }
 
     pub(crate) async fn add_python_echo(
@@ -310,7 +330,57 @@ impl SessionStore {
             .map(|(sender, _, _)| sender.clone())
             .collect::<Vec<_>>();
         for sender in senders {
-            let _ = sender.send(message.clone()).await;
+            // 用 try_send 避免慢客户端（不读数据导致通道满）把事件任务无限挂起；
+            // 通道满或已断开的会话直接剔除
+            if sender.try_send(message.clone()).is_err() {
+                self.remove_slow_onebot_sessions(&sender).await;
+            }
+        }
+    }
+
+    /// 定向把 API 响应发回发起请求的会话；该会话已断开时退回广播（兼容旧行为）
+    pub(crate) async fn send_onebot_api_ret(
+        &self,
+        target_uid: &str,
+        message: String,
+        platform: &str,
+        self_id: &str,
+    ) {
+        let target = {
+            let sessions = self.onebot_sessions.read().await;
+            sessions
+                .get(target_uid)
+                .filter(|(_, p, s)| p == platform && s == self_id)
+                .map(|(sender, _, _)| sender.clone())
+        };
+        if let Some(sender) = target {
+            match sender.try_send(message.clone()) {
+                Ok(()) => return,
+                Err(_) => self.remove_slow_onebot_sessions(&sender).await,
+            }
+        }
+        self.send_onebot_event(message, platform, self_id).await;
+    }
+
+    /// 按发送端剔除对应的会话条目
+    async fn remove_slow_onebot_sessions(
+        &self,
+        stale_sender: &tokio::sync::mpsc::Sender<String>,
+    ) {
+        let mut to_remove: Vec<String> = Vec::new();
+        {
+            let sessions = self.onebot_sessions.read().await;
+            for (uid, (sender, _, _)) in sessions.iter() {
+                if sender.same_channel(stale_sender) {
+                    to_remove.push(uid.clone());
+                }
+            }
+        }
+        if !to_remove.is_empty() {
+            let mut sessions = self.onebot_sessions.write().await;
+            for uid in to_remove {
+                sessions.remove(&uid);
+            }
         }
     }
 }

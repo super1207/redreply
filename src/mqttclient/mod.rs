@@ -49,7 +49,7 @@ pub fn call_mqtt_remote(
             .ok_or("MQTT远程调用参数必须是JSON对象")?;
         payload_obj["message_id"] = serde_json::json!(passive_id);
         let payload = playload.to_string();
-        cq_add_log(&format!("mqtt client send: {}", payload)).unwrap();
+        let _ = cq_add_log(&format!("mqtt client send: {}", payload));
         client.try_publish_with_properties(topic, QoS::ExactlyOnce, false, payload, resp_props)?;
         let rst = match rx_ay.recv_timeout(std::time::Duration::from_secs(30)) {
             Ok(v) => v.to_string(),
@@ -236,7 +236,7 @@ fn deal_publish_api(
     };
     let client = get_mqtt_client();
     if let Some(client) = client {
-        cq_add_log(&format!("mqtt client send: {}", resp)).unwrap();
+        let _ = cq_add_log(&format!("mqtt client send: {}", resp));
         client.publish_with_properties(
             response_topic,
             QoS::ExactlyOnce,
@@ -335,9 +335,9 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
             .set_mqtt_client_id(mqtt_client_id.clone());
     }
 
-    cq_add_log("MQTT 推送已开启！").unwrap();
-    cq_add_log(&format!("MQTT Client ID: {}", mqtt_client_id)).unwrap();
-    cq_add_log(&format!("MQTT Broker: {}:{}", broker_host, broker_port)).unwrap();
+    let _ = cq_add_log("MQTT 推送已开启！");
+    let _ = cq_add_log(&format!("MQTT Client ID: {}", mqtt_client_id));
+    let _ = cq_add_log(&format!("MQTT Broker: {}:{}", broker_host, broker_port));
 
     std::thread::spawn(move || {
         loop {
@@ -360,7 +360,7 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
                 if let rumqttc::v5::Event::Incoming(Publish(p)) = notification {
                     runtime().spawn_blocking(move || {
                         if let Err(e) = deal_pushlish(p) {
-                            cq_add_log_w(&format!("deal_publish_api error: {}", e)).unwrap();
+                            let _ = cq_add_log_w(&format!("deal_publish_api error: {}", e));
                         }
                     });
                 } else if let rumqttc::v5::Event::Incoming(ConnAck(p)) = notification {
@@ -386,7 +386,7 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
                             }
                         }
                         if let Some(err) = last_err {
-                            cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
+                            let _ = cq_add_log_w(&format!("MQTT Client subscribe error: {}", err));
                         }
                         let mut last_err = None;
                         for _ in 0..100 {
@@ -405,7 +405,7 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
                             }
                         }
                         if let Some(err) = last_err {
-                            cq_add_log_w(&format!("MQTT Client subscribe error: {}", err)).unwrap();
+                            let _ = cq_add_log_w(&format!("MQTT Client subscribe error: {}", err));
                         }
                         let remote_clients = { runtime_context().services.mqtt_remote_clients() };
                         for remote_client in remote_clients {
@@ -438,7 +438,7 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
             {
                 runtime_context().services.set_mqtt_client(None);
             }
-            cq_add_log_w("MQTT 连接已断开，5秒后重连...").unwrap();
+            let _ = cq_add_log_w("MQTT 连接已断开，5秒后重连...");
             std::thread::sleep(Duration::from_secs(5));
         }
     });

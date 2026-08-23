@@ -25,7 +25,10 @@ async fn http_post(
     json_data: &serde_json::Value,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
     let uri = reqwest::Url::from_str(url)?;
-    let client = reqwest::Client::builder().no_proxy().build()?;
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
     let req = client
         .post(uri)
         .body(reqwest::Body::from(json_data.to_string()))
@@ -101,6 +104,8 @@ impl BotConnectTrait for OneBot115Connect {
     async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // println!("正在连接ovo：{}",self.url);
 
+        // 先清空再填充，避免二次 connect 时重复累积
+        self.platforms.write().unwrap().clear();
         {
             let mut to_send = serde_json::json!({
                 "action":"get_bot_list"
@@ -153,6 +158,7 @@ impl BotConnectTrait for OneBot115Connect {
         // 这里使用弱引用，防止可能的循环依赖
         let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
         tokio::spawn(async move {
+            let mut idle = Box::pin(tokio::time::sleep(std::time::Duration::from_secs(90)));
             while let Some(val) = is_stop.upgrade() {
                 if val.load(std::sync::atomic::Ordering::Relaxed) {
                     break;
@@ -162,6 +168,8 @@ impl BotConnectTrait for OneBot115Connect {
                         let Some(msg) = msg else {
                             break;
                         };
+                        // 只要收到任何数据（含自身心跳的回复）即认为连接存活
+                        idle.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(90));
                         // 获得json数据
                         let json_dat;
                         if let Some(val) =  get_json_dat(msg) {
@@ -190,6 +198,11 @@ impl BotConnectTrait for OneBot115Connect {
                     },
                     _ = stoprx.recv() => {
 
+                        break;
+                    }
+                    _ = &mut idle => {
+                        // 长时间无任何数据（自身心跳也无回复），判定连接已死亡
+                        cq_add_log_w("ovo 心跳无响应，判定连接已死亡").unwrap();
                         break;
                     }
                 }

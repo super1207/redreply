@@ -35,6 +35,13 @@ pub struct Live2dProviderConfig {
     /// 访问该模型的 HTTP 代理地址（空表示直连，不走代理）。
     #[serde(default)]
     pub proxy: String,
+    /// 接口类型：chat_completions（Chat Completions）或 responses（Responses）
+    #[serde(default = "default_api_type")]
+    pub api_type: String,
+}
+
+fn default_api_type() -> String {
+    "chat_completions".to_owned()
 }
 
 impl Default for Live2dProviderConfig {
@@ -47,6 +54,7 @@ impl Default for Live2dProviderConfig {
             context_length: 131_072,
             thinking_level: "high".to_owned(),
             proxy: String::new(),
+            api_type: default_api_type(),
         }
     }
 }
@@ -63,6 +71,8 @@ pub struct Live2dChatConfig {
     pub context_length: u64,
     /// 当前选中配置的代理地址（空表示直连）。
     pub proxy: String,
+    /// 当前选中配置的接口类型
+    pub api_type: String,
 }
 
 impl Default for Live2dChatConfig {
@@ -78,6 +88,7 @@ impl Default for Live2dChatConfig {
             thinking_level: provider.thinking_level.clone(),
             context_length: provider.context_length,
             proxy: provider.proxy.clone(),
+            api_type: provider.api_type.clone(),
         }
     }
 }
@@ -103,7 +114,8 @@ fn default_config() -> Value {
                     "api_key": "",
                     "model": "gpt-4o-mini",
                     "context_length": 131072,
-                    "thinking_level": "high"
+                    "thinking_level": "high",
+                    "api_type": "chat_completions"
                 }
             ],
             "system_prompt": DEFAULT_LIVE2D_SYSTEM_PROMPT
@@ -122,12 +134,59 @@ fn config_write_lock() -> &'static Mutex<()> {
     CONFIG_WRITE_LOCK.get_or_init(|| Mutex::new(()))
 }
 
+/// 原子写入：先写临时文件并 fsync 再重命名，降低断电截断/丢数据风险；
+/// 跨文件系统 rename 失败时回退为直接写入。
+fn atomic_write_file(path: &std::path::Path, content: &str) -> ConfigResult<()> {
+    use std::io::Write;
+    let tmp_path = {
+        let mut p = path.as_os_str().to_owned();
+        p.push(".tmp");
+        std::path::PathBuf::from(p)
+    };
+    {
+        let mut file = fs::File::create(&tmp_path)?;
+        file.write_all(content.as_bytes())?;
+        let _ = file.sync_all();
+    }
+    // 在同目录内重命名是原子操作
+    if fs::rename(&tmp_path, path).is_err() {
+        let _ = fs::remove_file(&tmp_path);
+        fs::write(path, content)?;
+    }
+    Ok(())
+}
+
 fn read_config_from_disk() -> ConfigResult<Value> {
     let path = config_path()?;
     if !path.is_file() {
-        fs::write(&path, default_config().to_string())?;
+        atomic_write_file(&path, &default_config().to_string())?;
     }
-    Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
+    let content = fs::read_to_string(&path)?;
+    match serde_json::from_str(&content) {
+        Ok(config) => Ok(config),
+        Err(e) => {
+            // 配置损坏（断电半截写入/手工改坏）时备份坏文件并回退默认配置，
+            // 避免此后每次 read_config 永久失败导致登录鉴权、服务启动全部瘫痪
+            let backup = {
+                let mut p = path.clone().into_os_string();
+                p.push(format!(
+                    ".corrupt-{}",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                ));
+                std::path::PathBuf::from(p)
+            };
+            let renamed = fs::rename(&path, &backup).is_ok();
+            let _ =
+                crate::cq_add_log_w(&format!("config.json 解析失败:{e}，已{}并回退默认配置",
+                    if renamed { format!("备份到 {:?}", backup) } else { "尝试回退".to_owned() }));
+            let default = default_config();
+            atomic_write_file(&path, &default.to_string())?;
+            Ok(default)
+        }
+    }
 }
 
 /// Return the process-wide cached `config.json` value.
@@ -137,13 +196,19 @@ fn read_config_from_disk() -> ConfigResult<Value> {
 /// maintain additional field-level caches.
 pub fn read_config() -> ConfigResult<Value> {
     {
-        let cache = config_cache().read().unwrap();
+        let cache = match config_cache().read() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         if let Some(config) = cache.as_ref() {
             return Ok(config.clone());
         }
     }
 
-    let mut cache = config_cache().write().unwrap();
+    let mut cache = match config_cache().write() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
     if let Some(config) = cache.as_ref() {
         return Ok(config.clone());
     }
@@ -188,15 +253,29 @@ pub(crate) fn parse_startup_config(config: &Value) -> ConfigResult<StartupConfig
 }
 
 pub(crate) fn write_config(config: &Value) -> ConfigResult<()> {
-    fs::write(config_path()?, serde_json::to_string_pretty(config)?)?;
-    *config_cache().write().unwrap() = Some(config.clone());
+    let path = config_path()?;
+    let content = serde_json::to_string_pretty(config)?;
+    atomic_write_file(&path, &content)?;
+    match config_cache().write() {
+        Ok(mut g) => *g = Some(config.clone()),
+        Err(poison) => *poison.into_inner() = Some(config.clone()),
+    }
     Ok(())
 }
 
 /// Create the default configuration file used on first startup.
 pub fn init_config() {
-    let _write_guard = config_write_lock().lock().unwrap();
-    let path = config_path().unwrap();
+    let _write_guard = match config_write_lock().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    let path = match config_path() {
+        Ok(p) => p,
+        Err(e) => {
+            let _ = crate::cq_add_log_w(&format!("无法获取配置路径: {e}"));
+            return;
+        }
+    };
     if !path.is_file() {
         let web_port = 1207u64;
         let web_host = "127.0.0.1".to_owned();
@@ -217,18 +296,31 @@ pub fn init_config() {
                         "api_key": "",
                         "model": "gpt-4o-mini",
                         "context_length": 131072,
-                        "thinking_level": "high"
+                        "thinking_level": "high",
+                        "api_type": "chat_completions"
                     }
                 ],
                 "system_prompt": DEFAULT_LIVE2D_SYSTEM_PROMPT
             }
         });
-        fs::write(&path, config.to_string()).unwrap();
+        if let Err(e) = atomic_write_file(&path, &config.to_string()) {
+            let _ = crate::cq_add_log_w(&format!("写入默认配置失败: {e}"));
+            return;
+        }
     }
 
-    let config = serde_json::from_str::<Value>(&fs::read_to_string(&path).unwrap()).unwrap();
-    fs::write(path, serde_json::to_string_pretty(&config).unwrap()).unwrap();
-    *config_cache().write().unwrap() = Some(config);
+    // 读取并解析现有配置；损坏则备份后回退默认（与 read_config_from_disk 同路径）
+    let config = match read_config_from_disk() {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = crate::cq_add_log_w(&format!("读取配置失败: {e}"));
+            return;
+        }
+    };
+    match config_cache().write() {
+        Ok(mut g) => *g = Some(config),
+        Err(p) => *p.into_inner() = Some(config),
+    }
 }
 
 /// Load configuration values whose lifetime is tied to the running process.
@@ -248,9 +340,15 @@ pub fn startup_config() -> ConfigResult<StartupConfig> {
 
 /// Explicitly reload the single cached configuration object from disk.
 pub fn refresh_cached_config() -> ConfigResult<()> {
-    let _write_guard = config_write_lock().lock().unwrap();
+    let _write_guard = match config_write_lock().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
     let config = read_config_from_disk()?;
-    *config_cache().write().unwrap() = Some(config);
+    match config_cache().write() {
+        Ok(mut g) => *g = Some(config),
+        Err(p) => *p.into_inner() = Some(config),
+    }
     Ok(())
 }
 
@@ -276,7 +374,10 @@ pub fn live2d_chat_config() -> ConfigResult<Live2dChatConfig> {
 
 pub fn save_live2d_chat_config(chat: &Live2dChatConfig) -> ConfigResult<()> {
     validate_live2d_chat_config(chat)?;
-    let _write_guard = config_write_lock().lock().unwrap();
+    let _write_guard = match config_write_lock().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
     let mut config = read_config()?;
     config["live2d_chat"] = serde_json::json!({
         "config": chat.config,
@@ -307,7 +408,10 @@ pub fn get_ban_pkgs() -> ConfigResult<Vec<String>> {
 }
 
 pub fn set_ban_pkg(pkg_name: &str, banned: bool) -> ConfigResult<()> {
-    let _write_guard = config_write_lock().lock().unwrap();
+    let _write_guard = match config_write_lock().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
     let mut config = read_config()?;
     let mut ban_pkgs = parse_ban_pkgs(&config);
     let pkg_name = pkg_name_to_display(pkg_name);
@@ -323,7 +427,10 @@ pub fn set_ban_pkg(pkg_name: &str, banned: bool) -> ConfigResult<()> {
 }
 
 pub fn rename_ban_pkg(old_pkg_name: &str, new_pkg_name: &str) -> ConfigResult<()> {
-    let _write_guard = config_write_lock().lock().unwrap();
+    let _write_guard = match config_write_lock().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
     let mut config = read_config()?;
     let mut ban_pkgs = parse_ban_pkgs(&config);
     let old_pkg_name = pkg_name_to_display(old_pkg_name);
@@ -351,7 +458,10 @@ pub fn ws_urls() -> ConfigResult<Vec<String>> {
 }
 
 fn set_config_value(key: &str, value: Value) -> ConfigResult<()> {
-    let _write_guard = config_write_lock().lock().unwrap();
+    let _write_guard = match config_write_lock().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
     let mut config = read_config()?;
     config[key] = value;
     write_config(&config)
@@ -404,6 +514,24 @@ fn parse_provider_config(value: &Value) -> Option<Live2dProviderConfig> {
     let defaults = Live2dProviderConfig::default();
     let name = obj.get("name").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty())?.to_owned();
     let model = obj.get("model").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty())?.to_owned();
+    let raw_api_type = obj
+        .get("api_type")
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned);
+    let api_type = raw_api_type.unwrap_or_else(|| {
+        let url = obj.get("base_url").and_then(Value::as_str).unwrap_or("");
+        if url.contains("/responses") {
+            "responses".to_owned()
+        } else {
+            defaults.api_type.clone()
+        }
+    });
+    let api_type = match api_type.as_str() {
+        "responses" => "responses".to_owned(),
+        _ => "chat_completions".to_owned(),
+    };
     Some(Live2dProviderConfig {
         name,
         base_url: obj.get("base_url").and_then(Value::as_str).unwrap_or(&defaults.base_url).to_owned(),
@@ -412,6 +540,7 @@ fn parse_provider_config(value: &Value) -> Option<Live2dProviderConfig> {
         context_length: obj.get("context_length").and_then(Value::as_u64).unwrap_or(defaults.context_length),
         thinking_level: obj.get("thinking_level").and_then(Value::as_str).unwrap_or(&defaults.thinking_level).to_owned(),
         proxy: obj.get("proxy").and_then(Value::as_str).unwrap_or_default().to_owned(),
+        api_type,
     })
 }
 
@@ -438,6 +567,7 @@ pub(crate) fn parse_live2d_chat_config(config: &Value) -> Live2dChatConfig {
         thinking_level: current.thinking_level.clone(),
         context_length: current.context_length,
         proxy: current.proxy.clone(),
+        api_type: current.api_type.clone(),
     }
 }
 
@@ -467,9 +597,12 @@ fn validate_live2d_chat_config(chat: &Live2dChatConfig) -> ConfigResult<()> {
         }
         if !matches!(
             item.thinking_level.as_str(),
-            "none" | "low" | "high" | "xhigh" | "max"
+            "none" | "low" | "medium" | "high" | "xhigh" | "max"
         ) {
             return Err("思考等级无效".into());
+        }
+        if !matches!(item.api_type.as_str(), "chat_completions" | "responses") {
+            return Err("接口类型无效".into());
         }
         if !matches!(
             item.context_length,

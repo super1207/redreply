@@ -72,7 +72,7 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 webviews.insert(new_window.id(), (new_window, webview));
             }
             Err(e) => {
-                let _ = redlang::cq_add_log_w(&format!("创建窗口失败: {:?}", e)).unwrap();
+                let _ = redlang::cq_add_log_w(&format!("创建窗口失败: {:?}", e));
             }
         }
         Ok(())
@@ -245,11 +245,10 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                             create_new_window(&mut webviews, event_loop_window_target, &proxy)
                         {
                             use redlang::cq_add_log_w;
-                            cq_add_log_w(&format!(
+                            let _ = cq_add_log_w(&format!(
                                 "Failed to create window on tray double click: {:?}",
                                 e
-                            ))
-                            .unwrap();
+                            ));
                         }
                     }
                 }
@@ -278,8 +277,10 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         &url,
                     ) {
                         use redlang::cq_add_log_w;
-                        cq_add_log_w(&format!("Failed to create specific window: {:?}", e))
-                            .unwrap();
+                        let _ = cq_add_log_w(&format!(
+                            "Failed to create specific window: {:?}",
+                            e
+                        ));
                     }
                 }
 
@@ -353,9 +354,12 @@ fn main() {
     // 初始化资源
     redlang::initialize();
 
+    // 注册 Ctrl+C / SIGTERM 优雅退出（docker stop、控制台关闭不再直接丢进程）
+    redlang::lifecycle::register_signal_handler();
+
     #[cfg(windows)]
     if let Err(e) = create_windows() {
-        redlang::cq_add_log_w(&format!("load tray err:{:?}", e)).unwrap();
+        let _ = redlang::cq_add_log_w(&format!("load tray err:{:?}", e));
     }
 
     loop {

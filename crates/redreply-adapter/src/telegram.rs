@@ -53,10 +53,12 @@ impl TeleTramConnect {
     }
 
     fn add_username2userid(&self, username: &str, user_id: i64) {
-        self.username2userid
-            .write()
-            .unwrap()
-            .insert(username.to_owned(), user_id);
+        let mut lk = self.username2userid.write().unwrap();
+        // 简单防膨胀：超过上限先清空
+        if lk.len() > 100_000 {
+            lk.clear();
+        }
+        lk.insert(username.to_owned(), user_id);
     }
 
     fn get_username2userid(&self, username: &str) -> Option<i64> {
@@ -1198,7 +1200,8 @@ impl BotConnectTrait for TeleTramConnect {
             .ok_or("proxy not found")?
             .as_str()
             .ok_or("proxy not str")?;
-        self.proxy.write().unwrap().push_str(proxy);
+        // 先重置再赋值，避免二次 connect 时累积双份数据
+        *self.proxy.write().unwrap() = proxy.to_owned();
         let ret_text = self
             .proxyrequest(format!("https://api.telegram.org/bot{}/getMe", token).as_str())
             .await?;
@@ -1219,8 +1222,8 @@ impl BotConnectTrait for TeleTramConnect {
             .as_str()
             .ok_or("username not str")?;
         self.add_username2userid(&format!("@{username}"), self_id.parse()?);
-        self.self_id.write().unwrap().push_str(self_id.as_str());
-        self.token.write().unwrap().push_str(token);
+        *self.self_id.write().unwrap() = self_id.clone();
+        *self.token.write().unwrap() = token.to_owned();
         cq_add_log(&format!("telegram bot {} connect success", self_id)).unwrap();
         let self_t = self.clone();
         tokio::task::spawn(async move {

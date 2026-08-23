@@ -75,27 +75,27 @@ impl ServiceHub {
     }
 
     pub(crate) fn mqtt_client(&self) -> Option<rumqttc::v5::Client> {
-        self.mqtt_client.lock().unwrap().clone()
+        self.mqtt_client.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub(crate) fn set_mqtt_client(&self, client: Option<rumqttc::v5::Client>) {
-        *self.mqtt_client.lock().unwrap() = client;
+        *self.mqtt_client.lock().unwrap_or_else(|e| e.into_inner()) = client;
     }
 
     pub(crate) fn mqtt_client_id(&self) -> String {
-        self.mqtt_client_id.lock().unwrap().clone()
+        self.mqtt_client_id.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub(crate) fn set_mqtt_client_id(&self, client_id: String) {
-        *self.mqtt_client_id.lock().unwrap() = client_id;
+        *self.mqtt_client_id.lock().unwrap_or_else(|e| e.into_inner()) = client_id;
     }
 
     pub(crate) fn set_mqtt_remote_clients(&self, clients: Vec<String>) {
-        *self.mqtt_remote_clients.lock().unwrap() = clients;
+        *self.mqtt_remote_clients.lock().unwrap_or_else(|e| e.into_inner()) = clients;
     }
 
     pub(crate) fn mqtt_remote_clients(&self) -> Vec<String> {
-        self.mqtt_remote_clients.lock().unwrap().clone()
+        self.mqtt_remote_clients.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub(crate) fn add_mqtt_echo(
@@ -103,11 +103,11 @@ impl ServiceHub {
         echo: String,
         sender: std::sync::mpsc::Sender<serde_json::Value>,
     ) {
-        self.mqtt_echo_map.lock().unwrap().insert(echo, sender);
+        self.mqtt_echo_map.lock().unwrap_or_else(|e| e.into_inner()).insert(echo, sender);
     }
 
     pub(crate) fn remove_mqtt_echo(&self, echo: &str) {
-        self.mqtt_echo_map.lock().unwrap().remove(echo);
+        self.mqtt_echo_map.lock().unwrap_or_else(|e| e.into_inner()).remove(echo);
     }
 
     pub(crate) fn send_mqtt_echo(
@@ -115,7 +115,7 @@ impl ServiceHub {
         echo: &str,
         value: serde_json::Value,
     ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
-        let sender = self.mqtt_echo_map.lock().unwrap().get(echo).cloned();
+        let sender = self.mqtt_echo_map.lock().unwrap_or_else(|e| e.into_inner()).get(echo).cloned();
         if let Some(sender) = sender {
             sender.send(value)?;
             return Ok(true);
@@ -124,19 +124,19 @@ impl ServiceHub {
     }
 
     pub(crate) fn set_auto_close(&self, auto_close: bool) {
-        *self.auto_close.lock().unwrap() = auto_close;
+        *self.auto_close.lock().unwrap_or_else(|e| e.into_inner()) = auto_close;
     }
 
     pub(crate) fn auto_close(&self) -> bool {
-        *self.auto_close.lock().unwrap()
+        *self.auto_close.lock().unwrap_or_else(|e| e.into_inner())
     }
 
     pub(crate) fn default_font(&self) -> Option<Vec<u8>> {
-        self.default_font.read().unwrap().clone()
+        self.default_font.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub(crate) fn set_default_font(&self, font: Vec<u8>) {
-        *self.default_font.write().unwrap() = Some(font);
+        *self.default_font.write().unwrap_or_else(|e| e.into_inner()) = Some(font);
     }
 }
 

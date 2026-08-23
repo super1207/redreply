@@ -469,12 +469,12 @@ pub fn init_ex_fun_map() {
                         if let Ok(val) = val_rst {
                             val
                         } else {
-                            cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
+                            let _ = cq_add_log_w(&format!("{:?}",val_rst.err().unwrap()));
                             (vec![],BTreeMap::new())
                         }
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
-                        cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
+                        let _ = cq_add_log_w(&format!("GET访问:`{}`超时",url));
                         (vec![],BTreeMap::new())
                     }
                 };
@@ -488,7 +488,7 @@ pub fn init_ex_fun_map() {
         match access(self_t, &url) {
             Ok(ret) => Ok(ret),
             Err(err) => {
-                cq_add_log_w(&format!("{:?}", err)).unwrap();
+                let _ = cq_add_log_w(&format!("{:?}", err));
                 Ok(Some(rv_bin(vec![])))
             }
         }
@@ -521,12 +521,12 @@ pub fn init_ex_fun_map() {
                         if let Ok(val) = val_rst {
                             val
                         } else {
-                            cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
+                            let _ = cq_add_log_w(&format!("{:?}",val_rst.err().unwrap()));
                             (vec![],BTreeMap::new())
                         }
                     },
                     _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
-                        cq_add_log_w(&format!("{}访问:`{}`超时",method,url)).unwrap();
+                        let _ = cq_add_log_w(&format!("{}访问:`{}`超时",method,url));
                         (vec![],BTreeMap::new())
                     }
                 };
@@ -550,7 +550,7 @@ pub fn init_ex_fun_map() {
         match access(method, self_t, &url, data) {
             Ok(ret) => Ok(ret),
             Err(err) => {
-                cq_add_log_w(&format!("{:?}", err)).unwrap();
+                let _ = cq_add_log_w(&format!("{:?}", err));
                 Ok(Some(rv_bin(vec![])))
             }
         }
@@ -633,7 +633,8 @@ pub fn init_ex_fun_map() {
     #[cfg(target_os = "windows")]
     add_fun(vec!["设置桌面背景"], |self_t, params| {
         let image_path = self_t.get_param_text(params, 0)?;
-        let image_path = std::ffi::CString::new(image_path).unwrap();
+        let image_path = std::ffi::CString::new(image_path)
+            .map_err(|e| RedLang::make_err(&format!("路径包含空字符: {e}")))?;
         let image_path_c_ptr: *mut winapi::ctypes::c_void =
             image_path.as_ptr() as *mut winapi::ctypes::c_void;
         unsafe {
@@ -794,7 +795,7 @@ pub fn init_ex_fun_map() {
             if let Ok(v) = json_data.query(&jsonpath) {
                 return Ok(Some(json_value_to_red(&serde_json::json!(v))?));
             } else {
-                cq_add_log_w("jsonpath解析失败").unwrap();
+                let _ = cq_add_log_w("jsonpath解析失败");
                 return Ok(Some(rv_empty()));
             }
         }
@@ -2439,7 +2440,7 @@ pub fn init_ex_fun_map() {
     });
     add_fun(vec!["打印日志"], |self_t, params| {
         let text = self_t.get_param_text(params, 0)?;
-        cq_add_log(&text).unwrap();
+        let _ = cq_add_log(&text);
         Ok(Some(rv_empty()))
     });
     add_fun(vec!["读目录"], |self_t, params| {
@@ -2717,7 +2718,7 @@ pub fn init_ex_fun_map() {
     ) {
         Ok(data) => Ok(Some(rv_bin(data))),
         Err(err) => {
-            cq_add_log_w(&format!("网页截图失败：`{:?}`", err)).unwrap();
+            let _ = cq_add_log_w(&format!("网页截图失败：`{:?}`", err));
             Ok(Some(rv_bin(vec![])))
         }
     });
@@ -2727,7 +2728,7 @@ pub fn init_ex_fun_map() {
         |self_t, params| match browser_access(self_t, params, "content") {
             Ok(data) => Ok(Some(rv_text(String::from_utf8(data)?))),
             Err(err) => {
-                cq_add_log_w(&format!("网页获取失败：`{:?}`", err)).unwrap();
+                let _ = cq_add_log_w(&format!("网页获取失败：`{:?}`", err));
                 Ok(Some(rv_empty()))
             }
         },
@@ -2740,7 +2741,7 @@ pub fn init_ex_fun_map() {
     ) {
         Ok(data) => Ok(Some(rv_text(String::from_utf8(data)?))),
         Err(err) => {
-            cq_add_log_w(&format!("网页获取文本失败：`{:?}`", err)).unwrap();
+            let _ = cq_add_log_w(&format!("网页获取文本失败：`{:?}`", err));
             Ok(Some(rv_empty()))
         }
     });
@@ -2956,6 +2957,8 @@ pub fn init_ex_fun_map() {
         }
 
         let conn = rusqlite::Connection::open(sql_file)?;
+
+        crate::resource_manager::configure_conn_busy_timeout(&conn);
         add_regexp_function(&conn)?;
         add_red_function(self_t, &conn)?;
         let mut stmt = conn.prepare(&sql)?;
@@ -3006,7 +3009,7 @@ pub fn init_ex_fun_map() {
         let key = self_t.get_param_text(params, 0)?;
         let value_rv = self_t.get_param(params, 1)?;
         let value =
-            crate::redlang::persistent_value_codec::to_persistent_legacy_string(value_rv.as_ref());
+            crate::redlang::persistent_value_codec::to_persistent_legacy_string(value_rv.as_ref())?;
 
         add_file_lock(&sql_file);
         let _guard = scopeguard::guard(sql_file.clone(), |sql_file| {
@@ -3014,6 +3017,8 @@ pub fn init_ex_fun_map() {
         });
 
         let conn = rusqlite::Connection::open(sql_file)?;
+
+        crate::resource_manager::configure_conn_busy_timeout(&conn);
         conn.execute(
             "CREATE TABLE IF NOT EXISTS CONST_TABLE (KEY TEXT PRIMARY KEY,VALUE TEXT);",
             [],
@@ -3039,6 +3044,7 @@ pub fn init_ex_fun_map() {
                 del_file_lock(&sql_file);
             });
             let conn = rusqlite::Connection::open(sql_file)?;
+            crate::resource_manager::configure_conn_busy_timeout(&conn);
             ret_rst = conn.query_row(
                 "SELECT VALUE FROM CONST_TABLE WHERE KEY = ?",
                 [key],
@@ -3078,6 +3084,7 @@ pub fn init_ex_fun_map() {
             use std::env;
             use std::process::Command;
 
+            // 拿不到自身路径属异常情况，按 fail-fast 直接 panic
             let exe_path = env::current_exe().unwrap();
             let args: Vec<String> = env::args().skip(1).collect();
 
@@ -3179,7 +3186,7 @@ pub fn init_ex_fun_map() {
     add_fun(vec!["删除文件"], |self_t, params| {
         let file_path = self_t.get_param_text(params, 0)?;
         let path = Path::new(&file_path);
-        fs::remove_file(path)?;
+        let _ = fs::remove_file(path);
         Ok(Some(rv_empty()))
     });
     add_fun(vec!["压缩"], |self_t, params| {
@@ -3773,12 +3780,12 @@ pub fn init_ex_fun_map() {
                             if let Ok(val) = val_rst {
                                 val
                             } else {
-                                cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
+                                let _ = cq_add_log_w(&format!("{:?}",val_rst.err().unwrap()));
                                 (vec![],BTreeMap::new())
                             }
                         },
                         _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
-                            cq_add_log_w(&format!("POST访问:`{}`超时",url)).unwrap();
+                            let _ = cq_add_log_w(&format!("POST访问:`{}`超时",url));
                 (vec![],BTreeMap::new())
                         }
                     };
@@ -3796,7 +3803,7 @@ pub fn init_ex_fun_map() {
         match access(self_t, &filename, url, &mut bin) {
             Ok(ret) => Ok(Some(rv_text(ret))),
             Err(err) => {
-                cq_add_log_w(&format!("{:?}", err)).unwrap();
+                let _ = cq_add_log_w(&format!("{:?}", err));
                 Ok(Some(rv_empty()))
             }
         }
@@ -3940,7 +3947,7 @@ def red_out(sw):
         let out = String::from_utf8_lossy(&output.stdout).to_string();
         let err = String::from_utf8_lossy(&output.stderr).to_string();
         if !err.is_empty() {
-            cq_add_log_w(&format!("python中的警告或错误:{}", err)).unwrap();
+            let _ = cq_add_log_w(&format!("python中的警告或错误:{}", err));
         }
         Ok(Some(python_base64_wire_output_to_red(&out)?))
     });
@@ -4011,7 +4018,7 @@ def red_out(sw):
         let out = String::from_utf8_lossy(&output.stdout).to_string();
         let err = String::from_utf8_lossy(&output.stderr).to_string();
         if !err.is_empty() {
-            cq_add_log_w(&format!("python中的警告或错误:{}", err)).unwrap();
+            let _ = cq_add_log_w(&format!("python中的警告或错误:{}", err));
         }
         Ok(Some(python_base64_wire_output_to_red(&out)?))
     });
@@ -4102,7 +4109,7 @@ def red_out(sw):
         let out = String::from_utf8_lossy(&output.stdout).to_string();
         let err = String::from_utf8_lossy(&output.stderr).to_string();
         if !err.is_empty() {
-            cq_add_log_w(&format!("python中的警告或错误:{}", err)).unwrap();
+            let _ = cq_add_log_w(&format!("python中的警告或错误:{}", err));
         }
         Ok(Some(python_base64_wire_output_to_red(&out)?))
     });
@@ -4138,12 +4145,12 @@ def red_out(sw):
                     if let Ok(val) = val_rst {
                         val
                     } else {
-                        cq_add_log_w(&format!("{:?}",val_rst.err().unwrap())).unwrap();
+                        let _ = cq_add_log_w(&format!("{:?}",val_rst.err().unwrap()));
                         (vec![],BTreeMap::new())
                     }
                 },
                 _ = tokio::time::sleep(std::time::Duration::from_millis(timeout)) => {
-                    cq_add_log_w(&format!("GET访问:`{}`超时",url)).unwrap();
+                    let _ = cq_add_log_w(&format!("GET访问:`{}`超时",url));
                     (vec![],BTreeMap::new())
                 }
             };
@@ -4151,14 +4158,14 @@ def red_out(sw):
         });
         if content.0.len() == DEFAULT_FONT_LEN {
             if let Err(err) = fs::write(&font_file_path, &content.0) {
-                cq_add_log_w(&format!("默认字体缓存写入失败：{}", err)).unwrap();
+                let _ = cq_add_log_w(&format!("默认字体缓存写入失败：{}", err));
             }
             runtime_context()
                 .services
                 .set_default_font(content.0.clone());
             Ok(Some(rv_bin(content.0)))
         } else {
-            cq_add_log_w("默认字体下载失败！").unwrap();
+            let _ = cq_add_log_w("默认字体下载失败！");
             Ok(Some(rv_bin(vec![])))
         }
     });
@@ -4221,7 +4228,9 @@ def red_out(sw):
             ProcessRefreshKind::everything(),
         );
         let pid = sysinfo::Pid::from(std::process::id() as usize);
-        let process = sysinfo::System::process(&s, pid).unwrap();
+        let Some(process) = sysinfo::System::process(&s, pid) else {
+            return Ok(Some(rv_empty()));
+        };
         Ok(Some(rv_text(
             (sysinfo::Process::cpu_usage(process) / sysinfo::System::cpus(&s).len() as f32)
                 .to_string(),
@@ -4549,6 +4558,8 @@ def red_out(sw):
             let tm13 = tm.as_millis() as i64;
 
             let conn = rusqlite::Connection::open(sql_file)?;
+
+            crate::resource_manager::configure_conn_busy_timeout(&conn);
             // 先创建表
             conn.execute(
                 "CREATE TABLE IF NOT EXISTS RUN_FREQ_TABLE (KEY TEXT PRIMARY KEY,VALUE TEXT);",

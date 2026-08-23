@@ -5,9 +5,10 @@ use std::time::{Duration, Instant};
 use crate::redlang::RedValueData;
 
 type PackageLocks = HashMap<String, HashMap<String, i32>>;
-type SignalEntry = (String, String, String, Option<Arc<RedValueData>>);
+type SignalEntry = (String, String, String, Vec<Arc<RedValueData>>);
 type FileLocks = HashMap<String, i32>;
 
+#[derive(Debug)]
 pub(crate) enum SignalWaitResult {
     Received(Arc<RedValueData>),
     TimedOut,
@@ -36,8 +37,13 @@ impl SyncPrimitives {
         }
     }
 
-    pub(crate) fn acquire_lock(&self, pkg_name: &str, lock_name: &str) {
-        let mut locks = self.package_locks.lock().unwrap();
+    /// 获取包内互斥锁。等待期间周期性调用 `can_continue`，返回 false 时放弃并返回 false
+    /// （调用方应结束脚本，已持有的锁由 Drop 统一释放），避免脚本间死锁永久占死线程。
+    pub(crate) fn acquire_lock<F>(&self, pkg_name: &str, lock_name: &str, mut can_continue: F) -> bool
+    where
+        F: FnMut() -> bool,
+    {
+        let mut locks = self.package_locks.lock().unwrap_or_else(|e| e.into_inner());
         loop {
             let acquired = {
                 let package_locks = locks.entry(pkg_name.to_owned()).or_default();
@@ -49,19 +55,25 @@ impl SyncPrimitives {
                 }
             };
             if acquired {
-                return;
+                return true;
+            }
+            if !can_continue() {
+                return false;
             }
 
             let (guard, _) = self
                 .package_lock_changed
                 .wait_timeout(locks, Duration::from_millis(1000))
-                .unwrap();
+                .unwrap_or_else(|e| e.into_inner());
             locks = guard;
         }
     }
 
     pub(crate) fn try_acquire_lock(&self, pkg_name: &str, lock_name: &str) -> bool {
-        let mut locks = self.package_locks.lock().unwrap();
+        let mut locks = self
+            .package_locks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let package_locks = locks.entry(pkg_name.to_owned()).or_default();
         if package_locks.contains_key(lock_name) {
             false
@@ -72,7 +84,10 @@ impl SyncPrimitives {
     }
 
     pub(crate) fn release_lock(&self, pkg_name: &str, lock_name: &str) {
-        let mut locks = self.package_locks.lock().unwrap();
+        let mut locks = self
+            .package_locks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(package_locks) = locks.get_mut(pkg_name) {
             package_locks.remove(lock_name);
         }
@@ -80,7 +95,10 @@ impl SyncPrimitives {
     }
 
     pub(crate) fn release_locks(&self, pkg_name: &str, lock_names: &HashSet<String>) {
-        let mut locks = self.package_locks.lock().unwrap();
+        let mut locks = self
+            .package_locks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(package_locks) = locks.get_mut(pkg_name) {
             for lock_name in lock_names {
                 package_locks.remove(lock_name);
@@ -92,21 +110,26 @@ impl SyncPrimitives {
     }
 
     pub(crate) fn release_package_locks(&self, pkg_name: &str) {
-        self.package_locks.lock().unwrap().remove(pkg_name);
+        self.package_locks
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(pkg_name);
         self.package_lock_changed.notify_all();
     }
 
+    /// 向同名信号的所有等待者投递值。采用队列语义：同一等待者收到多条信号时按序消费，
+    /// 不再相互覆盖；没有等待者时信号丢弃并返回 false。
     pub(crate) fn send_signal(
         &self,
         pkg_name: &str,
         signal_name: &str,
         value: Arc<RedValueData>,
     ) -> bool {
-        let mut signals = self.signals.lock().unwrap();
+        let mut signals = self.signals.lock().unwrap_or_else(|e| e.into_inner());
         let mut changed = false;
-        for (_, entry_pkg, entry_signal, entry_value) in &mut *signals {
+        for (_, entry_pkg, entry_signal, entry_queue) in &mut *signals {
             if entry_pkg == pkg_name && entry_signal == signal_name {
-                *entry_value = Some(value.clone());
+                entry_queue.push(value.clone());
                 changed = true;
             }
         }
@@ -119,14 +142,14 @@ impl SyncPrimitives {
     pub(crate) fn register_signal(&self, uid: String, pkg_name: String, signal_name: String) {
         self.signals
             .lock()
-            .unwrap()
-            .push((uid, pkg_name, signal_name, None));
+            .unwrap_or_else(|e| e.into_inner())
+            .push((uid, pkg_name, signal_name, Vec::new()));
     }
 
     pub(crate) fn unregister_signal(&self, uid: &str) {
         self.signals
             .lock()
-            .unwrap()
+            .unwrap_or_else(|e| e.into_inner())
             .retain(|(entry_uid, _, _, _)| entry_uid != uid);
     }
 
@@ -140,13 +163,13 @@ impl SyncPrimitives {
         F: FnMut() -> bool,
     {
         let start_time = Instant::now();
-        let mut signals = self.signals.lock().unwrap();
+        let mut signals = self.signals.lock().unwrap_or_else(|e| e.into_inner());
         loop {
-            if let Some(value) = signals
-                .iter()
-                .find(|(entry_uid, _, _, value)| entry_uid == uid && value.is_some())
-                .and_then(|(_, _, _, value)| value.clone())
-            {
+            // 按发送顺序消费队列中的最早一条信号
+            if let Some(pos) = signals.iter().position(|(entry_uid, _, _, queue)| {
+                entry_uid == uid && !queue.is_empty()
+            }) {
+                let value = signals[pos].3.remove(0);
                 return SignalWaitResult::Received(value);
             }
             if !can_continue() {
@@ -163,7 +186,7 @@ impl SyncPrimitives {
             let (guard, timeout_result) = self
                 .signal_changed
                 .wait_timeout(signals, remaining)
-                .unwrap();
+                .unwrap_or_else(|e| e.into_inner());
             signals = guard;
             if timeout_result.timed_out() {
                 return SignalWaitResult::TimedOut;
@@ -175,7 +198,10 @@ impl SyncPrimitives {
     where
         F: FnMut(),
     {
-        let mut locks = self.file_locks.lock().unwrap();
+        let mut locks = match self.file_locks.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         loop {
             if !locks.contains_key(filename) {
                 locks.insert(filename.to_owned(), 0);
@@ -185,16 +211,22 @@ impl SyncPrimitives {
             let (guard, timeout_result) = self
                 .file_lock_changed
                 .wait_timeout(locks, Duration::from_secs(5))
-                .unwrap();
+                .unwrap_or_else(|e| e.into_inner());
             locks = guard;
             if timeout_result.timed_out() {
+                // 避免持锁回调，防止回调中再尝试获取同锁导致死锁
+                drop(locks);
                 on_timeout();
+                locks = match self.file_locks.lock() {
+                    Ok(g) => g,
+                    Err(p) => p.into_inner(),
+                };
             }
         }
     }
 
     pub(crate) fn release_file_lock(&self, filename: &str) {
-        let mut locks = self.file_locks.lock().unwrap();
+        let mut locks = self.file_locks.lock().unwrap_or_else(|e| e.into_inner());
         if locks.remove(filename).is_some() {
             self.file_lock_changed.notify_all();
         }
@@ -218,10 +250,19 @@ mod tests {
     #[test]
     fn package_lock_can_be_released_and_reacquired() {
         let sync = SyncPrimitives::new();
-        sync.acquire_lock("demo", "lock");
+        assert!(sync.acquire_lock("demo", "lock", || true));
         assert!(!sync.try_acquire_lock("demo", "lock"));
         sync.release_lock("demo", "lock");
         assert!(sync.try_acquire_lock("demo", "lock"));
+    }
+
+    #[test]
+    fn acquire_lock_can_be_cancelled_while_waiting() {
+        let sync = SyncPrimitives::new();
+        assert!(sync.acquire_lock("demo", "lock", || true));
+        let cancelled = sync.acquire_lock("demo", "lock", || false);
+        assert!(!cancelled);
+        assert!(sync.try_acquire_lock("demo2", "lock"));
     }
 
     #[test]
@@ -243,6 +284,37 @@ mod tests {
             handle.join().unwrap(),
             SignalWaitResult::Received(value)
                 if matches!(&*value, RedValueData::Text(text) if text == "ok")
+        ));
+        sync.unregister_signal("id");
+    }
+
+    #[test]
+    fn queued_signals_are_consumed_in_order_without_overwrite() {
+        let sync = SyncPrimitives::new();
+        sync.register_signal("id".to_owned(), "demo".to_owned(), "ready".to_owned());
+        assert!(sync.send_signal(
+            "demo",
+            "ready",
+            Arc::new(RedValueData::Text("first".to_owned()))
+        ));
+        assert!(sync.send_signal(
+            "demo",
+            "ready",
+            Arc::new(RedValueData::Text("second".to_owned()))
+        ));
+        for expected in ["first", "second"] {
+            match sync.wait_for_signal("id", Duration::from_millis(100), || true) {
+                SignalWaitResult::Received(value) => assert!(
+                    matches!(&*value, RedValueData::Text(text) if text == expected),
+                    "expected `{expected}`"
+                ),
+                other => panic!("unexpected result: {other:?}"),
+            }
+        }
+        // 队列消费完毕后回到超时路径
+        assert!(matches!(
+            sync.wait_for_signal("id", Duration::from_millis(50), || true),
+            SignalWaitResult::TimedOut
         ));
         sync.unregister_signal("id");
     }

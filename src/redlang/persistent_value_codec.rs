@@ -2,56 +2,75 @@ use std::{collections::BTreeMap, rc::Rc};
 
 use super::{astparser, RedLang, RedValue};
 
-pub fn to_persistent_legacy_string(value: &RedValue) -> Rc<String> {
-    match value {
-        RedValue::Text(s) => s.clone(),
-        RedValue::Array(arr) => {
-            let mut ret = String::new();
-            ret.push_str(crate::PERSISTENT_VALUE_MARKER);
-            ret.push('A');
-            for item in arr {
-                let s = to_persistent_legacy_string(item);
-                ret.push_str(&s.len().to_string());
-                ret.push(',');
-                ret.push_str(&s);
+/// 序列化最大嵌套深度：与运行期值树深度上限一致，
+/// 防止畸形 DB 数据在反序列化时递归爆栈。
+const MAX_PERSIST_DEPTH: usize = 256;
+
+pub fn to_persistent_legacy_string(
+    value: &RedValue,
+) -> Result<Rc<String>, Box<dyn std::error::Error>> {
+    fn encode(value: &RedValue, depth: usize) -> Result<Rc<String>, Box<dyn std::error::Error>> {
+        if depth > MAX_PERSIST_DEPTH {
+            return Err(RedLang::make_err("持久常量嵌套过深"));
+        }
+        Ok(match value {
+            RedValue::Text(s) => s.clone(),
+            RedValue::Array(arr) => {
+                let mut ret = String::new();
+                ret.push_str(crate::PERSISTENT_VALUE_MARKER);
+                ret.push('A');
+                for item in arr {
+                    let s = encode(item, depth + 1)?;
+                    ret.push_str(&s.len().to_string());
+                    ret.push(',');
+                    ret.push_str(&s);
+                }
+                Rc::new(ret)
             }
-            Rc::new(ret)
-        }
-        RedValue::Object(obj) => {
-            let mut ret = String::new();
-            ret.push_str(crate::PERSISTENT_VALUE_MARKER);
-            ret.push('O');
-            for (k, v) in obj {
-                ret.push_str(&k.len().to_string());
-                ret.push(',');
-                ret.push_str(k);
-                let vs = to_persistent_legacy_string(v);
-                ret.push_str(&vs.len().to_string());
-                ret.push(',');
-                ret.push_str(&vs);
+            RedValue::Object(obj) => {
+                let mut ret = String::new();
+                ret.push_str(crate::PERSISTENT_VALUE_MARKER);
+                ret.push('O');
+                for (k, v) in obj {
+                    ret.push_str(&k.len().to_string());
+                    ret.push(',');
+                    ret.push_str(k);
+                    let vs = encode(v, depth + 1)?;
+                    ret.push_str(&vs.len().to_string());
+                    ret.push(',');
+                    ret.push_str(&vs);
+                }
+                Rc::new(ret)
             }
-            Rc::new(ret)
-        }
-        RedValue::Bin(bin) => {
-            let mut ret = String::new();
-            ret.push_str(crate::PERSISTENT_VALUE_MARKER);
-            ret.push('B');
-            for ch in bin.iter() {
-                ret.push_str(&format!("{:02X}", ch));
+            RedValue::Bin(bin) => {
+                let mut ret = String::new();
+                ret.push_str(crate::PERSISTENT_VALUE_MARKER);
+                ret.push('B');
+                for ch in bin.iter() {
+                    ret.push_str(&format!("{:02X}", ch));
+                }
+                Rc::new(ret)
             }
-            Rc::new(ret)
-        }
-        RedValue::Fun(ast) => {
-            let mut ret = String::new();
-            ret.push_str(crate::PERSISTENT_VALUE_MARKER);
-            ret.push('F');
-            ret.push_str(&astparser::ast_to_string(ast));
-            Rc::new(ret)
-        }
+            RedValue::Fun(ast) => {
+                let mut ret = String::new();
+                ret.push_str(crate::PERSISTENT_VALUE_MARKER);
+                ret.push('F');
+                ret.push_str(&astparser::ast_to_string(ast));
+                Rc::new(ret)
+            }
+        })
     }
+    encode(value, 1)
 }
 
 pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::error::Error>> {
+    decode(s, 1)
+}
+
+fn decode(s: &str, depth: usize) -> Result<RedValue, Box<dyn std::error::Error>> {
+    if depth > MAX_PERSIST_DEPTH {
+        return Err(RedLang::make_err("持久常量嵌套过深"));
+    }
     let marker = crate::PERSISTENT_VALUE_MARKER;
     if !s.starts_with(marker) {
         return Ok(RedValue::Text(Rc::new(s.to_string())));
@@ -66,17 +85,20 @@ pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::e
             let mut arr = s.get(marker_len + 1..).ok_or("不能获得数组类型")?;
             loop {
                 let spos_opt = arr.find(',');
-                if spos_opt.is_none() {
+                let Some(spos_num) = spos_opt else {
+                    // 尾部残留非空说明数据被截断，不能静默接受
+                    if !arr.is_empty() {
+                        return Err(RedLang::make_err("数组类型数据不完整"));
+                    }
                     break;
-                }
-                let spos_num = spos_opt.unwrap();
+                };
                 let num_str = arr.get(0..spos_num).ok_or("不能获得数组类型")?;
                 let num = num_str.parse::<usize>()?;
                 // checked_add 防止恶意长度前缀造成 usize 溢出(debug panic)
                 let start = spos_num.checked_add(1).ok_or("不能获得数组类型")?;
                 let end = start.checked_add(num).ok_or("不能获得数组类型")?;
                 let str_val = arr.get(start..end).ok_or("不能获得数组类型")?;
-                ret_arr.push(Rc::new(from_persistent_legacy_string(str_val)?));
+                ret_arr.push(Rc::new(decode(str_val, depth + 1)?));
                 arr = arr.get(end..).ok_or("不能获得数组类型")?;
             }
             Ok(RedValue::Array(ret_arr))
@@ -87,10 +109,13 @@ pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::e
             let mut arr = s.get(marker_len + 1..).ok_or("不能获得对象类型")?;
             loop {
                 let spos_opt = arr.find(',');
-                if spos_opt.is_none() {
+                let Some(spos_num) = spos_opt else {
+                    // 尾部残留非空说明数据被截断，不能静默接受
+                    if !arr.is_empty() {
+                        return Err(RedLang::make_err("对象类型数据不完整"));
+                    }
                     break;
-                }
-                let spos_num = spos_opt.unwrap();
+                };
                 let num_str = arr.get(0..spos_num).ok_or("不能获得对象类型")?;
                 let num = num_str.parse::<usize>()?;
                 // checked_add 防止恶意长度前缀造成 usize 溢出(debug panic)
@@ -105,7 +130,7 @@ pub fn from_persistent_legacy_string(s: &str) -> Result<RedValue, Box<dyn std::e
             }
             for i in 0..(arr_strs.len() / 2) {
                 let k = arr_strs[i * 2].to_string();
-                let v = from_persistent_legacy_string(arr_strs[i * 2 + 1])?;
+                let v = decode(arr_strs[i * 2 + 1], depth + 1)?;
                 ret_map.insert(k, Rc::new(v));
             }
             Ok(RedValue::Object(ret_map))

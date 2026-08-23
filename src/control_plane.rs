@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicU64, Ordering},
     Condvar, Mutex, RwLock,
 };
-use std::time::SystemTime;
+use std::time::{Duration, Instant};
 
 use crate::ScriptInfo;
 
@@ -34,29 +34,56 @@ impl ControlPlane {
     }
 
     pub(crate) fn pkg_can_run(&self, pkg_name: &str, script_type: &str) -> bool {
-        if *self.quit_flag.read().unwrap() {
+        let quit = match self.quit_flag.read() {
+            Ok(g) => *g,
+            Err(p) => *p.into_inner(),
+        };
+        if quit {
             return false;
         }
-        if self.package_quit_flags.read().unwrap().contains(pkg_name) {
+        let contains_pkg = match self.package_quit_flags.read() {
+            Ok(g) => g.contains(pkg_name),
+            Err(p) => p.into_inner().contains(pkg_name),
+        };
+        if contains_pkg {
             return false;
         }
         if script_type != "init"
             && script_type != "输入流"
             && script_type != "延时"
             && script_type != "等待信号"
-            && self.loading_script_flags.read().unwrap().contains(pkg_name)
         {
-            return false;
+            let loading = match self.loading_script_flags.read() {
+                Ok(g) => g.contains(pkg_name),
+                Err(p) => p.into_inner().contains(pkg_name),
+            };
+            if loading {
+                return false;
+            }
         }
         true
     }
 
     pub(crate) fn set_quit(&self, quit: bool) {
-        *self.quit_flag.write().unwrap() = quit;
+        match self.quit_flag.write() {
+            Ok(mut g) => *g = quit,
+            Err(p) => *p.into_inner() = quit,
+        }
+    }
+
+    /// 进程是否正在退出（用于后台监督线程停止重试/重启）
+    pub(crate) fn is_quitting(&self) -> bool {
+        match self.quit_flag.read() {
+            Ok(g) => *g,
+            Err(p) => *p.into_inner(),
+        }
     }
 
     pub(crate) fn set_package_quit(&self, pkg_name: &str, quitting: bool) {
-        let mut flags = self.package_quit_flags.write().unwrap();
+        let mut flags = match self.package_quit_flags.write() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         if quitting {
             flags.insert(pkg_name.to_owned());
         } else {
@@ -65,7 +92,10 @@ impl ControlPlane {
     }
 
     pub(crate) fn set_loading_script(&self, pkg_name: &str, loading: bool) {
-        let mut flags = self.loading_script_flags.write().unwrap();
+        let mut flags = match self.loading_script_flags.write() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         if loading {
             flags.insert(pkg_name.to_owned());
         } else {
@@ -74,55 +104,47 @@ impl ControlPlane {
     }
 
     pub(crate) fn wait_one_pkg_quit(&self, pkg_name: &str, timeout_ms: i64) -> bool {
-        let start_time = SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
-        let mut scripts = self.running_scripts.lock().unwrap();
+        let start = Instant::now();
+        let mut scripts = match self.running_scripts.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         loop {
             if !scripts.iter().any(|script| script.pkg_name == pkg_name) {
                 return true;
             }
-            let now = SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as i64;
-            let elapsed = now - start_time;
-            if elapsed > timeout_ms {
+            let elapsed_ms = start.elapsed().as_millis() as i64;
+            if elapsed_ms > timeout_ms {
                 return false;
             }
-            let remaining = (timeout_ms - elapsed).max(1) as u64;
+            let remaining = (timeout_ms - elapsed_ms).max(1) as u64;
             let (guard, _) = self
                 .script_quit_changed
-                .wait_timeout(scripts, core::time::Duration::from_millis(remaining))
-                .unwrap();
+                .wait_timeout(scripts, Duration::from_millis(remaining))
+                .unwrap_or_else(|e| e.into_inner());
             scripts = guard;
         }
     }
 
     pub(crate) fn wait_all_pkg_quit(&self, timeout_ms: i64) -> bool {
-        let start_time = SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as i64;
-        let mut scripts = self.running_scripts.lock().unwrap();
+        let start = Instant::now();
+        let mut scripts = match self.running_scripts.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         loop {
             if scripts.is_empty() {
                 return true;
             }
-            let now = SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as i64;
-            let elapsed = now - start_time;
-            if elapsed > timeout_ms {
+            let elapsed_ms = start.elapsed().as_millis() as i64;
+            if elapsed_ms > timeout_ms {
                 return false;
             }
-            let remaining = (timeout_ms - elapsed).max(1) as u64;
+            let remaining = (timeout_ms - elapsed_ms).max(1) as u64;
             let (guard, _) = self
                 .script_quit_changed
-                .wait_timeout(scripts, core::time::Duration::from_millis(remaining))
-                .unwrap();
+                .wait_timeout(scripts, Duration::from_millis(remaining))
+                .unwrap_or_else(|e| e.into_inner());
             scripts = guard;
         }
     }
@@ -135,16 +157,35 @@ impl ControlPlane {
     ) -> Option<u64> {
         // Keep the original lock order: running scripts, then the count,
         // followed by the process/package state checks.
-        let mut scripts = self.running_scripts.lock().unwrap();
-        let mut count = self.running_script_num.write().unwrap();
-        if *self.quit_flag.read().unwrap()
-            || self.package_quit_flags.read().unwrap().contains(pkg_name)
-            || (script_type != "init"
-                && script_type != "输入流"
-                && script_type != "延时"
-                && script_type != "等待信号"
-                && self.loading_script_flags.read().unwrap().contains(pkg_name))
+        let mut scripts = match self.running_scripts.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let mut count = match self.running_script_num.write() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let quit = match self.quit_flag.read() {
+            Ok(g) => *g,
+            Err(p) => *p.into_inner(),
+        };
+        let contains_pkg = match self.package_quit_flags.read() {
+            Ok(g) => g.contains(pkg_name),
+            Err(p) => p.into_inner().contains(pkg_name),
+        };
+        let loading_contains = if script_type != "init"
+            && script_type != "输入流"
+            && script_type != "延时"
+            && script_type != "等待信号"
         {
+            match self.loading_script_flags.read() {
+                Ok(g) => g.contains(pkg_name),
+                Err(p) => p.into_inner().contains(pkg_name),
+            }
+        } else {
+            false
+        };
+        if quit || contains_pkg || loading_contains {
             return None;
         }
 
@@ -159,12 +200,21 @@ impl ControlPlane {
     }
 
     pub(crate) fn running_script_info(&self) -> Vec<ScriptInfo> {
-        self.running_scripts.lock().unwrap().clone()
+        match self.running_scripts.lock() {
+            Ok(g) => g.clone(),
+            Err(p) => p.into_inner().clone(),
+        }
     }
 
     pub(crate) fn dec_running_script_num(&self, run_id: u64) {
-        let mut scripts = self.running_scripts.lock().unwrap();
-        let mut count = self.running_script_num.write().unwrap();
+        let mut scripts = match self.running_scripts.lock() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
+        let mut count = match self.running_script_num.write() {
+            Ok(g) => g,
+            Err(p) => p.into_inner(),
+        };
         if let Some(pos) = scripts.iter().position(|script| script.run_id == run_id) {
             scripts.remove(pos);
             if *count != 0 {
@@ -175,11 +225,17 @@ impl ControlPlane {
     }
 
     pub(crate) fn set_start_time(&self, start_time: String) {
-        *self.start_time.lock().unwrap() = start_time;
+        match self.start_time.lock() {
+            Ok(mut g) => *g = start_time,
+            Err(p) => *p.into_inner() = start_time,
+        }
     }
 
     pub(crate) fn start_time(&self) -> String {
-        self.start_time.lock().unwrap().clone()
+        match self.start_time.lock() {
+            Ok(g) => g.clone(),
+            Err(p) => p.into_inner().clone(),
+        }
     }
 }
 

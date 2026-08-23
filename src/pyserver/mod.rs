@@ -20,7 +20,7 @@ pub fn call_py_block(code: &str, input: &str) -> String {
         match rst {
             Ok(s) => s.to_string(),
             Err(err) => {
-                cq_add_log_w(&err.to_string()).unwrap();
+                let _ = cq_add_log_w(&err.to_string());
                 "".to_string()
             }
         }
@@ -51,7 +51,7 @@ async fn call_py(
     });
     let ret = send_to_ser(send_json.to_string()).await;
     if ret.is_err() {
-        cq_add_log_w(&format!("call_py err:{:?}", ret.err())).unwrap();
+        let _ = cq_add_log_w(&format!("call_py err:{:?}", ret.err()));
         return Ok(serde_json::Value::String(String::new()));
     }
     tokio::select! {
@@ -59,7 +59,7 @@ async fn call_py(
             Ok(val)
         },
         _ = tokio::time::sleep(std::time::Duration::from_secs(90)) => {
-            cq_add_log_w("接收python返回超时").unwrap();
+            let _ = cq_add_log_w("接收python返回超时");
             Ok(serde_json::Value::String(String::new()))
         }
     }
