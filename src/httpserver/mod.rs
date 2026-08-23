@@ -2226,28 +2226,34 @@ pub fn init_http_server() -> Result<()> {
         Box::<dyn std::error::Error + Send + Sync>::from(msg)
     })?;
 
-    // 同步完成 socket 创建/绑定/监听（带重试）。失败时退出进程：
-    // WebUI 永久缺失而机器人继续运行的"僵尸"状态比干净退出更难排查。
-    let listener = {
+    runtime().spawn(async move {
+        // 绑定/监听（带重试）。注意：tokio 的 socket/listener 创建必须在 runtime 上下文内。
+        // 失败时退出进程：WebUI 永久缺失而机器人继续运行的"僵尸"状态比干净退出更难排查。
         const MAX_BIND_RETRIES: u32 = 120; // 每 0.5s 重试一次，约 1 分钟
         let mut retries = 0u32;
-        loop {
-            let socket = if addr1.is_ipv4() {
+        let listener = loop {
+            let socket_result = if addr1.is_ipv4() {
                 tokio::net::TcpSocket::new_v4()
             } else {
                 tokio::net::TcpSocket::new_v6()
             };
-            let socket = match socket {
+            let socket = match socket_result {
                 Ok(s) => s,
                 Err(e) => {
-                    return Err(format!("创建监听 socket 失败: {e}").into());
+                    let msg = format!("创建监听 socket 失败: {e}");
+                    let _ = cq_add_log_w(&msg);
+                    eprintln!("{msg}");
+                    std::process::exit(1);
                 }
             };
 
             // win 下不需要设置这个
             #[cfg(not(windows))]
             if let Err(e) = socket.set_reuseaddr(true) {
-                return Err(format!("设置 reuseaddr 失败: {e}").into());
+                let msg = format!("设置 reuseaddr 失败: {e}");
+                let _ = cq_add_log_w(&msg);
+                eprintln!("{msg}");
+                std::process::exit(1);
             }
 
             match socket.bind(addr1).and_then(|_| socket.listen(1024)) {
@@ -2264,13 +2270,10 @@ pub fn init_http_server() -> Result<()> {
                     let _ = cq_add_log_w(&format!(
                         "绑定端口失败 {addr1}: {e} (尝试 {retries}/{MAX_BIND_RETRIES})"
                     ));
-                    thread::sleep(Duration::from_millis(500));
+                    tokio::time::sleep(Duration::from_millis(500)).await;
                 }
             }
-        }
-    };
-
-    runtime().spawn(async move {
+        };
         loop {
             let (stream, remote_address) = match listener.accept().await {
                 Ok(ok) => ok,

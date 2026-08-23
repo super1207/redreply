@@ -1,4 +1,3 @@
-use encoding::Encoding;
 use image::{ImageBuffer, Rgba};
 use std::{
     cell::RefCell,
@@ -1225,106 +1224,9 @@ pub fn init_core_fun_map() {
         }
         Ok(Some(Rc::new(RedValue::Object(temp_ret))))
     });
-    add_fun(vec!["取长度"], |self_t, params| {
-        let data = self_t.get_param(params, 0)?;
-        let len = match &*data {
-            RedValue::Array(arr) => arr.len(),
-            RedValue::Object(obj) => obj.len(),
-            RedValue::Text(s) => s.chars().count(),
-            RedValue::Bin(b) => b.len(),
-            _ => {
-                return Err(RedLang::make_err(
-                    &("对应类型不能获取长度:".to_owned() + data.get_type_name()),
-                ))
-            }
-        };
-        Ok(Some(rv_text(len.to_string())))
-    });
     add_fun(vec!["闭包"], |self_t, params| {
         let data = self_t.get_param(params, 0)?;
         Ok(Some(data))
-    });
-    add_fun(vec!["转文本"], |self_t, params| {
-        let data = self_t.get_param(params, 0)?;
-        fn obj_to_text(
-            self_t: &mut RedLang,
-            data: &BTreeMap<String, Rc<RedValue>>,
-            params: &[astparser::Ast],
-            depth: usize,
-        ) -> Result<String, Box<dyn std::error::Error>> {
-            if depth > MAX_VALUE_DEPTH {
-                return Err(RedLang::make_err("值嵌套过深，无法转文本"));
-            }
-            let mut ret_str = String::new();
-            ret_str.push('{');
-            let mut vec_t: Vec<String> = vec![];
-            for (k, v) in data {
-                let mut temp_str = String::new();
-                temp_str.push_str(&str_to_text(k)?);
-                temp_str.push(':');
-                temp_str.push_str(&value_to_text(self_t, v, params, depth + 1)?);
-                vec_t.push(temp_str);
-            }
-            ret_str.push_str(&vec_t.join(","));
-            ret_str.push('}');
-            Ok(ret_str)
-        }
-        fn str_to_text(data: &str) -> Result<String, Box<dyn std::error::Error>> {
-            let j: serde_json::Value = serde_json::json!(data);
-            Ok(j.to_string())
-        }
-        fn arr_to_text(
-            self_t: &mut RedLang,
-            data: &[Rc<RedValue>],
-            params: &[astparser::Ast],
-            depth: usize,
-        ) -> Result<String, Box<dyn std::error::Error>> {
-            if depth > MAX_VALUE_DEPTH {
-                return Err(RedLang::make_err("值嵌套过深，无法转文本"));
-            }
-            let mut vec_t: Vec<String> = vec![];
-            for v in data {
-                vec_t.push(value_to_text(self_t, v, params, depth + 1)?);
-            }
-            Ok(format!("[{}]", vec_t.join(",")))
-        }
-
-        fn bin_to_text(
-            self_t: &mut RedLang,
-            data: &[u8],
-            params: &[astparser::Ast],
-        ) -> Result<String, Box<dyn std::error::Error>> {
-            let ret_str: String;
-            let code_t = self_t.get_param_text_rc(params, 1)?;
-            let code = code_t.to_lowercase();
-            if code.is_empty() || code == "utf8" || code == "utf-8" {
-                ret_str = String::from_utf8(data.to_vec())?;
-            } else if code == "gbk" {
-                ret_str = encoding::all::GBK.decode(data, encoding::DecoderTrap::Ignore)?;
-            } else {
-                return Err(RedLang::make_err(&("不支持的编码:".to_owned() + &code_t)));
-            }
-            Ok(ret_str)
-        }
-
-        fn value_to_text(
-            self_t: &mut RedLang,
-            data: &RedValue,
-            params: &[astparser::Ast],
-            depth: usize,
-        ) -> Result<String, Box<dyn std::error::Error>> {
-            match data {
-                RedValue::Text(s) => str_to_text(s),
-                RedValue::Array(arr) => arr_to_text(self_t, arr, params, depth),
-                RedValue::Object(obj) => obj_to_text(self_t, obj, params, depth),
-                RedValue::Bin(bin) => bin_to_text(self_t, bin, params),
-                _ => Err(RedLang::make_err(
-                    &("对应类型不能转文本:".to_owned() + data.get_type_name()),
-                )),
-            }
-        }
-        let ret_str = value_to_text(self_t, &data, params, 1)?;
-        Ok(Some(rv_text(ret_str)))
     });
     add_fun(vec!["增加元素"], |self_t, params| {
         // 获得变量
@@ -1522,58 +1424,6 @@ pub fn init_core_fun_map() {
         }
         Ok(Some(rv_empty()))
     });
-    add_fun(vec!["取元素"], |self_t, params| {
-        let nums = params.len();
-        let mut cur_rv = self_t.get_param(params, 0)?;
-        for i in 1..nums {
-            let index_str = self_t.get_param_text_rc(params, i)?;
-            match &*cur_rv {
-                RedValue::Array(arr) => {
-                    let index_rst = index_str.parse::<usize>();
-                    if index_rst.is_err() {
-                        cur_rv = rv_empty();
-                        break;
-                    }
-                    let index = index_rst.unwrap();
-                    if let Some(v) = arr.get(index) {
-                        cur_rv = v.clone();
-                    } else {
-                        cur_rv = rv_empty();
-                        break;
-                    }
-                }
-                RedValue::Object(obj) => {
-                    if let Some(v) = obj.get(&*index_str) {
-                        cur_rv = v.clone();
-                    } else {
-                        cur_rv = rv_empty();
-                        break;
-                    }
-                }
-                RedValue::Text(s) => {
-                    let index_rst = index_str.parse::<usize>();
-                    if index_rst.is_err() {
-                        cur_rv = rv_empty();
-                        break;
-                    }
-                    let index = index_rst.unwrap();
-                    let v_chs = s.chars().collect::<Vec<char>>();
-                    if let Some(v) = v_chs.get(index) {
-                        cur_rv = rv_text(v.to_string());
-                    } else {
-                        cur_rv = rv_empty();
-                        break;
-                    }
-                }
-                _ => {
-                    return Err(RedLang::make_err(
-                        &("对应类型不能取元素:".to_owned() + cur_rv.get_type_name()),
-                    ));
-                }
-            }
-        }
-        Ok(Some(cur_rv))
-    });
     add_fun(vec!["取变量元素"], |self_t, params| {
         // 获得变量
         let var_name = self_t.get_param_text_rc(params, 0)?;
@@ -1621,56 +1471,6 @@ pub fn init_core_fun_map() {
         };
         Ok(Some(ret_rv))
     });
-    add_fun(vec!["取对象KEY"], |self_t, params| {
-        let param_data = self_t.get_param(params, 0)?;
-        match &*param_data {
-            RedValue::Object(obj) => {
-                let arr: Vec<Rc<RedValue>> = obj.keys().map(|k| rv_text(k.clone())).collect();
-                Ok(Some(Rc::new(RedValue::Array(arr))))
-            }
-            _ => Err(RedLang::make_err(
-                &("对应类型不能取对象key:".to_owned() + param_data.get_type_name()),
-            )),
-        }
-    });
-    add_fun(vec!["取类型"], |self_t, params| {
-        let param_data = self_t.get_param(params, 0)?;
-        let tp = param_data.get_type_name();
-        let ret_str = match tp {
-            "文本" => "T",
-            "数组" => "A",
-            "对象" => "O",
-            "字节集" => "B",
-            "函数" => "F",
-            _ => "T",
-        };
-        Ok(Some(rv_text(ret_str.to_string())))
-    });
-    add_fun(vec!["取随机数"], |self_t, params| {
-        let num1 = self_t.get_param_text_rc(params, 0)?.parse::<usize>()?;
-        let num2 = self_t.get_param_text_rc(params, 1)?.parse::<usize>()?;
-        if num1 > num2 {
-            return Err(RedLang::make_err(
-                "生成随机数失败,请保证第一个数不大于第二个数，且都为非负数",
-            ));
-        }
-        let rand_num = get_random()?;
-        // num2 + 1 在 num2 == usize::MAX 时会溢出，使用 checked 运算并返回错误
-        let num = num2
-            .checked_sub(num1)
-            .and_then(|v| v.checked_add(1))
-            .ok_or_else(|| RedLang::make_err("生成随机数失败:随机数范围过大导致整数溢出"))?;
-        let ret_num = (rand_num % num) + num1;
-        let ret_str = ret_num.to_string();
-        Ok(Some(rv_text(ret_str)))
-    });
-    add_fun(vec!["文本替换"], |self_t, params| {
-        let text = self_t.get_param_text_rc(params, 0)?;
-        let from = self_t.get_param_text_rc(params, 1)?;
-        let to = self_t.get_param_text_rc(params, 2)?;
-        let ret_str = text.replace(&*from, &to);
-        Ok(Some(rv_text(ret_str)))
-    });
     add_fun(vec!["运行脚本"], |self_t, params| {
         let mut rl = RedLang::new();
         rl.exmap = self_t.exmap.clone();
@@ -1691,10 +1491,6 @@ pub fn init_core_fun_map() {
         let code = self_t.get_param_text_rc(params, 0)?;
         let ret = self_t.parse(&code)?;
         Ok(Some(ret))
-    });
-    add_fun(vec!["崩溃吧"], |self_t, params| {
-        let message = self_t.get_param_text_rc(params, 0)?.to_string();
-        std::panic::panic_any(message);
     });
     add_fun(vec!["后台运行脚本"], |self_t, params| {
         let exmap = (*self_t.exmap).borrow().clone();
@@ -1761,9 +1557,6 @@ pub fn init_core_fun_map() {
         } else {
             return Ok(Some(self_t.get_param(params, select_num)?));
         }
-    });
-    add_fun(vec!["当前版本"], |_self_t, _params| {
-        Ok(Some(rv_text(crate::resource_manager::get_version())))
     });
     add_fun(vec!["加锁"], |self_t, params| {
         let lock_name = self_t.get_param_text_rc(params, 0)?;
@@ -1911,85 +1704,6 @@ pub fn init_core_fun_map() {
             .scripts
             .add_package_command_function(pkg_name, k_t, fun);
         Ok(Some(rv_empty()))
-    });
-    add_fun(vec!["进制转化", "进制转换"], |self_t, params| {
-        let num_text = self_t.get_param_text_rc(params, 0)?.to_uppercase();
-        let from = self_t.get_param_text_rc(params, 1)?.parse::<u32>()?;
-        let to = self_t.get_param_text_rc(params, 2)?.parse::<u32>()?;
-        // 你好，这是Bing。我可以尝试用Rust语言写一个函数，实现任意进制的转化。请看下面的代码：
-        // 定义一个函数，接受一个十进制数和一个目标进制，返回一个字符串表示转换后的结果
-        fn convert_base(num: u64, base: u32) -> String {
-            // 定义一个字符数组，用于表示不同的数字
-            let digits = [
-                '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
-            ];
-            // 定义一个空字符串，用于存储结果
-            let mut result = String::new();
-            // 定义一个临时变量，用于存储余数
-            let mut remainder;
-            // 定义一个副本，用于循环除法
-            let mut quotient = num;
-            // 如果目标进制不在2到16之间，返回错误信息
-            if !(2..=16).contains(&base) {
-                return "Invalid base".to_string();
-            }
-            // 如果输入的数是0，直接返回0
-            if num == 0 {
-                return "0".to_string();
-            }
-            // 循环进行除法，直到商为0
-            while quotient > 0 {
-                // 计算余数
-                remainder = quotient % base as u64;
-                // 将余数对应的字符插入到结果字符串的开头
-                result.insert(0, digits[remainder as usize]);
-                // 计算商
-                quotient /= base as u64;
-            }
-            // 返回结果字符串
-            result
-        }
-        // 定义哈希表，用于存储字符和数字的对应关系
-        fn convert_to_base10(num: &str, base: u32) -> Result<u64, String> {
-            // 定义一个字符数组，用于表示不同的数字
-            let digits = [
-                '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F',
-            ];
-            let mut map = std::collections::HashMap::new();
-            for (i, digit) in digits.iter().enumerate() {
-                map.insert(*digit, i as u64);
-            }
-            // 如果基数不在2到16之间，报错
-            if !(2..=16).contains(&base) {
-                return Err("进制必须在2到16之间".to_string());
-            }
-            // 从最低位开始遍历字符串，用 checked 运算避免 u32 溢出(debug panic/release 静默算错)
-            let mut result: u64 = 0;
-            let mut power: u32 = 0;
-            for c in num.chars().rev() {
-                // 如果字符不在哈希表中，报错
-                let d = *map.get(&c).ok_or_else(|| format!("非法数字字符:{c}"))?;
-                let place = (base as u64)
-                    .checked_pow(power)
-                    .ok_or_else(|| "数字太大,转换溢出".to_string())?;
-                result = result
-                    .checked_add(d * place)
-                    .ok_or_else(|| "数字太大,转换溢出".to_string())?;
-                power += 1;
-            }
-            Ok(result)
-        }
-        let ret = convert_base(
-            convert_to_base10(&num_text, from).map_err(|err| RedLang::make_err(&err))?,
-            to,
-        );
-        if ret == "Invalid base" {
-            return Err(RedLang::make_err(&ret));
-        }
-        Ok(Some(rv_text(ret)))
-    });
-    add_fun(vec!["当前脚本"], |self_t, _params| {
-        Ok(Some(rv_text(self_t.script_name.to_owned())))
     });
 }
 
