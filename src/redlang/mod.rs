@@ -1802,6 +1802,7 @@ impl RedLang {
             Rc::new(RefCell::new(val)),
         );
     }
+    #[allow(dead_code)]
     pub fn get_gobalmap(&mut self, key: &str) -> String {
         let k = format!("{}8bb64e93-143d-4209-8fad-3e3a6a43f191", key);
         let var_ref = self.var_vec[0].get(&k);
@@ -1811,6 +1812,7 @@ impl RedLang {
             "".to_string()
         }
     }
+    #[allow(dead_code)]
     pub fn set_gobalmap(&mut self, key: &str, val: &str) -> Result<(), Box<dyn std::error::Error>> {
         let mp = &mut self.var_vec[0];
 

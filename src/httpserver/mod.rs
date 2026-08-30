@@ -24,8 +24,7 @@ use http_body_util::BodyExt;
 use hyper::body::Incoming;
 use hyper::http::HeaderValue;
 use hyper::service::service_fn;
-use hyper::{Method, Response, StatusCode};
-use serde::de::DeserializeOwned;
+use hyper::{Response, StatusCode};
 
 use serde_json::json;
 use std::io::Read;
@@ -1554,7 +1553,8 @@ pub fn full<T: Into<Bytes>>(chunk: T) -> BoxBody {
         .boxed()
 }
 
-async fn read_json_body<T: DeserializeOwned>(
+#[allow(dead_code)]
+async fn read_json_body<T: serde::de::DeserializeOwned>(
     request: hyper::Request<Incoming>,
     limit: usize,
 ) -> Result<T> {
@@ -1582,6 +1582,7 @@ async fn read_json_body<T: DeserializeOwned>(
     Ok(serde_json::from_slice(&data)?)
 }
 
+#[allow(dead_code)]
 pub(crate) fn json_api_response(value: serde_json::Value) -> hyper::Response<BoxBody> {
     let mut response = hyper::Response::new(full(value.to_string()));
     response.headers_mut().insert(
@@ -1591,6 +1592,7 @@ pub(crate) fn json_api_response(value: serde_json::Value) -> hyper::Response<Box
     response
 }
 
+#[allow(dead_code)]
 pub(crate) fn json_api_error(message: &str) -> hyper::Response<BoxBody> {
     json_api_response(json!({
         "retcode": -1,
@@ -1598,6 +1600,7 @@ pub(crate) fn json_api_error(message: &str) -> hyper::Response<BoxBody> {
     }))
 }
 
+#[allow(dead_code)]
 fn method_not_allowed() -> hyper::Response<BoxBody> {
     let mut response = json_api_error("请求方法不支持");
     *response.status_mut() = StatusCode::METHOD_NOT_ALLOWED;
