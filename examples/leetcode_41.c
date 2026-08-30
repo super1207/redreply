@@ -1,2 +1,0 @@
-int first_missing_positive(int nums[],int size){int i;int target;int temp;i=0;while(i<size){if(nums[i]>0&&nums[i]<=size&&nums[nums[i]-1]!=nums[i]){target=nums[i]-1;temp=nums[target];nums[target]=nums[i];nums[i]=temp;}else i=i+1;}for(i=0;i<size;i=i+1)if(nums[i]!=i+1)return i+1;return size+1;}
-int main(void){int a[3]={1,2,0};int b[4]={3,4,-1,1};int c[5]={7,8,9,11,12};if(first_missing_positive(a,3)!=3)return 1;if(first_missing_positive(b,4)!=2)return 2;if(first_missing_positive(c,5)!=1)return 3;return 42;}

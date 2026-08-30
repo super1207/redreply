@@ -158,99 +158,6 @@
         <div class="pio-container right" >
             <div class="pio-action"></div>
             <canvas id="pio" width="200" height="200"></canvas>
-            <button id="pio-chat-launcher" class="pio-chat-launcher" type="button" title="和看板娘贴贴" aria-label="和看板娘贴贴" aria-controls="pio-chat" aria-expanded="false">
-                <span class="pio-chat-launcher-icon" aria-hidden="true">💬</span>
-            </button>
-            <section id="pio-chat" class="pio-chat" aria-label="和看板娘贴贴" hidden>
-                <header class="pio-chat-header">
-                    <strong>和看板娘贴贴</strong>
-                    <div class="pio-chat-header-actions">
-                        <span id="pio-context-usage" class="pio-context-usage" title="已用上下文/上限" aria-label="已用上下文">0/128K</span>
-                        <button id="pio-chat-compress-header" type="button" title="压缩对话上下文，并像普通对话一样查看压缩摘要">压缩</button>
-                        <button id="pio-chat-settings-button" type="button">设置</button>
-                        <button id="pio-chat-close" class="pio-chat-close" type="button" title="关闭对话" aria-label="关闭对话">×</button>
-                    </div>
-                </header>
-                <div id="pio-agent-status" class="pio-agent-status" role="status" aria-live="polite" hidden>
-                    <div id="pio-agent-phase" class="pio-agent-phase">
-                        <span id="pio-agent-phase-text">就绪</span>
-                    </div>
-                    <div id="pio-agent-log" class="pio-agent-log"></div>
-                </div>
-                <form id="pio-chat-form" class="pio-chat-form" aria-label="向看板娘发送消息">
-                    <label class="pio-sr-only" for="pio-chat-input">消息</label>
-                    <textarea id="pio-chat-input" maxlength="2000" rows="1" autocomplete="off" aria-label="消息" placeholder="输入消息，Enter 发送，Shift+Enter 换行"></textarea>
-                    <button id="pio-chat-send" class="pio-chat-send" type="submit" title="发送消息" aria-label="发送消息">↑</button>
-                </form>
-                <form id="pio-chat-settings" class="pio-chat-settings" hidden>
-                    <label>
-                        <span>配置</span>
-                        <select id="pio-chat-config" required></select>
-                        <div class="pio-config-edit">
-                            <input id="pio-chat-config-add" type="text" maxlength="200" placeholder="添加配置名称" autocomplete="off">
-                            <button type="button" id="pio-chat-config-add-btn" title="添加配置">添加</button>
-                            <button type="button" id="pio-chat-config-del-btn" title="删除当前选中的配置">删除</button>
-                        </div>
-                    </label>
-                    <label>
-                        <span>接口地址</span>
-                        <input id="pio-chat-base-url" type="url" maxlength="2048" required placeholder="https://api.deepseek.com/v1/chat/completions">
-                    </label>
-                    <label>
-                        <span>接口类型</span>
-                        <select id="pio-chat-api-type">
-                            <option value="chat_completions">Chat Completions</option>
-                            <option value="responses">Responses</option>
-                        </select>
-                    </label>
-                    <label>
-                        <span>模型</span>
-                        <input id="pio-chat-model" type="text" maxlength="200" required>
-                    </label>
-                    <label>
-                        <span>API Key</span>
-                        <div class="pio-input-eye">
-                            <input id="pio-chat-api-key" type="password" maxlength="8192" autocomplete="new-password" placeholder="未设置">
-                            <button type="button" class="pio-eye-toggle" id="pio-api-key-toggle" title="显示/隐藏" aria-label="显示/隐藏 API Key">👁</button>
-                        </div>
-                    </label>
-                    <label>
-                        <span>代理（留空则直连）</span>
-                        <input id="pio-chat-proxy" type="text" maxlength="2048" autocomplete="off" placeholder="例如 http://127.0.0.1:7890">
-                    </label>
-                    <label>
-                        <span>角色设定</span>
-                        <textarea id="pio-chat-system-prompt" rows="4" maxlength="8000"></textarea>
-                    </label>
-                    <label>
-                        <span>思考等级</span>
-                        <select id="pio-chat-thinking-level">
-                            <option value="none">关闭</option>
-                            <option value="low">Low</option>
-                            <option value="medium">Medium</option>
-                            <option value="high">High</option>
-                            <option value="xhigh">XHigh</option>
-                            <option value="max">Max</option>
-                        </select>
-                    </label>
-                    <label>
-                        <span>上下文长度</span>
-                        <select id="pio-chat-context-length">
-                            <option value="32768">32K</option>
-                            <option value="65536">64K</option>
-                            <option value="131072">128K</option>
-                            <option value="262144">256K</option>
-                            <option value="524288">512K</option>
-                            <option value="1048576">1M</option>
-                        </select>
-                    </label>
-                    <div class="pio-chat-settings-actions">
-                        <button id="pio-chat-settings-back" type="button">返回</button>
-                        <button id="pio-chat-clear-context" type="button" title="永久清除当前对话上下文" aria-label="清除上下文">清除上下文</button>
-                        <button class="pio-chat-save" type="submit">保存</button>
-                    </div>
-                </form>
-            </section>
         </div>
         <div id="app" style="display: flex;flex-direction:column;">
             
@@ -820,10 +727,7 @@
           
           
         <script src='live2d/l2d.js'></script>
-        <script src='live2d/motion-controller.js'></script>
         <script src='live2d/pio.js'></script>
-        <script src="live2d/marked.min.js"></script>
-        <script src="live2d/purify.min.js"></script>
         <script>
             var pio = new Paul_Pio({
                 "mode": "draggable",
@@ -836,7 +740,6 @@
                 "model": ["live2d/models/pio/model1.json","live2d/models/pio/model2.json","live2d/models/pio/model3.json"]
             });
         </script>
-        <script src="live2d/chat.js"></script>
         <script src="theme.js"></script>
     </body>
 </html>

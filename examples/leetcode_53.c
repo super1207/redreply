@@ -1,2 +1,0 @@
-int maximum_subarray(int nums[],int size){int current;int best;int i;current=nums[0];best=nums[0];for(i=1;i<size;i=i+1){if(current+nums[i]>nums[i])current=current+nums[i];else current=nums[i];if(current>best)best=current;}return best;}
-int main(void){int a[9]={-2,1,-3,4,-1,2,1,-5,4};int b[1]={1};int c[5]={5,4,-1,7,8};if(maximum_subarray(a,9)!=6)return 1;if(maximum_subarray(b,1)!=1)return 2;if(maximum_subarray(c,5)!=23)return 3;return 42;}

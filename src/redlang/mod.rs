@@ -10,7 +10,6 @@ use std::{
 
 use crate::{cqapi::cq_add_log_w, cqevent::do_script, lifecycle::pkg_can_run};
 
-pub(crate) mod aifun;
 pub(crate) mod astparser;
 pub(crate) mod cqexfun;
 pub mod exfun;

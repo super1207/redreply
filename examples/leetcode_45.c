@@ -1,2 +1,0 @@
-int jump_game_two(int nums[],int size){int jumps;int end;int farthest;int i;jumps=0;end=0;farthest=0;for(i=0;i<size-1;i=i+1){if(i+nums[i]>farthest)farthest=i+nums[i];if(i==end){jumps=jumps+1;end=farthest;}}return jumps;}
-int main(void){int a[5]={2,3,1,1,4};int b[5]={2,3,0,1,4};int c[1]={0};if(jump_game_two(a,5)!=2)return 1;if(jump_game_two(b,5)!=2)return 2;if(jump_game_two(c,1)!=0)return 3;return 42;}

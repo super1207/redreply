@@ -5,7 +5,6 @@ use std::thread;
 use cqapi::cq_add_log;
 use rust_embed::RustEmbed;
 
-mod ai_client;
 mod botconn;
 mod browserbridge;
 pub mod config_manager;
@@ -13,7 +12,6 @@ mod control_plane;
 mod cqapi;
 mod cqevent;
 mod cronevent;
-mod embedded_source;
 mod httpevent;
 mod httpserver;
 mod initevent;
@@ -157,7 +155,6 @@ pub fn initialize() -> i32 {
     redlang::webexfun::init_web_ex_fun_map();
     redlang::cqexfun::init_cq_ex_fun_map();
     redlang::exfun::init_ex_fun_map();
-    redlang::aifun::init_ai_fun_map();
     redlang::init_core_fun_map();
 
     if let Err(error) = resource_manager::release_file() {

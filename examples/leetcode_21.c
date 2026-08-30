@@ -1,3 +1,0 @@
-struct ListNode { int val; struct ListNode *next; };
-struct ListNode *merge_two_lists(struct ListNode *a,struct ListNode *b){struct ListNode dummy;struct ListNode *tail;dummy.next=0;tail=&dummy;while(a!=0&&b!=0){if(a->val<=b->val){tail->next=a;a=a->next;}else{tail->next=b;b=b->next;}tail=tail->next;}if(a!=0)tail->next=a;else tail->next=b;return dummy.next;}
-int main(void){struct ListNode a[3];struct ListNode b[3];struct ListNode *r;int e[6]={1,1,2,3,4,4};int i;a[0].val=1;a[1].val=2;a[2].val=4;b[0].val=1;b[1].val=3;b[2].val=4;for(i=0;i<3;i=i+1){a[i].next=i<2?&a[i+1]:0;b[i].next=i<2?&b[i+1]:0;}r=merge_two_lists(a,b);for(i=0;i<6;i=i+1){if(r==0||r->val!=e[i])return 1;r=r->next;}if(r!=0)return 2;return 42;}

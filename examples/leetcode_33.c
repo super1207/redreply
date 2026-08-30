@@ -1,2 +1,0 @@
-int search_rotated(int nums[],int size,int target){int left;int right;int mid;left=0;right=size-1;while(left<=right){mid=left+(right-left)/2;if(nums[mid]==target)return mid;if(nums[left]<=nums[mid]){if(nums[left]<=target&&target<nums[mid])right=mid-1;else left=mid+1;}else{if(nums[mid]<target&&target<=nums[right])left=mid+1;else right=mid-1;}}return -1;}
-int main(void){int a[7]={4,5,6,7,0,1,2};int b[1]={1};if(search_rotated(a,7,0)!=4)return 1;if(search_rotated(a,7,3)!=-1)return 2;if(search_rotated(b,1,0)!=-1)return 3;if(search_rotated(b,1,1)!=0)return 4;return 42;}

@@ -1,2 +1,0 @@
-double power(double base,int exponent){unsigned int n;double result;if(exponent<0){base=1.0/base;n=0U-(unsigned int)exponent;}else n=(unsigned int)exponent;result=1.0;while(n!=0U){if((n&1U)!=0U)result=result*base;base=base*base;n=n>>1;}return result;}
-int main(void){double x;x=power(2.0,10);if(x!=1024.0)return 1;x=power(2.0,-2);if(x!=0.25)return 2;x=power(2.1,3);if(x<9.2609||x>9.2611)return 3;x=power(1.0,-2147483647-1);if(x!=1.0)return 4;return 42;}

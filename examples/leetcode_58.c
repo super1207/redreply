@@ -1,2 +1,0 @@
-int length_of_last_word(char*text){int i;int end;i=0;while(text[i])i=i+1;i=i-1;while(i>=0&&text[i]==' ')i=i-1;end=i;while(i>=0&&text[i]!=' ')i=i-1;return end-i;}
-int main(void){if(length_of_last_word("Hello World")!=5)return 1;if(length_of_last_word("   fly me   to   the moon  ")!=4)return 2;if(length_of_last_word("luffy is still joyboy")!=6)return 3;if(length_of_last_word("a")!=1)return 4;return 42;}

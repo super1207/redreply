@@ -22,7 +22,6 @@ var Paul_Pio = function (prop) {
     const current = {
         idol: 0,
         timeout: undefined,
-        messageLocked: false,
         menu: document.querySelector(".pio-container .pio-action"),
         canvas: document.getElementById("pio"),
         body: document.querySelector(".pio-container"),
@@ -71,61 +70,28 @@ var Paul_Pio = function (prop) {
         idol: () => {
             current.idol < (prop.model.length - 1) ? current.idol++ : current.idol = 0;
 
-            // 记录当前换装索引，刷新/重启后恢复
-            localStorage.setItem("posterGirlSkin", String(current.idol));
-
             return current.idol;
-        },
-        clearMessage: () => {
-            clearTimeout(current.timeout);
-            current.timeout = undefined;
-            current.messageLocked = false;
-            elements.dialog.classList.remove("active", "pio-dialog-closeable");
         },
         // 创建对话框方法
         message: (text, options = {}) => {
             const { dialog } = elements;
-            if (current.messageLocked && !options.force) return;
-
-            dialog.innerText = "";
-            const content = tools.create("div", { class: "pio-dialog-content" });
 
             if (text.constructor === Array) {
-                content.innerText = tools.rand(text);
+                dialog.innerText = tools.rand(text);
             }
             else if (text.constructor === String) {
-                content[options.html ? "innerHTML" : "innerText"] = text;
+                dialog[options.html ? "innerHTML" : "innerText"] = text;
             }
             else {
-                content.innerText = "输入内容出现问题了 X_X";
-            }
-            dialog.appendChild(content);
-
-            dialog.classList.remove("pio-dialog-closeable");
-            if (options.closeable) {
-                const close = tools.create("button", { class: "pio-dialog-close" });
-                close.type = "button";
-                close.innerText = "×";
-                close.title = "关闭回答";
-                close.setAttribute("aria-label", "关闭回答");
-                close.onclick = (event) => {
-                    event.stopPropagation();
-                    modules.clearMessage();
-                };
-                dialog.appendChild(close);
-                dialog.classList.add("pio-dialog-closeable");
+                dialog.innerText = "输入内容出现问题了 X_X";
             }
 
             dialog.classList.add("active");
 
-            clearTimeout(current.timeout);
-            current.timeout = undefined;
-            current.messageLocked = Boolean(options.persist);
-            if (!options.persist) {
-                current.timeout = setTimeout(() => {
-                    dialog.classList.remove("active");
-                }, options.time || 3000);
-            }
+            current.timeout = clearTimeout(current.timeout) || undefined;
+            current.timeout = setTimeout(() => {
+                dialog.classList.remove("active");
+            }, options.time || 3000);
         },
         // 移除方法
         destroy: () => {
@@ -136,7 +102,6 @@ var Paul_Pio = function (prop) {
 
     this.destroy = modules.destroy;
     this.message = modules.message;
-    this.clearMessage = modules.clearMessage;
 
     /* - 提示操作 */
     const action = {
@@ -336,13 +301,7 @@ var Paul_Pio = function (prop) {
         if (!(prop.hidden && tools.isMobile())) {
             if (!noModel) {
                 action.welcome();
-                // 读取换装存储：恢复上次选择的模型，索引越界时取模兜底
-                const skinIndex = parseInt(localStorage.getItem("posterGirlSkin") || "0", 10);
-                const safeIndex = (Number.isInteger(skinIndex) && skinIndex >= 0 && prop.model.length > 0)
-                    ? skinIndex % prop.model.length
-                    : 0;
-                current.idol = safeIndex;
-                loadlive2d("pio", prop.model[safeIndex]);
+                loadlive2d("pio", prop.model[0]);
             }
 
             switch (prop.mode) {

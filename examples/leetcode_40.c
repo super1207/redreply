@@ -1,4 +1,0 @@
-static void sort_numbers(int a[],int n){int i;int j;int v;for(i=1;i<n;i=i+1){v=a[i];j=i-1;while(j>=0&&a[j]>v){a[j+1]=a[j];j=j-1;}a[j+1]=v;}}
-static void search(int a[],int n,int start,int target,int path[],int depth,int result[][16],int lengths[],int *count){int i;int j;if(target==0){for(j=0;j<depth;j=j+1)result[*count][j]=path[j];lengths[*count]=depth;*count=*count+1;return;}for(i=start;i<n;i=i+1){if(i>start&&a[i]==a[i-1])continue;if(a[i]>target)break;path[depth]=a[i];search(a,n,i+1,target-a[i],path,depth+1,result,lengths,count);}}
-int combination_sum_two(int a[],int n,int target,int result[][16],int lengths[]){int path[16];int count;sort_numbers(a,n);count=0;search(a,n,0,target,path,0,result,lengths,&count);return count;}
-int main(void){int a[7]={10,1,2,7,6,1,5};int b[5]={2,5,2,1,2};int r[32][16];int l[32];if(combination_sum_two(a,7,8,r,l)!=4)return 1;if(combination_sum_two(b,5,5,r,l)!=2)return 2;return 42;}

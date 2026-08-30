@@ -1,2 +1,0 @@
-int find_first_occurrence(char *haystack,char *needle){int i;int j;if(needle[0]=='\0')return 0;for(i=0;haystack[i]!='\0';i=i+1){j=0;while(needle[j]!='\0'&&haystack[i+j]==needle[j])j=j+1;if(needle[j]=='\0')return i;}return -1;}
-int main(void){if(find_first_occurrence("sadbutsad","sad")!=0)return 1;if(find_first_occurrence("leetcode","leeto")!=-1)return 2;if(find_first_occurrence("hello","ll")!=2)return 3;if(find_first_occurrence("a","")!=0)return 4;if(find_first_occurrence("mississippi","issip")!=4)return 5;return 42;}

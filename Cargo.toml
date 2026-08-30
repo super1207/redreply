@@ -10,10 +10,6 @@ members = [
     ".",
     "crates/redreply-adapter",
     "crates/redreply-browser",
-    "crates/msedge-tts",
-    "crates/rv-core",
-    "crates/c89c",
-    "crates/c89-runner",
 ]
 default-members = [
     ".",
@@ -49,7 +45,6 @@ uuid = { version = "1.18.1", features = ["v4", "fast-rng"] }
 
 [dependencies]
 redreply-adapter = { path = "crates/redreply-adapter" }
-c89-runner = { path = "crates/c89-runner" }
 fancy-regex = { workspace = true }
 encoding = "0.2.33"
 getrandom = "0.3.3"
@@ -81,10 +76,8 @@ rusqlite = {version = "0.37.0",features = ["bundled","functions"]}
 sevenz-rust2 = {"git" = "https://github.com/super1207/sevenz-rust2"}
 jsonpath-rust = "1.0.4"
 rusttype = "0.9.3"
-# markdown = "1.0.0-alpha.7"
 reqwest = { workspace = true }
 time = { version = "0.3.44", features = ["formatting", "macros"] }
-# headless_chrome = {version="1.0.5",default-features = false}
 webp = "0.3.1"
 sysinfo = "0.37.0"
 usvg = "0.45.1"
@@ -110,8 +103,6 @@ minimp3_fixed ="0.5.4"
 silk-rs-no-llvm = {git = "https://github.com/super1207/silk-rs-no-llvm"}
 lewton = "0.10.2"
 symphonia={version="0.5",default-features=false,features=["aac","isomp4"]}
-
-msedge-tts = { path = "crates/msedge-tts", features = ["proxy"] }
 
 imap = { workspace = true }
 mail-parser = { workspace = true }
@@ -151,7 +142,7 @@ incremental = true
 
 [profile.dev.package."*"]
 debug = 0
- 
+
 [profile.release]
 panic = "abort" # Strip expensive panic clean-up logic
 codegen-units = 1 # Compile crates one after another so the compiler can optimize better

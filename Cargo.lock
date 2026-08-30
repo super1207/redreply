@@ -576,21 +576,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "c89-runner"
-version = "0.1.0"
-dependencies = [
- "c89c",
- "rv-core",
-]
-
-[[package]]
-name = "c89c"
-version = "0.1.0"
-dependencies = [
- "rv-core",
-]
-
-[[package]]
 name = "cairo-rs"
 version = "0.18.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -821,7 +806,6 @@ version = "0.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4ddef33a339a91ea89fb53151bd0a4689cfce27055c291dfa69945475d22c747"
 dependencies = [
- "percent-encoding",
  "time",
  "version_check",
 ]
@@ -833,24 +817,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9885fa71e26b8ab7855e2ec7cae6e9b380edff76cd052e07c683a0319d51b3a2"
 dependencies = [
  "futures",
-]
-
-[[package]]
-name = "cookie_store"
-version = "0.22.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "15b2c103cf610ec6cae3da84a766285b42fd16aad564758459e6ecf128c75206"
-dependencies = [
- "cookie",
- "document-features",
- "idna",
- "indexmap",
- "log",
- "serde",
- "serde_derive",
- "serde_json",
- "time",
- "url",
 ]
 
 [[package]]
@@ -1323,15 +1289,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "442039f5147480ba31067cb00ada1adae6892028e40e45fc5de7b7df6dcc1b5f"
 dependencies = [
  "const-random",
-]
-
-[[package]]
-name = "document-features"
-version = "0.2.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d4b8a88685455ed29a21542a33abd9cb6510b6b129abadabdcef0f4c55bc8f61"
-dependencies = [
- "litrs",
 ]
 
 [[package]]
@@ -3310,12 +3267,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92daf443525c4cce67b150400bc2316076100ce0b3686209eb8cf3c31612e6f0"
 
 [[package]]
-name = "litrs"
-version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "11d3d7f243d5c5a8b9bb5d6dd2b1602c0cb0b9db1621bafc7ed66e35ff9fe092"
-
-[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3611,25 +3562,6 @@ checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
 dependencies = [
  "num-traits",
  "pxfm",
-]
-
-[[package]]
-name = "msedge-tts"
-version = "0.4.0"
-dependencies = [
- "base64",
- "chrono",
- "http",
- "httparse",
- "rustls",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "thiserror 2.0.18",
- "tungstenite",
- "ureq",
- "uuid",
- "webpki-roots 1.0.7",
 ]
 
 [[package]]
@@ -5176,7 +5108,6 @@ dependencies = [
  "base64",
  "brotli",
  "bytes",
- "c89-runner",
  "chrono",
  "claxon",
  "crc64",
@@ -5209,7 +5140,6 @@ dependencies = [
  "md-5 0.10.6",
  "minimp3_fixed",
  "mlua",
- "msedge-tts",
  "opener",
  "path-clean",
  "rcnb-rs",
@@ -5669,13 +5599,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a7c1c839d570d835527c9a5e4db7cb2198683a988cb9d7293fc8674e6bd58fc8"
 dependencies = [
  "twox-hash",
-]
-
-[[package]]
-name = "rv-core"
-version = "0.1.0"
-dependencies = [
- "libc",
 ]
 
 [[package]]
@@ -7075,14 +6998,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "dea7109cdcd5864d4eeb1b58a1648dc9bf520360d7af16ec26d0a9354bafcfc0"
 dependencies = [
  "base64",
- "cookie_store",
  "flate2",
  "log",
  "percent-encoding",
  "rustls",
  "rustls-pki-types",
- "serde",
- "serde_json",
  "socks",
  "ureq-proto",
  "utf8-zero",

@@ -1,2 +1,0 @@
-int remove_duplicates(int nums[],int size){int write;int read;if(size==0)return 0;write=1;for(read=1;read<size;read=read+1){if(nums[read]!=nums[write-1]){nums[write]=nums[read];write=write+1;}}return write;}
-int main(void){int a[3]={1,1,2};int b[10]={0,0,1,1,1,2,2,3,3,4};int n;n=remove_duplicates(a,3);if(n!=2||a[0]!=1||a[1]!=2)return 1;n=remove_duplicates(b,10);if(n!=5||b[0]!=0||b[1]!=1||b[2]!=2||b[3]!=3||b[4]!=4)return 2;if(remove_duplicates(b,0)!=0)return 3;return 42;}

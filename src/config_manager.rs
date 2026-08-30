@@ -7,8 +7,6 @@ use serde_json::Value;
 
 pub type ConfigResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
-const DEFAULT_LIVE2D_SYSTEM_PROMPT: &str = "你是红色问答的看板娘。请使用简洁、自然、友好的中文回答。";
-
 /// Settings consumed while services are started. They are snapshotted once;
 /// changing `config.json` does not rebind an already running service.
 #[derive(Clone, Debug, PartialEq)]
@@ -19,78 +17,6 @@ pub struct StartupConfig {
     pub auto_close: bool,
     pub mqtt_client: Option<Value>,
     pub postgresql: Option<Value>,
-}
-
-#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Live2dProviderConfig {
-    pub name: String,
-    pub base_url: String,
-    #[serde(default)]
-    pub api_key: String,
-    pub model: String,
-    #[serde(default)]
-    pub context_length: u64,
-    #[serde(default)]
-    pub thinking_level: String,
-    /// 访问该模型的 HTTP 代理地址（空表示直连，不走代理）。
-    #[serde(default)]
-    pub proxy: String,
-    /// 接口类型：chat_completions（Chat Completions）或 responses（Responses）
-    #[serde(default = "default_api_type")]
-    pub api_type: String,
-}
-
-fn default_api_type() -> String {
-    "chat_completions".to_owned()
-}
-
-impl Default for Live2dProviderConfig {
-    fn default() -> Self {
-        Self {
-            name: "OpenAI 官方".to_owned(),
-            base_url: "https://api.openai.com/v1/chat/completions".to_owned(),
-            api_key: String::new(),
-            model: "gpt-4o-mini".to_owned(),
-            context_length: 131_072,
-            thinking_level: "high".to_owned(),
-            proxy: String::new(),
-            api_type: default_api_type(),
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct Live2dChatConfig {
-    pub base_url: String,
-    pub api_key: String,
-    pub model: String,
-    pub config: String,
-    pub configs: Vec<Live2dProviderConfig>,
-    pub system_prompt: String,
-    pub thinking_level: String,
-    pub context_length: u64,
-    /// 当前选中配置的代理地址（空表示直连）。
-    pub proxy: String,
-    /// 当前选中配置的接口类型
-    pub api_type: String,
-}
-
-impl Default for Live2dChatConfig {
-    fn default() -> Self {
-        let provider = Live2dProviderConfig::default();
-        Self {
-            base_url: provider.base_url.clone(),
-            api_key: provider.api_key.clone(),
-            model: provider.model.clone(),
-            config: provider.name.clone(),
-            configs: vec![provider.clone()],
-            system_prompt: DEFAULT_LIVE2D_SYSTEM_PROMPT.to_owned(),
-            thinking_level: provider.thinking_level.clone(),
-            context_length: provider.context_length,
-            proxy: provider.proxy.clone(),
-            api_type: provider.api_type.clone(),
-        }
-    }
 }
 
 fn config_path() -> ConfigResult<PathBuf> {
@@ -104,22 +30,7 @@ fn default_config() -> Value {
         "readonly_web_password": "",
         "web_host": "127.0.0.1",
         "ws_urls": [],
-        "not_open_browser": false,
-        "live2d_chat": {
-            "config": "OpenAI 官方",
-            "configs": [
-                {
-                    "name": "OpenAI 官方",
-                    "base_url": "https://api.openai.com/v1/chat/completions",
-                    "api_key": "",
-                    "model": "gpt-4o-mini",
-                    "context_length": 131072,
-                    "thinking_level": "high",
-                    "api_type": "chat_completions"
-                }
-            ],
-            "system_prompt": DEFAULT_LIVE2D_SYSTEM_PROMPT
-        }
+        "not_open_browser": false
     })
 }
 
@@ -287,21 +198,6 @@ pub fn init_config() {
             "web_host": web_host,
             "ws_urls": [],
             "not_open_browser": false,
-            "live2d_chat": {
-                "config": "OpenAI 官方",
-                "configs": [
-                    {
-                        "name": "OpenAI 官方",
-                        "base_url": "https://api.openai.com/v1/chat/completions",
-                        "api_key": "",
-                        "model": "gpt-4o-mini",
-                        "context_length": 131072,
-                        "thinking_level": "high",
-                        "api_type": "chat_completions"
-                    }
-                ],
-                "system_prompt": DEFAULT_LIVE2D_SYSTEM_PROMPT
-            }
         });
         if let Err(e) = atomic_write_file(&path, &config.to_string()) {
             let _ = crate::cq_add_log_w(&format!("写入默认配置失败: {e}"));
@@ -366,25 +262,6 @@ pub fn read_readonly_web_password() -> ConfigResult<String> {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned())
-}
-
-pub fn live2d_chat_config() -> ConfigResult<Live2dChatConfig> {
-    Ok(parse_live2d_chat_config(&read_config()?))
-}
-
-pub fn save_live2d_chat_config(chat: &Live2dChatConfig) -> ConfigResult<()> {
-    validate_live2d_chat_config(chat)?;
-    let _write_guard = match config_write_lock().lock() {
-        Ok(g) => g,
-        Err(p) => p.into_inner(),
-    };
-    let mut config = read_config()?;
-    config["live2d_chat"] = serde_json::json!({
-        "config": chat.config,
-        "configs": chat.configs,
-        "system_prompt": chat.system_prompt,
-    });
-    write_config(&config)
 }
 
 pub fn set_ws_urls(ws_urls: Value) -> ConfigResult<()> {
@@ -509,122 +386,9 @@ pub(crate) fn parse_ws_urls(config: &Value) -> ConfigResult<Vec<String>> {
     Ok(ws_urls)
 }
 
-fn parse_provider_config(value: &Value) -> Option<Live2dProviderConfig> {
-    let obj = value.as_object()?;
-    let defaults = Live2dProviderConfig::default();
-    let name = obj.get("name").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty())?.to_owned();
-    let model = obj.get("model").and_then(Value::as_str).map(str::trim).filter(|v| !v.is_empty())?.to_owned();
-    let raw_api_type = obj
-        .get("api_type")
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|v| !v.is_empty())
-        .map(str::to_owned);
-    let api_type = raw_api_type.unwrap_or_else(|| {
-        let url = obj.get("base_url").and_then(Value::as_str).unwrap_or("");
-        if url.contains("/responses") {
-            "responses".to_owned()
-        } else {
-            defaults.api_type.clone()
-        }
-    });
-    let api_type = match api_type.as_str() {
-        "responses" => "responses".to_owned(),
-        _ => "chat_completions".to_owned(),
-    };
-    Some(Live2dProviderConfig {
-        name,
-        base_url: obj.get("base_url").and_then(Value::as_str).unwrap_or(&defaults.base_url).to_owned(),
-        api_key: obj.get("api_key").and_then(Value::as_str).unwrap_or_default().to_owned(),
-        model,
-        context_length: obj.get("context_length").and_then(Value::as_u64).unwrap_or(defaults.context_length),
-        thinking_level: obj.get("thinking_level").and_then(Value::as_str).unwrap_or(&defaults.thinking_level).to_owned(),
-        proxy: obj.get("proxy").and_then(Value::as_str).unwrap_or_default().to_owned(),
-        api_type,
-    })
-}
-
-pub(crate) fn parse_live2d_chat_config(config: &Value) -> Live2dChatConfig {
-    let defaults = Live2dChatConfig::default();
-    let Some(chat) = config.get("live2d_chat").and_then(Value::as_object) else {
-        return defaults;
-    };
-    let mut configs: Vec<Live2dProviderConfig> = chat.get("configs").and_then(Value::as_array).map(|items| items.iter().filter_map(parse_provider_config).collect()).unwrap_or_default();
-    let mut seen = std::collections::HashSet::new();
-    configs.retain(|item| seen.insert(item.name.clone()));
-    if configs.is_empty() {
-        configs.push(Live2dProviderConfig::default());
-    }
-    let selected_name = chat.get("config").and_then(Value::as_str).unwrap_or(&defaults.config).trim();
-    let current = configs.iter().find(|item| item.name == selected_name).cloned().unwrap_or_else(|| configs[0].clone());
-    Live2dChatConfig {
-        base_url: current.base_url.clone(),
-        api_key: current.api_key.clone(),
-        model: current.model.clone(),
-        config: current.name.clone(),
-        configs,
-        system_prompt: chat.get("system_prompt").and_then(Value::as_str).unwrap_or(&defaults.system_prompt).to_owned(),
-        thinking_level: current.thinking_level.clone(),
-        context_length: current.context_length,
-        proxy: current.proxy.clone(),
-        api_type: current.api_type.clone(),
-    }
-}
-
-fn validate_live2d_chat_config(chat: &Live2dChatConfig) -> ConfigResult<()> {
-    if chat.configs.is_empty() || chat.configs.len() > 50 {
-        return Err("配置列表不能为空且最多50个配置".into());
-    }
-    for item in &chat.configs {
-        if item.name.trim().is_empty() || item.name.chars().count() > 200 {
-            return Err("配置名称不能为空且不能超过200个字符".into());
-        }
-        if item.model.trim().is_empty() || item.model.chars().count() > 200 {
-            return Err("模型名称不能为空且不能超过200个字符".into());
-        }
-        if item.base_url.chars().count() > 2048 {
-            return Err("对话接口地址不能超过2048个字符".into());
-        }
-        let url = reqwest::Url::parse(item.base_url.trim())?;
-        if !matches!(url.scheme(), "http" | "https") {
-            return Err("对话接口地址只支持 http 或 https".into());
-        }
-        if item.api_key.chars().count() > 8192 {
-            return Err("API Key过长".into());
-        }
-        if item.proxy.chars().count() > 2048 {
-            return Err("代理地址不能超过2048个字符".into());
-        }
-        if !matches!(
-            item.thinking_level.as_str(),
-            "none" | "low" | "medium" | "high" | "xhigh" | "max"
-        ) {
-            return Err("思考等级无效".into());
-        }
-        if !matches!(item.api_type.as_str(), "chat_completions" | "responses") {
-            return Err("接口类型无效".into());
-        }
-        if !matches!(
-            item.context_length,
-            32_768 | 65_536 | 131_072 | 262_144 | 524_288 | 1_048_576
-        ) {
-            return Err("上下文长度必须是 32K、64K、128K、256K、512K 或 1M 之一".into());
-        }
-    }
-    if chat.config.trim().is_empty()
-        || !chat.configs.iter().any(|item| item.name == chat.config)
-    {
-        return Err("当前选中的配置必须存在于配置列表中".into());
-    }
-    if chat.system_prompt.chars().count() > 8000 {
-        return Err("角色设定不能超过8000个字符".into());
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{parse_live2d_chat_config, parse_startup_config, parse_ws_urls};
+    use super::{parse_startup_config, parse_ws_urls};
 
     #[test]
     fn parse_startup_config_separates_service_settings() {
@@ -661,72 +425,5 @@ mod tests {
     fn parse_ws_urls_rejects_non_string_entries() {
         let config = serde_json::json!({"ws_urls": ["ws://one", 2]});
         assert!(parse_ws_urls(&config).is_err());
-    }
-
-    #[test]
-    fn parse_live2d_chat_config_uses_defaults_when_missing() {
-        let chat = parse_live2d_chat_config(&serde_json::json!({}));
-        assert_eq!(chat.config, "OpenAI 官方");
-        assert_eq!(chat.configs.len(), 1);
-        assert_eq!(chat.configs[0].name, "OpenAI 官方");
-        assert_eq!(chat.model, "gpt-4o-mini");
-    }
-
-    #[test]
-    fn parse_live2d_chat_config_reads_named_configs() {
-        let chat = parse_live2d_chat_config(&serde_json::json!({
-            "live2d_chat": {
-                "config": "DeepSeek 官方",
-                "configs": [
-                    {
-                        "name": "DeepSeek 官方",
-                        "base_url": "https://api.deepseek.com/v1/chat/completions",
-                        "api_key": "key",
-                        "model": "deepseek-v4-flash",
-                        "context_length": 524288,
-                        "thinking_level": "max",
-                        "proxy": "http://127.0.0.1:7890"
-                    },
-                    {
-                        "name": "本地模型",
-                        "base_url": "http://127.0.0.1:11434/v1/chat/completions",
-                        "api_key": "",
-                        "model": "qwen2.5",
-                        "context_length": 131072,
-                        "thinking_level": "high"
-                    }
-                ]
-            }
-        }));
-        assert_eq!(chat.config, "DeepSeek 官方");
-        assert_eq!(chat.model, "deepseek-v4-flash");
-        assert_eq!(chat.base_url, "https://api.deepseek.com/v1/chat/completions");
-        assert_eq!(chat.configs.len(), 2);
-        assert_eq!(chat.configs[1].name, "本地模型");
-        assert_eq!(chat.configs[1].model, "qwen2.5");
-        // 选中配置的代理同步到顶层，未设置的配置代理为空
-        assert_eq!(chat.proxy, "http://127.0.0.1:7890");
-        assert_eq!(chat.configs[1].proxy, "");
-    }
-
-    #[test]
-    fn parse_live2d_chat_config_falls_back_to_first_config() {
-        let chat = parse_live2d_chat_config(&serde_json::json!({
-            "live2d_chat": {
-                "config": "不存在",
-                "configs": [
-                    {
-                        "name": "配置 A",
-                        "base_url": "http://a/v1/chat/completions",
-                        "api_key": "",
-                        "model": "a",
-                        "context_length": 32768,
-                        "thinking_level": "low"
-                    }
-                ]
-            }
-        }));
-        assert_eq!(chat.config, "配置 A");
-        assert_eq!(chat.model, "a");
     }
 }
