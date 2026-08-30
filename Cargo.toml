@@ -104,6 +104,8 @@ silk-rs-no-llvm = {git = "https://github.com/super1207/silk-rs-no-llvm"}
 lewton = "0.10.2"
 symphonia={version="0.5",default-features=false,features=["aac","isomp4"]}
 
+msedge-tts = { version = "0.4.0", features = ["proxy"] }
+
 imap = { workspace = true }
 mail-parser = { workspace = true }
 lettre = { workspace = true }

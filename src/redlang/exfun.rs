@@ -4487,6 +4487,46 @@ def red_out(sw):
         })?;
         Ok(Some(rv_text(lua_ret)))
     });
+    add_fun(vec!["TTS"], |self_t, params| {
+        fn to_audio(
+            text: &str,
+            player: &str,
+            proxy: &str,
+        ) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+            let voices = if proxy.is_empty() {
+                msedge_tts::voice::get_voices_list()?
+            } else {
+                msedge_tts::voice::get_voices_list_proxy(proxy)?
+            };
+            for voice in &voices {
+                if voice.name.contains(player) {
+                    let config = msedge_tts::tts::SpeechConfig::from(voice);
+                    if proxy.is_empty() {
+                        let mut tts = msedge_tts::tts::client::connect()?;
+                        let audio: msedge_tts::tts::client::SynthesizedAudio =
+                            tts.synthesize(text, &config)?;
+                        let bt = audio.audio_bytes;
+                        return Ok(bt);
+                    } else {
+                        let mut tts = msedge_tts::tts::client::connect_proxy(proxy)?;
+                        let audio: msedge_tts::tts::client::SynthesizedAudio =
+                            tts.synthesize(text, &config)?;
+                        let bt = audio.audio_bytes;
+                        return Ok(bt);
+                    }
+                }
+            }
+            Err(format!("player `{player}` not found").into())
+        }
+        let proxy = self_t.get_coremap("代理");
+        let text = self_t.get_param_text(params, 0)?;
+        let mut player = self_t.get_param_text(params, 1)?;
+        if player.is_empty() {
+            player = "YunyangNeural".to_owned();
+        }
+        let bin_mp3 = to_audio(&text, &player, &proxy)?;
+        Ok(Some(rv_bin(bin_mp3)))
+    });
     add_fun(vec!["执行频率"], |self_t, params| {
         self_t.set_coremap("剩余次数", &0.to_string())?;
 
