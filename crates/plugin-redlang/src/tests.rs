@@ -332,3 +332,33 @@ fn media_and_sticker_commands_preserve_binary_attachments_and_text_ids() {
     let error = rl.parse("【表情回应@123@@真@自定义@真】").unwrap_err();
     assert!(error.to_string().contains("指定机器人ID"));
 }
+
+#[test]
+fn simplified_card_and_event_commands_use_redlang_values() {
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    let card = rl.parse("【KOOK卡片@活动@【数组@【数组@【数组@报名@001】】】@绿色@小】").unwrap();
+    let payload = crate::bot_commands::card_for_edit(&card).unwrap();
+    assert_eq!(payload[0]["theme"], "success");
+    assert_eq!(payload[0]["modules"][1]["elements"][0]["value"], "001");
+    assert_eq!(payload[0]["modules"][1]["elements"][0]["click"], "return-val");
+
+    rl.set_exmap("原始事件", r#"{"platform":"kook","notice_type":"kook","sub_type":"message_btn_click","kook":{"value":"001"}}"#);
+    assert_eq!(rl.parse("【事件内容@按钮值】").unwrap().expect_text_value().unwrap(), "001");
+    rl.set_exmap("原始事件", r#"{"platform":"telegram","notice_type":"telegram","sub_type":"poll_answer","telegram":{"option_ids":[0,2]}}"#);
+    let choices = rl.parse("【事件内容@投票选项】").unwrap().expect_array_value().unwrap();
+    assert_eq!(choices[0].expect_text_value().unwrap(), "1");
+    assert_eq!(choices[1].expect_text_value().unwrap(), "3");
+
+    rl.set_exmap("机器人平台", "telegram");
+    rl.set_exmap("群ID", "-100123456789");
+    for code in [
+        "【Telegram命令菜单@设置@【数组@【数组@start@开始使用】】@所有私聊@zh】",
+        "【Telegram菜单按钮@小程序@@打开服务@https://example.org/app】",
+        "【Telegram投票@下次活动选哪天？@【数组@周六@周日】@假】",
+        "【Telegram结束投票@消息ID】",
+        "【邀请链接@创建@@@3600@@活动报名@真】",
+    ] {
+        assert!(rl.parse(code).unwrap_err().to_string().contains("指定机器人ID"), "{code}");
+    }
+}

@@ -1850,6 +1850,24 @@ impl BotConnectTrait for TeleTramConnect {
                 };
                 native_api::action_result(result, echo)
             }
+            "telegram_stop_poll" => {
+                let result = async {
+                    let id = read_json_str(params, "message_id");
+                    let messages = self.get_msg_id(&id);
+                    let [message] = messages.as_slice() else {
+                        return Err("请指定一条 Telegram 投票的 RedReply 消息 ID".into());
+                    };
+                    let mut body = json!({
+                        "chat_id":message.chat_id.parse::<i64>()?,
+                        "message_id":message.msg_id.parse::<i64>()?,
+                    });
+                    if !message.business_id.is_empty() {
+                        body["business_connection_id"] = message.business_id.as_str().into();
+                    }
+                    self.native_request("stopPoll", &body, None, Duration::from_secs(25), echo).await
+                }.await;
+                native_api::action_result(result, echo)
+            }
             "edit_msg" => native_api::action_result(self.edit_message(params, echo).await, echo),
             "forward_msgs" => native_api::action_result(self.forward_messages(params, echo).await, echo),
             "delete_msg" => self.deal_ob_delete_msg(params, echo).await?,

@@ -32,60 +32,85 @@ KOOK 的平台名为 `kook`。
 
 ## Telegram 菜单
 
-用 `setMyCommands` 设置输入框中的命令列表。命令名省略斜杠。`scope` 可以限定范围，`language_code` 可以限定界面语言。`getMyCommands` 和 `deleteMyCommands` 使用相同的范围和语言参数。
+### 命令菜单
+
+- 【Telegram命令菜单@设置@命令数组@范围@语言@聊天ID@成员ID】
+- 【Telegram命令菜单@查询@范围@语言@聊天ID@成员ID】
+- 【Telegram命令菜单@删除@范围@语言@聊天ID@成员ID】
+
+| 参数 | 怎么填 |
+| --- | --- |
+| 操作 | 必填 `设置`、`查询` 或 `删除`。 |
+| 命令数组 | 设置时必填，每项是【数组@命令名@说明】，最多 100 项。名称可以带开头的斜杠，主体用 1 至 32 个小写字母、数字或下划线。说明填 1 至 256 字。 |
+| 范围 | 可省略，默认对所有用户生效。可填 `默认`、`所有私聊`、`所有群聊`、`所有群管理员`、`指定聊天`、`指定群管理员` 或 `指定群成员`。 |
+| 语言 | 可省略，表示该范围内没有专门语言设置时使用此菜单。简体中文常用 `zh`，英文用 `en`。 |
+| 聊天 ID | `指定聊天`、`指定群管理员` 或 `指定群成员` 时必填，其余范围省略。用户名须带 `@`，脚本里写作【@@名称】。 |
+| 成员 ID | 仅 `指定群成员` 时必填。 |
+
+设置、删除成功时没有输出。查询返回命令数组，每项仍是命令名和说明，可以交给另一条设置命令。删除时填写与设置相同的范围和语言。
 
 ```text
-【定义变量@命令列表@【数组
-  @【对象@command@start@description@开始使用】
-  @【对象@command@help@description@查看帮助】
-】】
-【定义变量@结果@【Telegram调用@setMyCommands@【对象
-  @commands@【变量@命令列表】
-  @scope@【对象@type@all_private_chats】
-  @language_code@zh
-】】】
-【取元素@【变量@结果】@retcode】
+【Telegram命令菜单@设置@【数组
+  @【数组@start@开始使用】
+  @【数组@help@查看帮助】
+】@所有私聊@zh】
 ```
-
-用 `setChatMenuButton` 设置私聊输入框旁的菜单按钮。省略 `chat_id` 会设置机器人的默认按钮。`commands` 打开命令列表，`web_app` 可指定 HTTPS Mini App，`default` 恢复默认行为。用 `getChatMenuButton` 查询设置。
 
 ```text
-【隐藏@【Telegram调用@setChatMenuButton@【对象
-  @menu_button@【对象@type@web_app@text@打开服务@web_app@【对象@url@https://example.org/app】】
-】】】
+【取长度@【Telegram命令菜单@查询@所有私聊@zh】】
 ```
 
-[机器人命令菜单](https://core.telegram.org/bots/api#setmycommands) · [私聊菜单按钮](https://core.telegram.org/bots/api#setchatmenubutton)
+### 私聊菜单按钮
+
+【Telegram菜单按钮@类型@私聊ID@按钮文字@小程序链接】
+
+| 参数 | 怎么填 |
+| --- | --- |
+| 类型 | 必填 `命令`、`默认`、`小程序` 或 `查询`。分别用于打开命令菜单、恢复默认、打开小程序和读取当前设置。 |
+| 私聊 ID | 可省略，省略时操作机器人的默认按钮。指定单个私聊时填数字 ID。 |
+| 按钮文字、小程序链接 | 类型为 `小程序` 时必填，链接用 HTTPS。其他类型省略。 |
+
+查询返回三个位置，依次为类型、按钮文字和链接，普通按钮的后两项为空。
+
+```text
+【Telegram菜单按钮@小程序@@打开服务@https://example.org/app】
+```
+
+[Telegram 命令菜单](https://core.telegram.org/bots/api#setmycommands) · [私聊菜单按钮](https://core.telegram.org/bots/api#setchatmenubutton)
 
 ## Telegram 行内键盘与回复键盘
 
-【输出流】的第二个参数在 Telegram 上可以传键盘对象，消息仍发到当前聊天和话题。多段消息的键盘附在最后一条。行内键盘的外层数组装所有行，每行也是一个数组。每个按钮提供 `text` 和一种动作，例如 `callback_data` 或 `url`。
+【Telegram键盘@按钮行数组@模式@自动缩放@用后隐藏】
+
+| 参数 | 怎么填 |
+| --- | --- |
+| 按钮行数组 | 每行用一个【数组】。行内按钮用【数组@文字@值@动作】，动作默认为 `回调`，也可填 `链接` 或 `小程序`。回调值限 1 至 64 字节，链接填 HTTP(S) 或 `tg://`，小程序链接填 HTTPS。回复键盘每行直接填按钮文字。移除模式此项留空。 |
+| 模式 | 可省略，默认 `行内`。可填 `回复` 或 `移除`。小程序按钮仅用于机器人私聊。 |
+| 自动缩放、用后隐藏 | 仅回复模式使用，可省略，分别默认为 `真`、`假`。 |
+
+把键盘放入【输出流】第二个参数。多段消息时键盘附在最后一段。
 
 ```text
-【定义变量@键盘@【对象@inline_keyboard@【数组
-  @【数组@【对象@text@下一页@callback_data@next】@【对象@text@帮助@url@https://core.telegram.org/bots】】
-  @【数组@【对象@text@关闭@callback_data@close】】
-】】】
-【隐藏@【输出流@请选择操作@【变量@键盘】】】
+【定义变量@按钮行@【数组
+  @【数组@【数组@下一页@next】@【数组@帮助@https://core.telegram.org/bots@链接】】
+  @【数组@【数组@关闭@close】】
+】】
+【隐藏@【输出流@请选择操作@【Telegram键盘@【变量@按钮行】】】】
 ```
-
-回复键盘出现在输入框附近，点击普通文本按钮会发送一条消息，仍用消息脚本处理。可用 `remove_keyboard` 移除回复键盘。
 
 ```text
-【隐藏@【输出流@请选择@【对象
-  @keyboard@【数组@【数组@【对象@text@签到】@【对象@text@帮助】】】
-  @resize_keyboard@【接口值@逻辑@真】
-】】】
+【隐藏@【输出流@请选择@【Telegram键盘@【数组@【数组@签到@帮助】】@回复】】】
+【隐藏@【输出流@操作完成@【Telegram键盘@@移除】】】
 ```
 
-新建「事件触发」脚本，关键词填 `notice:telegram:callback_query`。从 `telegram.data` 读取按钮值，用 `answerCallbackQuery` 结束客户端等待。用 `editMessageReplyMarkup` 更新行内键盘时，从 `telegram.message` 取原生聊天和消息 ID，或使用事件中的 `inline_message_id`。
+【Telegram应答按钮@提示@是否弹窗@回调ID】用于结束按钮点击后的等待。提示可省略，最多 200 字。是否弹窗默认 `假`。在 `notice:telegram:callback_query` 事件中可省略回调 ID。用【事件内容@按钮值】读取点击值。更新现有行内键盘时，用【编辑消息@消息ID@新键盘@键盘】，将新键盘留空可清除按钮。
 
 ```text
-【定义变量@回调ID@【取元素@【事件内容】@telegram@id】】
-【隐藏@【Telegram调用@answerCallbackQuery@【对象@callback_query_id@【变量@回调ID】@text@已收到】】】
+【Telegram应答按钮@已收到】
+【事件内容@按钮值】
 ```
 
-[行内键盘](https://core.telegram.org/bots/api#inlinekeyboardmarkup) · [回复键盘](https://core.telegram.org/bots/api#replykeyboardmarkup) · [按钮回调](https://core.telegram.org/bots/api#answercallbackquery)
+[Telegram 行内键盘](https://core.telegram.org/bots/api#inlinekeyboardmarkup) · [回复键盘](https://core.telegram.org/bots/api#replykeyboardmarkup) · [按钮回调](https://core.telegram.org/bots/api#answercallbackquery)
 
 ## Telegram 查询、投票与文件
 
@@ -116,29 +141,30 @@ KOOK 的平台名为 `kook`。
 
 ### 发起及结束投票
 
-用 `sendPoll` 发起投票。示例在当前群发起非匿名投票。要接收逐人答案，使用 `notice:telegram:poll_answer`，从 `telegram.option_ids` 读取从 0 开始的选项下标。用 `notice:telegram:poll` 接收投票状态；用 `stopPoll` 和返回的原生 `data.message_id` 结束投票。要发往论坛话题，可在发送参数中加上整数 `message_thread_id`。
+【Telegram投票@题目@选项数组@是否匿名@是否多选@正确选项@话题ID】
+
+| 参数 | 怎么填 |
+| --- | --- |
+| 题目 | 必填，1 至 300 字。 |
+| 选项数组 | 必填，用【数组】直接列出 1 至 12 个选项，每项 1 至 100 字。 |
+| 是否匿名、是否多选 | 均可省略，分别默认为 `真`、`假`。 |
+| 正确选项 | 可省略，省略时发普通投票。填写从 1 开始的选项序号即可发测验。多个正确答案用【数组】，同时将是否多选填 `真`。 |
+| 话题 ID | 可省略，默认沿用当前论坛话题。此命令向当前聊天发送。 |
+
+【Telegram投票】返回 RedReply 消息 ID。【Telegram结束投票@消息ID】使用这个 ID 结束投票并返回总人数。ID 省略时使用当前消息。RedReply 消息 ID 依赖适配器的消息缓存，重启后应通过平台接口和原始消息 ID 操作旧投票。
 
 ```text
-【定义变量@投票@【Telegram调用@sendPoll@【对象
-  @chat_id@【接口值@整数@【群ID】】
-  @question@下一次活动选哪天？
-  @options@【数组@【对象@text@周六】@【对象@text@周日】】
-  @is_anonymous@【接口值@逻辑@假】
-】】】
-【取元素@【变量@投票】@data@poll@id】
+【定义变量@投票消息@【Telegram投票@下次活动选哪天？@【数组@周六@周日】@假】】
+【变量@投票消息】
 ```
-
-保存 `data.chat.id` 和 `data.message_id` 后可在另一条脚本中结束投票。下面的两个占位值替换为已保存的 ID。
 
 ```text
-【定义变量@结果@【Telegram调用@stopPoll@【对象
-  @chat_id@【接口值@整数@-1001234567890】
-  @message_id@【接口值@整数@128】
-】】】
-【取元素@【变量@结果】@data@total_voter_count】
+【Telegram结束投票@已保存的投票消息ID】
 ```
 
-测验模式填写 `type=quiz`，并用整数数组 `correct_option_ids` 指定正确选项。允许多选的普通投票可设置 `allows_multiple_answers`。
+非匿名投票可用 `notice:telegram:poll_answer` 接收个人答案。【事件内容@投票选项】返回从 1 开始的选项序号数组。撤回选择时返回空数组。用 `notice:telegram:poll` 接收状态并用【事件内容@投票人数】读取总人数。
+
+[Telegram 投票](https://core.telegram.org/bots/api#sendpoll) · [结束投票](https://core.telegram.org/bots/api#stoppoll)
 
 ### 发送、上传与下载文件
 
@@ -295,18 +321,16 @@ Telegram 的两个回应更新需要机器人具备管理员权限，并在管�
 Telegram 可通过选项对象传 `parse_mode`、`entities`、`reply_markup` 等方法字段。行内模式发出的消息用【Telegram调用】直接传 `inline_message_id`。实时位置、业务清单和组件数据等专用编辑方法也通过【Telegram调用】传官方字段。
 
 ```text
-【定义变量@结果@【编辑消息@机器人消息ID@【对象@inline_keyboard@【数组
-  @【数组@【对象@text@查看活动@callback_data@event-details】】
-】】@键盘】】
+【定义变量@结果@【编辑消息@机器人消息ID@【Telegram键盘@【数组@【数组
+  @【数组@查看活动@event-details】
+】】】@键盘】】
 【取元素@【变量@结果】@retcode】
 ```
 
-KOOK 只允许编辑原类型为 KMarkdown 或卡片的消息。通过普通输出发送的新文本使用 KMarkdown。旧的纯文本消息或独立图片仍受平台编辑限制。编辑卡片时传新卡片数组，保留原消息的卡片类型。
+KOOK 只允许编辑原类型为 KMarkdown 或卡片的消息。通过普通输出发送的新文本使用 KMarkdown。旧的纯文本消息或独立图片仍受平台编辑限制。编辑卡片时将【KOOK卡片】作为新内容传入。
 
 ```text
-【定义变量@结果@【编辑消息@卡片消息ID@【数组@【对象
-  @type@card@modules@【数组@【对象@type@section@text@报名已截止】】
-】】@卡片】】
+【定义变量@结果@【编辑消息@卡片消息ID@【KOOK卡片@报名已截止】@卡片】】
 【取元素@【变量@结果】@retcode】
 ```
 
@@ -436,34 +460,30 @@ Telegram 聊天 ID 可从【群ID】或事件中的 `telegram.chat.id` 取得。
 
 ### 邀请链接与审核
 
-| 用途 | Telegram Bot API |
+- 【邀请链接@创建@目标ID@目标类型@有效秒数@上限@名称@是否审核】
+- 【邀请链接@编辑@链接@目标ID@目标类型@有效秒数@上限@名称@是否审核】
+- 【邀请链接@撤销@链接@目标ID@目标类型】
+
+| 参数 | Telegram 填法 |
 | --- | --- |
-| 创建、编辑、撤销额外邀请 | `createChatInviteLink`、`editChatInviteLink`、`revokeChatInviteLink`。保存返回的 `data.invite_link`。 |
-| 重建主邀请 | `exportChatInviteLink` 返回新主邀请，原主邀请随即撤销。 |
-| 频道付费订阅邀请 | `createChatSubscriptionInviteLink` 与 `editChatSubscriptionInviteLink`，用 `revokeChatInviteLink` 撤销。 |
-| 接收入群申请 | `notice:telegram:chat_join_request`，从 `telegram.invite_link` 查看邀请来源。用【同意】或【拒绝】处理。 |
+| 操作 | 必填 `创建`、`编辑` 或 `撤销`。创建和编辑返回链接。撤销成功时没有输出。 |
+| 链接 | 编辑或撤销时必填，填写机器人创建的完整邀请链接。 |
+| 目标 ID、目标类型 | 可省略，默认当前群或频道。目标可填聊天 ID 或用户名，类型可填 `群聊` 或 `频道`。 |
+| 有效秒数 | 可省略。创建时默认无有效期限制，填 `0` 也表示无有效期限制。正整数从调用时开始计时。 |
+| 上限 | 可省略，填写 1 至 99999。开启审核时省略。 |
+| 名称、是否审核 | 均可省略，名称最多 32 字，创建时默认无需审核。编辑时可填 `假` 关闭审核。 |
 
 ```text
-【定义变量@邀请@【Telegram调用@createChatInviteLink@【对象
-  @chat_id@【接口值@整数@【群ID】】
-  @name@活动审核入口
-  @creates_join_request@【接口值@逻辑@真】
-】】】
-【取元素@【变量@邀请】@data@invite_link】
+【邀请链接@创建@@@3600@@活动报名@真】
 ```
-
-机器人需有邀请权限，并管理自己创建的链接。启用 `creates_join_request` 时省略 `member_limit`。下例撤销之前保存的邀请链接，替换其中的链接占位值。
 
 ```text
-【定义变量@结果@【Telegram调用@revokeChatInviteLink@【对象
-  @chat_id@【接口值@整数@【群ID】】@invite_link@已保存的邀请链接
-】】】
-【取元素@【变量@结果】@retcode】
+【邀请链接@撤销@已保存的邀请链接】
 ```
 
-如需把带 `query_id` 的请求交给其他管理员，可用 `answerChatJoinRequestQuery` 传 `chat_join_request_query_id` 和 `result=queue`。
+机器人须具备邀请权限。在 `notice:telegram:chat_join_request` 中用【同意】或【拒绝】处理申请。主邀请和付费订阅邀请可通过【Telegram调用】使用官方专用接口。
 
-[邀请链接](https://core.telegram.org/bots/api#createchatinvitelink) · [频道订阅邀请](https://core.telegram.org/bots/api#createchatsubscriptioninvitelink) · [入群审核](https://core.telegram.org/bots/api#answerchatjoinrequestquery)
+[Telegram 邀请链接](https://core.telegram.org/bots/api#createchatinvitelink)
 
 ### 论坛话题与频道私信话题
 
@@ -550,29 +570,30 @@ Telegram 聊天 ID 可从【群ID】或事件中的 `telegram.chat.id` 取得。
 
 ### 邀请链接
 
-用 `invite/create` 创建服务器或频道邀请，至少填写 `guild_id` 或 `channel_id` 之一。下例创建一小时有效、可用五次的频道邀请。
+- 【邀请链接@创建@目标ID@目标类型@有效秒数@次数】
+- 【邀请链接@撤销@链接或邀请码@目标ID@目标类型】
+- 【邀请链接@列表@目标ID@目标类型@页码】
+- 【邀请链接@受邀人数@链接或邀请码@服务器ID】
+
+| 参数 | KOOK 填法 |
+| --- | --- |
+| 操作 | 必填 `创建`、`撤销`、`列表` 或 `受邀人数`。创建返回链接，列表返回当页链接数组，受邀人数返回总数。 |
+| 目标类型、目标 ID | 类型可省略，默认 `频道`，也可填 `服务器`。ID 省略时按类型取当前频道或当前服务器。 |
+| 有效秒数 | 可省略，默认 604800 秒。可填 `0` 永久，或 `1800`、`3600`、`21600`、`43200`、`86400`、`604800`。 |
+| 次数 | 可省略，默认不限。可填 `-1`、`1`、`5`、`10`、`25`、`50` 或 `100`。 |
+| 链接或邀请码 | 撤销或查询受邀人数时必填。 |
+| 页码、服务器 ID | 列表页码默认 `1`。查询受邀人数时，服务器 ID 可省略。 |
 
 ```text
-【定义变量@邀请@【KOOK调用@POST@invite/create@【对象
-  @channel_id@【群ID】@duration@【接口值@整数@3600】@setting_times@【接口值@整数@5】
-】】】
-【取元素@【变量@邀请】@data@url】
+【邀请链接@创建@@@3600@5】
 ```
 
-GET `invite/list` 可按服务器或频道查邀请。POST `invite/delete` 使用 `url_code`。GET `invite/invitees` 按 `id` 或 `invite_url` 查询被邀请用户，传入 `page`、`page_size` 分页。创建、查询和删除依赖相应的邀请权限。
-
 ```text
-【定义变量@名单@【KOOK调用@GET@invite/invitees@【对象
-  @id@邀请码@page@【接口值@整数@1】@page_size@【接口值@整数@20】
-】】】
-【取元素@【变量@名单】@data@count】
+【取长度@【邀请链接@列表】】
 ```
 
 ```text
-【定义变量@结果@【KOOK调用@POST@invite/delete@【对象
-  @channel_id@【群ID】@url_code@邀请码
-】】】
-【取元素@【变量@结果】@retcode】
+【邀请链接@撤销@已保存的邀请链接】
 ```
 
 [KOOK 邀请接口](https://developer.kookapp.cn/doc/http/invite)
@@ -604,35 +625,28 @@ POST `thread/reply` 的 `content` 是回复文本。回复某一楼时再传 `re
 
 ### 发送交互卡片
 
-【KOOK卡片@<font color="red">卡片数组</font>】
+【KOOK卡片@正文@按钮行数组@主题@大小】
 
-每个卡片是 `type=card` 的对象，`modules` 是模块数组。一条消息最多 5 张卡片，合计最多 50 个模块，每个交互模块最多 4 个按钮。用【输出流】发往当前频道或私聊。
+| 参数 | 怎么填 |
+| --- | --- |
+| 正文 | 填显示的文本，有按钮时可省略。 |
+| 按钮行数组 | 可省略。每行用一个【数组】，每行 1 至 4 个按钮。每个按钮用【数组@文字@值@动作】。动作默认为 `回调`，值是点击后发送给脚本的文本。动作填 `链接` 时，值填 HTTP(S) 链接。 |
+| 主题 | 可省略，默认 `蓝色`。也可填 `绿色`、`红色`、`黄色`、`青色`、`灰色` 或 `无边框`。 |
+| 大小 | 可省略，默认 `大`，也可填 `小`。 |
 
-```text
-【定义变量@卡片@【数组@【对象@type@card@theme@primary@size@lg
-  @modules@【数组
-    @【对象@type@section@text@【对象@type@plain-text@content@请选择操作】】
-    @【对象@type@action-group@elements@【数组
-      @【对象@type@button@theme@primary@text@确认@click@return-val@value@confirm】
-      @【对象@type@button@text@说明@click@link@value@https://developer.kookapp.cn】
-    】】
-  】
-】】】
-【隐藏@【输出流@【KOOK卡片@【变量@卡片】】】】
-```
-
-向指定目标发卡片可用 `message/create` 或 `direct-message/create`，把卡片数组直接放到 `content`。创建消息时自动使用卡片类型；用 `message/update`、`direct-message/update` 更新已有卡片，传原生 `msg_id`。帖子频道的 `thread/create` 也可用卡片数组作为 `content`。
+用【输出流】发送卡片，可用【编辑消息】更新原卡片。正文及每行按钮各占一个模块，每张简写卡片最多 50 个模块。
 
 ```text
-【隐藏@【KOOK调用@POST@message/create@【对象
-  @target_id@频道ID
-  @content@【数组@【对象@type@card@modules@【数组@【对象@type@section@text@公告内容】】】】
+【定义变量@按钮行@【数组@【数组
+  @【数组@确认@confirm】
+  @【数组@说明@https://developer.kookapp.cn@链接】
 】】】
+【隐藏@【输出流@【KOOK卡片@请选择操作@【变量@按钮行】】】】
 ```
 
-点击 `return-val` 按钮触发 `notice:kook:message_btn_click`。从 `kook.value` 取按钮值，【发送者ID】是点击者。事件中的 `kook_message_id` 是 KOOK 原生消息 ID，【消息ID】用于 RedReply 消息操作。
+按钮回调在 `notice:kook:message_btn_click` 触发。用【事件内容@按钮值】读取点击值，用【消息ID】获取 RedReply 消息 ID。需要更复杂的布局时，【KOOK卡片】也接受官方卡片数组。
 
-[KOOK 卡片规范](https://developer.kookapp.cn/doc/cardmessage) · [频道消息](https://developer.kookapp.cn/doc/http/message) · [私聊消息](https://developer.kookapp.cn/doc/http/direct-message) · [帖子](https://developer.kookapp.cn/doc/http/thread)
+[KOOK 卡片规范](https://developer.kookapp.cn/doc/cardmessage) · [按钮事件](https://developer.kookapp.cn/doc/event/user)
 
 ### 文件上传和收发
 
@@ -696,20 +710,17 @@ POST `thread/reply` 的 `content` 是回复文本。回复某一楼时再传 `re
 KOOK 的公开 Bot API 提供卡片按钮及其回调。用下面的脚本在频道发起投票。
 
 ```text
-【隐藏@【输出流@【KOOK卡片@【数组@【对象@type@card@modules@【数组
-  @【对象@type@section@text@下次活动选哪天？】
-  @【对象@type@action-group@elements@【数组
-    @【对象@type@button@text@周六@click@return-val@value@poll-weekend-sat】
-    @【对象@type@button@text@周日@click@return-val@value@poll-weekend-sun】
-  】】
-】】】】】】
+【隐藏@【输出流@【KOOK卡片@下次活动选哪天？@【数组@【数组
+  @【数组@周六@poll-weekend-sat】
+  @【数组@周日@poll-weekend-sun】
+】】】】】
 ```
 
 用 `notice:kook:message_btn_click` 建立事件脚本，用同一张卡片的原生消息 ID 和投票人 ID 保存选择。下例把每张卡片作为一个配置节，同一人再次点击会覆盖原选择。
 
 ```text
-【定义变量@选择@【取元素@【事件内容】@kook@value】】
-【定义变量@投票ID@【取元素@【事件内容】@kook_message_id】】
+【定义变量@选择@【事件内容@按钮值】】
+【定义变量@投票ID@【事件内容@平台消息ID】】
 【加锁@kook-votes.ini】
 【判等@【变量@选择】@poll-weekend-sat@
   【判等@【变量@选择】@poll-weekend-sun@@【写配置@【应用目录】kook-votes.ini@【变量@投票ID】@【发送者ID】@周日】】

@@ -2672,6 +2672,10 @@ CQ码**外部**的字符需要CQ转义，以上三个命令的作用可以参考
 
 【事件内容】
 
+【事件内容@<font color="red">字段</font>】
+
+不填字段时返回原始事件对象。字段可填按钮值、平台消息ID、投票选项或投票人数。按钮值支持 Telegram 和 KOOK，Telegram 投票选项从 1 开始。
+
 onebot事件json对应的RedLang对象。
 
 
@@ -2826,9 +2830,55 @@ KOOK 和 Telegram 支持使用第三个参数 `假` 移除回应。KOOK 支持 U
 
 ### KOOK卡片
 
-【KOOK卡片@<font color="red">卡片数组</font>】
+【KOOK卡片@<font color="red">正文</font>@<font color="red">按钮行数组</font>@<font color="red">主题</font>@<font color="red">大小</font>】
 
-将 KOOK 卡片数组转换为消息片段。卡片是包含 `type=card` 和 `modules` 数组的【对象】。在 KOOK 聊天中可直接输出，也可用【输出流】发送。
+用于直接输出或交给【输出流】与【编辑消息】。正文或按钮至少填一项。每行最多 4 个按钮，每个写成【数组@文字@值@动作】，动作默认回调，也可填链接。主题和大小默认为蓝色、大。原有卡片数组写法也可使用。
+
+### Telegram命令菜单
+
+【Telegram命令菜单@设置@<font color="red">命令数组</font>@<font color="red">范围</font>@<font color="red">语言</font>@<font color="red">聊天ID</font>@<font color="red">成员ID</font>】
+
+【Telegram命令菜单@查询或删除@<font color="red">范围</font>@<font color="red">语言</font>@<font color="red">聊天ID</font>@<font color="red">成员ID</font>】
+
+每项写成【数组@命令名@说明】。范围、语言可省略。聊天 ID 和成员 ID 按所选范围填写。查询返回相同格式的数组。
+
+### Telegram菜单按钮
+
+【Telegram菜单按钮@<font color="red">类型</font>@<font color="red">私聊ID</font>@<font color="red">按钮文字</font>@<font color="red">小程序链接</font>】
+
+类型填命令、默认、小程序或查询。私聊 ID 可省略。按钮文字和 HTTPS 链接仅在设置小程序时填写。
+
+### Telegram键盘
+
+【Telegram键盘@<font color="red">按钮行数组</font>@<font color="red">模式</font>@<font color="red">自动缩放</font>@<font color="red">用后隐藏</font>】
+
+默认行内模式。每个行内按钮写【数组@文字@值@动作】，动作默认为回调，可填链接或小程序。回复模式每行直接列出按钮文字，自动缩放默认真，用后隐藏默认假。移除回复键盘用【Telegram键盘@@移除】。
+
+### Telegram应答按钮
+
+【Telegram应答按钮@<font color="red">提示</font>@<font color="red">是否弹窗</font>@<font color="red">回调ID</font>】
+
+提示可省略，弹窗默认假。在按钮回调事件内可省略回调 ID。
+
+### Telegram投票
+
+【Telegram投票@<font color="red">题目</font>@<font color="red">选项数组</font>@<font color="red">是否匿名</font>@<font color="red">是否多选</font>@<font color="red">正确选项</font>@<font color="red">话题ID</font>】
+
+题目和选项数组必填，匿名默认真，多选默认假。正确选项从 1 开始，省略时发普通投票。话题 ID 省略时沿用当前话题。返回 RedReply 消息 ID。
+
+### Telegram结束投票
+
+【Telegram结束投票@<font color="red">投票消息ID</font>】
+
+ID 省略时使用当前消息。成功返回总投票人数。
+
+### 邀请链接
+
+【邀请链接@创建@<font color="red">目标ID</font>@<font color="red">目标类型</font>@<font color="red">有效秒数</font>@<font color="red">上限</font>@<font color="red">Telegram 名称</font>@<font color="red">Telegram 是否审核</font>】
+
+【邀请链接@撤销@<font color="red">链接或邀请码</font>@<font color="red">目标ID</font>@<font color="red">目标类型</font>】
+
+目标省略时使用当前群或频道。创建返回链接。Telegram 还可编辑，KOOK 还可列出链接和查询受邀人数。各操作的参数、默认值与示例见[原生机器人使用说明](/adaptar/native-bot-api.md)。
 
 ### KOOK共享播放
 

@@ -50,7 +50,7 @@ pub fn get_app_dir(pkg_name: &str) -> Result<String, Box<dyn std::error::Error>>
     Ok(app_dir)
 }
 
-fn get_platform(self_t: &RedLang) -> String {
+pub(super) fn get_platform(self_t: &RedLang) -> String {
     let platform = self_t.get_exmap("机器人平台");
     (*platform).to_owned()
 }
@@ -61,6 +61,16 @@ fn call_platform_api(
     action: &str,
     params: serde_json::Value,
 ) -> RedCommandResult {
+    let response = call_platform_api_value(rl, platform, action, params)?;
+    Ok(Some(json_value_to_red(&response)?))
+}
+
+pub(super) fn call_platform_api_value(
+    rl: &RedLang,
+    platform: &str,
+    action: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     if get_platform(rl) != platform {
         return Err(RedLang::make_err(&format!("此命令需要 {platform} 机器人来源")));
     }
@@ -80,7 +90,7 @@ fn call_platform_api(
     if !response.is_object() {
         return Err(RedLang::make_err("原生 API 未收到响应，请检查机器人是否已连接"));
     }
-    Ok(Some(json_value_to_red(&response)?))
+    Ok(response)
 }
 
 pub(crate) fn telegram_join_request(
@@ -453,6 +463,7 @@ fn message_handle_list(value: &RedValue) -> Result<Vec<String>, Box<dyn std::err
 }
 
 pub fn init_cq_ex_fun_map() {
+    crate::bot_commands::register();
     add_fun(vec!["取群列表", "群列表"], |self_t, params| {
         let groups_id = self_t.get_exmap("群组ID");
         let send_json = if get_platform(self_t) == "kook" {
@@ -932,20 +943,12 @@ pub fn init_cq_ex_fun_map() {
             ("telegram", "" | "文本") => ("text", "text", content.expect_text_value()?.into()),
             ("telegram", "说明") => ("caption", "caption", content.expect_text_value()?.into()),
             ("telegram", "键盘") => {
-                let markup = match content.as_ref() {
-                    RedValue::Text(text) if text.is_empty() => serde_json::json!({"inline_keyboard":[]}),
-                    _ => native_args::object(&content)?,
-                };
-                ("keyboard", "reply_markup", markup)
+                ("keyboard", "reply_markup", crate::bot_commands::edit_keyboard(&content)?)
             }
             ("telegram", "媒体") => ("media", "media", native_args::object(&content)?),
             ("kook", "" | "文本") => ("text", "content", content.expect_text_value()?.into()),
             ("kook", "卡片") => {
-                let cards = native_args::value(&content)?;
-                if !cards.is_array() {
-                    return Err(RedLang::make_err("KOOK 卡片编辑需要【数组】"));
-                }
-                ("card", "content", cards)
+                ("card", "content", crate::bot_commands::card_for_edit(&content)?)
             }
             _ => return Err(RedLang::make_err("当前平台不支持这种编辑类型")),
         };
@@ -1194,10 +1197,15 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["子关键词"], |self_t, _params| {
         return Ok(Some(self_t.get_exmap_value("子关键词")?));
     });
-    add_fun(vec!["事件内容"], |self_t, _params| {
+    add_fun(vec!["事件内容"], |self_t, params| {
         let raw_data = self_t.get_exmap("原始事件");
         let raw_json = serde_json::from_str(&raw_data)?;
-        return Ok(Some(json_value_to_red(&raw_json)?));
+        let field = self_t.get_param_text(params, 0)?;
+        if field.is_empty() {
+            Ok(Some(json_value_to_red(&raw_json)?))
+        } else {
+            crate::bot_commands::event_field(&raw_json, &field)
+        }
     });
     add_fun(vec!["OB调用"], |self_t, params| {
         let input = self_t.get_param(params, 0)?;
@@ -1220,10 +1228,7 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["KOOK卡片"], |rl, params| {
         let value = rl.get_param(params, 0)?;
-        let cards = native_args::value(&value)?;
-        if !cards.is_array() {
-            return Err(RedLang::make_err("【KOOK卡片】需要卡片【数组】"));
-        }
+        let cards = crate::bot_commands::card_args(rl, params, &value)?;
         let content = cq_params_encode(&cards.to_string());
         Ok(Some(rv_text(format!("[CQ:kook_card,content={content}]"))))
     });

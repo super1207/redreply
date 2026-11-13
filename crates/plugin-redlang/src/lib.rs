@@ -9,6 +9,7 @@
 pub mod core;
 
 mod api;
+mod bot_commands;
 mod control_plane;
 mod cqevent;
 mod cqexfun;
