@@ -307,6 +307,21 @@ async fn run(
     let total = tracks.len();
     let mut track = 1;
     let result = loop {
+        let started = {
+            let mut state = bot.playback.lock().await;
+            state.active.as_mut().is_some_and(|active| {
+                active.track = track;
+                active.cancel.is_some()
+            })
+        };
+        if started {
+            playback_notice(
+                &bot,
+                "voice_track_started",
+                json!({"channel_id":join["channel_id"],"state":"playing","track":track,"total":total}),
+            )
+            .await;
+        }
         let mut result = wait_for_track(&bot, &body, &mut child, &mut cancelled).await;
         if let Err(error) = voice_call(&bot, "leave", &body).await {
             result["leave_error"] = error.to_string().into();
@@ -328,9 +343,6 @@ async fn run(
             break json!({"state":"stopped"});
         }
         track += 1;
-        if let Some(active) = bot.playback.lock().await.active.as_mut() {
-            active.track = track;
-        }
         child = match start_track(&bot, &join, &tracks[track - 1], volume, &Value::Null).await {
             Ok(Ok(child)) => child,
             Ok(Err(response)) => {
@@ -349,13 +361,17 @@ async fn run(
         state.last = Some(result.clone());
         done.send_replace(Some(result.clone()));
     }
+    playback_notice(&bot, "voice_playback", result).await;
+}
+
+async fn playback_notice(bot: &KookConnect, event_type: &str, result: Value) {
     let event = json!({
         "time": chrono::Utc::now().timestamp(),
         "platform": "kook",
         "self_id": bot.self_id.read().unwrap_or_else(|e| e.into_inner()).clone(),
         "post_type": "notice",
         "notice_type": "kook",
-        "sub_type": "voice_playback",
+        "sub_type": event_type,
         "kook": result,
     });
     bot.send_to_onebot_client(&event).await;

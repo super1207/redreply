@@ -72,8 +72,8 @@
 
 ## KOOK
 
-原生适配器支持频道和私聊消息、卡片按钮、语音频道共享播放及原生 HTTP API。用法见[KOOK 与 Telegram 原生接口](/adaptar/native-bot-api.md)。
+原生适配器支持频道和私聊消息、卡片按钮、文件收发、语音频道共享播放及原生 HTTP API。用法见[KOOK 与 Telegram 原生接口](/adaptar/native-bot-api.md)。
 
 ## Telegram
 
-原生适配器支持群聊和私聊消息、原生 Bot API、命令菜单、行内键盘和按钮回调。用法见[KOOK 与 Telegram 原生接口](/adaptar/native-bot-api.md)。
+原生适配器支持群聊和私聊消息、原生 Bot API、命令菜单、行内与回复键盘、行内查询、投票和按钮回调。用法见[KOOK 与 Telegram 原生接口](/adaptar/native-bot-api.md)。

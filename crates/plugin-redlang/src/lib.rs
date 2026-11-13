@@ -18,6 +18,7 @@ mod font;
 mod httpevent;
 mod initevent;
 pub mod lifecycle;
+mod native_args;
 mod pyserver;
 mod python_env;
 mod script_manager;

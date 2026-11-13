@@ -2429,6 +2429,10 @@ return ""
 
 【输出流@<font color="red">内容</font>】
 
+【输出流@<font color="red">内容</font>@<font color="red">Telegram 键盘对象</font>】
+
+Telegram 可选的第二个参数接受【对象】，用于设置行内键盘或回复键盘。发送多段消息时，键盘附在最后一段。
+
 发送一条消息，然后返回消息ID，注意，输出流不支持【分页】。如果消息发送失败，则返回空文本。
 
 
@@ -2758,9 +2762,9 @@ KOOK 和 Telegram 支持使用第三个参数 `假` 移除回应。KOOK 支持 U
 
 ### Telegram调用
 
-【Telegram调用@<font color="red">Bot API 方法</font>@<font color="red">参数 JSON 对象</font>@<font color="red">上传文件 JSON 对象</font>】
+【Telegram调用@<font color="red">Bot API 方法</font>@<font color="red">参数对象</font>@<font color="red">上传文件对象</font>】
 
-调用已连接的 Telegram 机器人原生接口。参数和文件可以省略。返回带有 `retcode`、`data` 和 `message` 的对象。
+调用已连接的 Telegram 机器人原生接口。用【对象】构建参数，嵌套列表用【数组】。参数和文件可以省略。返回带有 `retcode`、`data` 和 `message` 的对象。
 
 ### Telegram下载文件
 
@@ -2770,9 +2774,21 @@ KOOK 和 Telegram 支持使用第三个参数 `假` 移除回应。KOOK 支持 U
 
 ### KOOK调用
 
-【KOOK调用@<font color="red">HTTP 方法</font>@<font color="red">接口路径</font>@<font color="red">参数 JSON 对象</font>@<font color="red">上传文件 JSON 对象</font>】
+【KOOK调用@<font color="red">HTTP 方法</font>@<font color="red">接口路径</font>@<font color="red">参数对象</font>@<font color="red">上传文件对象</font>】
 
-调用已连接的 KOOK 机器人原生接口，支持 GET 和 POST。返回带有 `retcode`、`data` 和 `message` 的对象。
+调用已连接的 KOOK 机器人原生接口，支持 GET 和 POST。上传文件对象按表单字段名填写，每个文件是包含文件名 `filename` 和字节集 `内容` 的对象。返回带有 `retcode`、`data` 和 `message` 的对象。
+
+### 接口值
+
+【接口值@<font color="red">类型</font>@<font color="red">值</font>】
+
+用于原生接口、Telegram 键盘和 KOOK 卡片中的非文本参数。类型为 `整数`、`小数`、`逻辑` 或 `空值`。逻辑值填写 `真` 或 `假`，空值省略第二个参数。文本字段直接填写原文。
+
+### KOOK卡片
+
+【KOOK卡片@<font color="red">卡片数组</font>】
+
+将 KOOK 卡片数组转换为消息片段。卡片是包含 `type=card` 和 `modules` 数组的【对象】。在 KOOK 聊天中可直接输出，也可用【输出流】发送。
 
 ### KOOK共享播放
 

@@ -1,8 +1,5 @@
-use reqwest::header::HeaderName;
-use reqwest::header::HeaderValue;
 use std::collections::HashMap;
 use std::collections::VecDeque;
-use std::str::FromStr;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
@@ -112,10 +109,6 @@ impl Topic {
         }
     }
 
-    fn apply_form(&self, form: reqwest::multipart::Form) -> reqwest::multipart::Form {
-        self.fields()
-            .fold(form, |form, (field, id)| form.text(field, id.to_string()))
-    }
 }
 
 impl TeleTramConnect {
@@ -166,22 +159,35 @@ impl TeleTramConnect {
         Ok(self.request_client_builder()?.build()?)
     }
 
+    async fn native_request(
+        &self,
+        method: &str,
+        payload: &Value,
+        files: Option<&Value>,
+        timeout: Duration,
+        echo: &Value,
+    ) -> AdapterResult<Value> {
+        let token = self.token.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let url = native_api::telegram_url(&token, method)?;
+        let client = self
+            .request_client_builder()?
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(timeout)
+            .build()?;
+        let request = native_api::post(client.post(url), payload, files)?;
+        let (status, body) = native_api::response(request, "Telegram").await?;
+        Ok(native_api::telegram_reply(status, &body, echo))
+    }
+
     async fn call_native_api(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
         let method = params["method"]
             .as_str()
             .ok_or("缺少 Telegram API 方法名")?;
-        let token = self.token.read().unwrap_or_else(|e| e.into_inner()).clone();
-        let url = native_api::telegram_url(&token, method)?;
         let empty = json!({});
         let payload = params.get("body").unwrap_or(&empty);
-        let client = self
-            .request_client_builder()?
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(Duration::from_secs(25))
-            .build()?;
-        let request = native_api::post(client.post(url), payload, params.get("files"))?;
-        let (status, body) = native_api::response(request, "Telegram").await?;
-        let mut reply = native_api::telegram_reply(status, &body, echo);
+        let mut reply = self
+            .native_request(method, payload, params.get("files"), Duration::from_secs(25), echo)
+            .await?;
         // Methods that return messages preserve provider IDs and expose an OB handle.
         let result = &reply["data"];
         let messages: Vec<_> = result
@@ -1032,351 +1038,114 @@ impl TeleTramConnect {
         new_id
     }
 
-    fn telegram_message_id(ret_json: &serde_json::Value) -> Result<String, String> {
-        if ret_json
-            .get("ok")
-            .and_then(serde_json::Value::as_bool)
-            .is_some_and(|ok| !ok)
-        {
-            return Err(format!("telegram api returned error: {ret_json}"));
+    fn message_payload(
+        chat_id: &str,
+        topic: &Topic,
+        quote: Option<&str>,
+        reply_markup: Option<&Value>,
+    ) -> AdapterResult<Value> {
+        let mut payload = json!({"chat_id": chat_id.parse::<i64>()?});
+        topic.apply(&mut payload);
+        if let Some(id) = quote.filter(|id| !id.is_empty()) {
+            payload["reply_parameters"] = json!({"message_id": id.parse::<i64>()?});
         }
-
-        ret_json["result"]["message_id"]
-            .as_i64()
-            .map(|id| id.to_string())
-            .ok_or_else(|| format!("telegram api response missing result.message_id: {ret_json}"))
+        if let Some(markup) = reply_markup {
+            payload["reply_markup"] = markup.clone();
+        }
+        Ok(payload)
     }
 
     async fn send_message_inner(
         &self,
         to_send_data: Vec<(&str, String, String)>,
-        mut quote: String,
+        quote: String,
         chat_id: &str,
         topic: &Topic,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let mut msg_ids = vec![];
-        for (tp, msg, caption) in &to_send_data.clone() {
-            if *tp == "text" {
-                // do post
-                let client = self.get_req_client()?;
-                let mut data_json = serde_json::json!({
-                    "chat_id":chat_id.parse::<i64>()?,
-                    "text":msg,
-                });
-                topic.apply(&mut data_json);
-                if !quote.is_empty() {
-                    data_json["reply_parameters"] = serde_json::json!({
-                        "message_id":quote.parse::<i64>()?
-                    });
-                    quote = "".to_owned();
-                }
-                let mut req = client
-                    .post(
-                        format!(
-                            "https://api.telegram.org/bot{}/sendMessage",
-                            self.token.read().unwrap_or_else(|e| e.into_inner())
-                        )
-                        .as_str(),
-                    )
-                    .body(reqwest::Body::from(data_json.to_string()))
-                    .build()?;
-                req.headers_mut().append(
-                    HeaderName::from_str("Content-type")?,
-                    HeaderValue::from_str("application/json")?,
-                );
-                let resp = client.execute(req).await?;
-                let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                let msg_id = Self::telegram_message_id(&ret_json)?;
-                msg_ids.push(RawMsgId {
-                    msg_id,
-                    chat_id: chat_id.to_owned(),
-                });
-            } else if *tp == "url_image" {
-                let client = self.get_req_client()?;
-                let mut data_json = serde_json::json!({
-                    "chat_id":chat_id.parse::<i64>()?,
-                    "photo":msg,
-                });
-                if !caption.is_empty() {
-                    data_json["caption"] = serde_json::Value::String(caption.clone());
-                }
-                topic.apply(&mut data_json);
-                if !quote.is_empty() {
-                    data_json["reply_parameters"] = serde_json::json!({
-                        "message_id":quote.parse::<i64>()?
-                    });
-                    quote = "".to_owned();
-                }
-                let mut req = client
-                    .post(
-                        format!(
-                            "https://api.telegram.org/bot{}/sendPhoto",
-                            self.token.read().unwrap_or_else(|e| e.into_inner())
-                        )
-                        .as_str(),
-                    )
-                    .body(reqwest::Body::from(data_json.to_string()))
-                    .build()?;
-                req.headers_mut().append(
-                    HeaderName::from_str("Content-type")?,
-                    HeaderValue::from_str("application/json")?,
-                );
-                let resp = client.execute(req).await?;
-                let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                let msg_id = Self::telegram_message_id(&ret_json)?;
-                msg_ids.push(RawMsgId {
-                    msg_id,
-                    chat_id: chat_id.to_owned(),
-                });
-            } else if *tp == "file_image" {
-                let file_bin = base64::Engine::decode(
-                    &base64::engine::GeneralPurpose::new(
-                        &base64::alphabet::STANDARD,
-                        base64::engine::general_purpose::PAD,
-                    ),
-                    msg,
-                )?;
-
-                let client = self.get_req_client()?;
-                let mut form = reqwest::multipart::Form::new()
-                    .part(
-                        "photo",
-                        reqwest::multipart::Part::bytes(file_bin).file_name("redpic"),
-                    )
-                    .part(
-                        "chat_id",
-                        reqwest::multipart::Part::text(chat_id.to_owned()),
-                    );
-                if !caption.is_empty() {
-                    form = form.part("caption", reqwest::multipart::Part::text(caption.clone()));
-                }
-                if !quote.is_empty() {
-                    form = form.part(
-                        "reply_parameters",
-                        reqwest::multipart::Part::text(
-                            serde_json::json!({
-                                "message_id":quote.parse::<i64>()?
-                            })
-                            .to_string(),
-                        ),
-                    );
-                    quote = "".to_owned();
-                }
-                let req = client
-                    .post(
-                        format!(
-                            "https://api.telegram.org/bot{}/sendPhoto",
-                            self.token.read().unwrap_or_else(|e| e.into_inner())
-                        )
-                        .as_str(),
-                    )
-                    .multipart(topic.apply_form(form))
-                    .build()?;
-                let resp = client.execute(req).await?;
-                let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                let msg_id = Self::telegram_message_id(&ret_json)?;
-                msg_ids.push(RawMsgId {
-                    msg_id,
-                    chat_id: chat_id.to_owned(),
-                });
-            } else if *tp == "url_record" {
-                let client = self.get_req_client()?;
-                let mut data_json = serde_json::json!({
-                    "chat_id":chat_id.parse::<i64>()?,
-                    "audio":msg,
-                });
-                topic.apply(&mut data_json);
-                if !quote.is_empty() {
-                    data_json["reply_parameters"] = serde_json::json!({
-                        "message_id":quote.parse::<i64>()?
-                    });
-                    quote = "".to_owned();
-                }
-                let mut req = client
-                    .post(
-                        format!(
-                            "https://api.telegram.org/bot{}/sendAudio",
-                            self.token.read().unwrap_or_else(|e| e.into_inner())
-                        )
-                        .as_str(),
-                    )
-                    .body(reqwest::Body::from(data_json.to_string()))
-                    .build()?;
-                req.headers_mut().append(
-                    HeaderName::from_str("Content-type")?,
-                    HeaderValue::from_str("application/json")?,
-                );
-                let resp = client.execute(req).await?;
-                let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                let msg_id = Self::telegram_message_id(&ret_json)?;
-                msg_ids.push(RawMsgId {
-                    msg_id,
-                    chat_id: chat_id.to_owned(),
-                });
-            } else if *tp == "file_record" {
-                let file_bin = base64::Engine::decode(
-                    &base64::engine::GeneralPurpose::new(
-                        &base64::alphabet::STANDARD,
-                        base64::engine::general_purpose::PAD,
-                    ),
-                    msg,
-                )?;
-
-                let client = self.get_req_client()?;
-                let mut form = reqwest::multipart::Form::new()
-                    .part(
-                        "audio",
-                        reqwest::multipart::Part::bytes(file_bin).file_name("语音"),
-                    )
-                    .part(
-                        "chat_id",
-                        reqwest::multipart::Part::text(chat_id.to_owned()),
-                    );
-                if !quote.is_empty() {
-                    form = form.part(
-                        "reply_parameters",
-                        reqwest::multipart::Part::text(
-                            serde_json::json!({
-                                "message_id":quote.parse::<i64>()?
-                            })
-                            .to_string(),
-                        ),
-                    );
-                    quote = "".to_owned();
-                }
-                let req = client
-                    .post(
-                        format!(
-                            "https://api.telegram.org/bot{}/sendAudio",
-                            self.token.read().unwrap_or_else(|e| e.into_inner())
-                        )
-                        .as_str(),
-                    )
-                    .multipart(topic.apply_form(form))
-                    .build()?;
-                let resp = client.execute(req).await?;
-                let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                let msg_id = Self::telegram_message_id(&ret_json)?;
-                msg_ids.push(RawMsgId {
-                    msg_id,
-                    chat_id: chat_id.to_owned(),
-                });
-            } else if matches!(*tp, "document" | "video") {
-                let method = if *tp == "document" {
-                    "sendDocument"
-                } else {
-                    "sendVideo"
-                };
-                let mut payload = json!({"chat_id": chat_id.parse::<i64>()?});
-                topic.apply(&mut payload);
-                if !quote.is_empty() {
-                    payload["reply_parameters"] = json!({"message_id": quote.parse::<i64>()?});
-                    quote.clear();
-                }
-                let mut request = json!({"method":method});
-                if let Some(base64) = msg.strip_prefix("base64://") {
-                    let fallback = if *tp == "video" { "video.mp4" } else { "file" };
-                    let filename = if caption.is_empty() {
-                        fallback
-                    } else {
-                        caption
-                    };
-                    request["files"] = json!({*tp: {"filename":filename,"base64":base64}});
-                } else {
-                    payload[*tp] = msg.as_str().into();
-                }
-                request["body"] = payload;
-                let reply = self.call_native_api(&request, &Value::Null).await?;
-                if reply["retcode"] != 0 {
-                    return Err(format!("Telegram {method}: {}", reply["message"]).into());
-                }
-                let id = reply["data"]["message_id"]
-                    .as_i64()
-                    .ok_or("Telegram 未返回 message_id")?;
-                msg_ids.push(RawMsgId {
-                    msg_id: id.to_string(),
-                    chat_id: chat_id.to_owned(),
-                });
-            } else if *tp == "music" {
-                let client = self.get_req_client()?;
-                let msg_json: serde_json::Value = serde_json::from_str(msg)?;
-                let title = msg_json["title"]
-                    .as_str()
-                    .ok_or("title not str")?
-                    .to_owned();
-                let audio = msg_json["audio"]
-                    .as_str()
-                    .ok_or("audio not str")?
-                    .to_owned();
-                let image = msg_json["image"].as_str().ok_or("image not str")?;
-                let content = msg_json["content"]
-                    .as_str()
-                    .ok_or("content not str")?
-                    .to_owned();
-                let url = msg_json["url"].as_str().ok_or("url not str")?.to_owned();
-
-                let mut form = reqwest::multipart::Form::new();
-
-                if !image.is_empty() {
-                    let cli = self.get_req_client()?;
-                    let resp = cli.get(image).send().await?;
-                    let image_bin = resp.bytes().await?;
-                    form = form.part(
-                        "thumbnail",
-                        reqwest::multipart::Part::bytes(image_bin.to_vec()).file_name("image.jpg"),
-                    )
-                }
-
-                {
-                    let cli = self.get_req_client()?;
-                    let resp = cli.get(audio).send().await?;
-                    let audio_bin = resp.bytes().await?;
-                    form = form.part(
-                        "audio",
-                        reqwest::multipart::Part::bytes(audio_bin.to_vec())
-                            .file_name(title.clone()),
-                    )
-                }
-
-                if !title.is_empty() {
-                    form = form.part("title", reqwest::multipart::Part::text(title));
-                }
-
-                if !content.is_empty() {
-                    form = form.part("performer", reqwest::multipart::Part::text(content));
-                }
-
-                if !url.is_empty() {
-                    form = form.part("caption", reqwest::multipart::Part::text(url));
-                }
-
-                form = form.part(
-                    "chat_id",
-                    reqwest::multipart::Part::text(chat_id.to_owned()),
-                );
-
-                let req = client
-                    .post(
-                        format!(
-                            "https://api.telegram.org/bot{}/sendAudio",
-                            self.token.read().unwrap_or_else(|e| e.into_inner())
-                        )
-                        .as_str(),
-                    )
-                    .multipart(topic.apply_form(form))
-                    .build()?;
-                let resp = client.execute(req).await?;
-                let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                let _ = cq_add_log(&format!("music card ret:{:?}", ret_json));
-                let msg_id = Self::telegram_message_id(&ret_json)?;
-                msg_ids.push(RawMsgId {
-                    msg_id,
-                    chat_id: chat_id.to_owned(),
-                });
+        reply_markup: Option<&Value>,
+    ) -> AdapterResult<String> {
+        if let Some(markup) = reply_markup {
+            native_api::object(markup)?;
+            if to_send_data.is_empty() {
+                return Err("Telegram 键盘需要可发送的消息".into());
             }
         }
-        let msg_id = self.add_msg_id(&msg_ids);
-        Ok(msg_id)
+        let mut msg_ids = Vec::with_capacity(to_send_data.len());
+        let last = to_send_data.len().saturating_sub(1);
+        for (index, (kind, message, caption)) in to_send_data.into_iter().enumerate() {
+            let mut payload = Self::message_payload(
+                chat_id,
+                topic,
+                (index == 0).then_some(quote.as_str()),
+                reply_markup.filter(|_| index == last),
+            )?;
+            let mut files = json!({});
+            let method = match kind {
+                "text" => {
+                    payload["text"] = message.into();
+                    "sendMessage"
+                }
+                "url_image" | "file_image" | "url_record" | "file_record" | "document" | "video" => {
+                    let (method, field, filename) = match kind {
+                        "url_image" | "file_image" => ("sendPhoto", "photo", "redpic"),
+                        "url_record" | "file_record" => ("sendAudio", "audio", "语音"),
+                        "document" => ("sendDocument", "document", "file"),
+                        _ => ("sendVideo", "video", "video.mp4"),
+                    };
+                    if kind == "file_image" || kind == "file_record" {
+                        files[field] = json!({"filename":filename,"base64":message});
+                    } else if let Some(base64) = message.strip_prefix("base64://") {
+                        let name = if caption.is_empty() { filename } else { &caption };
+                        files[field] = json!({"filename":name,"base64":base64});
+                    } else {
+                        payload[field] = message.into();
+                    }
+                    if matches!(kind, "url_image" | "file_image" | "url_record") && !caption.is_empty() {
+                        payload["caption"] = caption.into();
+                    }
+                    method
+                }
+                "music" => {
+                    let music: Value = serde_json::from_str(&message)?;
+                    let title = read_json_str(&music, "title");
+                    let image = read_json_str(&music, "image");
+                    let audio = read_json_str(&music, "audio");
+                    let client = self.get_req_client()?;
+                    let encoder = base64::engine::general_purpose::STANDARD;
+                    if !image.is_empty() {
+                        let bytes = client.get(image).send().await?.bytes().await?;
+                        files["thumbnail"] = json!({"filename":"image.jpg","base64":encoder.encode(bytes)});
+                    }
+                    let bytes = client.get(audio).send().await?.bytes().await?;
+                    let filename = if title.is_empty() { "audio" } else { &title };
+                    files["audio"] = json!({"filename":filename,"base64":encoder.encode(bytes)});
+                    for (key, value) in [
+                        ("title", title),
+                        ("performer", read_json_str(&music, "content")),
+                        ("caption", read_json_str(&music, "url")),
+                    ] {
+                        if !value.is_empty() {
+                            payload[key] = value.into();
+                        }
+                    }
+                    "sendAudio"
+                }
+                _ => return Err(format!("Telegram 不支持的消息类型：{kind}").into()),
+            };
+            let reply = self
+                .native_request(method, &payload, Some(&files), Duration::from_secs(60), &Value::Null)
+                .await?;
+            if reply["retcode"] != 0 {
+                return Err(format!("Telegram {method}: {}", reply["message"]).into());
+            }
+            let id = reply["data"]["message_id"]
+                .as_i64()
+                .ok_or("Telegram 未返回 message_id")?;
+            msg_ids.push(RawMsgId {
+                msg_id: id.to_string(),
+                chat_id: chat_id.to_owned(),
+            });
+        }
+        Ok(self.add_msg_id(&msg_ids))
     }
 
     async fn deal_ob_send_group_msg(
@@ -1409,7 +1178,13 @@ impl TeleTramConnect {
             .await?;
 
         let msg_id = self
-            .send_message_inner(to_send_data, quote, &group_id, &Topic::from_params(params)?)
+            .send_message_inner(
+                to_send_data,
+                quote,
+                &group_id,
+                &Topic::from_params(params)?,
+                params.get("reply_markup"),
+            )
             .await?;
 
         let send_json = serde_json::json!({
@@ -1453,7 +1228,13 @@ impl TeleTramConnect {
             .await?;
 
         let msg_id = self
-            .send_message_inner(to_send_data, quote, &user_id, &Topic::from_params(params)?)
+            .send_message_inner(
+                to_send_data,
+                quote,
+                &user_id,
+                &Topic::from_params(params)?,
+                params.get("reply_markup"),
+            )
             .await?;
 
         let send_json = serde_json::json!({
@@ -1787,6 +1568,17 @@ mod native_tests {
         direct.apply(&mut payload);
         assert_eq!(payload["direct_messages_topic_id"], 8);
         assert!(Topic::from_params(&payload).is_err());
+    }
+
+    #[test]
+    fn keyboard_payload_keeps_native_topic_and_reply() {
+        let keyboard = json!({"inline_keyboard":[[{"text":"点选","callback_data":"001"}]]});
+        let topic = Topic::from_message(&json!({"message_thread_id":5,"is_topic_message":true}));
+        let payload = TeleTramConnect::message_payload("-100", &topic, Some("8"), Some(&keyboard)).unwrap();
+        assert_eq!(payload, json!({
+            "chat_id":-100, "message_thread_id":5,
+            "reply_parameters":{"message_id":8}, "reply_markup":keyboard
+        }));
     }
 
     #[test]

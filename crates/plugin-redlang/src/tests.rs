@@ -211,3 +211,56 @@ fn telegram_topic_follows_only_the_original_bot_and_chat() {
     apply_telegram_topic(&event, "123", "-100234", &mut payload);
     assert_eq!(payload, json!({"message_thread_id":9}));
 }
+
+
+#[test]
+fn native_objects_keep_text_and_explicit_values_separate() {
+    use crate::native_args;
+    use serde_json::json;
+
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    let value = rl.parse(
+        "【对象@text@假@callback_data@001@reply_markup@【对象@inline_keyboard@【数组@【数组@【对象@text@123】】】】@is_anonymous@【接口值@逻辑@假】@offset@【接口值@整数@-2】@optional@【接口值@空值】】"
+    ).unwrap();
+    assert_eq!(native_args::object(&value).unwrap(), json!({
+        "text":"假", "callback_data":"001", "reply_markup":{"inline_keyboard":[[{"text":"123"}]]},
+        "is_anonymous":false, "offset":-2, "optional":null
+    }));
+    assert!(rl.parse("【接口值@整数@1.5】").is_err());
+    assert!(rl.parse("【接口值@小数@NaN】").is_err());
+
+    let files = crate::core::astparser::parse_to_ast(
+        "【对象@file@【对象@filename@说明.txt@内容@【BASE64解码@YWJj】】】"
+    ).unwrap();
+    assert_eq!(native_args::files(&mut rl, &[files], 0).unwrap(), Some(json!({
+        "file":{"filename":"说明.txt","base64":"YWJj"}
+    })));
+    let invalid = crate::core::astparser::parse_to_ast(
+        "【对象@file@【对象@filename@说明.txt@内容@abc】】"
+    ).unwrap();
+    assert!(native_args::files(&mut rl, &[invalid], 0).is_err());
+
+    let card = rl.parse("【KOOK卡片@【数组@【对象@type@card@modules@【数组@【对象@type@section@text@测试】】】】】").unwrap();
+    let message = redlang::mytool::str_msg_to_arr(&json!(card.expect_text_value().unwrap())).unwrap();
+    assert_eq!(message[0]["type"], "kook_card");
+    assert_eq!(
+        serde_json::from_str::<serde_json::Value>(message[0]["data"]["content"].as_str().unwrap()).unwrap(),
+        json!([{"type":"card","modules":[{"type":"section","text":"测试"}]}])
+    );
+}
+
+#[test]
+fn telegram_join_request_reuses_existing_approval_and_refusal() {
+    use crate::cqexfun::telegram_join_request;
+    use serde_json::json;
+
+    let event = json!({
+        "notice_type":"telegram", "sub_type":"chat_join_request",
+        "telegram":{"chat":{"id":-100234},"from":{"id":42},"user_chat_id":1000}
+    });
+    let expected = json!({"chat_id":-100234,"user_id":42});
+    assert_eq!(telegram_join_request(&event, true), Some(("approveChatJoinRequest", expected.clone())));
+    assert_eq!(telegram_join_request(&event, false), Some(("declineChatJoinRequest", expected)));
+    assert!(telegram_join_request(&json!({"notice_type":"telegram","sub_type":"chat_join_request"}), true).is_none());
+}

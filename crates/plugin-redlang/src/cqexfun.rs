@@ -16,6 +16,7 @@ use crate::core::{
     set_const_val, set_temp_const_val, RedCommandResult, RedLang, RedValue, RedValueData, CLEAR_UUID,
 };
 use crate::exfun::json_value_to_red;
+use crate::native_args;
 use redlang::cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2};
 use crate::lifecycle::pkg_can_run;
 use redlang::mytool::{cq_params_encode, cq_text_encode, json_to_cq_str, read_json_str};
@@ -82,20 +83,48 @@ fn call_platform_api(
     Ok(Some(json_value_to_red(&response)?))
 }
 
-fn read_native_object(
-    rl: &mut RedLang,
-    params: &[crate::core::astparser::Ast],
-    index: usize,
-) -> Result<Option<serde_json::Value>, Box<dyn std::error::Error>> {
-    let text = rl.get_param_text(params, index)?;
-    if text.trim().is_empty() {
-        return Ok(None);
+pub(crate) fn telegram_join_request(
+    event: &serde_json::Value,
+    approve: bool,
+) -> Option<(&'static str, serde_json::Value)> {
+    if event["notice_type"] != "telegram" || event["sub_type"] != "chat_join_request" {
+        return None;
     }
-    let value: serde_json::Value = serde_json::from_str(&text)?;
-    if !value.is_object() {
-        return Err(RedLang::make_err("原生 API 参数及文件必须使用 JSON 对象"));
+    let request = &event["telegram"];
+    let chat_id = request["chat"]["id"].as_i64()?;
+    let user_id = request["from"]["id"].as_i64()?;
+    let method = if approve {
+        "approveChatJoinRequest"
+    } else {
+        "declineChatJoinRequest"
+    };
+    Some((method, serde_json::json!({"chat_id": chat_id, "user_id": user_id})))
+}
+
+fn handle_telegram_join_request(
+    rl: &RedLang,
+    event: &serde_json::Value,
+    approve: bool,
+) -> RedCommandResult {
+    let Some((method, body)) = telegram_join_request(event, approve) else {
+        return Err(RedLang::make_err("Telegram 入群申请缺少聊天或用户 ID"));
+    };
+    let response = call_platform_api(
+        rl,
+        "telegram",
+        "telegram_api",
+        serde_json::json!({"method": method, "body": body}),
+    )?
+    .ok_or("Telegram 入群审核未返回响应")?;
+    let RedValue::Object(fields) = response.as_ref() else {
+        return Err(RedLang::make_err("Telegram 入群审核返回格式错误"));
+    };
+    let code = fields.get("retcode").ok_or("缺少 retcode")?.expect_text_value()?;
+    if code != "0" {
+        let message = fields.get("message").ok_or("缺少 message")?.expect_text_value()?;
+        return Err(RedLang::make_err(&format!("Telegram 入群审核失败（{code}）{message}")));
     }
-    Ok(Some(value))
+    Ok(Some(rv_empty()))
 }
 
 fn get_sub_id(rl: &RedLang, msg_type: &str) -> String {
@@ -241,6 +270,14 @@ pub(crate) fn apply_telegram_topic(
 }
 
 pub fn send_one_msg(rl: &RedLang, msg: &str) -> Result<String, Box<dyn std::error::Error>> {
+    send_one_msg_with_markup(rl, msg, None)
+}
+
+fn send_one_msg_with_markup(
+    rl: &RedLang,
+    msg: &str,
+    reply_markup: Option<serde_json::Value>,
+) -> Result<String, Box<dyn std::error::Error>> {
     if msg.is_empty() {
         return Ok("".to_string());
     }
@@ -287,6 +324,9 @@ pub fn send_one_msg(rl: &RedLang, msg: &str) -> Result<String, Box<dyn std::erro
     let self_id = rl.get_exmap("机器人ID");
     let platform = get_platform(rl);
     if platform == "telegram" {
+        if let Some(reply_markup) = reply_markup {
+            send_json["params"]["reply_markup"] = reply_markup;
+        }
         let source = rl.get_exmap("原始事件");
         let target = if msg_type == "group" { sub_id.clone() } else { rl.get_exmap("发送者ID").to_string() };
         if let Ok(event) = serde_json::from_str(&source) {
@@ -824,7 +864,16 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["输出流"], |self_t, params| {
         let msg = self_t.get_param_text(params, 0)?;
-        match send_one_msg(self_t, &msg) {
+        let markup = if get_platform(self_t) == "telegram" && params.len() > 1 {
+            let value = self_t.get_param(params, 1)?;
+            match value.as_ref() {
+                RedValue::Text(text) if text.is_empty() => None,
+                _ => Some(native_args::object(&value)?),
+            }
+        } else {
+            None
+        };
+        match send_one_msg_with_markup(self_t, &msg, markup) {
             Ok(msg_id) => Ok(Some(rv_text(msg_id))),
             Err(e) => {
                 let _ = cq_add_log_w(&format!("输出流失败，{}", e));
@@ -903,11 +952,25 @@ pub fn init_cq_ex_fun_map() {
         let js_v = serde_json::from_str(&call_ret)?;
         return Ok(Some(json_value_to_red(&js_v)?));
     });
+    add_fun(vec!["接口值"], |rl, params| {
+        let kind = rl.get_param_text(params, 0)?;
+        let value = rl.get_param_text(params, 1)?;
+        Ok(Some(native_args::scalar(&kind, &value)?))
+    });
+    add_fun(vec!["KOOK卡片"], |rl, params| {
+        let value = rl.get_param(params, 0)?;
+        let cards = native_args::value(&value)?;
+        if !cards.is_array() {
+            return Err(RedLang::make_err("【KOOK卡片】需要卡片【数组】"));
+        }
+        let content = cq_params_encode(&cards.to_string());
+        Ok(Some(rv_text(format!("[CQ:kook_card,content={content}]"))))
+    });
     add_fun(vec!["Telegram调用"], |rl, params| {
         let method = rl.get_param_text(params, 0)?;
-        let body = read_native_object(rl, params, 1)?.unwrap_or_else(|| serde_json::json!({}));
+        let body = native_args::body(rl, params, 1)?;
         let mut request = serde_json::json!({"method": method, "body": body});
-        if let Some(files) = read_native_object(rl, params, 2)? {
+        if let Some(files) = native_args::files(rl, params, 2)? {
             request["files"] = files;
         }
         call_platform_api(rl, "telegram", "telegram_api", request)
@@ -933,9 +996,9 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["KOOK调用"], |rl, params| {
         let method = rl.get_param_text(params, 0)?.to_ascii_uppercase();
         let endpoint = rl.get_param_text(params, 1)?;
-        let body = read_native_object(rl, params, 2)?.unwrap_or_else(|| serde_json::json!({}));
+        let body = native_args::body(rl, params, 2)?;
         let mut request = serde_json::json!({"http_method": method, "endpoint": endpoint, "body": body});
-        if let Some(files) = read_native_object(rl, params, 3)? {
+        if let Some(files) = native_args::files(rl, params, 3)? {
             request["files"] = files;
         }
         call_platform_api(rl, "kook", "kook_api", request)
@@ -1594,6 +1657,11 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["同意"], |self_t, params| {
         let raw_data = self_t.get_exmap("原始事件");
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
+        if get_platform(self_t) == "telegram"
+            && raw_json["notice_type"] == "telegram" && raw_json["sub_type"] == "chat_join_request"
+        {
+            return handle_telegram_join_request(self_t, &raw_json, true);
+        }
         let request_type = read_json_str(&raw_json, "request_type");
         let sub_type = read_json_str(&raw_json, "sub_type");
         let flag = read_json_str(&raw_json, "flag");
@@ -1645,6 +1713,11 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["拒绝"], |self_t, params| {
         let raw_data = self_t.get_exmap("原始事件");
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
+        if get_platform(self_t) == "telegram"
+            && raw_json["notice_type"] == "telegram" && raw_json["sub_type"] == "chat_join_request"
+        {
+            return handle_telegram_join_request(self_t, &raw_json, false);
+        }
         let request_type = read_json_str(&raw_json, "request_type");
         let sub_type = read_json_str(&raw_json, "sub_type");
         let flag = read_json_str(&raw_json, "flag");
