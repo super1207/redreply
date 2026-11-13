@@ -33,4 +33,6 @@ pub struct Voice {
 #[cfg(feature = "blocking")]
 mod blocking;
 #[cfg(feature = "blocking")]
+mod transport;
+#[cfg(feature = "blocking")]
 pub use blocking::*;

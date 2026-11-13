@@ -22,6 +22,7 @@ mod pyserver;
 mod python_env;
 mod script_manager;
 mod status;
+mod tts_commands;
 mod webexfun;
 
 #[cfg(test)]

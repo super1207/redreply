@@ -7,6 +7,7 @@
 * [onebot网络接口](/onebot/)
 * [MQTT推送接口](/mqtt/)
 * [数据持久化](/pgsql/)
+* [文字转语音](/tts/)
 * [语法详细参考](/detailref/)
 * [设计理念](/idea/)
 * [框架与插件架构](/plugin-architecture/)

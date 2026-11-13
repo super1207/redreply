@@ -41,8 +41,11 @@
 //!     }
 //!     ```
 
+mod auth;
 mod constants;
 
+#[cfg(feature = "blocking")]
+mod deadline;
 pub mod error;
 pub mod tts;
 pub mod voice;
