@@ -72,8 +72,8 @@
 
 ## KOOK
 
-支持对接KOOK官方平台。
+原生适配器支持频道和私聊消息、卡片按钮、语音频道共享播放及原生 HTTP API。用法见[KOOK 与 Telegram 原生接口](/adaptar/native-bot-api.md)。
 
-## telegram
+## Telegram
 
-支持对接telegram官方平台。目前只支持了基础的群组和私聊的图文收发、发送语音、发送自定义音卡，所以某些平台相关的命令暂时是不可用的，若有需要，请向我们反馈。
+原生适配器支持群聊和私聊消息、原生 Bot API、命令菜单、行内键盘和按钮回调。用法见[KOOK 与 Telegram 原生接口](/adaptar/native-bot-api.md)。

@@ -110,6 +110,7 @@ dialog#adapter-dialog::backdrop { background:rgba(0,0,0,0.45); }
     <div class="dlg-row" data-field="kook-token"><span>Token</span><input id="adp-kook-token"></div>
     <div class="dlg-row" data-field="tg-token"><span>Token</span><input id="adp-tg-token"></div>
     <div class="dlg-row" data-field="tg-proxy"><span>Proxy</span><input id="adp-tg-proxy" placeholder="http://127.0.0.1:7890"></div>
+    <div class="dlg-row" data-field="tg-updates"><span>订阅更新</span><input id="adp-tg-updates" placeholder="留空使用默认，或填 message,callback_query" aria-label="Telegram 更新类型，用逗号分隔"></div>
     <div class="dlg-row" data-field="email-user"><span>邮箱地址</span><input id="adp-email-user"></div>
     <div class="dlg-row" data-field="email-pass"><span>邮箱密码</span><input id="adp-email-pass" type="password"></div>
     <div class="dlg-row" data-field="imap-server"><span>IMAP服务器</span><input id="adp-imap-server"></div>
@@ -225,7 +226,7 @@ const ADAPTER_FIELDS = {
   qqguild_public: ['appid', 'appsecret', 'guild-token'],
   qqguild_private: ['appid', 'appsecret', 'guild-token'],
   kook: ['kook-token'],
-  telegram: ['tg-token', 'tg-proxy'],
+  telegram: ['tg-token', 'tg-proxy', 'tg-updates'],
   email: ['email-user', 'email-pass', 'imap-server', 'imap-port', 'imap-ssl', 'smtp-server', 'smtp-port', 'smtp-ssl'],
   yunhu: ['yunhu-url', 'yunhu-token', 'yunhu-self']
 };
@@ -250,7 +251,7 @@ function syncAdapterFields() {
   });
 }
 function resetAdapterFields() {
-  ['uri', 'token', 'appid', 'appsecret', 'guild-token', 'kook-token', 'tg-token', 'tg-proxy',
+  ['uri', 'token', 'appid', 'appsecret', 'guild-token', 'kook-token', 'tg-token', 'tg-proxy', 'tg-updates',
    'email-user', 'email-pass', 'imap-server', 'smtp-server', 'yunhu-url', 'yunhu-token', 'yunhu-self'
   ].forEach(function (id) { adapterField(id).value = ''; });
   adapterField('tls').value = '0';
@@ -285,6 +286,7 @@ function parseAdapterUrl(raw) {
       const obj = JSON.parse(raw.slice(11));
       document.getElementById('adp-type').value = 'telegram';
       set('tg-token', obj.Token); set('tg-proxy', obj.Proxy);
+      if (Array.isArray(obj.AllowedUpdates)) set('tg-updates', obj.AllowedUpdates.join(','));
     } else if (raw.startsWith('email://')) {
       const obj = JSON.parse(raw.slice(8));
       document.getElementById('adp-type').value = 'email';
@@ -327,7 +329,12 @@ function buildAdapterUrl() {
     return type + '://' + JSON.stringify({ AppID: value('appid'), AppSecret: value('appsecret'), Token: value('guild-token') });
   }
   if (type === 'kook') return 'kook://' + JSON.stringify({ Token: value('kook-token') });
-  if (type === 'telegram') return 'telegram://' + JSON.stringify({ Token: value('tg-token'), Proxy: value('tg-proxy') });
+  if (type === 'telegram') {
+    const config = { Token: value('tg-token'), Proxy: value('tg-proxy') };
+    const updates = value('tg-updates').split(',').map(function (name) { return name.trim(); }).filter(Boolean);
+    if (updates.length) config.AllowedUpdates = Array.from(new Set(updates));
+    return 'telegram://' + JSON.stringify(config);
+  }
   if (type === 'email') {
     return 'email://' + JSON.stringify({
       username: value('email-user'),

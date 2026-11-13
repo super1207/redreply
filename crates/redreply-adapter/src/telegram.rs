@@ -13,7 +13,9 @@ use crate::cqapi::{cq_add_log, cq_add_log_w};
 use crate::mytool::{
     cq_fix_image_file_in_arr, cq_params_encode, cq_text_encode, read_json_str, str_msg_to_arr,
 };
+use crate::{native_api, AdapterResult};
 use async_trait::async_trait;
+use serde_json::{json, Value};
 use uuid::Uuid;
 
 #[derive(Debug, Clone)]
@@ -25,6 +27,7 @@ pub struct TeleTramConnect {
     pub is_stop: Arc<AtomicBool>,
     msg_ids: Arc<RwLock<VecDeque<MsgIdPair>>>,
     username2userid: Arc<RwLock<HashMap<String, i64>>>,
+    allowed_updates: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -49,6 +52,7 @@ impl TeleTramConnect {
             is_stop: Arc::new(AtomicBool::new(false)),
             msg_ids: Arc::new(RwLock::new(VecDeque::new())),
             username2userid: Arc::new(RwLock::new(HashMap::new())),
+            allowed_updates: Vec::new(),
         }
     }
 
@@ -65,23 +69,119 @@ impl TeleTramConnect {
         self.username2userid.read().unwrap_or_else(|e| e.into_inner()).get(username).cloned()
     }
 
-    fn get_req_client(&self) -> Result<reqwest::Client, Box<dyn std::error::Error + Send + Sync>> {
-        let proxy;
-        {
-            let lk = self.proxy.read().unwrap_or_else(|e| e.into_inner());
-            proxy = lk.to_owned();
-        }
+    fn request_client_builder(&self) -> AdapterResult<reqwest::ClientBuilder> {
+        let proxy = self.proxy.read().unwrap_or_else(|e| e.into_inner());
+        let builder = reqwest::Client::builder().timeout(Duration::from_secs(60));
         if proxy.is_empty() {
-            Ok(reqwest::Client::builder()
-                .no_proxy()
-                .timeout(Duration::from_secs(60))
-                .build()?)
+            Ok(builder.no_proxy())
         } else {
-            Ok(reqwest::Client::builder()
-                .proxy(reqwest::Proxy::all(proxy.as_str())?)
-                .timeout(Duration::from_secs(60))
-                .build()?)
+            Ok(builder.proxy(reqwest::Proxy::all(proxy.as_str())?))
         }
+    }
+
+    fn get_req_client(&self) -> AdapterResult<reqwest::Client> {
+        Ok(self.request_client_builder()?.build()?)
+    }
+
+    async fn call_native_api(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let method = params["method"]
+            .as_str()
+            .ok_or("缺少 Telegram API 方法名")?;
+        let token = self.token.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let url = native_api::telegram_url(&token, method)?;
+        let empty = json!({});
+        let payload = params.get("body").unwrap_or(&empty);
+        let client = self
+            .request_client_builder()?
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(25))
+            .build()?;
+        let request = native_api::post(client.post(url), payload, params.get("files"))?;
+        let (status, body) = native_api::response(request, "Telegram").await?;
+        let mut reply = native_api::telegram_reply(status, &body, echo);
+        // Methods that return messages preserve provider IDs and expose an OB handle.
+        let result = &reply["data"];
+        let messages: Vec<_> = result
+            .as_array()
+            .map_or_else(|| vec![result], |items| items.iter().collect());
+        let ids: Vec<_> = messages
+            .into_iter()
+            .filter_map(|message| {
+                Some(RawMsgId {
+                    msg_id: message["message_id"].as_i64()?.to_string(),
+                    chat_id: message["chat"]["id"].as_i64()?.to_string(),
+                })
+            })
+            .collect();
+        if !ids.is_empty() {
+            reply["redreply_message_id"] = self.add_msg_id(&ids).into();
+        }
+        Ok(reply)
+    }
+
+    fn updates_url(&self, offset: Option<i64>, timeout: u64) -> AdapterResult<reqwest::Url> {
+        let mut url = native_api::telegram_url(&self.token.read().unwrap_or_else(|e| e.into_inner()), "getUpdates")?;
+        let mut query = url.query_pairs_mut();
+        query.append_pair("timeout", &timeout.to_string());
+        query.append_pair(
+            "allowed_updates",
+            &serde_json::to_string(&self.allowed_updates)?,
+        );
+        if let Some(offset) = offset {
+            query.append_pair("offset", &offset.to_string());
+        }
+        drop(query);
+        Ok(url)
+    }
+
+    fn native_update(&self, kind: &str, event: &Value) -> Value {
+        let data = &event[kind];
+        let self_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let timestamp = SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        let chat = data.get("chat").unwrap_or(&data["message"]["chat"]);
+        let from = &data["from"];
+        let mut notice = json!({
+            "time": timestamp,
+            "platform": "telegram",
+            "self_id": self_id,
+            "post_type": "notice",
+            "notice_type": "telegram",
+            "sub_type": kind,
+            "update_id": event["update_id"],
+            "telegram": data,
+        });
+        if let Some(user_id) = from["id"].as_i64() {
+            notice["user_id"] = user_id.to_string().into();
+            let name = from["username"]
+                .as_str()
+                .or_else(|| from["first_name"].as_str())
+                .unwrap_or_default();
+            notice["sender"] = json!({"user_id": user_id.to_string(), "nickname": name});
+        }
+        if let Some(chat_id) = chat["id"].as_i64() {
+            let chat_id = chat_id.to_string();
+            notice["chat_id"] = chat_id.clone().into();
+            if let Some(chat_type) = chat["type"].as_str() {
+                notice["chat_type"] = chat_type.into();
+                if chat_type != "private" {
+                    notice["group_id"] = chat_id.clone().into();
+                }
+            }
+            if kind == "callback_query" {
+                if let Some(message_id) = data["message"]["message_id"].as_i64() {
+                    notice["message_id"] = self
+                        .add_msg_id(&vec![RawMsgId {
+                            msg_id: message_id.to_string(),
+                            chat_id,
+                        }])
+                        .into();
+                }
+            }
+        }
+        notice
     }
 
     async fn proxyrequest(
@@ -94,7 +194,8 @@ impl TeleTramConnect {
         } else {
             request
         };
-        Ok(request.send().await?.text().await?)
+        let response = request.send().await.map_err(|err| err.without_url())?;
+        Ok(response.text().await.map_err(|err| err.without_url())?)
     }
 
     fn parse_updates_result(ret: &str) -> Result<Vec<serde_json::Value>, String> {
@@ -277,7 +378,8 @@ impl TeleTramConnect {
                 "user_id":user_id,
                 "nickname":nickname,
             },
-            "platform":"telegram"
+            "platform":"telegram",
+            "telegram": message_obj,
         });
         tokio::task::spawn_blocking(move || {
             let json_str = event_json.to_string();
@@ -342,7 +444,8 @@ impl TeleTramConnect {
             "raw_message":message,
             "font":0,
             "sender":sender,
-            "platform":"telegram"
+            "platform":"telegram",
+            "telegram": event["message"],
         });
         tokio::task::spawn_blocking(move || {
             let json_str = event_json.to_string();
@@ -358,6 +461,20 @@ impl TeleTramConnect {
         &self,
         event: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let message_chat_type = event["message"]["chat"]["type"].as_str();
+        let ordinary_message =
+            matches!(message_chat_type, Some("private" | "group" | "supergroup"));
+        let update = event
+            .as_object()
+            .and_then(|fields| fields.keys().find(|key| key.as_str() != "update_id"));
+        if let Some(kind) = update.filter(|_| !ordinary_message) {
+            let notice = self.native_update(kind, event);
+            tokio::task::spawn_blocking(move || {
+                if let Err(error) = crate::cqevent::do_1207_event(&notice.to_string()) {
+                    let _ = cq_add_log_w(&format!("Telegram 原生事件处理失败：{error}"));
+                }
+            });
+        }
         let is_msg = event.get("message").is_some();
         if is_msg {
             if let Some(from_id) = event["message"]["from"]["id"]
@@ -385,11 +502,8 @@ impl TeleTramConnect {
     async fn do_recv_loop(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let mut last_update_id = None;
 
-        let mut url = format!(
-            "https://api.telegram.org/bot{}/getUpdates",
-            self.token.read().unwrap_or_else(|e| e.into_inner())
-        );
-        let result = match self.proxyrequest(&url).await {
+        let url = self.updates_url(None, 0)?;
+        let result = match self.proxyrequest(url.as_str()).await {
             Ok(ret) => match Self::parse_updates_result(&ret) {
                 Ok(result) => result,
                 Err(err) => {
@@ -425,19 +539,8 @@ impl TeleTramConnect {
             if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
-            if let Some(last_update_id) = last_update_id {
-                url = format!(
-                    "https://api.telegram.org/bot{}/getUpdates?offset={}&timeout=8",
-                    self.token.read().unwrap_or_else(|e| e.into_inner()),
-                    last_update_id
-                );
-            } else {
-                url = format!(
-                    "https://api.telegram.org/bot{}/getUpdates?timeout=8",
-                    self.token.read().unwrap_or_else(|e| e.into_inner())
-                );
-            }
-            let ret = match self.proxyrequest(&url).await {
+            let url = self.updates_url(last_update_id, 8)?;
+            let ret = match self.proxyrequest(url.as_str()).await {
                 Ok(ret) => ret,
                 Err(err) => {
                     let _ = cq_add_log_w(&format!(
@@ -1182,6 +1285,11 @@ impl BotConnectTrait for TeleTramConnect {
             .ok_or("proxy not str")?;
         // 先重置再赋值，避免二次 connect 时累积双份数据
         *self.proxy.write().unwrap_or_else(|e| e.into_inner()) = proxy.to_owned();
+        self.allowed_updates = match config_json.get("AllowedUpdates") {
+            Some(updates) => serde_json::from_value(updates.clone())
+                .map_err(|_| "Telegram AllowedUpdates 必须是字符串数组")?,
+            None => Vec::new(),
+        };
         let ret_text = self
             .proxyrequest(format!("https://api.telegram.org/bot{}/getMe", token).as_str())
             .await?;
@@ -1240,6 +1348,9 @@ impl BotConnectTrait for TeleTramConnect {
         let def = serde_json::json!({});
         let params = json.get("params").unwrap_or(&def);
         let send_json = match action {
+            "telegram_api" => {
+                native_api::action_result(self.call_native_api(params, echo).await, echo)
+            }
             "send_group_msg" => self.deal_ob_send_group_msg(params, echo).await?,
             "send_private_msg" => self.deal_ob_send_private_msg(params, echo).await?,
             "send_msg" => {
@@ -1341,5 +1452,59 @@ impl BotConnectTrait for TeleTramConnect {
             return vec![];
         }
         vec![("telegram".to_owned(), lk.to_owned())]
+    }
+}
+
+#[cfg(test)]
+mod native_tests {
+    use super::*;
+
+    #[test]
+    fn callback_retains_provider_and_redreply_chat_context() {
+        let bot = TeleTramConnect::build("");
+        let event = json!({"update_id":42,"callback_query":{
+            "id":"callback", "data":"next", "from":{"id":7,"first_name":"User"},
+            "message":{"message_id":9,"chat":{"id":-100123,"type":"supergroup"}}
+        }});
+        let notice = bot.native_update("callback_query", &event);
+        assert_eq!(notice["sub_type"], "callback_query");
+        assert_eq!(notice["group_id"], "-100123");
+        assert_eq!(notice["telegram"]["id"], "callback");
+        let mapped = bot.get_msg_id(notice["message_id"].as_str().unwrap());
+        assert_eq!(mapped[0].msg_id, "9");
+        assert_eq!(mapped[0].chat_id, "-100123");
+    }
+
+    #[test]
+    fn inline_callback_has_no_synthetic_chat() {
+        let bot = TeleTramConnect::build("");
+        let event = json!({"update_id":43,"callback_query":{
+            "id":"callback", "from":{"id":7}, "inline_message_id":"inline"
+        }});
+        let notice = bot.native_update("callback_query", &event);
+        assert!(notice.get("chat_id").is_none());
+        assert_eq!(notice["telegram"]["inline_message_id"], "inline");
+    }
+
+    #[test]
+    fn polling_sets_allowed_updates_even_if_previous_session_filtered_callbacks() {
+        let mut bot = TeleTramConnect::build("");
+        let url = bot.updates_url(Some(42), 8).unwrap();
+        let query = url.query_pairs().collect::<HashMap<_, _>>();
+        assert_eq!(query["allowed_updates"], "[]");
+        assert_eq!(query["offset"], "42");
+        bot.allowed_updates = vec![
+            "message".to_owned(),
+            "callback_query".to_owned(),
+            "chat_member".to_owned(),
+        ];
+        let url = bot.updates_url(None, 0).unwrap();
+        assert_eq!(
+            url.query_pairs()
+                .find(|(key, _)| key == "allowed_updates")
+                .unwrap()
+                .1,
+            r#"["message","callback_query","chat_member"]"#
+        );
     }
 }

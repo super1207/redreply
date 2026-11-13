@@ -2754,6 +2754,27 @@ onebot事件json对应的RedLang对象。
 
 
 
+### Telegram调用
+
+【Telegram调用@<font color="red">Bot API 方法</font>@<font color="red">参数 JSON 对象</font>@<font color="red">上传文件 JSON 对象</font>】
+
+调用已连接的 Telegram 机器人原生接口。参数和文件可以省略。返回带有 `retcode`、`data` 和 `message` 的对象。
+
+### KOOK调用
+
+【KOOK调用@<font color="red">HTTP 方法</font>@<font color="red">接口路径</font>@<font color="red">参数 JSON 对象</font>@<font color="red">上传文件 JSON 对象</font>】
+
+调用已连接的 KOOK 机器人原生接口，支持 GET 和 POST。返回带有 `retcode`、`data` 和 `message` 的对象。
+
+### KOOK共享播放
+
+【KOOK共享播放@<font color="red">语音频道ID</font>@<font color="red">音源</font>@<font color="red">音量百分比</font>@<font color="red">频道密码</font>】
+
+加入语音频道并推送音频。音量默认 100，密码可以省略。`【KOOK播放状态】` 查询当前状态，`【KOOK停止播放】` 停止并离开频道。
+
+参见[原生接口与按钮、菜单示例](/adaptar/native-bot-api.md)。
+
+
 ### 伪造OB事件
 
 

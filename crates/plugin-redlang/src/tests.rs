@@ -160,3 +160,37 @@ fn test_run_script_shares_call_depth_counter() {
 //     std::fs::write("D:\\青雀语音\\71201001_cn.silk", output).unwrap();
 // }
 
+
+
+#[test]
+fn native_platform_commands_are_registered_and_validate_their_inputs() {
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    for command in [
+        "【Telegram调用@getMe】",
+        "【KOOK调用@GET@voice/list】",
+        "【KOOK共享播放@channel@https://example.org/song.mp3@65】",
+        "【KOOK停止播放】",
+        "【KOOK播放状态】",
+    ] {
+        let error = rl.parse(command).unwrap_err();
+        assert!(error.to_string().contains("机器人来源"), "{error}");
+    }
+    rl.set_exmap("机器人平台", "telegram");
+    let error = rl.parse("【Telegram调用@setMyCommands@【@[]】】").unwrap_err();
+    assert!(error.to_string().contains("JSON 对象"), "{error}");
+    let error = rl.parse("【Telegram调用@setMyCommands@【@{\"commands\":[]}】】").unwrap_err();
+    assert!(error.to_string().contains("指定机器人ID"), "{error}");
+}
+
+#[test]
+fn documented_native_platform_examples_parse() {
+    let document = include_str!("../../../docs/adaptar/native-bot-api.md");
+    let mut count = 0;
+    for block in document.split("```text\n").skip(1) {
+        let code = block.split_once("```").unwrap().0;
+        assert!(crate::core::astparser::parse_to_ast(code).is_ok(), "{code}");
+        count += 1;
+    }
+    assert!(count >= 7);
+}

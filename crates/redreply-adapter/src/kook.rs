@@ -31,6 +31,10 @@ use crate::mytool::read_json_str;
 use crate::mytool::str_msg_to_arr;
 
 use super::BotConnectTrait;
+use crate::{native_api, AdapterResult};
+use serde_json::{json, Value};
+
+mod voice;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 
@@ -57,6 +61,7 @@ pub struct KookConnect {
     msg_ids: Arc<RwLock<VecDeque<MsgIdPair>>>,
     recieve_pong: Arc<AtomicBool>,
     http_cache: Arc<RwLock<VecDeque<(String, serde_json::Value, u64)>>>,
+    playback: Arc<tokio::sync::Mutex<voice::Playback>>,
 }
 
 impl KookConnect {
@@ -71,8 +76,135 @@ impl KookConnect {
             msg_ids: Arc::new(RwLock::new(VecDeque::new())),
             recieve_pong: Arc::new(AtomicBool::new(false)),
             http_cache: Arc::new(RwLock::new(VecDeque::new())),
+            playback: Arc::default(),
         }
     }
+    async fn native_request(
+        &self,
+        verb: &str,
+        endpoint: &str,
+        payload: &Value,
+        files: Option<&Value>,
+        timeout: Duration,
+        echo: &Value,
+    ) -> AdapterResult<Value> {
+        let mut url = native_api::kook_url(endpoint)?;
+        let object = native_api::object(payload)?;
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(timeout)
+            .build()?;
+        let mut auth = HeaderValue::from_str(&format!("Bot {}", self.token))?;
+        auth.set_sensitive(true);
+        let request = match verb {
+            "GET" if files.is_none() => {
+                url.query_pairs_mut()
+                    .extend_pairs(native_api::form_fields(object));
+                client.get(url).header("Authorization", auth)
+            }
+            "POST" => native_api::post(
+                client.post(url).header("Authorization", auth),
+                payload,
+                files,
+            )?,
+            _ => return Err("KOOK 原生 API 仅支持 GET 或 POST，上传文件请使用 POST".into()),
+        };
+        let (status, body) = native_api::response(request, "KOOK").await?;
+        Ok(native_api::kook_reply(status, &body, echo))
+    }
+
+    async fn call_native_api(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let endpoint = params["endpoint"].as_str().ok_or("缺少 KOOK API 路径")?;
+        let verb = params["http_method"]
+            .as_str()
+            .ok_or("缺少 KOOK HTTP 请求方式")?;
+        let empty = json!({});
+        let payload = params.get("body").unwrap_or(&empty);
+        let _voice_guard = voice::native_voice_guard(&self.playback, endpoint).await?;
+        let mut result = self
+            .native_request(
+                verb,
+                endpoint,
+                payload,
+                params.get("files"),
+                Duration::from_secs(25),
+                echo,
+            )
+            .await?;
+        let normalized = endpoint.strip_prefix("/api/v3/").unwrap_or(endpoint);
+        if result["retcode"] == 0
+            && matches!(normalized, "message/create" | "direct-message/create")
+        {
+            if let Some(id) = result["data"]["msg_id"].as_str() {
+                let raw_id = RawMsgId {
+                    msg_id: id.to_owned(),
+                    user_id: if normalized == "direct-message/create" {
+                        read_json_str(payload, "target_id")
+                    } else {
+                        String::new()
+                    },
+                };
+                result["redreply_message_id"] = self.add_msg_id(&vec![raw_id]).into();
+            }
+        }
+        Ok(result)
+    }
+
+    fn native_event(&self, data: &Value) -> Option<Value> {
+        if data["type"] != 255 {
+            return None;
+        }
+        let kind = data["extra"]["type"].as_str()?;
+        let body = &data["extra"]["body"];
+        let timestamp = data["msg_timestamp"]
+            .as_i64()
+            .map(|millis| millis / 1000)
+            .unwrap_or_else(|| chrono::Utc::now().timestamp());
+        let mut event = json!({
+            "time": timestamp,
+            "self_id": self.self_id.read().unwrap_or_else(|e| e.into_inner()).clone(),
+            "platform": "kook",
+            "post_type": "notice",
+            "notice_type": "kook",
+            "sub_type": kind,
+            "channel_type": data["channel_type"],
+            "kook": body,
+            "kook_event": data,
+        });
+        if kind == "message_btn_click" {
+            let user_id = body["user_id"].as_str().filter(|id| !id.is_empty())?;
+            let message_id = body["msg_id"].as_str().filter(|id| !id.is_empty())?;
+            let is_group = data["channel_type"] == "GROUP";
+            let target = body["target_id"]
+                .as_str()
+                .filter(|id| !id.is_empty())
+                .or_else(|| data["target_id"].as_str())
+                .unwrap_or_default();
+            let nickname = body["user_info"]["nickname"]
+                .as_str()
+                .filter(|name| !name.is_empty())
+                .or_else(|| body["user_info"]["username"].as_str())
+                .unwrap_or_default();
+            event["group_id"] = if is_group { target } else { "" }.into();
+            event["groups_id"] = body["guild_id"].as_str().unwrap_or_default().into();
+            event["user_id"] = user_id.into();
+            event["sender"] = json!({"user_id": user_id, "nickname": nickname});
+            event["kook_message_id"] = message_id.into();
+            event["message_id"] = self
+                .add_msg_id(&vec![RawMsgId {
+                    msg_id: message_id.to_owned(),
+                    user_id: if is_group {
+                        String::new()
+                    } else {
+                        user_id.to_owned()
+                    },
+                }])
+                .into();
+        }
+        Some(event)
+    }
+
     async fn http_get_json(
         &self,
         uri: &str,
@@ -496,7 +628,8 @@ impl KookConnect {
             "raw_message":msg,
             "font":0,
             "sender":sender,
-            "platform":"kook"
+            "platform":"kook",
+            "kook":data
         });
         self.send_to_onebot_client(&event_json).await;
         Ok(())
@@ -731,7 +864,8 @@ impl KookConnect {
             "raw_message":msg,
             "font":0,
             "sender":sender,
-            "platform":"kook"
+            "platform":"kook",
+            "kook":data
         });
         self.send_to_onebot_client(&event_json).await;
         Ok(())
@@ -1004,6 +1138,12 @@ impl KookConnect {
         &self,
         data: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if let Some(event) = self.native_event(&data) {
+            self.send_to_onebot_client(&event).await;
+            if event["sub_type"] == "message_btn_click" {
+                return Ok(());
+            }
+        }
         let tp = data
             .get("channel_type")
             .ok_or("channel_type not found")?
@@ -2231,6 +2371,9 @@ impl BotConnectTrait for KookConnect {
     async fn disconnect(&mut self) {
         self.is_stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
+        if let Err(error) = voice::stop(&self.playback).await {
+            let _ = cq_add_log_w(&format!("KOOK 停止共享播放失败：{error}"));
+        }
         if let Some(stop_tx) = &self.stop_tx {
             let _ = stop_tx
                 .send_timeout(true, Duration::from_secs(1))
@@ -2257,15 +2400,11 @@ impl BotConnectTrait for KookConnect {
         *self.self_id.write().unwrap_or_else(|e| e.into_inner()) = login_info.user_id;
 
         let wss_url = self.get_gateway().await?;
-        let (ws_stream, _) = match tokio::time::timeout(
-            Duration::from_secs(30),
-            connect_async(wss_url),
-        )
-        .await
-        {
-            Ok(ok) => ok?,
-            Err(_) => return Err("kook websocket连接超时(30s)".into()),
-        };
+        let (ws_stream, _) =
+            match tokio::time::timeout(Duration::from_secs(30), connect_async(wss_url)).await {
+                Ok(ok) => ok?,
+                Err(_) => return Err("kook websocket连接超时(30s)".into()),
+            };
         let (mut write_halt, mut read_halt) = ws_stream.split();
         let sn_ptr = self.sn.clone();
         let is_stop = self.is_stop.clone();
@@ -2332,7 +2471,6 @@ impl BotConnectTrait for KookConnect {
             let _ = cq_add_log_w("KOOK心跳断开");
         });
         let is_stop = self.is_stop.clone();
-        let url_str_t = self.url.clone();
         let kobj = self.clone();
         let stop_tx = stoptx.clone();
         tokio::spawn(async move {
@@ -2388,7 +2526,10 @@ impl BotConnectTrait for KookConnect {
             }
             // 移除conn
             is_stop.store(true, std::sync::atomic::Ordering::Relaxed);
-            let _ = cq_add_log_w(&format!("kook连接已经断开(read_halt):{url_str_t}"));
+            if let Err(error) = voice::stop(&kobj.playback).await {
+                let _ = cq_add_log_w(&format!("KOOK 停止共享播放失败：{error}"));
+            }
+            let _ = cq_add_log_w("KOOK 网关连接已断开");
         });
         Ok(())
     }
@@ -2409,6 +2550,19 @@ impl BotConnectTrait for KookConnect {
         let def = serde_json::json!({});
         let params = json.get("params").unwrap_or(&def);
         let send_json = match action {
+            "kook_api" => native_api::action_result(self.call_native_api(params, echo).await, echo),
+            "kook_voice_play" => {
+                native_api::action_result(voice::play(self, params, echo).await, echo)
+            }
+            "kook_voice_stop" => {
+                let result = voice::stop(&self.playback)
+                    .await
+                    .map(|data| native_api::reply(0, &data, "", echo));
+                native_api::action_result(result, echo)
+            }
+            "kook_voice_status" => {
+                native_api::reply(0, &voice::status(&self.playback).await, "", echo)
+            }
             "send_group_msg" => self.deal_ob_send_group_msg(params, echo).await?,
             "send_private_msg" => self.deal_ob_send_private_msg(params, echo).await?,
             "send_msg" => {
@@ -2542,4 +2696,32 @@ struct GroupInfo {
     group_name: String,
     member_count: i32,
     max_member_count: i32,
+}
+
+#[cfg(test)]
+mod native_tests {
+    use super::*;
+
+    #[test]
+    fn group_button_event_uses_clicking_user_and_target_channel() {
+        let bot = KookConnect::build("");
+        let event = json!({
+            "type":255, "channel_type":"GROUP", "msg_timestamp":1611559482954_i64,
+            "target_id":"bot", "author_id":"1",
+            "extra":{"type":"message_btn_click","body":{
+                "user_id":"actor", "target_id":"channel", "msg_id":"native-id", "value":"next"
+            }}
+        });
+        let notice = bot.native_event(&event).unwrap();
+        assert_eq!(notice["group_id"], "channel");
+        assert_eq!(notice["user_id"], "actor");
+        assert_eq!(notice["time"], 1611559482);
+        assert_eq!(notice["kook"]["value"], "next");
+        assert_eq!(notice["kook_message_id"], "native-id");
+        assert_eq!(
+            bot.get_msg_id(notice["message_id"].as_str().unwrap())[0].msg_id,
+            "native-id"
+        );
+        assert!(notice.get("message_type").is_none());
+    }
 }

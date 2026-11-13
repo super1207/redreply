@@ -13,7 +13,7 @@ use std::{
 
 use crate::core::{
     add_fun, get_const_val, get_temp_const_val, rv_array, rv_bin, rv_empty, rv_object, rv_text,
-    set_const_val, set_temp_const_val, RedLang, RedValue, RedValueData, CLEAR_UUID,
+    set_const_val, set_temp_const_val, RedCommandResult, RedLang, RedValue, RedValueData, CLEAR_UUID,
 };
 use crate::exfun::json_value_to_red;
 use redlang::cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2};
@@ -52,6 +52,50 @@ pub fn get_app_dir(pkg_name: &str) -> Result<String, Box<dyn std::error::Error>>
 fn get_platform(self_t: &RedLang) -> String {
     let platform = self_t.get_exmap("机器人平台");
     (*platform).to_owned()
+}
+
+fn call_platform_api(
+    rl: &RedLang,
+    platform: &str,
+    action: &str,
+    params: serde_json::Value,
+) -> RedCommandResult {
+    if get_platform(rl) != platform {
+        return Err(RedLang::make_err(&format!("此命令需要 {platform} 机器人来源")));
+    }
+    let self_id = rl.get_exmap("机器人ID");
+    if self_id.is_empty() {
+        return Err(RedLang::make_err("请使用【设置来源】指定机器人ID"));
+    }
+    let request = serde_json::json!({"action": action, "params": params});
+    let result = cq_call_api(
+        platform,
+        &self_id,
+        &rl.get_exmap("消息ID"),
+        &request.to_string(),
+        &rl.get_exmap("远程MQTT客户端ID"),
+    );
+    let response: serde_json::Value = serde_json::from_str(&result)?;
+    if !response.is_object() {
+        return Err(RedLang::make_err("原生 API 未收到响应，请检查机器人是否已连接"));
+    }
+    Ok(Some(json_value_to_red(&response)?))
+}
+
+fn read_native_object(
+    rl: &mut RedLang,
+    params: &[crate::core::astparser::Ast],
+    index: usize,
+) -> Result<Option<serde_json::Value>, Box<dyn std::error::Error>> {
+    let text = rl.get_param_text(params, index)?;
+    if text.trim().is_empty() {
+        return Ok(None);
+    }
+    let value: serde_json::Value = serde_json::from_str(&text)?;
+    if !value.is_object() {
+        return Err(RedLang::make_err("原生 API 参数及文件必须使用 JSON 对象"));
+    }
+    Ok(Some(value))
 }
 
 fn get_sub_id(rl: &RedLang, msg_type: &str) -> String {
@@ -811,6 +855,43 @@ pub fn init_cq_ex_fun_map() {
         let call_ret = cq_call_api(&platform, &self_id, &passive_id, &content, &remote_id);
         let js_v = serde_json::from_str(&call_ret)?;
         return Ok(Some(json_value_to_red(&js_v)?));
+    });
+    add_fun(vec!["Telegram调用"], |rl, params| {
+        let method = rl.get_param_text(params, 0)?;
+        let body = read_native_object(rl, params, 1)?.unwrap_or_else(|| serde_json::json!({}));
+        let mut request = serde_json::json!({"method": method, "body": body});
+        if let Some(files) = read_native_object(rl, params, 2)? {
+            request["files"] = files;
+        }
+        call_platform_api(rl, "telegram", "telegram_api", request)
+    });
+    add_fun(vec!["KOOK调用"], |rl, params| {
+        let method = rl.get_param_text(params, 0)?.to_ascii_uppercase();
+        let endpoint = rl.get_param_text(params, 1)?;
+        let body = read_native_object(rl, params, 2)?.unwrap_or_else(|| serde_json::json!({}));
+        let mut request = serde_json::json!({"http_method": method, "endpoint": endpoint, "body": body});
+        if let Some(files) = read_native_object(rl, params, 3)? {
+            request["files"] = files;
+        }
+        call_platform_api(rl, "kook", "kook_api", request)
+    });
+    add_fun(vec!["KOOK共享播放"], |rl, params| {
+        let channel = rl.get_param_text(params, 0)?;
+        let source = rl.get_param_text(params, 1)?;
+        let volume = rl.get_param_text(params, 2)?;
+        let password = rl.get_param_text(params, 3)?;
+        let volume = if volume.is_empty() { 100 } else { volume.parse::<u64>()? };
+        let mut request = serde_json::json!({"channel_id": channel, "source": source, "volume": volume});
+        if !password.is_empty() {
+            request["password"] = password.into();
+        }
+        call_platform_api(rl, "kook", "kook_voice_play", request)
+    });
+    add_fun(vec!["KOOK停止播放"], |rl, _| {
+        call_platform_api(rl, "kook", "kook_voice_stop", serde_json::json!({}))
+    });
+    add_fun(vec!["KOOK播放状态"], |rl, _| {
+        call_platform_api(rl, "kook", "kook_voice_status", serde_json::json!({}))
     });
     add_fun(vec!["CQ码解析"], |self_t, params| {
         let data_str = self_t.get_param_text(params, 0)?;
