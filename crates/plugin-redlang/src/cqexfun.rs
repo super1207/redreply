@@ -432,6 +432,26 @@ fn group_member_role(rl: &RedLang, user_id: &str) -> RedCommandResult {
     Ok(Some(rv_text(role.to_owned())))
 }
 
+fn management_platform(rl: &RedLang) -> Result<String, Box<dyn std::error::Error>> {
+    let platform = get_platform(rl);
+    if matches!(platform.as_str(), "kook" | "telegram") {
+        Ok(platform)
+    } else {
+        Err(RedLang::make_err("此命令需要 KOOK 或 Telegram 机器人来源"))
+    }
+}
+
+fn message_handle_list(value: &RedValue) -> Result<Vec<String>, Box<dyn std::error::Error>> {
+    let ids = match value {
+        RedValue::Array(items) => items.iter().map(|item| item.expect_text_value()).collect::<Result<Vec<_>, _>>()?,
+        _ => vec![value.expect_text_value()?],
+    };
+    if ids.iter().any(|id| id.is_empty()) {
+        return Err(RedLang::make_err("消息 ID 需要非空文本"));
+    }
+    Ok(ids)
+}
+
 pub fn init_cq_ex_fun_map() {
     add_fun(vec!["取群列表", "群列表"], |self_t, params| {
         let groups_id = self_t.get_exmap("群组ID");
@@ -814,6 +834,13 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["撤回"], |self_t, params| {
         let msg_id_rv = self_t.get_param(params, 0)?;
+        let platform = get_platform(self_t);
+        if matches!(platform.as_str(), "kook" | "telegram") && matches!(msg_id_rv.as_ref(), RedValue::Array(_)) {
+            let ids = message_handle_list(&msg_id_rv)?;
+            return call_platform_api(
+                self_t, &platform, "delete_msgs", serde_json::json!({"message_ids":ids}),
+            );
+        }
         let current_msg_id = self_t.get_exmap("消息ID");
         let msg_id_vec: Vec<String> = match &*msg_id_rv {
             RedValue::Text(s) if s.is_empty() => vec![current_msg_id.to_string()],
@@ -844,6 +871,93 @@ pub fn init_cq_ex_fun_map() {
             );
         }
         Ok(Some(rv_empty()))
+    });
+    add_fun(vec!["编辑消息"], |rl, params| {
+        let platform = management_platform(rl)?;
+        let mut id = rl.get_param_text(params, 0)?;
+        if id.is_empty() {
+            id = rl.get_exmap("消息ID").to_string();
+        }
+        let content = rl.get_param(params, 1)?;
+        let kind = rl.get_param_text(params, 2)?;
+        let mut body = if params.len() > 3 {
+            let options = rl.get_param(params, 3)?;
+            match options.as_ref() {
+                RedValue::Text(text) if text.is_empty() => serde_json::json!({}),
+                _ => native_args::object(&options)?,
+            }
+        } else {
+            serde_json::json!({})
+        };
+        let (kind, field, value) = match (platform.as_str(), kind.as_str()) {
+            ("telegram", "" | "文本") => ("text", "text", content.expect_text_value()?.into()),
+            ("telegram", "说明") => ("caption", "caption", content.expect_text_value()?.into()),
+            ("telegram", "键盘") => {
+                let markup = match content.as_ref() {
+                    RedValue::Text(text) if text.is_empty() => serde_json::json!({"inline_keyboard":[]}),
+                    _ => native_args::object(&content)?,
+                };
+                ("keyboard", "reply_markup", markup)
+            }
+            ("telegram", "媒体") => ("media", "media", native_args::object(&content)?),
+            ("kook", "" | "文本") => ("text", "content", content.expect_text_value()?.into()),
+            ("kook", "卡片") => {
+                let cards = native_args::value(&content)?;
+                if !cards.is_array() {
+                    return Err(RedLang::make_err("KOOK 卡片编辑需要【数组】"));
+                }
+                ("card", "content", cards)
+            }
+            _ => return Err(RedLang::make_err("当前平台不支持这种编辑类型")),
+        };
+        body[field] = value;
+        let mut request = serde_json::json!({"message_id":id,"kind":kind,"body":body});
+        if platform == "telegram" {
+            if let Some(files) = native_args::files(rl, params, 4)? {
+                request["files"] = files;
+            }
+        }
+        call_platform_api(rl, &platform, "edit_msg", request)
+    });
+    add_fun(vec!["转发消息"], |rl, params| {
+        let platform = management_platform(rl)?;
+        let source = rl.get_param(params, 0)?;
+        let ids = match source.as_ref() {
+            RedValue::Text(text) if text.is_empty() => vec![rl.get_exmap("消息ID").to_string()],
+            _ => message_handle_list(&source)?,
+        };
+        let mut target = rl.get_param_text(params, 1)?;
+        let kind = rl.get_param_text(params, 2)?;
+        let is_private = match kind.as_str() {
+            "" => crate::cqevent::get_msg_type(rl) == "private",
+            "群聊" | "频道" => false,
+            "私聊" => true,
+            _ => return Err(RedLang::make_err("转发目标类型需为群聊、频道或私聊")),
+        };
+        if target.is_empty() {
+            target = rl.get_exmap(if is_private { "发送者ID" } else { "群ID" }).to_string();
+        }
+        let options = rl.get_param(params, 3)?;
+        let options = match options.as_ref() {
+            RedValue::Text(text) if text.is_empty() => serde_json::json!({}),
+            _ => native_args::object(&options)?,
+        };
+        if ids.is_empty() || ids.iter().any(|id| id.is_empty()) || target.is_empty() {
+            return Err(RedLang::make_err("转发需要消息 ID 和目标聊天"));
+        }
+        let mut request = serde_json::json!({
+            "message_ids":ids,"target_id":target,"private":is_private,
+            "copy":options["复制"] == "真","silent":options["静默"] == "真",
+        });
+        if platform == "telegram" {
+            let read_option = |key| options.get(key).and_then(serde_json::Value::as_str).unwrap_or_default();
+            if let Some((field, id)) = telegram_output_topic(read_option("话题ID"), read_option("话题类型"))? {
+                request[field] = id.into();
+            } else if let Ok(event) = serde_json::from_str(&rl.get_exmap("原始事件")) {
+                apply_telegram_topic(&event, &rl.get_exmap("机器人ID"), &target, &mut request);
+            }
+        }
+        call_platform_api(rl, &platform, "forward_msgs", request)
     });
     add_fun(vec!["禁言"], |self_t, params| {
         let ban_time = self_t.get_param_text(params, 0)?;

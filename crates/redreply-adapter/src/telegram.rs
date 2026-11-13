@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
@@ -28,10 +28,22 @@ pub struct TeleTramConnect {
     allowed_updates: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct RawMsgId {
     msg_id: String,
     chat_id: String,
+    business_id: String,
+}
+
+impl RawMsgId {
+    fn from_message(message: &Value, chat_id: &Value, business_id: &str) -> Option<Self> {
+        let id = message["message_id"].as_i64().filter(|id| *id > 0)?;
+        Some(Self {
+            msg_id: id.to_string(),
+            chat_id: chat_id.as_i64()?.to_string(),
+            business_id: message["business_connection_id"].as_str().unwrap_or(business_id).to_owned(),
+        })
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -227,24 +239,29 @@ impl TeleTramConnect {
         let mut reply = self
             .native_request(method, payload, params.get("files"), Duration::from_secs(25), echo)
             .await?;
-        // Methods that return messages preserve provider IDs and expose an OB handle.
-        let result = &reply["data"];
-        let messages: Vec<_> = result
-            .as_array()
-            .map_or_else(|| vec![result], |items| items.iter().collect());
-        let ids: Vec<_> = messages
-            .into_iter()
-            .filter_map(|message| {
-                Some(RawMsgId {
-                    msg_id: message["message_id"].as_i64()?.to_string(),
-                    chat_id: message["chat"]["id"].as_i64()?.to_string(),
-                })
-            })
-            .collect();
+        let ids = Self::response_message_ids(method, payload, &reply["data"]);
         if !ids.is_empty() {
-            reply["redreply_message_id"] = self.add_msg_id(&ids).into();
+            let handles: Vec<_> = ids.iter().cloned().map(|raw| self.message_handle(raw)).collect();
+            let handle = if handles.len() == 1 {
+                handles[0].clone()
+            } else {
+                self.add_msg_id(&ids)
+            };
+            reply["redreply_message_id"] = handle.into();
+            reply["redreply_message_ids"] = json!(handles);
         }
         Ok(reply)
+    }
+
+    fn response_message_ids(method: &str, payload: &Value, result: &Value) -> Vec<RawMsgId> {
+        let ids_only = matches!(method, "copyMessage" | "copyMessages" | "forwardMessages");
+        let numeric_target = read_json_str(payload, "chat_id").parse::<i64>().ok().map(Value::from);
+        let business_id = payload["business_connection_id"].as_str().unwrap_or_default();
+        let messages: &[Value] = result.as_array().map_or(std::slice::from_ref(result), Vec::as_slice);
+        messages.iter().filter_map(|message| {
+            let chat_id = if ids_only { numeric_target.as_ref()? } else { &message["chat"]["id"] };
+            RawMsgId::from_message(message, chat_id, business_id)
+        }).collect()
     }
 
     async fn download_file(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
@@ -326,6 +343,9 @@ impl TeleTramConnect {
         let Some(message) = target.last() else {
             return Err("Telegram 表情回应需要当前消息或 RedReply 消息 ID".into());
         };
+        if !message.business_id.is_empty() {
+            return Err("Telegram 业务消息不支持此表情操作".into());
+        }
         let legacy = read_json_str(params, "emoji_id");
         let emoji = params["emoji"].as_str().unwrap_or(&legacy);
         let numeric = emoji.parse::<u32>().ok().and_then(char::from_u32);
@@ -418,13 +438,19 @@ impl TeleTramConnect {
                     notice["group_id"] = chat_id.clone().into();
                 }
             }
-            if let Some(message_id) = message["message_id"].as_i64().filter(|id| *id > 0) {
-                notice["message_id"] = self
-                    .add_msg_id(&vec![RawMsgId {
-                        msg_id: message_id.to_string(),
-                        chat_id,
-                    }])
-                    .into();
+            if let Some(raw) = RawMsgId::from_message(message, &chat["id"], "") {
+                notice["message_id"] = self.message_handle(raw).into();
+            }
+            if kind == "deleted_business_messages" {
+                if let (Some(business_id), Some(ids)) = (
+                    data["business_connection_id"].as_str(), data["message_ids"].as_array(),
+                ) {
+                    let handles: Vec<_> = ids.iter().filter_map(|id| {
+                        let raw = RawMsgId::from_message(&json!({"message_id":id}), &chat["id"], business_id)?;
+                        Some(self.message_handle(raw))
+                    }).collect();
+                    notice["message_ids"] = json!(handles);
+                }
             }
         }
         notice
@@ -608,10 +634,11 @@ impl TeleTramConnect {
             .to_string();
 
         // 存msg_id
-        let msg_id = self.add_msg_id(&vec![RawMsgId {
+        let msg_id = self.message_handle(RawMsgId {
             msg_id: message_id.to_owned(),
             chat_id: user_id.to_string(),
-        }]);
+            business_id: String::new(),
+        });
 
         let message = self.to_cq_msg(event).await?;
 
@@ -667,10 +694,11 @@ impl TeleTramConnect {
             .to_string();
 
         // 存msg_id
-        let msg_id = self.add_msg_id(&vec![RawMsgId {
+        let msg_id = self.message_handle(RawMsgId {
             msg_id: message_id.to_owned(),
             chat_id: group_id.to_string(),
-        }]);
+            business_id: String::new(),
+        });
 
         let sender = serde_json::json!({
             "user_id":user_id.to_string(),
@@ -711,6 +739,26 @@ impl TeleTramConnect {
         Ok(())
     }
 
+    fn forwarded_notice(&self, kind: &str, event: &Value) -> Option<Value> {
+        let message = &event[kind];
+        if !matches!(kind, "message" | "channel_post" | "business_message")
+            || !message["forward_origin"].is_object()
+        {
+            return None;
+        }
+        let mut notice = self.notice_for_update("forwarded_message", message, &event["update_id"]);
+        notice["telegram_update_type"] = kind.into();
+        Some(notice)
+    }
+
+    fn dispatch_notice(notice: Value) {
+        tokio::task::spawn_blocking(move || {
+            if let Err(error) = crate::cqevent::do_1207_event(&notice.to_string()) {
+                let _ = cq_add_log_w(&format!("Telegram 原生事件处理失败：{error}"));
+            }
+        });
+    }
+
     async fn deal_event(
         &self,
         event: &serde_json::Value,
@@ -730,11 +778,10 @@ impl TeleTramConnect {
             update.map(|kind| self.native_update(kind, event))
         };
         if let Some(notice) = notice {
-            tokio::task::spawn_blocking(move || {
-                if let Err(error) = crate::cqevent::do_1207_event(&notice.to_string()) {
-                    let _ = cq_add_log_w(&format!("Telegram 原生事件处理失败：{error}"));
-                }
-            });
+            Self::dispatch_notice(notice);
+        }
+        if let Some(notice) = update.and_then(|kind| self.forwarded_notice(kind, event)) {
+            Self::dispatch_notice(notice);
         }
         let is_msg = event.get("message").is_some();
         if is_msg {
@@ -907,7 +954,7 @@ impl TeleTramConnect {
         let lk = self.msg_ids.read().unwrap_or_else(|e| e.into_inner());
         for msg_id_pair in lk.iter().rev() {
             for raw_msg in &msg_id_pair.raw_msg_ids {
-                if raw_msg.chat_id == chat_id && raw_msg.msg_id == raw_msg_id {
+                if raw_msg.business_id.is_empty() && raw_msg.chat_id == chat_id && raw_msg.msg_id == raw_msg_id {
                     return Some(msg_id_pair.msg_id.clone());
                 }
             }
@@ -1073,18 +1120,26 @@ impl TeleTramConnect {
         }
         Ok((to_send_data, quote))
     }
-    fn add_msg_id(&self, raw_msg_ids: &Vec<RawMsgId>) -> String {
-        let new_id = Uuid::new_v4().to_string();
-        let msg_id_pair = MsgIdPair {
-            msg_id: new_id.to_owned(),
-            raw_msg_ids: raw_msg_ids.to_owned(),
-        };
-        let mut lk = self.msg_ids.write().unwrap_or_else(|e| e.into_inner());
-        lk.push_back(msg_id_pair);
-        while lk.len() > 9999 {
-            lk.pop_front();
+    fn message_handle(&self, raw: RawMsgId) -> String {
+        let mut ids = self.msg_ids.write().unwrap_or_else(|e| e.into_inner());
+        if let Some(pair) = ids.iter().rev().find(|pair| pair.raw_msg_ids.as_slice() == std::slice::from_ref(&raw)) {
+            return pair.msg_id.clone();
         }
-        new_id
+        Self::store_msg_id(&mut ids, vec![raw])
+    }
+
+    fn add_msg_id(&self, raw_msg_ids: &[RawMsgId]) -> String {
+        let mut ids = self.msg_ids.write().unwrap_or_else(|e| e.into_inner());
+        Self::store_msg_id(&mut ids, raw_msg_ids.to_vec())
+    }
+
+    fn store_msg_id(ids: &mut VecDeque<MsgIdPair>, raw_msg_ids: Vec<RawMsgId>) -> String {
+        let msg_id = Uuid::new_v4().to_string();
+        ids.push_back(MsgIdPair { msg_id: msg_id.clone(), raw_msg_ids });
+        if ids.len() > 9999 {
+            ids.pop_front();
+        }
+        msg_id
     }
 
     fn message_payload(
@@ -1192,7 +1247,11 @@ impl TeleTramConnect {
             msg_ids.push(RawMsgId {
                 msg_id: id.to_string(),
                 chat_id: chat_id.to_owned(),
+                business_id: String::new(),
             });
+        }
+        if let [message] = msg_ids.as_slice() {
+            return Ok(self.message_handle(message.clone()));
         }
         Ok(self.add_msg_id(&msg_ids))
     }
@@ -1301,29 +1360,136 @@ impl TeleTramConnect {
         let id = read_json_str(params, "message_id");
         let messages = self.get_msg_id(&id);
         if messages.is_empty() {
-            return Ok(native_api::reply(
-                1404,
-                &Value::Null,
-                "Telegram 找不到 RedReply 消息 ID",
-                echo,
-            ));
+            return Ok(native_api::reply(1404, &Value::Null, "Telegram 找不到 RedReply 消息 ID", echo));
         }
-        for message in messages {
-            let response = self.call_native_api(&json!({
-                "method":"deleteMessage",
-                "body":{"chat_id":message.chat_id,"message_id":message.msg_id.parse::<i64>()?},
-            }), echo).await?;
-            if response["retcode"] != 0 {
-                return Ok(response);
+        if let [message] = messages.as_slice() {
+            if message.business_id.is_empty() {
+                return self.native_request(
+                    "deleteMessage",
+                    &json!({"chat_id":message.chat_id.parse::<i64>()?,"message_id":message.msg_id.parse::<i64>()?}),
+                    None, Duration::from_secs(25), echo,
+                ).await;
             }
         }
-        Ok(native_api::reply(0, &json!({}), "", echo))
+        self.delete_messages(&[id.as_str()], echo).await
+    }
+
+    fn message_batches(
+        &self,
+        ids: &[&str],
+    ) -> AdapterResult<(BTreeMap<(i64, String), BTreeSet<i64>>, Vec<String>)> {
+        let mut by_chat = BTreeMap::<_, BTreeSet<_>>::new();
+        let mut missing = Vec::new();
+        for id in ids.iter().copied().collect::<BTreeSet<_>>() {
+            let messages = self.get_msg_id(id);
+            if messages.is_empty() {
+                missing.push(id.to_owned());
+            }
+            for raw in messages {
+                by_chat.entry((raw.chat_id.parse::<i64>()?, raw.business_id))
+                    .or_default()
+                    .insert(raw.msg_id.parse::<i64>()?);
+            }
+        }
+        Ok((by_chat, missing))
+    }
+
+    async fn delete_messages(&self, ids: &[&str], echo: &Value) -> AdapterResult<Value> {
+        let (groups, missing) = self.message_batches(ids)?;
+        let mut batch = native_api::DeleteBatch::default();
+        for id in missing {
+            batch.record(json!({"message_id":id}), Err("Telegram 找不到 RedReply 消息 ID".into()));
+        }
+        for ((chat_id, business_id), ids) in groups {
+            let ids: Vec<_> = ids.into_iter().collect();
+            for chunk in ids.chunks(100) {
+                let mut body = json!({"message_ids":chunk});
+                let method = if business_id.is_empty() {
+                    body["chat_id"] = chat_id.into();
+                    "deleteMessages"
+                } else {
+                    body["business_connection_id"] = business_id.as_str().into();
+                    "deleteBusinessMessages"
+                };
+                let result = self.native_request(method, &body, None, Duration::from_secs(25), echo).await;
+                batch.record(json!({"chat_id":chat_id,"message_ids":chunk}), result);
+            }
+        }
+        Ok(batch.finish(echo))
+    }
+
+    async fn edit_message(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let messages = self.get_msg_id(&read_json_str(params, "message_id"));
+        let [raw] = messages.as_slice() else {
+            return Err("编辑需要指向一条 Telegram 消息的 RedReply ID".into());
+        };
+        let method = match params["kind"].as_str() {
+            Some("text") => "editMessageText",
+            Some("caption") => "editMessageCaption",
+            Some("keyboard") => "editMessageReplyMarkup",
+            Some("media") => "editMessageMedia",
+            _ => return Err("未知的 Telegram 消息编辑类型".into()),
+        };
+        let mut body = native_api::object(&params["body"])?.clone();
+        if body.contains_key("inline_message_id") {
+            return Err("行内消息请通过 Telegram调用 指定 inline_message_id".into());
+        }
+        body.insert("chat_id".to_owned(), raw.chat_id.parse::<i64>()?.into());
+        body.insert("message_id".to_owned(), raw.msg_id.parse::<i64>()?.into());
+        if !raw.business_id.is_empty() {
+            body.insert("business_connection_id".to_owned(), raw.business_id.as_str().into());
+        } else {
+            body.remove("business_connection_id");
+        }
+        self.native_request(method, &Value::Object(body), params.get("files"), Duration::from_secs(25), echo).await
+    }
+
+    async fn forward_messages(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let (method, body) = self.forward_request(params)?;
+        self.call_native_api(&json!({"method":method,"body":body}), echo).await
+    }
+
+    fn forward_request(&self, params: &Value) -> AdapterResult<(&'static str, Value)> {
+        let ids = native_api::message_handles(params)?;
+        let (groups, missing) = self.message_batches(&ids)?;
+        if !missing.is_empty() || groups.len() != 1 {
+            return Err("Telegram 转发需要同一聊天中已知的 RedReply 消息 ID".into());
+        }
+        let Some(((source, business_id), ids)) = groups.into_iter().next() else {
+            return Err("Telegram 没有可转发的消息".into());
+        };
+        if !business_id.is_empty() || ids.len() > 100 {
+            return Err("Telegram 转发支持同一普通聊天内的 1 至 100 条消息".into());
+        }
+        let target = read_json_str(params, "target_id");
+        let chat_id = match target.parse::<i64>() {
+            Ok(id) => id.into(),
+            Err(_) if target.starts_with('@') && target.len() > 1 => Value::String(target),
+            Err(_) => return Err("Telegram 转发目标需为聊天 ID 或用户名".into()),
+        };
+        let mut body = json!({"chat_id":chat_id,"from_chat_id":source});
+        Topic::from_params(params)?.apply(&mut body);
+        if params["silent"] == true {
+            body["disable_notification"] = true.into();
+        }
+        let copy = params["copy"] == true;
+        let method = if let Some(id) = ids.first().filter(|_| ids.len() == 1) {
+            body["message_id"] = (*id).into();
+            if copy { "copyMessage" } else { "forwardMessage" }
+        } else {
+            body["message_ids"] = json!(ids);
+            if copy { "copyMessages" } else { "forwardMessages" }
+        };
+        Ok((method, body))
     }
 
     async fn pin_message(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
         let id = read_json_str(params, "message_id");
         let messages = self.get_msg_id(&id);
         let message = messages.last().ok_or("Telegram 找不到 RedReply 消息 ID")?;
+        if !message.business_id.is_empty() {
+            return Err("Telegram 业务消息不支持此置顶操作".into());
+        }
         let method = if params["remove"] == true { "unpinChatMessage" } else { "pinChatMessage" };
         let mut body = json!({
             "chat_id":message.chat_id.parse::<i64>()?,
@@ -1554,6 +1720,15 @@ impl BotConnectTrait for TeleTramConnect {
                     self.deal_ob_send_private_msg(params, echo).await?
                 }
             }
+            "delete_msgs" => {
+                let result = match native_api::message_handles(params) {
+                    Ok(ids) => self.delete_messages(&ids, echo).await,
+                    Err(error) => Err(error),
+                };
+                native_api::action_result(result, echo)
+            }
+            "edit_msg" => native_api::action_result(self.edit_message(params, echo).await, echo),
+            "forward_msgs" => native_api::action_result(self.forward_messages(params, echo).await, echo),
             "delete_msg" => self.deal_ob_delete_msg(params, echo).await?,
             "get_login_info" => self.deal_ob_get_login_info(params, echo).await?,
             // "get_stranger_info" => {
@@ -1658,6 +1833,71 @@ mod native_tests {
     use super::*;
 
     #[test]
+    fn forwarding_sorts_unique_ids_and_respects_chat_boundaries() {
+        let bot = TeleTramConnect::build("");
+        let handle = |chat, id| bot.message_handle(RawMsgId::from_message(
+            &json!({"message_id":id}), &json!(chat), "",
+        ).unwrap());
+        let first = handle(-100, 9);
+        let second = handle(-100, 3);
+        let other = handle(-200, 3);
+        let input = json!({
+            "message_ids":[first,second,first],"target_id":"-400",
+            "copy":true,"silent":true,"message_thread_id":8
+        });
+        let (method, body) = bot.forward_request(&input).unwrap();
+        assert_eq!(method, "copyMessages");
+        assert_eq!(body, json!({
+            "chat_id":-400,"from_chat_id":-100,"message_ids":[3,9],
+            "disable_notification":true,"message_thread_id":8
+        }));
+        assert!(bot.forward_request(&json!({
+            "message_ids":[first,other],"target_id":"-400"
+        })).is_err());
+        assert!(bot.forward_request(&json!({
+            "message_ids":[first,"missing"],"target_id":"-400"
+        })).is_err());
+
+        let returned = TeleTramConnect::response_message_ids(
+            method, &body, &json!([{"message_id":11},{"message_id":12}]),
+        );
+        assert_eq!(returned[0].chat_id, "-400");
+        assert_eq!(returned[1].msg_id, "12");
+    }
+
+    #[test]
+    fn edited_and_deleted_business_notices_reuse_connection_scoped_handles() {
+        let bot = TeleTramConnect::build("");
+        let message = json!({
+            "message_id":8, "chat":{"id":12,"type":"private"},
+            "business_connection_id":"business-1",
+            "forward_origin":{"type":"hidden_user","sender_user_name":"Example"}
+        });
+        let event = json!({"update_id":1,"business_message":message});
+        let original = bot.native_update("business_message", &event);
+        let forwarded = bot.forwarded_notice("business_message", &event).unwrap();
+        let edited = bot.native_update("edited_business_message", &json!({
+            "edited_business_message":message
+        }));
+        let deleted = bot.native_update("deleted_business_messages", &json!({
+            "deleted_business_messages":{
+                "chat":{"id":12,"type":"private"},
+                "business_connection_id":"business-1","message_ids":[8]
+            }
+        }));
+        assert_eq!(original["message_id"], forwarded["message_id"]);
+        assert_eq!(original["message_id"], edited["message_id"]);
+        assert_eq!(original["message_id"], deleted["message_ids"][0]);
+        let regular = bot.message_handle(RawMsgId::from_message(&json!({"message_id":8}), &json!(12), "").unwrap());
+        assert_ne!(original["message_id"], regular);
+        let (groups, missing) = bot.message_batches(&[
+            original["message_id"].as_str().unwrap(), &regular, "missing",
+        ]).unwrap();
+        assert_eq!(groups.len(), 2);
+        assert_eq!(missing, ["missing"]);
+    }
+
+    #[test]
     fn topic_service_notice_keeps_the_message_and_thread() {
         let bot = TeleTramConnect::build("");
         let message = json!({
@@ -1749,10 +1989,12 @@ mod native_tests {
         let a = bot.add_msg_id(&vec![RawMsgId {
             msg_id: "9".into(),
             chat_id: "-100".into(),
+            business_id: String::new(),
         }]);
         let b = bot.add_msg_id(&vec![RawMsgId {
             msg_id: "9".into(),
             chat_id: "-200".into(),
+            business_id: String::new(),
         }]);
         assert_eq!(bot.get_cq_msg_id("-100", "9").as_deref(), Some(a.as_str()));
         let message = json!([

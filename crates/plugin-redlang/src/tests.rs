@@ -291,3 +291,24 @@ fn telegram_explicit_topics_and_join_request_queries() {
     rl.set_exmap("机器人平台", "telegram");
     assert!(rl.parse("【输出流@消息@@0】").unwrap_err().to_string().contains("正整数"));
 }
+
+
+#[test]
+fn message_management_accepts_redlang_objects_and_checks_invalid_arguments() {
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    rl.set_exmap("机器人平台", "telegram");
+    for script in [
+        "【编辑消息@消息ID@新的内容】",
+        "【编辑消息@消息ID@【对象@inline_keyboard@【数组】】@键盘】",
+        "【转发消息@【数组@消息一@消息二】@-100123@群聊@【对象@复制@真】】",
+        "【撤回@【数组@消息一@消息二】】",
+    ] {
+        let error = rl.parse(script).unwrap_err();
+        assert!(error.to_string().contains("指定机器人ID"), "{error}");
+    }
+    assert!(rl.parse("【转发消息@【数组】@-100123】").is_err());
+    assert!(rl.parse("【撤回@【数组@消息一@【对象】】】").is_err());
+    rl.set_exmap("机器人平台", "kook");
+    assert!(rl.parse("【编辑消息@消息ID@文本@卡片】").is_err());
+}

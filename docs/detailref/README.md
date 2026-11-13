@@ -2418,6 +2418,20 @@ KOOK 支持【取群列表@服务器ID】。省略服务器 ID 时使用当前�
 
 若省略参数，则表示撤回当前消息，此命令需要onebot协议端支持。
 
+KOOK 与 Telegram 支持用【数组】批量撤回 RedReply 消息 ID。结果对象包含 `retcode`、`data.failed` 和 `data.results`。
+
+### 编辑消息
+
+【编辑消息@<font color="red">消息 ID</font>@<font color="red">新内容</font>@<font color="red">类型</font>@<font color="red">选项对象</font>@<font color="red">Telegram 上传文件对象</font>】
+
+消息 ID 省略时使用当前消息。类型默认为 `文本`，Telegram 还支持 `说明`、`键盘` 和 `媒体`，KOOK 还支持 `卡片`。返回结果对象。
+
+### 转发消息
+
+【转发消息@<font color="red">消息 ID 或数组</font>@<font color="red">目标 ID</font>@<font color="red">目标类型</font>@<font color="red">选项对象</font>】
+
+目标类型可填 `群聊`、`频道` 或 `私聊`。消息或目标省略时使用当前消息或会话。Telegram 使用原生转发或复制，KOOK 读取内容后重新发送。返回结果对象。参见[编辑、转发与批量撤回](/adaptar/native-bot-api.md)。
+
 ### 禁言
 
 

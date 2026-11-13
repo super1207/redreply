@@ -172,6 +172,104 @@ KOOK 的平台名为 `kook`。
 
 [入群审核](https://core.telegram.org/bots/api#approvechatjoinrequest) · [更新订阅](https://core.telegram.org/bots/api#getupdates)
 
+## 编辑、转发和批量撤回
+
+【输出流】返回 RedReply 消息 ID，可以存入变量供后续脚本操作。以下命令使用这个 ID。【Telegram调用】和【KOOK调用】的原生方法仍使用平台 ID。一个 RedReply ID 可能包含多条平台消息，例如一次输出发送多段内容。编辑需要单条消息 ID。转发和撤回可展开多段消息。
+
+### 编辑消息
+
+【编辑消息@<font color="red">RedReply 消息 ID</font>@<font color="red">新内容</font>@<font color="red">类型</font>@<font color="red">选项对象</font>@<font color="red">Telegram 上传文件对象</font>】
+
+省略第一个参数时使用当前消息。类型省略时为 `文本`。返回对象包含 `retcode`、`data` 和 `message`。
+
+| 平台 | 类型与参数 |
+| --- | --- |
+| Telegram | `文本` 和 `说明` 接受文本。`键盘` 接受含 `inline_keyboard` 的对象，留空清除按钮。`媒体` 接受 InputMedia 对象，可用 `attach://字段名` 引用上传文件。 |
+| KOOK | `文本` 接受 KMarkdown。`卡片` 接受卡片数组。适配器按原消息选择频道或私聊编辑接口。 |
+
+```text
+【定义变量@消息ID@【输出流@活动开始时间待定】】
+【定义变量@结果@【编辑消息@【变量@消息ID】@活动将于周六开始】】
+【取元素@【变量@结果】@retcode】
+```
+
+Telegram 可通过选项对象传 `parse_mode`、`entities`、`reply_markup` 等方法字段。行内模式发出的消息用【Telegram调用】直接传 `inline_message_id`。实时位置、业务清单和组件数据等专用编辑方法也通过【Telegram调用】传官方字段。
+
+```text
+【定义变量@结果@【编辑消息@机器人消息ID@【对象@inline_keyboard@【数组
+  @【数组@【对象@text@查看活动@callback_data@event-details】】
+】】@键盘】】
+【取元素@【变量@结果】@retcode】
+```
+
+KOOK 只允许编辑原类型为 KMarkdown 或卡片的消息。通过普通输出发送的新文本使用 KMarkdown。旧的纯文本消息或独立图片仍受平台编辑限制。编辑卡片时传新卡片数组，保留原消息的卡片类型。
+
+```text
+【定义变量@结果@【编辑消息@卡片消息ID@【数组@【对象
+  @type@card@modules@【数组@【对象@type@section@text@报名已截止】】
+】】@卡片】】
+【取元素@【变量@结果】@retcode】
+```
+
+[Telegram 编辑接口](https://core.telegram.org/bots/api#updating-messages) · [KOOK 频道消息](https://developer.kookapp.cn/doc/http/message) · [KOOK 私聊消息](https://developer.kookapp.cn/doc/http/direct-message)
+
+### 转发消息
+
+【转发消息@<font color="red">RedReply 消息 ID 或数组</font>@<font color="red">目标 ID</font>@<font color="red">目标类型</font>@<font color="red">选项对象</font>】
+
+源 ID 省略时使用当前消息。目标省略时使用当前会话，跨会话时填写目标 ID，KOOK 私聊同时指定 `私聊`。Telegram 可使用聊天 ID 或 `【@@频道用户名】`。该命令转发已存在的消息，【合并转发】仍用于生成现有的合并消息节点。
+
+- **Telegram** 使用 `forwardMessage` 或 `forwardMessages`。批量最多 100 条，需来自同一普通聊天，按平台消息 ID 升序发送。服务消息和受保护消息由 Telegram 限制。选项对象中 `复制=真` 时用 `copyMessage` 或 `copyMessages`，消息不带原转发来源。可用 `静默=真`、`话题ID` 和 `话题类型`。数字目标的返回对象提供 `redreply_message_ids`，可逐条编辑或撤回。批量接口可能跳过不能转发的消息。
+- **KOOK** 公开接口提供消息读取和发送。适配器读取原消息内容后重新发送文字、KMarkdown、卡片和常见附件，由机器人署名，卡片按钮的回调也会发给重发卡片的机器人。发送失败时，`data.sent` 保留此前已发送的 RedReply 消息 ID，可避免重试时重复发送。
+
+```text
+【定义变量@结果@【转发消息@【数组@原消息一@原消息二】@目标频道ID@频道】】
+【取元素@【变量@结果】@retcode】
+```
+
+```text
+【定义变量@结果@【转发消息@【消息ID】@-1001234567890@群聊@【对象
+  @复制@真@静默@真@话题ID@15
+】】】
+【取长度@【取元素@【变量@结果】@redreply_message_ids】】
+```
+
+[Telegram 转发](https://core.telegram.org/bots/api#forwardmessages) · [Telegram 复制](https://core.telegram.org/bots/api#copymessages) · [KOOK 频道消息](https://developer.kookapp.cn/doc/http/message)
+
+### 批量撤回
+
+【撤回@<font color="red">RedReply 消息 ID 数组</font>】
+
+Telegram 按原聊天分组，每次原生请求最多 100 条，使用 `deleteMessages`。业务消息按聊天和业务连接分组，使用 `deleteBusinessMessages`。KOOK 按每条消息的频道或私聊类型选择删除接口。两端均去重，单项失败后继续处理剩余请求。返回 `data.failed` 为失败请求数，`data.results` 内每项含目标和平台响应。Telegram 跳过已不存在的消息，因此成功表示该批请求被平台接受。单条文本 ID 的【撤回】用法保持原样。
+
+```text
+【定义变量@结果@【撤回@【数组@消息一ID@消息二ID】】】
+【取元素@【变量@结果】@data@failed】
+```
+
+[Telegram 批量删除](https://core.telegram.org/bots/api#deletemessages) · [Telegram 业务消息删除](https://core.telegram.org/bots/api#deletebusinessmessages) · [KOOK 私聊删除](https://developer.kookapp.cn/doc/http/direct-message)
+
+### 编辑、删除和转发事件
+
+| 事件关键词 | 可读取的字段 |
+| --- | --- |
+| `notice:kook:updated_message`、`notice:kook:updated_private_message` | `kook.content` 为更新内容，`kook_message_id` 是平台原始 ID，【消息ID】是 RedReply ID。私聊的 `kook.chat_code` 标识会话。 |
+| `notice:kook:deleted_message`、`notice:kook:deleted_private_message` | `kook.msg_id` 为已删除的原始 ID，仍兼容旧有 `notice:group_recall` 和 `notice:friend_recall`。 |
+| `notice:telegram:edited_message`、`notice:telegram:edited_channel_post`、`notice:telegram:edited_business_message` | `telegram.text` 或 `telegram.caption` 为编辑后的内容，【消息ID】可关联已缓存的原消息。 |
+| `notice:telegram:forwarded_message` | 收到带 `forward_origin` 的消息时触发。原始来源在 `telegram.forward_origin`，同一消息仍走相应的普通消息或频道、业务消息事件。 |
+| `notice:telegram:deleted_business_messages` | `telegram.message_ids` 是原生 ID 列表，外层 `message_ids` 是 RedReply ID 列表，`telegram.business_connection_id` 标识业务连接。 |
+
+Telegram Bot API 的删除更新仅覆盖已连接的业务账户。普通聊天或频道的删除以调用结果为准。KOOK 重新发送会作为机器人普通消息出现。自定义 Telegram 更新订阅时，填写原始更新名，例如 `message,channel_post,business_message,edited_message,edited_channel_post,edited_business_message,deleted_business_messages`。
+
+以下示例用于普通群聊的 `notice:telegram:forwarded_message` 脚本，可读取来源类型并用【输出流】回复。
+
+```text
+【定义变量@来源@【取元素@【事件内容】@telegram@forward_origin@type】】
+【隐藏@【输出流@转发来源类型：【变量@来源】】】
+```
+
+[Telegram 更新类型](https://core.telegram.org/bots/api#update) · [KOOK 频道消息事件](https://developer.kookapp.cn/doc/event/channel) · [KOOK 私聊消息事件](https://developer.kookapp.cn/doc/event/direct-message)
+
 ## Telegram 群与频道管理
 
 Telegram 聊天 ID 可从【群ID】或事件中的 `telegram.chat.id` 取得。以用户名指定频道时，用原始字符串保留前导 `@`，例如 `【@@example_channel】`。管理接口返回的 `retcode` 为 `0` 时操作成功。

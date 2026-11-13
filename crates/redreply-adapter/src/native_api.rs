@@ -23,6 +23,30 @@ pub(crate) fn action_result(result: AdapterResult<Value>, echo: &Value) -> Value
     result.unwrap_or_else(|error| reply(-1, &Value::Null, &error.to_string(), echo))
 }
 
+pub(crate) fn message_handles(params: &Value) -> AdapterResult<Vec<&str>> {
+    let ids = params["message_ids"].as_array().ok_or("消息 ID 需要数组")?;
+    ids.iter()
+        .map(|id| id.as_str().filter(|id| !id.is_empty()).ok_or_else(|| "消息 ID 需要非空文本".into()))
+        .collect()
+}
+
+#[derive(Default)]
+pub(crate) struct DeleteBatch {
+    results: Vec<Value>,
+}
+
+impl DeleteBatch {
+    pub(crate) fn record(&mut self, target: Value, result: AdapterResult<Value>) {
+        self.results.push(json!({"target": target, "response": action_result(result, &Value::Null)}));
+    }
+
+    pub(crate) fn finish(self, echo: &Value) -> Value {
+        let failed = self.results.iter().filter(|item| item["response"]["retcode"] != 0).count();
+        let (code, message) = if failed == 0 { (0, "") } else { (-1, "部分或全部删除请求失败") };
+        reply(code, &json!({"results": self.results, "failed": failed}), message, echo)
+    }
+}
+
 pub(crate) fn telegram_url(token: &str, method: &str) -> AdapterResult<reqwest::Url> {
     if method.is_empty()
         || !method.as_bytes()[0].is_ascii_alphabetic()
