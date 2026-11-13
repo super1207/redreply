@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PostgreSQL 配置 · 红色问答</title>
+<style>
+:root {
+  --bg-primary:#f5f2f0; --bg-secondary:#e1ebe7; --bg-card:#b6cde4; --bg-dialog:#fff;
+  --bg-button:#e1ebe7; --bg-button-hover:aqua; --bg-input:#fff;
+  --text-primary:#000; --text-secondary:#e55743; --text-accent:red;
+  --border-primary:#999; --border-secondary:#e55743; --border-input:#ffd1dc;
+  --ok:#2f7d4f; --err:#d02f2f;
+}
+* { box-sizing:border-box; }
+button, input { font-family:inherit; }
+html, body { height:100%; }
+body { margin:0; background:var(--bg-primary); color:var(--text-primary); font:14px/1.6 fusion-pixel-12px-monospaced-zh_hant, "Microsoft YaHei", serif; display:flex; flex-direction:column; min-height:100vh; }
+header { display:block; padding:0; background:var(--bg-primary); flex:0 0 auto; }
+.title-bar { position:relative; padding:10px 20px; border-top:2px solid var(--border-secondary); border-bottom:2px solid var(--border-secondary); text-align:center; }
+.title-bar h1 { margin:0; font-size:22px; color:var(--text-secondary); font-weight:bold; letter-spacing:0.25em; }
+nav { display:flex; gap:4px; padding:4px; background:var(--bg-card); border-bottom:1px solid var(--border-primary); }
+nav button { flex:1 1 0; background:var(--bg-button); border:1px solid var(--border-primary); padding:6px 26px; cursor:pointer; font-size:14px; }
+nav button.active { background:#fff; color:var(--text-secondary); font-weight:bold; border-color:var(--border-secondary); }
+main { flex:1 1 auto; min-height:0; width:100%; padding:12px 16px; display:flex; flex-direction:column; gap:12px; }
+section { background:var(--bg-dialog); border:1px solid var(--border-primary); box-shadow:0 0 8px rgba(0,0,0,0.12); padding:12px 16px; min-width:0; min-height:0; flex:1 1 auto; display:flex; flex-direction:column; overflow:hidden; }
+section h2 { margin:0 0 8px; font-size:15px; color:var(--text-secondary); font-weight:600; flex:0 0 auto; }
+.hint { color:#666; font-size:12px; margin-bottom:10px; flex:0 0 auto; }
+.form { flex:1 1 auto; min-height:0; overflow-y:auto; }
+.row { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border-secondary); background:#fff; margin-top:6px; }
+.row:first-child { margin-top:0; }
+.row > label { flex:0 0 7em; white-space:nowrap; }
+.row > input { flex:1 1 auto; min-width:0; background:var(--bg-input); border:1px solid var(--border-input); color:var(--text-primary); padding:5px 8px; }
+input:focus { outline:none; border-color:var(--border-secondary); }
+.actions { display:flex; gap:8px; margin-top:12px; flex:0 0 auto; }
+button { background:var(--bg-button); color:var(--text-primary); border:1px solid var(--border-primary); padding:4px 14px; cursor:pointer; }
+button:hover { background:var(--bg-button-hover); color:var(--text-accent); }
+button.danger { border-color:var(--err); color:var(--err); }
+#status { margin-top:10px; font-size:13px; min-height:1.4em; flex:0 0 auto; }
+#status.ok { color:var(--ok); }
+#status.err { color:var(--err); }
+</style>
+</head>
+<body>
+<header>
+  <div class="title-bar"><h1>红色问答<span id="app-version"></span></h1></div>
+  <nav>
+    <button type="button" class="active">PostgreSQL 配置</button>
+  </nav>
+</header>
+<main>
+  <section>
+    <h2>PostgreSQL 配置</h2>
+    <div class="hint">保存后需重启软件才能生效；清空配置即停用消息落库。</div>
+    <div class="form">
+      <div class="row"><label>主机</label><input id="host" placeholder="localhost"></div>
+      <div class="row"><label>端口</label><input id="port" type="number" min="1" max="65535" value="5432"></div>
+      <div class="row"><label>用户名</label><input id="user" placeholder="postgres"></div>
+      <div class="row"><label>密码</label><input id="password" type="password"></div>
+      <div class="row"><label>数据库名</label><input id="dbname" placeholder="postgres"></div>
+    </div>
+    <div class="actions">
+      <button id="save" type="button">保存</button>
+      <button id="clear" type="button" class="danger">清空配置</button>
+    </div>
+    <div id="status"></div>
+  </section>
+</main>
+<script>
+function setStatus(text, ok) {
+  const box = document.getElementById('status');
+  box.textContent = text || '';
+  box.className = ok === undefined ? '' : (ok ? 'ok' : 'err');
+}
+async function api(path, options) {
+  const response = await fetch(path, options);
+  let payload = null;
+  try { payload = await response.json(); } catch (e) { throw new Error('HTTP ' + response.status); }
+  if (!response.ok || (payload && payload.retcode !== 0)) {
+    throw new Error((payload && payload.data && payload.data.message) || ('HTTP ' + response.status));
+  }
+  return payload.data;
+}
+async function loadVersion() {
+  try {
+    const overview = await api('/api/overview');
+    document.getElementById('app-version').textContent = overview.version ? ' ' + overview.version : '';
+  } catch (error) { /* 版本号展示失败不影响配置编辑 */ }
+}
+async function load() {
+  try {
+    const config = await api('/pgsql/api/config');
+    if (!config) { setStatus('当前没有 PostgreSQL 配置'); return; }
+    document.getElementById('host').value = config.host || '';
+    document.getElementById('port').value = config.port || 5432;
+    document.getElementById('user').value = config.user || '';
+    document.getElementById('password').value = config.password || '';
+    document.getElementById('dbname').value = config.dbname || '';
+  } catch (error) { setStatus('读取失败：' + error.message, false); }
+}
+function collect() {
+  return {
+    host: document.getElementById('host').value.trim(),
+    port: parseInt(document.getElementById('port').value, 10) || 0,
+    user: document.getElementById('user').value.trim(),
+    password: document.getElementById('password').value,
+    dbname: document.getElementById('dbname').value.trim()
+  };
+}
+function setBusy(busy) {
+  document.getElementById('save').disabled = busy;
+  document.getElementById('clear').disabled = busy;
+}
+document.getElementById('save').onclick = async function () {
+  setBusy(true);
+  setStatus('保存中…');
+  try {
+    const data = await api('/pgsql/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(collect())
+    });
+    setStatus(data.message || '已保存', true);
+  } catch (error) { setStatus('保存失败：' + error.message, false); }
+  finally { setBusy(false); }
+};
+document.getElementById('clear').onclick = async function () {
+  if (!confirm('确定清空 PostgreSQL 配置？重启后不再落库。')) return;
+  setBusy(true);
+  try {
+    const data = await api('/pgsql/api/config/delete', { method: 'POST' });
+    setStatus(data.message || '已清空', true);
+  } catch (error) { setStatus('清空失败：' + error.message, false); }
+  finally { setBusy(false); }
+};
+loadVersion();
+load();
+</script>
+</body>
+</html>

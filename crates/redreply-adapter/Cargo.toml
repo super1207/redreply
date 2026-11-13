@@ -5,6 +5,11 @@ edition = "2021"
 description = "Adapter core abstractions for RedReply chat platform connectors"
 license = "MIT"
 
+[features]
+default = ["framework"]
+# 把协议适配器桥接进 redreply-bot 框架（迁移期间可关闭）
+framework = ["dep:redreply-bot"]
+
 [dependencies]
 async-trait = { workspace = true }
 base64 = { workspace = true }
@@ -30,3 +35,4 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
+redreply-bot = { path = "../redreply-bot", optional = true }

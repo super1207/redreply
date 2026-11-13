@@ -21,7 +21,6 @@
    </style>
    <script src="fetch-utils.js"></script>
    <script src="vue.js"></script>
-   <link rel="stylesheet" href="vue-quill.snow.prod.css">
 </head>
 
 <body>
@@ -62,7 +61,7 @@
             },
             run_script2(){
                 this.result = "正在执行..."
-                let url = "/test_cron?key=" + encodeURIComponent(this.cronexpr)
+                let url = "/redlang/api/test_cron?key=" + encodeURIComponent(this.cronexpr)
                 // console.log(url)
                 axios.get(url)
                 .then((res) => {
@@ -77,7 +76,7 @@
                         this.result = "执行失败，不支持的表达式"
                     }
                 })
-                .catch(function (error) {
+                .catch((error) => {
                     this.result = "执行失败，检查网络"
                 });
             },

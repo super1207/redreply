@@ -194,11 +194,9 @@
                 <div style="display: flex;flex-direction:column;">
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="debug_btn()">调试</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="help_web()">文档</button>
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="watch_log()">日志</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="gobal_filter_btn()">全局过滤器</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="gobal_init_btn()">全局初始化器</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="playmusic_btn()">{{playbkmusic}}</button>
-                    <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="quit_redreply()">退出</button>
                     <button style="margin: 0.3em;background-color: rgb(220, 238, 238);" @click="other_close()">取消</button>
                 </div>  
             </dialog>
@@ -225,7 +223,6 @@
                 <button @click="export_pkg()" style="flex: 1 0 auto;">导出</button>
             </div>
             <div id="cmd_content" style="display: flex;flex: 0 0 2.5em;padding: 0.5em;background-color: #b6cde4;">
-                <button @click="connect_ob()" style="flex: 1 0 auto;">连接平台协议</button>
                 <button @click="add_click()" style="flex: 1 0 auto;">新增</button>
                 <button @click="other_fun()" style="flex: 1 0 auto;">其它</button>
                 <button @click="import_pkg()" style="flex: 1 0 auto;">导入包</button>
@@ -265,7 +262,7 @@
                 },
                 mounted () {
                     axios
-                    .get("/get_version")
+                    .get("/redlang/api/get_version")
                     .then(
                     res => {
                         this.version = res.data["data"];
@@ -278,7 +275,7 @@
                 methods: {
                     flash_pkg_name(){
                         axios
-                        .get("/get_all_pkg_name")
+                        .get("/redlang/api/get_all_pkg_name")
                         .then(
                         res => {
                             let ret = res.data["data"];
@@ -289,7 +286,7 @@
                             console.log(error);
                         });
                         axios
-                        .get("/get_ban_pkgs")
+                        .get("/redlang/api/get_ban_pkgs")
                         .then(
                         res => {
                             this.ban_pkgs = res.data["data"];
@@ -311,23 +308,11 @@
                         box1.classList.remove("showMove")
                         maskShow.style.display='none'
                     },
-                    connect_ob() {
-                        window.open("/obconnect.html", "_blank");
-                    },
                     import_pkg() {
-                        window.open("/uploadpkg.html", "_blank");
+                        window.open("/redlang/uploadpkg.html", "_blank");
                     },
                     title_click() {
                         window.open("https://github.com/super1207/redreply", "_blank");
-                    },
-                    quit_redreply() {
-                        let is_quit = confirm("是否真的要退出强大的红色问答？")
-                        if(is_quit){
-                            setTimeout(function(){
-                                location.reload();
-                            },1000);
-                            axios.get("/close")
-                        }
                     },
                     other_fun(event) {
                         document.getElementById('other_dlg').showModal();
@@ -338,17 +323,14 @@
                     help_web() {
                         window.open("/docs/index.html#/detailref/", "_blank");
                     },
-                    watch_log() {
-                        window.open("/watchlog.html", "_blank");
-                    },
                     debug_btn() {
-                        window.open("/debug.html", "_blank");
+                        window.open("/redlang/debug.html", "_blank");
                     },
                     gobal_filter_btn() {
-                        window.open("/gobal_filter.html","_blank");
+                        window.open("/redlang/gobal_filter.html","_blank");
                     },
                     gobal_init_btn() {
-                        window.open("/gobal_init.html","_blank");
+                        window.open("/redlang/gobal_init.html","_blank");
                     },
                     playmusic_btn(){
                         let audio = this.$refs.mybackmusic
@@ -366,7 +348,7 @@
                     },
                     edit_click() {
                         console.log("edit")
-                        window.open("/pkg_edit.html?pkg_name=" + encodeURIComponent(this.select_name), "_blank");
+                        window.open("/redlang/pkg_edit.html?pkg_name=" + encodeURIComponent(this.select_name), "_blank");
                         this.downdown()
                     },                    del_pkg(){
                         if(this.select_name == "默认包") {
@@ -376,7 +358,7 @@
                         }
                         let is_del = confirm("是否确定要删除 '" + this.select_name + "' 包？此操作不可恢复。")
                         if(is_del) {
-                            axios.post("/del_one_pkg",{
+                            axios.post("/redlang/api/del_one_pkg",{
                                 "pkg_name":this.select_name,
                             })
                             .then((res) => {
@@ -393,7 +375,7 @@
                         this.downdown()
                     },
                     export_pkg(){
-                        let url = "/download_pkg";
+                        let url = "/redlang/api/download_pkg";
                         if(this.select_name !== "默认包") {
                             url += "?pkg_name=" + encodeURIComponent(this.select_name);
                         }
@@ -402,7 +384,7 @@
                     },
                     toggle_ban_pkg(){
                         let banned = !this.ban_pkgs.includes(this.select_name);
-                        axios.post("/set_ban_pkg",{
+                        axios.post("/redlang/api/set_ban_pkg",{
                             "pkg_name":this.select_name,
                             "banned":banned
                         })
@@ -441,7 +423,7 @@
                         }else if(this.new_pkg_name == "默认包") {
                             alert("失败，包名不可以为默认包")
                         }else {
-                            axios.post("/rename_one_pkg",{
+                            axios.post("/redlang/api/rename_one_pkg",{
                                 "old_pkg_name":this.select_name,
                                 "new_pkg_name":this.add_pkg_name
                             })
@@ -469,7 +451,7 @@
                         }else if(this.new_pkg_name == "默认包") {
                             alert("失败，包名不可以为默认包")
                         }else {
-                            axios.post("/save_one_pkg",{
+                            axios.post("/redlang/api/save_one_pkg",{
                                 "pkg_name":this.add_pkg_name,
                                 "data":[]
                             })

@@ -1,0 +1,43 @@
+[package]
+name = "redreply"
+version = "1.0.86"
+edition = "2021"
+description = "红色问答主程序：组装宿主、适配器与插件"
+license = "AGPL-3.0"
+
+[[bin]]
+name = "redlang"
+path = "src/main.rs"
+
+[dependencies]
+redlang = { path = "../.." }
+redreply-adapter = { path = "../redreply-adapter" }
+redreply-bot = { path = "../redreply-bot" }
+plugin-redlang = { path = "../plugin-redlang" }
+plugin-tts = { path = "../plugin-tts" }
+plugin-browser = { path = "../plugin-browser" }
+plugin-mqtt = { path = "../plugin-mqtt" }
+plugin-pgsql = { path = "../plugin-pgsql" }
+plugin-onebot = { path = "../plugin-onebot" }
+plugin-tianwang = { path = "../plugin-tianwang" }
+hyper = { workspace = true }
+time = { version = "0.3.44", features = ["formatting", "macros"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "time", "local-time"] }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tokio-tungstenite = { workspace = true }
+futures-util = { workspace = true }
+serde_json = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+tao = "0.34.5"
+tray-icon = "0.21.2"
+wry = "0.53.5"
+rfd = "0.15"
+dirs = "5.0"
+image = { version = "0.25.8", default-features = false, features = ["png", "jpeg", "gif", "webp", "bmp", "ico"] }
+
+[build-dependencies]
+embed-resource = "3.0.6"

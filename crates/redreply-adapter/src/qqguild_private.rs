@@ -528,6 +528,8 @@ impl BotConnectTrait for QQGuildPrivateConnect {
             return send_group_msg(&self_data, json, passive_id).await;
         } else if action == "send_private_msg" {
             return send_private_msg(&self_data, json, passive_id).await;
+        } else if action == "send_stream_msg" {
+            return crate::qqguild_public::send_c2c_stream_msg(&self_data, json, passive_id).await;
         } else if action == "get_login_info" {
             return get_login_info(&self_data).await;
         } else if action == "get_group_list" {

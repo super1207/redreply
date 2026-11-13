@@ -1,0 +1,20 @@
+[package]
+name = "plugin-onebot"
+version = "0.1.0"
+edition = "2021"
+description = "红色问答 OneBot 反向接口插件"
+license = "AGPL-3.0"
+
+[dependencies]
+redlang = { path = "../.." }
+redreply-bot = { path = "../redreply-bot" }
+hyper = { workspace = true }
+hyper-tungstenite = { workspace = true }
+hyper-util = { version = "0.1.17", features = ["full"] }
+tokio-tungstenite = { workspace = true }
+tokio = { workspace = true }
+futures-util = { workspace = true }
+uuid = { workspace = true }
+serde_json = { workspace = true }
+crc64 = "2.0.0"
+url = { workspace = true }

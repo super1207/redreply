@@ -1241,10 +1241,13 @@ pub async fn do_qq_json_post(
     let status = ret.status();
     let ret_str = ret.text().await?;
     if !status.is_success() {
-        // 非 2xx 视为失败，携带状态码与截断的响应体
+        // 非 2xx 视为失败，携带状态码与截断的响应体。
+        // 不能直接 &body[..500]：QQ 错误信息多为中文，字节 500 很可能落在
+        // 多字节字符中间，字节切片会 panic（release 下 panic=abort 直接杀进程），
+        // 需先对齐到最近的字符边界
         let mut body = ret_str.as_str();
         if body.len() > 500 {
-            body = &body[..500];
+            body = &body[..body.floor_char_boundary(500)];
         }
         return Err(format!(
             "do_qq_json_post http error:{} {path} body:{body}",

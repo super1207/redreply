@@ -165,7 +165,7 @@
                     "pkg_name":this.pkg_name
                 }
                 this.result = "正在提交..."
-                axios.post("/run_code",script)
+                axios.post("/redlang/api/run_code",script)
                 .then((res) => {
                     if(res.data['retcode'] == 0){
                         this.result = "请求已提交"
@@ -190,7 +190,7 @@
                 }
                 this.result = "正在执行..."
                 this.has_img = false
-                axios.post("/run_code_and_ret",script)
+                axios.post("/redlang/api/run_code_and_ret",script)
                 .then((res) => {
                     if(res.data['retcode'] == 0){
                         this.result = res.data["data"]
@@ -202,10 +202,10 @@
                                 this.img_src = "data:image/jpeg;base64," + img.slice(9)
                                 this.has_img = true;
                             } else {
-                                let img2 = img.replaceAll("[", '[')
-                                    .replaceAll("#93;", ']')
-                                    .replaceAll(",", ',')
-                                    .replaceAll("&", '&')
+                                let img2 = img.replaceAll("&#91;", "[")
+                                    .replaceAll("&#93;", "]")
+                                    .replaceAll("&#44;", ",")
+                                    .replaceAll("&amp;", "&")
                                 this.img_src = img2
                                 this.has_img = true;
                             }

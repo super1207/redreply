@@ -2405,6 +2405,40 @@ return ""
 如果没有在群聊中使用此命令，则不做任何事，并且直接返回空文本。
 
 
+### 流式开始
+
+
+【流式开始@<font color="red">内容</font>】
+
+在 QQ 官方机器人私聊（C2C）中开启一条流式消息，返回会话ID。仅 `qqgroup_public` 平台的私聊支持；其它平台不发送消息，返回一个随机会话ID，并把内容缓冲起来，等【流式结束】时整条发出。
+
+<font color="red">内容</font> 为本次要显示的首段文字；后续分片通过【流式发送】逐段拼接。消息按 Markdown 渲染。
+
+### 流式发送
+
+
+【流式发送@<font color="red">会话ID</font>@<font color="red">内容</font>】
+
+在流式消息末尾拼接新的一段内容。<font color="red">会话ID</font> 由【流式开始】返回。
+
+分片序号由解释器内部自动维护，脚本无需关心。
+
+### 流式结束
+
+
+【流式结束@<font color="red">会话ID</font>@<font color="red">内容</font>】
+
+结束流式消息，<font color="red">内容</font> 为最后一段（可省略），返回会话ID（注意：QQ 不支持撤回流式消息，该ID不能用于【撤回】）。
+
+非 QQ 官方机器人私聊平台下，此命令降级为把缓冲的全文与最后一段拼接后作为一条普通消息发出，返回该消息ID。
+
+例：
+```
+【流式开始@正在生成，请稍候】 返回会话ID
+【流式发送@<会话ID>@。这是第一段】
+【流式结束@<会话ID>@。这是最终内容】
+```
+
 ### 艾特
 
 
@@ -2952,9 +2986,9 @@ onebot事件json对应的RedLang对象。
 
 如果触发类型是<font color="red">网络触发</font>，那么，脚本会在用户访问特定网页时被触发。
 
-对于默认包，触发url为：http://host:port/user/<font color="red">/自定义路径</font>
+对于默认包，触发url为：http://host:port/redlang/user/<font color="red">/自定义路径</font>
 
-对于拓展包，触发url为：http://host:port/user/包名<font color="red">/自定义路径</font>
+对于拓展包，触发url为：http://host:port/redlang/user/包名<font color="red">/自定义路径</font>
 
 关键词一栏，写<font color="red">/自定义路径</font>
 

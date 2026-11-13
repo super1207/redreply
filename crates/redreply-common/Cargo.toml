@@ -1,0 +1,19 @@
+[package]
+name = "redreply-common"
+version = "0.1.0"
+edition = "2021"
+description = "红色问答共享工具层：路径/编码/音视频工具、文件锁、服务端口"
+license = "AGPL-3.0"
+
+[dependencies]
+log = "0.4.28"
+serde_json = { workspace = true }
+zhconv = { version = "0.3.3", features = ["opencc", "compress"] }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+rusqlite = { version = "0.37.0", features = ["bundled", "functions"] }
+claxon = "0.4.3"
+minimp3_fixed = "0.5.4"
+silk-rs-no-llvm = { git = "https://github.com/super1207/silk-rs-no-llvm" }
+lewton = "0.10.2"
+symphonia = { version = "0.5", default-features = false, features = ["aac", "isomp4"] }

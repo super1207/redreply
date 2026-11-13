@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChatGPT 配置 · 红色问答</title>
+<style>
+:root {
+  --bg-primary:#f5f2f0; --bg-secondary:#e1ebe7; --bg-card:#b6cde4; --bg-dialog:#fff;
+  --bg-button:#e1ebe7; --bg-button-hover:aqua; --bg-input:#fff;
+  --text-primary:#000; --text-secondary:#e55743; --text-accent:red;
+  --border-primary:#999; --border-secondary:#e55743; --border-input:#ffd1dc;
+  --ok:#2f7d4f; --err:#d02f2f;
+}
+* { box-sizing:border-box; }
+button, input, textarea { font-family:inherit; }
+html, body { height:100%; }
+body { margin:0; background:var(--bg-primary); color:var(--text-primary); font:14px/1.6 fusion-pixel-12px-monospaced-zh_hant, "Microsoft YaHei", serif; display:flex; flex-direction:column; min-height:100vh; }
+header { display:block; padding:0; background:var(--bg-primary); flex:0 0 auto; }
+.title-bar { position:relative; padding:10px 20px; border-top:2px solid var(--border-secondary); border-bottom:2px solid var(--border-secondary); text-align:center; }
+.title-bar h1 { margin:0; font-size:22px; color:var(--text-secondary); font-weight:bold; letter-spacing:0.25em; }
+nav { display:flex; gap:4px; padding:4px; background:var(--bg-card); border-bottom:1px solid var(--border-primary); }
+nav button { flex:1 1 0; background:var(--bg-button); border:1px solid var(--border-primary); padding:6px 26px; cursor:pointer; font-size:14px; }
+nav button.active { background:#fff; color:var(--text-secondary); font-weight:bold; border-color:var(--border-secondary); }
+main { flex:1 1 auto; min-height:0; width:100%; padding:12px 16px; display:flex; flex-direction:column; gap:12px; }
+section { background:var(--bg-dialog); border:1px solid var(--border-primary); box-shadow:0 0 8px rgba(0,0,0,0.12); padding:12px 16px; min-width:0; min-height:0; flex:1 1 auto; display:flex; flex-direction:column; overflow:hidden; }
+section h2 { margin:0 0 8px; font-size:15px; color:var(--text-secondary); font-weight:600; flex:0 0 auto; }
+.hint { color:#666; font-size:12px; margin-bottom:10px; flex:0 0 auto; }
+.form { flex:1 1 auto; min-height:0; overflow-y:auto; }
+.row { display:flex; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border-secondary); background:#fff; margin-top:6px; }
+.row:first-child { margin-top:0; }
+.row > label { flex:0 0 7em; white-space:nowrap; }
+.row > input, .row > textarea, .row > select { flex:1 1 auto; min-width:0; background:var(--bg-input); border:1px solid var(--border-input); color:var(--text-primary); padding:5px 8px; }
+.row > select { max-width:220px; }
+.row > textarea { min-height:4.5em; resize:vertical; }
+input:focus, textarea:focus { outline:none; border-color:var(--border-secondary); }
+.row.check > input { flex:0 0 auto; width:16px; height:16px; }
+.actions { display:flex; gap:8px; margin-top:12px; flex:0 0 auto; }
+button { background:var(--bg-button); color:var(--text-primary); border:1px solid var(--border-primary); padding:4px 14px; cursor:pointer; }
+button:hover { background:var(--bg-button-hover); color:var(--text-accent); }
+button.danger { border-color:var(--err); color:var(--err); }
+#status { margin-top:10px; font-size:13px; min-height:1.4em; flex:0 0 auto; }
+#status.ok { color:var(--ok); }
+#status.err { color:var(--err); }
+section[hidden] { display:none; }
+.stats { display:flex; gap:8px; flex-wrap:wrap; flex:0 0 auto; }
+.stat { flex:1 1 130px; min-width:110px; padding:8px 10px; border:1px solid var(--border-secondary); background:#fff; }
+.stat strong { display:block; font-size:18px; color:var(--text-secondary); line-height:1.2; }
+.stat span { font-size:12px; color:#666; }
+.toolbar { display:flex; align-items:center; gap:8px; flex:0 0 auto; margin:8px 0; }
+.toolbar .hint { margin:0; }
+.table-wrap { flex:1 1 auto; min-height:0; overflow:auto; border:1px solid var(--border-secondary); background:#fff; }
+.table-wrap table { width:100%; border-collapse:collapse; font-size:12px; white-space:nowrap; }
+.table-wrap th, .table-wrap td { padding:6px 8px; border-bottom:1px solid #eee; text-align:left; }
+.table-wrap th { position:sticky; top:0; background:var(--bg-secondary); z-index:1; }
+.table-wrap tr.failed td { color:var(--err); }
+.table-wrap td.session { max-width:260px; overflow:hidden; text-overflow:ellipsis; }
+.table-wrap td.empty { text-align:center; color:#888; padding:20px; }
+.detail-wrap { flex:1 1 auto; min-height:0; overflow:auto; }
+.detail-section { border:1px solid var(--border-secondary); background:#fff; margin-top:8px; }
+.detail-section > summary { padding:6px 10px; cursor:pointer; background:var(--bg-secondary); font-size:13px; }
+.detail-block { padding:8px 10px; border-top:1px solid #eee; }
+.detail-block h3 { margin:0 0 4px; font-size:13px; color:var(--text-secondary); }
+.detail-block pre { margin:0; white-space:pre-wrap; word-break:break-word; max-height:340px; overflow:auto; background:#1e1e1e; color:#d4d4d4; padding:10px; font-size:12px; line-height:1.5; }
+.detail-meta { font-size:12px; color:#666; margin-bottom:6px; }
+.detail-empty { padding:20px; text-align:center; color:#888; }
+</style>
+</head>
+<body>
+<header>
+  <div class="title-bar"><h1>红色问答<span id="app-version"></span></h1></div>
+  <nav>
+    <button type="button" class="active" data-target="config">ChatGPT 配置</button>
+    <button type="button" data-target="calls">调用明细</button>
+    <button type="button" data-target="last">最近触发</button>
+  </nav>
+</header>
+<main>
+  <section data-section="config">
+    <h2>ChatGPT 配置</h2>
+    <div class="hint">兼容 OpenAI / DeepSeek / Ollama 等所有 OpenAI 格式的 <code>/v1/chat/completions</code> 接口。保存后立即生效，无需重启。群聊需 @ 机器人或以前缀开头才回复，且仅群白名单内的群生效；私聊默认全部回复。白名单内未触发 AI 的群聊消息也会进入上下文，旧的闲聊由后台自动摘要压缩。开启工具调用后，模型可调用 <code>run_command</code> 在本机命令行执行命令，或调用 <code>no_reply</code> 静默本轮不输出任何文本。命令以机器人进程权限执行，请谨慎开启。</div>
+    <div class="form">
+      <div class="row"><label>API Key</label><input id="api_key" type="text" placeholder="粘贴 OpenCode Go 订阅的 API Key"></div>
+      <div class="row"><label>Key 状态</label><span id="key_state">未知</span></div>
+      <div class="row"><label>接口地址</label><input id="base_url" placeholder="https://opencode.ai/zen/go/v1"></div>
+      <div class="row"><label>模型</label><input id="model" placeholder="deepseek-v4.1-flash"></div>
+      <div class="row"><label>系统提示词</label><textarea id="system_prompt" placeholder="设定 AI 的人设与回复风格"></textarea></div>
+      <div class="row"><label>触发前缀</label><textarea id="prefixes" placeholder="每行一个前缀，例如：&#10;问 &#10;gpt "></textarea></div>
+      <div class="row"><label>群白名单</label><textarea id="group_whitelist" placeholder="每行一个群号；留空表示没有群"></textarea></div>
+      <div class="row"><label>上下文Token上限</label><input id="max_tokens" type="number" min="1000" placeholder="8000"></div>
+      <div class="row"><label>temperature</label><input id="temperature" type="number" min="0" max="2" step="0.1" placeholder="0.7"></div>
+      <div class="row"><label>思考强度</label><select id="reasoning_effort">
+        <option value="">默认（不发送）</option>
+        <option value="none">关闭思考</option>
+        <option value="low">低</option>
+        <option value="high">高</option>
+        <option value="max">最高</option>
+      </select><span class="hint" style="margin:0">DeepSeek 专用；默认由接口决定，通常为高</span></div>
+      <div class="row"><label>超时(秒)</label><input id="timeout_secs" type="number" min="5" max="3600" placeholder="1200"></div>
+      <div class="row check"><label>私聊全回复</label><input id="private_always" type="checkbox"><span class="hint" style="margin:0">关闭后私聊也需前缀才触发</span></div>
+      <div class="row check"><label>失败时提示</label><input id="send_error_tip" type="checkbox"><span class="hint" style="margin:0">请求失败时是否在聊天中回复错误原因</span></div>
+      <div class="row check"><label>工具调用</label><input id="command_enabled" type="checkbox"><span class="hint" style="margin:0">允许模型调用 run_command（本机 cmd.exe / sh 命令行）与 no_reply（静默本轮不回复）；开启后回复整段发送</span></div>
+      <div class="row"><label>执行超时(秒)</label><input id="command_timeout_secs" type="number" min="1" max="600" placeholder="30"></div>
+      <div class="row"><label>输出上限(字符)</label><input id="command_max_output" type="number" min="500" max="200000" placeholder="8000"></div>
+    </div>
+    <div class="actions">
+      <button id="save" type="button">保存</button>
+      <button id="test" type="button">测试连接</button>
+      <button id="clear" type="button" class="danger">清空配置</button>
+    </div>
+    <div id="status"></div>
+  </section>
+
+  <section data-section="calls" hidden>
+    <h2>调用明细</h2>
+    <div class="hint">仅保留最近 <span id="calls-capacity">500</span> 次模型调用，进程重启后清空。失败记录可悬停查看原因。</div>
+    <div class="stats" id="calls-stats"></div>
+    <div class="toolbar">
+      <button id="calls-refresh" type="button">刷新</button>
+      <span id="calls-status" class="hint"></span>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>时间</th><th>会话</th><th>模型</th><th>轮次</th>
+            <th>输入</th><th>缓存</th><th>输出</th><th>总计</th>
+            <th>耗时</th><th>状态</th>
+          </tr>
+        </thead>
+        <tbody id="calls-body"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section data-section="last" hidden>
+    <h2>最近一次触发</h2>
+    <div class="hint">每次新触发会覆盖上一条；这里保留本次触发中每一次模型调用的完整请求与响应。</div>
+    <div class="toolbar">
+      <button id="last-refresh" type="button">刷新</button>
+      <span id="last-status" class="hint"></span>
+    </div>
+    <div class="stats" id="last-stats"></div>
+    <div class="detail-wrap" id="last-detail"></div>
+  </section>
+</main>
+<script>function setStatus(text, ok) {
+  const box = document.getElementById('status');
+  box.textContent = text || '';
+  box.className = ok === undefined ? '' : (ok ? 'ok' : 'err');
+}
+async function api(path, options) {
+  const response = await fetch(path, options);
+  let payload = null;
+  try { payload = await response.json(); } catch (e) { throw new Error('HTTP ' + response.status); }
+  if (!response.ok || (payload && payload.retcode !== 0)) {
+    throw new Error((payload && payload.data && payload.data.message) || ('HTTP ' + response.status));
+  }
+  return payload.data;
+}
+async function loadVersion() {
+  try {
+    const overview = await api('/api/overview');
+    document.getElementById('app-version').textContent = overview.version ? ' ' + overview.version : '';
+  } catch (error) {  }
+}
+async function load() {
+  try {
+    const config = await api('/chatgpt/api/config');
+    if (!config || (!config.has_api_key && !config.base_url)) { setStatus('当前没有 ChatGPT 配置，请填写后保存'); }
+    document.getElementById('key_state').textContent = config.has_api_key ? '已配置' : '未配置';
+    document.getElementById('api_key').value = config.api_key || '';
+    document.getElementById('base_url').value = config.base_url || '';
+    document.getElementById('model').value = config.model || '';
+    document.getElementById('system_prompt').value = config.system_prompt || '';
+    document.getElementById('prefixes').value = (config.prefixes || []).join('\n');
+    document.getElementById('group_whitelist').value = (config.group_whitelist || []).join('\n');
+    document.getElementById('max_tokens').value = config.max_tokens != null ? config.max_tokens : '';
+    document.getElementById('temperature').value = config.temperature != null ? config.temperature : '';
+    document.getElementById('reasoning_effort').value = config.reasoning_effort || '';
+    document.getElementById('timeout_secs').value = config.timeout_secs != null ? config.timeout_secs : '';
+    document.getElementById('private_always').checked = config.private_always !== false;
+    document.getElementById('send_error_tip').checked = config.send_error_tip !== false;
+    document.getElementById('command_enabled').checked = config.command_enabled === true;
+    document.getElementById('command_timeout_secs').value = config.command_timeout_secs != null ? config.command_timeout_secs : '';
+    document.getElementById('command_max_output').value = config.command_max_output != null ? config.command_max_output : '';
+  } catch (error) { setStatus('读取失败：' + error.message, false); }
+}
+function collect() {
+  const prefixes = document.getElementById('prefixes').value
+    .split('\n').filter(function (line) { return line.trim().length > 0; });
+  const groupWhitelist = document.getElementById('group_whitelist').value
+    .split(/[\n,，]/).map(function (line) { return line.trim(); })
+    .filter(function (line) { return line.length > 0; });
+  return {
+    api_key: document.getElementById('api_key').value.trim(),
+    base_url: document.getElementById('base_url').value.trim(),
+    model: document.getElementById('model').value.trim(),
+    system_prompt: document.getElementById('system_prompt').value,
+    prefixes: prefixes,
+    group_whitelist: groupWhitelist,
+    max_tokens: parseInt(document.getElementById('max_tokens').value, 10) || 8000,
+    temperature: parseFloat(document.getElementById('temperature').value) || 0,
+    reasoning_effort: document.getElementById('reasoning_effort').value,
+    timeout_secs: parseInt(document.getElementById('timeout_secs').value, 10) || 1200,
+    private_always: document.getElementById('private_always').checked,
+    send_error_tip: document.getElementById('send_error_tip').checked,
+    command_enabled: document.getElementById('command_enabled').checked,
+    command_timeout_secs: parseInt(document.getElementById('command_timeout_secs').value, 10) || 30,
+    command_max_output: parseInt(document.getElementById('command_max_output').value, 10) || 8000
+  };
+}
+function setBusy(busy) {
+  document.getElementById('save').disabled = busy;
+  document.getElementById('test').disabled = busy;
+  document.getElementById('clear').disabled = busy;
+}
+document.getElementById('save').onclick = async function () {
+  setBusy(true);
+  setStatus('保存中…');
+  try {
+    const data = await api('/chatgpt/api/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(collect())
+    });
+    setStatus(data.message || '已保存', true);
+    load();
+  } catch (error) { setStatus('保存失败：' + error.message, false); }
+  finally { setBusy(false); }
+};
+document.getElementById('test').onclick = async function () {
+  setBusy(true);
+  setStatus('正在请求模型…');
+  try {
+    const data = await api('/chatgpt/api/test', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(collect())
+    });
+    setStatus('连接成功，模型回复：' + data.message, true);
+  } catch (error) { setStatus('连接失败：' + error.message, false); }
+  finally { setBusy(false); }
+};
+document.getElementById('clear').onclick = async function () {
+  if (!confirm('确定清空 ChatGPT 配置？清空后插件不再回复任何消息。')) return;
+  setBusy(true);
+  try {
+    const data = await api('/chatgpt/api/config/delete', { method: 'POST' });
+    setStatus(data.message || '已清空', true);
+    load();
+  } catch (error) { setStatus('清空失败：' + error.message, false); }
+  finally { setBusy(false); }
+};
+
+function formatTime(seconds) {
+  const d = new Date((seconds || 0) * 1000);
+  const pad = function (n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+    ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+}
+function formatNumber(value) {
+  return Number(value || 0).toLocaleString();
+}
+function statCard(label, value) {
+  const card = document.createElement('div');
+  card.className = 'stat';
+  const strong = document.createElement('strong');
+  strong.textContent = value;
+  const span = document.createElement('span');
+  span.textContent = label;
+  card.appendChild(strong);
+  card.appendChild(span);
+  return card;
+}
+function renderCalls(data) {
+  const stats = data.stats || {};
+  const box = document.getElementById('calls-stats');
+  box.textContent = '';
+  box.appendChild(statCard('调用次数', formatNumber(stats.total_calls)));
+  box.appendChild(statCard('失败次数', formatNumber(stats.failed_calls)));
+  box.appendChild(statCard('输入 Token', formatNumber(stats.total_prompt_tokens)));
+  box.appendChild(statCard('缓存命中率', (Number(stats.cache_hit_rate || 0)).toFixed(1) + '%'));
+  box.appendChild(statCard('输出 Token', formatNumber(stats.total_completion_tokens)));
+  box.appendChild(statCard('平均耗时', formatNumber(stats.avg_latency_ms) + ' ms'));
+  document.getElementById('calls-capacity').textContent = data.capacity || 500;
+
+  const body = document.getElementById('calls-body');
+  body.textContent = '';
+  const records = data.records || [];
+  if (!records.length) {
+    const tr = document.createElement('tr');
+    const td = document.createElement('td');
+    td.colSpan = 10;
+    td.className = 'empty';
+    td.textContent = '暂无调用记录';
+    tr.appendChild(td);
+    body.appendChild(tr);
+    return;
+  }
+  records.forEach(function (record) {
+    const tr = document.createElement('tr');
+    if (!record.success) tr.className = 'failed';
+    const cells = [
+      formatTime(record.time),
+      record.session || '',
+      record.model || '',
+      record.round || '',
+      formatNumber(record.prompt_tokens),
+      formatNumber(record.cached_tokens),
+      formatNumber(record.completion_tokens),
+      formatNumber(record.total_tokens),
+      formatNumber(record.latency_ms) + ' ms',
+      record.success ? '成功' : '失败'
+    ];
+    cells.forEach(function (text, index) {
+      const td = document.createElement('td');
+      if (index === 1) td.className = 'session';
+      td.textContent = text;
+      tr.appendChild(td);
+    });
+    if (!record.success && record.error) tr.title = record.error;
+    body.appendChild(tr);
+  });
+}
+async function loadCalls() {
+  const status = document.getElementById('calls-status');
+  status.textContent = '加载中…';
+  status.className = 'hint';
+  try {
+    const data = await api('/chatgpt/api/calls');
+    renderCalls(data || {});
+    status.textContent = '更新于 ' + formatTime(Math.floor(Date.now() / 1000));
+  } catch (error) {
+    status.textContent = '读取失败：' + error.message;
+  }
+}
+function prettyJson(value) {
+  try {
+    const parsed = typeof value === 'string' ? JSON.parse(value) : value;
+    return JSON.stringify(parsed, null, 2);
+  } catch (error) {
+    return String(value == null ? '' : value);
+  }
+}
+function detailBlock(title, text) {
+  const block = document.createElement('div');
+  block.className = 'detail-block';
+  const heading = document.createElement('h3');
+  heading.textContent = title;
+  const pre = document.createElement('pre');
+  pre.textContent = text;
+  block.appendChild(heading);
+  block.appendChild(pre);
+  return block;
+}
+function detailSection(title, text, open) {
+  const section = document.createElement('details');
+  section.className = 'detail-section';
+  section.open = open === true;
+  const summary = document.createElement('summary');
+  summary.textContent = title;
+  section.appendChild(summary);
+  if (text !== '' && text != null) {
+    section.appendChild(detailBlock(title, text));
+  }
+  return section;
+}
+function turnStatus(turn) {
+  if (!turn.finished) return '进行中';
+  if (turn.error) return '失败';
+  if (turn.suppressed) return '静默';
+  return '完成';
+}
+function renderLastTurn(turn) {
+  const stats = document.getElementById('last-stats');
+  const wrap = document.getElementById('last-detail');
+  stats.textContent = '';
+  wrap.textContent = '';
+  if (!turn) {
+    const empty = document.createElement('div');
+    empty.className = 'detail-empty';
+    empty.textContent = '暂无触发记录';
+    wrap.appendChild(empty);
+    return;
+  }
+  stats.appendChild(statCard('触发时间', formatTime(turn.time)));
+  stats.appendChild(statCard('会话', turn.session || ''));
+  stats.appendChild(statCard('模型', turn.model || ''));
+  stats.appendChild(statCard('状态', turnStatus(turn)));
+  stats.appendChild(statCard('模型调用次数', formatNumber((turn.calls || []).length)));
+
+  wrap.appendChild(detailSection('触发事件 JSON', prettyJson(turn.trigger), true));
+  if (turn.reply) {
+    wrap.appendChild(detailSection('最终回复', turn.reply, false));
+  }
+  if (turn.error) {
+    wrap.appendChild(detailSection('本轮错误', turn.error, true));
+  }
+  const calls = turn.calls || [];
+  if (!calls.length) {
+    const empty = document.createElement('div');
+    empty.className = 'detail-empty';
+    empty.textContent = '本轮还没有模型调用记录';
+    wrap.appendChild(empty);
+    return;
+  }
+  calls.forEach(function (call) {
+    const title = '第 ' + call.round + ' 次调用 · ' + (call.success ? '成功' : '失败') +
+      ' · ' + formatNumber(call.latency_ms) + ' ms' +
+      ' · prompt ' + formatNumber(call.prompt_tokens) +
+      ' / cached ' + formatNumber(call.cached_tokens) +
+      ' / completion ' + formatNumber(call.completion_tokens);
+    const section = detailSection(title, '', true);
+    section.appendChild(detailBlock('请求体', prettyJson(call.request)));
+    section.appendChild(detailBlock('响应文本', call.response || '（空）'));
+    if (call.reasoning) {
+      section.appendChild(detailBlock('reasoning_content', call.reasoning));
+    }
+    if (call.tool_calls && call.tool_calls !== null) {
+      section.appendChild(detailBlock('工具调用', prettyJson(call.tool_calls)));
+    }
+    if (call.error) {
+      section.appendChild(detailBlock('错误', call.error));
+    }
+    wrap.appendChild(section);
+  });
+}
+async function loadLastTurn() {
+  const status = document.getElementById('last-status');
+  status.textContent = '加载中…';
+  try {
+    const data = await api('/chatgpt/api/last_trigger');
+    renderLastTurn(data);
+    status.textContent = '更新于 ' + formatTime(Math.floor(Date.now() / 1000));
+  } catch (error) {
+    status.textContent = '读取失败：' + error.message;
+  }
+}
+document.getElementById('calls-refresh').onclick = loadCalls;
+document.getElementById('last-refresh').onclick = loadLastTurn;
+document.querySelectorAll('nav button').forEach(function (button) {
+  button.onclick = function () {
+    const target = button.dataset.target;
+    document.querySelectorAll('nav button').forEach(function (item) {
+      item.classList.toggle('active', item === button);
+    });
+    document.querySelectorAll('main section').forEach(function (section) {
+      section.hidden = section.dataset.section !== target;
+    });
+    if (target === 'calls') loadCalls();
+    if (target === 'last') loadLastTurn();
+  };
+});
+loadVersion();
+load();
+</script>
+</body>
+</html>

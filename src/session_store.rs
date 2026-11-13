@@ -6,7 +6,7 @@ use crate::{InputStream, ScriptRelatMsg};
 
 type OnebotSession = (tokio::sync::mpsc::Sender<String>, String, String);
 
-pub(crate) struct SessionStore {
+pub struct SessionStore {
     message_ids: RwLock<HashMap<String, VecDeque<(String, String)>>>,
     input_streams: RwLock<Vec<InputStream>>,
     script_related_messages: RwLock<HashMap<String, ScriptRelatMsg>>,
@@ -21,7 +21,7 @@ pub(crate) struct SessionStore {
 }
 
 impl SessionStore {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             message_ids: RwLock::new(HashMap::new()),
             input_streams: RwLock::new(Vec::new()),
@@ -35,7 +35,7 @@ impl SessionStore {
         }
     }
 
-    pub(crate) fn insert_message_id(
+    pub fn insert_message_id(
         &self,
         self_id: String,
         user_id: String,
@@ -53,7 +53,7 @@ impl SessionStore {
         Ok(())
     }
 
-    pub(crate) fn message_ids(
+    pub fn message_ids(
         &self,
         self_id: &str,
         group_id: &str,
@@ -68,18 +68,18 @@ impl SessionStore {
             .unwrap_or_default())
     }
 
-    pub(crate) fn add_input_stream(&self, input_stream: InputStream) {
+    pub fn add_input_stream(&self, input_stream: InputStream) {
         self.input_streams.write().unwrap_or_else(|e| e.into_inner()).push(input_stream);
     }
 
-    pub(crate) fn remove_input_stream(&self, echo: &str) {
+    pub fn remove_input_stream(&self, echo: &str) {
         self.input_streams
             .write()
             .unwrap()
             .retain(|input_stream| input_stream.echo != echo);
     }
 
-    pub(crate) fn send_group_input_streams(
+    pub fn send_group_input_streams(
         &self,
         self_id: &str,
         user_id: &str,
@@ -115,7 +115,7 @@ impl SessionStore {
         Ok(())
     }
 
-    pub(crate) fn send_private_input_streams(
+    pub fn send_private_input_streams(
         &self,
         self_id: &str,
         user_id: &str,
@@ -137,7 +137,7 @@ impl SessionStore {
         Ok(())
     }
 
-    pub(crate) fn record_sent_message(
+    pub fn record_sent_message(
         &self,
         pkg_name: &str,
         self_id: &str,
@@ -160,7 +160,7 @@ impl SessionStore {
         messages.retain(|_, value| now.saturating_sub(value.create_time) <= 300);
     }
 
-    pub(crate) fn related_message_ids(&self, key: &str) -> Vec<String> {
+    pub fn related_message_ids(&self, key: &str) -> Vec<String> {
         self.script_related_messages
             .read()
             .unwrap()
@@ -169,7 +169,7 @@ impl SessionStore {
             .unwrap_or_default()
     }
 
-    pub(crate) fn add_related_message(
+    pub fn add_related_message(
         &self,
         key: String,
         self_id: &str,
@@ -191,7 +191,7 @@ impl SessionStore {
         }
     }
 
-    pub(crate) fn remove_package_related_messages(&self, pkg_name: &str) {
+    pub fn remove_package_related_messages(&self, pkg_name: &str) {
         let prefix = format!("{pkg_name}|");
         self.script_related_messages
             .write()
@@ -199,7 +199,7 @@ impl SessionStore {
             .retain(|key, _| !key.starts_with(&prefix));
     }
 
-    pub(crate) fn add_history_log(&self, message: &str) {
+    pub fn add_history_log(&self, message: &str) {
         let mut history = self.history_log.write().unwrap_or_else(|e| e.into_inner());
         history.push_back(message.to_owned());
         if history.len() > 50 {
@@ -207,11 +207,11 @@ impl SessionStore {
         }
     }
 
-    pub(crate) fn history_log(&self) -> VecDeque<String> {
+    pub fn history_log(&self) -> VecDeque<String> {
         self.history_log.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
-    pub(crate) async fn add_log_session(
+    pub async fn add_log_session(
         &self,
         uid: String,
         sender: tokio::sync::mpsc::Sender<String>,
@@ -219,11 +219,11 @@ impl SessionStore {
         self.log_sessions.write().await.insert(uid, sender);
     }
 
-    pub(crate) async fn remove_log_session(&self, uid: &str) {
+    pub async fn remove_log_session(&self, uid: &str) {
         self.log_sessions.write().await.remove(uid);
     }
 
-    pub(crate) async fn broadcast_log(&self, message: String) {
+    pub async fn broadcast_log(&self, message: String) {
         // 用 try_send 避免单个卡死的 /watch_log 客户端(通道满)让每条日志
         // 都永久阻塞一个任务；通道已满或已断开的慢客户端直接剔除
         let mut to_remove: Vec<String> = Vec::new();
@@ -243,7 +243,7 @@ impl SessionStore {
         }
     }
 
-    pub(crate) async fn set_python_handler(&self, sender: tokio::sync::mpsc::Sender<String>) -> u64 {
+    pub async fn set_python_handler(&self, sender: tokio::sync::mpsc::Sender<String>) -> u64 {
         use std::sync::atomic::Ordering;
         let generation = self
             .python_handler_generation
@@ -253,20 +253,26 @@ impl SessionStore {
         generation
     }
 
-    pub(crate) async fn clear_python_handler(&self) {
-        *self.python_handler.write().await = None;
+    /// 仅当当前处理器仍是 `generation` 这一代时才清除。
+    /// 旧连接退出（读/写任务结束）可能晚于新连接注册处理器，
+    /// 无条件清除会把新连接刚注册的处理器一起抹掉，导致 Python 桥接中断。
+    pub async fn clear_python_handler_if_current(&self, generation: u64) {
+        let mut handler = self.python_handler.write().await;
+        if handler.as_ref().map(|(g, _)| *g) == Some(generation) {
+            *handler = None;
+        }
     }
 
-    pub(crate) async fn has_python_handler(&self) -> bool {
+    pub async fn has_python_handler(&self) -> bool {
         self.python_handler.read().await.is_some()
     }
 
     /// 当前生效的 python 处理器代次；没有处理器时返回 None。
-    pub(crate) async fn python_handler_generation(&self) -> Option<u64> {
+    pub async fn python_handler_generation(&self) -> Option<u64> {
         self.python_handler.read().await.as_ref().map(|(g, _)| *g)
     }
 
-    pub(crate) async fn python_handler(
+    pub async fn python_handler(
         &self,
     ) -> Option<tokio::sync::mpsc::Sender<String>> {
         self.python_handler
@@ -276,7 +282,7 @@ impl SessionStore {
             .map(|(_, sender)| sender.clone())
     }
 
-    pub(crate) async fn add_python_echo(
+    pub async fn add_python_echo(
         &self,
         uid: String,
         sender: tokio::sync::mpsc::Sender<serde_json::Value>,
@@ -284,11 +290,11 @@ impl SessionStore {
         self.python_echo_sessions.write().await.insert(uid, sender);
     }
 
-    pub(crate) async fn remove_python_echo(&self, uid: &str) {
+    pub async fn remove_python_echo(&self, uid: &str) {
         self.python_echo_sessions.write().await.remove(uid);
     }
 
-    pub(crate) async fn send_python_echo(
+    pub async fn send_python_echo(
         &self,
         uid: &str,
         value: serde_json::Value,
@@ -301,7 +307,7 @@ impl SessionStore {
         Ok(false)
     }
 
-    pub(crate) async fn add_onebot_session(
+    pub async fn add_onebot_session(
         &self,
         uid: String,
         sender: tokio::sync::mpsc::Sender<String>,
@@ -314,11 +320,11 @@ impl SessionStore {
             .insert(uid, (sender, platform, self_id));
     }
 
-    pub(crate) async fn remove_onebot_session(&self, uid: &str) {
+    pub async fn remove_onebot_session(&self, uid: &str) {
         self.onebot_sessions.write().await.remove(uid);
     }
 
-    pub(crate) async fn send_onebot_event(&self, message: String, platform: &str, self_id: &str) {
+    pub async fn send_onebot_event(&self, message: String, platform: &str, self_id: &str) {
         let senders = self
             .onebot_sessions
             .read()
@@ -338,8 +344,11 @@ impl SessionStore {
         }
     }
 
-    /// 定向把 API 响应发回发起请求的会话；该会话已断开时退回广播（兼容旧行为）
-    pub(crate) async fn send_onebot_api_ret(
+    /// 定向把 API 响应发回发起请求的会话。
+    ///
+    /// 会话已断开时直接丢弃：广播给其它客户端会让它们收到无法识别的 echo，
+    /// 既没有意义也可能造成信息串流。
+    pub async fn send_onebot_api_ret(
         &self,
         target_uid: &str,
         message: String,
@@ -353,13 +362,15 @@ impl SessionStore {
                 .filter(|(_, p, s)| p == platform && s == self_id)
                 .map(|(sender, _, _)| sender.clone())
         };
-        if let Some(sender) = target {
-            match sender.try_send(message.clone()) {
-                Ok(()) => return,
-                Err(_) => self.remove_slow_onebot_sessions(&sender).await,
-            }
+        let Some(sender) = target else {
+            let _ = crate::cq_add_log_w(&format!(
+                "onebot api 响应目标会话不存在，已丢弃：platform={platform}, self_id={self_id}"
+            ));
+            return;
+        };
+        if sender.try_send(message).is_err() {
+            self.remove_slow_onebot_sessions(&sender).await;
         }
-        self.send_onebot_event(message, platform, self_id).await;
     }
 
     /// 按发送端剔除对应的会话条目

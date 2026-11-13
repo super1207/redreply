@@ -163,6 +163,17 @@ pub(crate) fn parse_startup_config(config: &Value) -> ConfigResult<StartupConfig
     })
 }
 
+/// 更新配置中的顶层字段并落盘（插件配置页保存用；下次启动生效）。
+pub fn set_config_key(key: &str, value: Value) -> ConfigResult<()> {
+    let _write_guard = match config_write_lock().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    let mut config = read_config()?;
+    config[key] = value;
+    write_config(&config)
+}
+
 pub(crate) fn write_config(config: &Value) -> ConfigResult<()> {
     let path = config_path()?;
     let content = serde_json::to_string_pretty(config)?;
@@ -264,12 +275,69 @@ pub fn read_readonly_web_password() -> ConfigResult<String> {
         .to_owned())
 }
 
-pub fn set_ws_urls(ws_urls: Value) -> ConfigResult<()> {
-    set_config_value("ws_urls", ws_urls)
+/// 读取全部平台连接配置（含停用），返回 `(url, enabled)`。
+pub fn adapter_entries() -> ConfigResult<Vec<(String, bool)>> {
+    parse_adapter_entries(&read_config()?)
 }
 
-pub fn set_disabled_ws_urls(disabled: Value) -> ConfigResult<()> {
-    set_config_value("disabled_ws_urls", disabled)
+/// 解析 `ws_urls` + `disabled_ws_urls`（按下标标记停用）。
+pub(crate) fn parse_adapter_entries(config: &Value) -> ConfigResult<Vec<(String, bool)>> {
+    let urls = config
+        .get("ws_urls")
+        .ok_or("无法获取ws_urls")?
+        .as_array()
+        .ok_or("无法获取ws_urls")?;
+    let disabled: std::collections::HashSet<usize> = config
+        .get("disabled_ws_urls")
+        .and_then(Value::as_array)
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_u64)
+                .map(|index| index as usize)
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut entries = Vec::with_capacity(urls.len());
+    for (index, url) in urls.iter().enumerate() {
+        entries.push((
+            url.as_str().ok_or("ws_url不是字符数组")?.to_owned(),
+            !disabled.contains(&index),
+        ));
+    }
+    Ok(entries)
+}
+
+/// 编码为 `(ws_urls, disabled_ws_urls)` 两个 JSON 数组。
+pub(crate) fn encode_adapter_entries(entries: &[(String, bool)]) -> (Value, Value) {
+    let urls = Value::Array(
+        entries
+            .iter()
+            .map(|(url, _)| Value::String(url.clone()))
+            .collect(),
+    );
+    let disabled = Value::Array(
+        entries
+            .iter()
+            .enumerate()
+            .filter(|(_, (_, enabled))| !enabled)
+            .map(|(index, _)| Value::from(index as u64))
+            .collect(),
+    );
+    (urls, disabled)
+}
+
+/// 写入全部平台连接配置。
+pub fn set_adapter_entries(entries: &[(String, bool)]) -> ConfigResult<()> {
+    let _write_guard = match config_write_lock().lock() {
+        Ok(g) => g,
+        Err(p) => p.into_inner(),
+    };
+    let mut config = read_config()?;
+    let (urls, disabled) = encode_adapter_entries(entries);
+    config["ws_urls"] = urls;
+    config["disabled_ws_urls"] = disabled;
+    write_config(&config)
 }
 
 pub fn pkg_name_to_display(pkg_name: &str) -> String {
@@ -323,25 +391,48 @@ pub fn rename_ban_pkg(old_pkg_name: &str, new_pkg_name: &str) -> ConfigResult<()
     write_config(&config)
 }
 
-pub fn skip_msg_time() -> i64 {
+/// 被禁用的插件名列表（框架管理台切换后持久化）。
+pub fn disabled_plugins() -> Vec<String> {
     read_config()
         .ok()
-        .and_then(|config| config.get("skip_msg_time").and_then(Value::as_i64))
-        .unwrap_or(600)
+        .and_then(|config| {
+            config
+                .get("disabled_plugins")
+                .and_then(Value::as_array)
+                .cloned()
+        })
+        .map(|items| {
+            items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(str::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
-pub fn ws_urls() -> ConfigResult<Vec<String>> {
-    parse_ws_urls(&read_config()?)
-}
-
-fn set_config_value(key: &str, value: Value) -> ConfigResult<()> {
+/// 记录插件的启用/禁用状态。
+pub fn set_plugin_enabled(plugin_name: &str, enabled: bool) -> ConfigResult<()> {
     let _write_guard = match config_write_lock().lock() {
         Ok(g) => g,
         Err(p) => p.into_inner(),
     };
     let mut config = read_config()?;
-    config[key] = value;
+    let mut disabled = disabled_plugins();
+    if enabled {
+        disabled.retain(|name| name != plugin_name);
+    } else if !disabled.iter().any(|name| name == plugin_name) {
+        disabled.push(plugin_name.to_owned());
+    }
+    config["disabled_plugins"] = Value::Array(disabled.into_iter().map(Value::String).collect());
     write_config(&config)
+}
+
+pub fn skip_msg_time() -> i64 {
+    read_config()
+        .ok()
+        .and_then(|config| config.get("skip_msg_time").and_then(Value::as_i64))
+        .unwrap_or(600)
 }
 
 pub(crate) fn parse_ban_pkgs(config: &Value) -> Vec<String> {
@@ -358,37 +449,10 @@ pub(crate) fn parse_ban_pkgs(config: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-pub(crate) fn parse_ws_urls(config: &Value) -> ConfigResult<Vec<String>> {
-    let urls = config
-        .get("ws_urls")
-        .ok_or("无法获取ws_urls")?
-        .as_array()
-        .ok_or("无法获取ws_urls")?;
-    let mut ws_urls = Vec::with_capacity(urls.len());
-    for url in urls {
-        ws_urls.push(url.as_str().ok_or("ws_url不是字符数组")?.to_owned());
-    }
-
-    if let Some(disabled) = config.get("disabled_ws_urls").and_then(Value::as_array) {
-        let disabled_indices: std::collections::HashSet<usize> = disabled
-            .iter()
-            .filter_map(Value::as_u64)
-            .map(|index| index as usize)
-            .collect();
-        ws_urls = ws_urls
-            .into_iter()
-            .enumerate()
-            .filter(|(index, _)| !disabled_indices.contains(index))
-            .map(|(_, url)| url)
-            .collect();
-    }
-
-    Ok(ws_urls)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{parse_startup_config, parse_ws_urls};
+    use super::{encode_adapter_entries, parse_adapter_entries, parse_startup_config};
+    use serde_json::json;
 
     #[test]
     fn parse_startup_config_separates_service_settings() {
@@ -410,20 +474,35 @@ mod tests {
     }
 
     #[test]
-    fn parse_ws_urls_filters_disabled_indices() {
-        let config = serde_json::json!({
+    fn adapter_entries_mark_disabled_indices() {
+        let config = json!({
             "ws_urls": ["ws://one", "ws://two", "ws://three"],
-            "disabled_ws_urls": [1]
+            "disabled_ws_urls": [1, 2]
         });
         assert_eq!(
-            parse_ws_urls(&config).unwrap(),
-            vec!["ws://one".to_owned(), "ws://three".to_owned()]
+            parse_adapter_entries(&config).unwrap(),
+            vec![
+                ("ws://one".to_owned(), true),
+                ("ws://two".to_owned(), false),
+                ("ws://three".to_owned(), false),
+            ]
         );
     }
 
     #[test]
-    fn parse_ws_urls_rejects_non_string_entries() {
-        let config = serde_json::json!({"ws_urls": ["ws://one", 2]});
-        assert!(parse_ws_urls(&config).is_err());
+    fn adapter_entries_reject_non_string_entries() {
+        let config = json!({"ws_urls": ["ws://one", 2]});
+        assert!(parse_adapter_entries(&config).is_err());
+    }
+
+    #[test]
+    fn adapter_entries_round_trip() {
+        let entries = vec![
+            ("ws://one".to_owned(), true),
+            ("ws://two".to_owned(), false),
+        ];
+        let (urls, disabled) = encode_adapter_entries(&entries);
+        let config = json!({"ws_urls": urls, "disabled_ws_urls": disabled});
+        assert_eq!(parse_adapter_entries(&config).unwrap(), entries);
     }
 }

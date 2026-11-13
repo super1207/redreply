@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · 红色问答</title>
+<style>
+:root {
+  --bg-primary:#f5f2f0; --bg-card:#b6cde4; --bg-dialog:#fff;
+  --bg-button:#e1ebe7; --bg-button-hover:aqua; --bg-input:#fff;
+  --text-primary:#000; --text-secondary:#e55743; --text-accent:red;
+  --border-primary:#999; --border-secondary:#e55743; --border-input:#ffd1dc;
+}
+* { box-sizing:border-box; }
+body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center; background:var(--bg-primary); color:var(--text-primary); font:14px/1.6 fusion-pixel-12px-monospaced-zh_hant, "Microsoft YaHei", serif; }
+button, input { font-family:inherit; }
+.box { width:300px; background:var(--bg-dialog); border:2px solid var(--border-secondary); padding:24px; display:grid; gap:14px; }
+h1 { margin:0; font-size:22px; text-align:center; color:var(--text-secondary); letter-spacing:0.25em; font-weight:bold; }
+p { margin:0; color:#666; font-size:12px; text-align:center; }
+input { background:var(--bg-input); border:1px solid var(--border-input); color:var(--text-primary); padding:8px 10px; outline:none; }
+input:focus { border-color:var(--border-secondary); }
+button { background:var(--text-secondary); border:1px solid var(--text-secondary); color:#fff; padding:8px 10px; cursor:pointer; font-size:14px; }
+button:hover { background:var(--bg-button-hover); border-color:var(--border-secondary); color:var(--text-accent); }
+</style>
+</head>
+<body>
+<form class="box" method="post" action="/login">
+  <h1>红色问答</h1>
+  <p id="hint">请输入管理密码</p>
+  <input type="password" name="password" placeholder="密码" autofocus autocomplete="current-password">
+  <button type="submit">登录</button>
+</form>
+<script>
+if (location.search.indexOf('error=1') >= 0) {
+  document.getElementById('hint').textContent = '密码错误，请重试';
+}
+</script>
+</body>
+</html>

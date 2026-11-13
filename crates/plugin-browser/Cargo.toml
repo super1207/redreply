@@ -1,0 +1,17 @@
+[package]
+name = "plugin-browser"
+version = "0.1.0"
+edition = "2021"
+description = "红色问答浏览器插件：无头 Chromium 网页截图 / 获取内容"
+license = "AGPL-3.0"
+
+[dependencies]
+redlang = { path = "../.." }
+redreply-bot = { path = "../redreply-bot" }
+serde_json = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+libloading = "0.8.9"
+
+[target.'cfg(not(windows))'.dependencies]
+redreply-browser = { path = "../redreply-browser" }

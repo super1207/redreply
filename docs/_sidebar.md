@@ -9,4 +9,5 @@
 * [数据持久化](/pgsql/)
 * [语法详细参考](/detailref/)
 * [设计理念](/idea/)
+* [框架与插件架构](/plugin-architecture/)
 

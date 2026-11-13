@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>红色问答 · 框架管理台</title>
+<style>
+:root {
+  --bg-primary:#f5f2f0; --bg-secondary:#e1ebe7; --bg-card:#b6cde4; --bg-dialog:#fff;
+  --bg-button:#e1ebe7; --bg-button-hover:aqua; --bg-input:#fff;
+  --text-primary:#000; --text-secondary:#e55743; --text-accent:red;
+  --border-primary:#999; --border-secondary:#e55743; --border-input:#ffd1dc;
+  --ok:#2f7d4f; --err:#d02f2f;
+}
+* { box-sizing:border-box; }
+header, nav, button, .badge { user-select:none; }
+a { -webkit-user-drag:none; }
+html, body { height:100%; }
+body { margin:0; background:var(--bg-primary); color:var(--text-primary); font:14px/1.6 fusion-pixel-12px-monospaced-zh_hant, "Microsoft YaHei", serif; display:flex; flex-direction:column; min-height:100vh; }
+button, input, select, textarea { font-family: inherit; }
+header { display:block; padding:0; background:var(--bg-primary); flex:0 0 auto; }
+.title-bar { position:relative; padding:10px 20px; border-top:2px solid var(--border-secondary); border-bottom:2px solid var(--border-secondary); text-align:center; }
+.title-bar h1 { margin:0; font-size:22px; color:var(--text-secondary); font-weight:bold; letter-spacing:0.25em; }
+nav { display:flex; gap:4px; padding:4px; background:var(--bg-card); border-bottom:1px solid var(--border-primary); }
+nav button { flex:1 1 0; background:var(--bg-button); border:1px solid var(--border-primary); padding:6px 26px; cursor:pointer; font-size:14px; }
+nav button.active { background:#fff; color:var(--text-secondary); font-weight:bold; border-color:var(--border-secondary); }
+main { flex:1 1 auto; min-height:0; width:100%; padding:12px 16px; display:flex; flex-direction:column; gap:12px; }
+section { background:var(--bg-dialog); border:1px solid var(--border-primary); box-shadow:0 0 8px rgba(0,0,0,0.12); padding:12px 16px; min-width:0; min-height:0; flex:1 1 auto; display:flex; flex-direction:column; overflow:hidden; }
+main section h2 { flex:0 0 auto; }
+main section[hidden] { display:none; }
+/* 列表区域内部滚动：插件/服务/适配器再多也只滚动列表本身 */
+#plugins, #adapters, #services { flex:1 1 auto; min-height:0; overflow-y:auto; }
+section h2 { margin:0 0 8px; font-size:15px; color:var(--text-secondary); font-weight:600; }
+.card { display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:8px 10px; border:1px solid var(--border-secondary); background:#fff; margin-top:6px; }
+.card:first-child { margin-top:0; }
+.card.plain { border:none; background:transparent; padding:6px 0; }
+.card.plain > button { flex:1 1 100%; padding:8px 14px; }
+.card .name { font-weight:600; word-break:break-all; }
+.card .desc { color:#555; flex:1 1 260px; }
+.badge { padding:1px 8px; font-size:12px; border:1px solid var(--border-primary); color:#555; background:var(--bg-secondary); }
+.badge.started { color:var(--ok); border-color:var(--ok); }
+.badge.failed { color:var(--err); border-color:var(--err); }
+button { background:var(--bg-button); color:var(--text-primary); border:1px solid var(--border-primary); padding:4px 14px; cursor:pointer; }
+button:hover { background:var(--bg-button-hover); color:var(--text-accent); }
+button:disabled { opacity:.4; cursor:not-allowed; }
+input { background:var(--bg-input); border:1px solid var(--border-input); color:var(--text-primary); padding:5px 8px; }
+input:focus { outline:none; border-color:var(--border-secondary); }
+.plugin-links { display:flex; gap:8px; flex-wrap:wrap; }
+.plugin-links a { color:var(--text-primary); text-decoration:none; border:1px solid var(--border-primary); padding:4px 14px; font-size:14px; background:var(--bg-button); }
+.plugin-links a:hover { background:var(--bg-button-hover); color:var(--text-accent); }
+.adapter-list { display:flex; flex-direction:column; gap:6px; margin-top:6px; }
+.adapter-item { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-start; padding:8px 10px; border:1px solid var(--border-secondary); background:#fff; }
+.adapter-item .info { flex:1 1 320px; min-width:0; }
+.adapter-item .title { display:flex; align-items:center; gap:8px; flex-wrap:wrap; font-weight:600; }
+.adapter-item .url { color:#777; font-size:12px; word-break:break-all; margin-top:4px; }
+.adapter-item .actions { flex:0 0 auto; display:flex; gap:6px; flex-wrap:wrap; }
+pre#logs { flex:1 1 auto; min-height:160px; max-height:none; max-width:100%; overflow:auto; margin:0; font-size:12px; color:#333; white-space:pre-wrap; word-break:break-all; background:#fff; border:1px solid #ddd; padding:8px; contain:content; }
+.empty { color:#666; }
+dialog#adapter-dialog { border:2px solid var(--border-secondary); padding:0; min-width:26em; max-width:92vw; color:var(--text-primary); background:var(--bg-dialog); }
+dialog#adapter-dialog::backdrop { background:rgba(0,0,0,0.45); }
+.dlg-body { display:flex; flex-direction:column; gap:8px; padding:16px; }
+.dlg-row { display:flex; align-items:center; gap:8px; }
+.dlg-row > span { flex:0 0 7em; white-space:nowrap; }
+.dlg-row > input, .dlg-row > select { flex:1 1 auto; min-width:0; }
+.dlg-actions { display:flex; gap:8px; margin-top:6px; }
+.dlg-actions button { flex:1; }
+</style>
+</head>
+<body>
+<header>
+  <div class="title-bar">
+    <h1>红色问答<span id="app-version"></span></h1>
+  </div>
+  <nav id="nav">
+    <button type="button" data-target="plugins" class="active">插件</button>
+    <button type="button" data-target="adapters">适配器</button>
+    <button type="button" data-target="services">服务</button>
+    <button type="button" data-target="logs">日志</button>
+  </nav>
+</header>
+<main>
+  <section data-section="plugins"><h2>插件</h2><div id="plugins" class="empty">加载中…</div></section>
+  <section data-section="adapters" hidden><h2>适配器</h2><div id="adapters" class="empty">加载中…</div></section>
+  <section data-section="services" hidden><h2>服务</h2><div id="services" class="empty">加载中…</div></section>
+  <section data-section="logs" hidden><h2>日志</h2><pre id="logs">加载中…</pre></section>
+</main>
+<dialog id="adapter-dialog">
+  <div class="dlg-body">
+    <div class="dlg-row">
+      <span>类型</span>
+      <select id="adp-type">
+        <option value="onebot11">onebot11</option>
+        <option value="ovo">olivos（ovo）</option>
+        <option value="satori">satori</option>
+        <option value="qqguild_public">官方QQ（公有）</option>
+        <option value="qqguild_private">官方QQ（私有）</option>
+        <option value="kook">kook</option>
+        <option value="email">邮件</option>
+        <option value="telegram">telegram</option>
+        <option value="yunhu">云湖</option>
+      </select>
+      <button id="adp-help" type="button">填写帮助</button>
+    </div>
+    <div class="dlg-row" data-field="uri"><span>uri</span><input id="adp-uri" placeholder="ws://127.0.0.1:5700"></div>
+    <div class="dlg-row" data-field="tls"><span>tls</span><select id="adp-tls"><option value="0">否</option><option value="1">是</option></select></div>
+    <div class="dlg-row" data-field="token"><span>token</span><input id="adp-token"></div>
+    <div class="dlg-row" data-field="appid"><span>AppID</span><input id="adp-appid"></div>
+    <div class="dlg-row" data-field="appsecret"><span>AppSecret</span><input id="adp-appsecret"></div>
+    <div class="dlg-row" data-field="guild-token"><span>Token</span><input id="adp-guild-token"></div>
+    <div class="dlg-row" data-field="kook-token"><span>Token</span><input id="adp-kook-token"></div>
+    <div class="dlg-row" data-field="tg-token"><span>Token</span><input id="adp-tg-token"></div>
+    <div class="dlg-row" data-field="tg-proxy"><span>Proxy</span><input id="adp-tg-proxy" placeholder="http://127.0.0.1:7890"></div>
+    <div class="dlg-row" data-field="email-user"><span>邮箱地址</span><input id="adp-email-user"></div>
+    <div class="dlg-row" data-field="email-pass"><span>邮箱密码</span><input id="adp-email-pass" type="password"></div>
+    <div class="dlg-row" data-field="imap-server"><span>IMAP服务器</span><input id="adp-imap-server"></div>
+    <div class="dlg-row" data-field="imap-port"><span>IMAP端口</span><input id="adp-imap-port" value="993"></div>
+    <div class="dlg-row" data-field="imap-ssl"><span>IMAP SSL</span><select id="adp-imap-ssl"><option value="1">是</option><option value="0">否</option></select></div>
+    <div class="dlg-row" data-field="smtp-server"><span>SMTP服务器</span><input id="adp-smtp-server"></div>
+    <div class="dlg-row" data-field="smtp-port"><span>SMTP端口</span><input id="adp-smtp-port" value="587"></div>
+    <div class="dlg-row" data-field="smtp-ssl"><span>SMTP SSL</span><select id="adp-smtp-ssl"><option value="1">是</option><option value="0">否</option></select></div>
+    <div class="dlg-row" data-field="yunhu-url"><span>Url</span><input id="adp-yunhu-url"></div>
+    <div class="dlg-row" data-field="yunhu-token"><span>Token</span><input id="adp-yunhu-token"></div>
+    <div class="dlg-row" data-field="yunhu-self"><span>SelfId</span><input id="adp-yunhu-self"></div>
+    <div class="dlg-actions">
+      <button id="adp-ok" type="button">确定</button>
+      <button id="adp-cancel" type="button">取消</button>
+    </div>
+  </div>
+</dialog>
+<script>
+async function api(path, options) {
+  const response = await fetch(path, options);
+  let payload = null;
+  try { payload = await response.json(); } catch (e) { throw new Error('HTTP ' + response.status); }
+  if (!response.ok || (payload && payload.retcode !== 0)) {
+    throw new Error((payload && payload.data && payload.data.message) || ('HTTP ' + response.status));
+  }
+  return payload.data;
+}
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+function switchSection(name) {
+  document.querySelectorAll('header nav button').forEach(function (button) {
+    button.classList.toggle('active', button.getAttribute('data-target') === name);
+  });
+  document.querySelectorAll('main section').forEach(function (section) {
+    section.hidden = section.getAttribute('data-section') !== name;
+  });
+}
+document.querySelectorAll('header nav button').forEach(function (button) {
+  button.addEventListener('click', function () {
+    switchSection(button.getAttribute('data-target'));
+    refresh();
+  });
+});
+function pluginMenus(menus, pluginName) {
+  return (menus || []).filter(function (menu) { return menu.plugin === pluginName; });
+}
+function pluginAction(name, action) {
+  api('/api/plugins/' + encodeURIComponent(name) + '/' + action, { method: 'POST' })
+    .catch(function (error) { alert(error.message); })
+    .then(refresh);
+}
+function renderPlugins(plugins, menus) {
+  const box = document.getElementById('plugins');
+  box.innerHTML = '';
+  if (!plugins.length) {
+    box.className = 'empty';
+    box.textContent = '暂无插件';
+    return;
+  }
+  box.className = '';
+  plugins.forEach(function (plugin) {
+    const card = el('div', 'card');
+    card.appendChild(el('span', 'name', plugin.name));
+    card.appendChild(el('span', 'badge ' + plugin.state, plugin.state + (plugin.enabled ? '' : ' · 已禁用')));
+    const summary = plugin.description || (plugin.provides.length ? '提供：' + plugin.provides.join('、') : '');
+    card.appendChild(el('span', 'desc', summary));
+    // 插件自己的页面入口，放在管理按钮左侧
+    const links = pluginMenus(menus, plugin.name);
+    if (links.length) {
+      const linkRow = el('span', 'plugin-links');
+      links.forEach(function (menu) {
+        const link = document.createElement('a');
+        link.href = menu.url;
+        link.textContent = menu.label;
+        link.title = plugin.name + ' 插件页面';
+        link.target = '_blank';
+        link.rel = 'noopener';
+        linkRow.appendChild(link);
+      });
+      card.appendChild(linkRow);
+    }
+    const toggle = el('button', '', plugin.enabled ? '禁用' : '启用');
+    toggle.onclick = function () { pluginAction(plugin.name, plugin.enabled ? 'disable' : 'enable'); };
+    card.appendChild(toggle);
+    const start = el('button', '', '启动');
+    start.disabled = !plugin.enabled || plugin.running;
+    start.onclick = function () { pluginAction(plugin.name, 'start'); };
+    card.appendChild(start);
+    const stop = el('button', '', '停止');
+    stop.disabled = !plugin.running;
+    stop.onclick = function () { pluginAction(plugin.name, 'stop'); };
+    card.appendChild(stop);
+    if (plugin.error) card.appendChild(el('span', 'desc', '错误：' + plugin.error));
+    box.appendChild(card);
+  });
+}
+function adapterAction(path, payload) {
+  api(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  }).catch(function (error) { alert(error.message); }).then(refresh);
+}
+const adapterState = { entries: [], editingUrl: '' };
+const ADAPTER_FIELDS = {
+  onebot11: ['uri'],
+  ovo: ['uri'],
+  satori: ['tls', 'uri', 'token'],
+  qqguild_public: ['appid', 'appsecret', 'guild-token'],
+  qqguild_private: ['appid', 'appsecret', 'guild-token'],
+  kook: ['kook-token'],
+  telegram: ['tg-token', 'tg-proxy'],
+  email: ['email-user', 'email-pass', 'imap-server', 'imap-port', 'imap-ssl', 'smtp-server', 'smtp-port', 'smtp-ssl'],
+  yunhu: ['yunhu-url', 'yunhu-token', 'yunhu-self']
+};
+const ADAPTER_HELP = {
+  onebot11: 'onebot11 示例 uri：\nws://127.0.0.1:5700\nws://127.0.0.1:5700?access_token=77156\nwss://127.0.0.1:5700',
+  ovo: 'olivos（ovo）示例 uri（通常不需要手动设置）：\n127.0.0.1:1123',
+  satori: 'tls：是否使用 https/wss，通常选否\nuri：127.0.0.1:8080/v1\ntoken：除非启用了 satori 的 token 验证，否则留空',
+  qqguild_public: '官方QQ；频道私信和Q单聊仅支持被动回复。',
+  qqguild_private: '官方QQ 私有部署：填写 AppID / AppSecret / Token。',
+  kook: '填写 kook 机器人 Token。',
+  email: '99% 情况下 IMAP 端口 993，SMTP 端口 587，SSL 都选是。',
+  telegram: 'Proxy 支持 http 代理，如 http://127.0.0.1:7890；不需要代理则留空。',
+  yunhu: '自用协议，若有需要请联系红色问答作者。'
+};
+function adapterField(id) { return document.getElementById('adp-' + id); }
+function adapterValue(id) { return adapterField(id).value.trim(); }
+function syncAdapterFields() {
+  const type = document.getElementById('adp-type').value;
+  const visible = ADAPTER_FIELDS[type] || [];
+  document.querySelectorAll('#adapter-dialog .dlg-row[data-field]').forEach(function (row) {
+    row.style.display = visible.indexOf(row.getAttribute('data-field')) >= 0 ? '' : 'none';
+  });
+}
+function resetAdapterFields() {
+  ['uri', 'token', 'appid', 'appsecret', 'guild-token', 'kook-token', 'tg-token', 'tg-proxy',
+   'email-user', 'email-pass', 'imap-server', 'smtp-server', 'yunhu-url', 'yunhu-token', 'yunhu-self'
+  ].forEach(function (id) { adapterField(id).value = ''; });
+  adapterField('tls').value = '0';
+  adapterField('imap-port').value = '993';
+  adapterField('imap-ssl').value = '1';
+  adapterField('smtp-port').value = '587';
+  adapterField('smtp-ssl').value = '1';
+}
+function parseAdapterUrl(raw) {
+  const set = function (id, value) {
+    if (value !== undefined && value !== null) adapterField(id).value = String(value);
+  };
+  try {
+    if (raw.startsWith('satori://')) {
+      const obj = JSON.parse(raw.slice(9));
+      document.getElementById('adp-type').value = 'satori';
+      set('uri', obj.uri); set('token', obj.token); adapterField('tls').value = obj.use_tls ? '1' : '0';
+    } else if (raw.startsWith('ovo://')) {
+      document.getElementById('adp-type').value = 'ovo'; set('uri', raw.slice(6));
+    } else if (raw.startsWith('qqguild_private://')) {
+      const obj = JSON.parse(raw.slice(18));
+      document.getElementById('adp-type').value = 'qqguild_private';
+      set('appid', obj.AppID); set('appsecret', obj.AppSecret); set('guild-token', obj.Token);
+    } else if (raw.startsWith('qqguild_public://')) {
+      const obj = JSON.parse(raw.slice(17));
+      document.getElementById('adp-type').value = 'qqguild_public';
+      set('appid', obj.AppID); set('appsecret', obj.AppSecret); set('guild-token', obj.Token);
+    } else if (raw.startsWith('kook://')) {
+      const obj = JSON.parse(raw.slice(7));
+      document.getElementById('adp-type').value = 'kook'; set('kook-token', obj.Token);
+    } else if (raw.startsWith('telegram://')) {
+      const obj = JSON.parse(raw.slice(11));
+      document.getElementById('adp-type').value = 'telegram';
+      set('tg-token', obj.Token); set('tg-proxy', obj.Proxy);
+    } else if (raw.startsWith('email://')) {
+      const obj = JSON.parse(raw.slice(8));
+      document.getElementById('adp-type').value = 'email';
+      set('email-user', obj.username); set('email-pass', obj.password);
+      set('imap-server', obj.imap_server); set('imap-port', obj.imap_port);
+      adapterField('imap-ssl').value = obj.imap_ssl ? '1' : '0';
+      set('smtp-server', obj.smtp_server); set('smtp-port', obj.smtp_port);
+      adapterField('smtp-ssl').value = obj.smtp_ssl ? '1' : '0';
+    } else if (raw.startsWith('yunhu://')) {
+      const obj = JSON.parse(raw.slice(8));
+      document.getElementById('adp-type').value = 'yunhu';
+      set('yunhu-url', obj.url); set('yunhu-token', obj.token); set('yunhu-self', obj.self_id);
+    } else {
+      document.getElementById('adp-type').value = 'onebot11'; set('uri', raw);
+    }
+  } catch (error) {
+    document.getElementById('adp-type').value = 'onebot11'; set('uri', raw);
+  }
+}
+function openAdapterDialog(url) {
+  adapterState.editingUrl = url || '';
+  resetAdapterFields();
+  if (adapterState.editingUrl) {
+    parseAdapterUrl(adapterState.editingUrl);
+  } else {
+    document.getElementById('adp-type').value = 'onebot11';
+  }
+  syncAdapterFields();
+  document.getElementById('adapter-dialog').showModal();
+}
+function buildAdapterUrl() {
+  const type = document.getElementById('adp-type').value;
+  const value = adapterValue;
+  if (type === 'onebot11') return value('uri');
+  if (type === 'ovo') return 'ovo://' + value('uri');
+  if (type === 'satori') {
+    return 'satori://' + JSON.stringify({ uri: value('uri'), token: value('token'), use_tls: value('tls') === '1' });
+  }
+  if (type === 'qqguild_public' || type === 'qqguild_private') {
+    return type + '://' + JSON.stringify({ AppID: value('appid'), AppSecret: value('appsecret'), Token: value('guild-token') });
+  }
+  if (type === 'kook') return 'kook://' + JSON.stringify({ Token: value('kook-token') });
+  if (type === 'telegram') return 'telegram://' + JSON.stringify({ Token: value('tg-token'), Proxy: value('tg-proxy') });
+  if (type === 'email') {
+    return 'email://' + JSON.stringify({
+      username: value('email-user'),
+      password: adapterField('email-pass').value,
+      imap_server: value('imap-server'),
+      imap_port: parseInt(value('imap-port'), 10) || 0,
+      imap_ssl: value('imap-ssl') === '1',
+      smtp_server: value('smtp-server'),
+      smtp_port: parseInt(value('smtp-port'), 10) || 0,
+      smtp_ssl: value('smtp-ssl') === '1'
+    });
+  }
+  if (type === 'yunhu') {
+    return 'yunhu://' + JSON.stringify({ url: value('yunhu-url'), token: value('yunhu-token'), self_id: value('yunhu-self') });
+  }
+  return '';
+}
+function submitAdapterDialog() {
+  const url = buildAdapterUrl().trim();
+  if (!url) { alert('请填写连接信息'); return; }
+  const editingUrl = adapterState.editingUrl;
+  document.getElementById('adapter-dialog').close();
+  if (editingUrl) {
+    adapterAction('/api/adapters/update', { url: editingUrl, new_url: url });
+  } else {
+    adapterAction('/api/adapters/add', { url: url });
+  }
+}
+document.getElementById('adp-type').addEventListener('change', syncAdapterFields);
+document.getElementById('adp-help').addEventListener('click', function () {
+  alert(ADAPTER_HELP[document.getElementById('adp-type').value] || '');
+});
+document.getElementById('adp-ok').addEventListener('click', submitAdapterDialog);
+document.getElementById('adp-cancel').addEventListener('click', function () {
+  document.getElementById('adapter-dialog').close();
+});
+function renderAdapters(adapters) {
+  const box = document.getElementById('adapters');
+  box.innerHTML = '';
+  adapterState.entries = adapters.entries || [];
+  const entries = adapterState.entries;
+  const bots = adapters.bots || [];
+
+  const urlLine = el('div', 'card plain');
+  const addButton = el('button', '', '新增连接');
+  addButton.onclick = function () { openAdapterDialog(''); };
+  urlLine.appendChild(addButton);
+  box.appendChild(urlLine);
+
+  if (!entries.length) {
+    const empty = el('div', 'card');
+    empty.appendChild(el('span', 'desc', '暂无连接配置'));
+    box.appendChild(empty);
+    return;
+  }
+  const list = el('div', 'adapter-list');
+  entries.forEach(function (entry) {
+    const bot = bots.filter(function (item) { return item.url === entry.url; })[0];
+    const item = el('div', 'adapter-item');
+
+    const info = el('div', 'info');
+    const title = el('div', 'title');
+    title.appendChild(el('span', '', adapterProtocolLabel(entry.url)));
+    if (!entry.enabled) {
+      title.appendChild(el('span', 'badge', '已停用'));
+    } else if (bot && bot.alive) {
+      title.appendChild(el('span', 'badge started', '已连接'));
+    } else {
+      title.appendChild(el('span', 'badge', '未连接'));
+    }
+    info.appendChild(title);
+    info.appendChild(el('div', 'url', maskAdapterUrl(entry.url)));
+    item.appendChild(info);
+
+    const actions = el('div', 'actions');
+    if (entry.enabled) {
+      const reconnect = el('button', '', '重连');
+      reconnect.onclick = function () { adapterAction('/api/adapters/reconnect', { url: entry.url }); };
+      actions.appendChild(reconnect);
+      const disable = el('button', '', '停用');
+      disable.onclick = function () { adapterAction('/api/adapters/toggle', { url: entry.url, enabled: false }); };
+      actions.appendChild(disable);
+    } else {
+      const enable = el('button', '', '启用');
+      enable.onclick = function () { adapterAction('/api/adapters/toggle', { url: entry.url, enabled: true }); };
+      actions.appendChild(enable);
+    }
+    const edit = el('button', '', '编辑');
+    edit.onclick = function () { openAdapterDialog(entry.url); };
+    actions.appendChild(edit);
+    const remove = el('button', '', '删除');
+    remove.onclick = function () { adapterAction('/api/adapters/remove', { url: entry.url }); };
+    actions.appendChild(remove);
+    item.appendChild(actions);
+
+    list.appendChild(item);
+  });
+  box.appendChild(list);
+}
+function adapterProtocolLabel(url) {
+  if (url.startsWith('ws://') || url.startsWith('wss://')) return 'OneBot11';
+  if (url.startsWith('ovo://')) return 'OneBot11 5（ovo）';
+  if (url.startsWith('satori://')) return 'Satori';
+  if (url.startsWith('qqguild_public://')) return '官方QQ（公有）';
+  if (url.startsWith('qqguild_private://')) return '官方QQ（私有）';
+  if (url.startsWith('kook://')) return 'KOOK';
+  if (url.startsWith('telegram://')) return 'Telegram';
+  if (url.startsWith('email://')) return '邮件';
+  if (url.startsWith('yunhu://')) return '云湖';
+  return '未知协议';
+}
+function maskAdapterUrl(url) {
+  return url.replace(/("(?:AppSecret|password|Token|token)"\s*:\s*")([^"]*)(")/g, function (match, prefix, secret, suffix) {
+    return prefix + '***' + suffix;
+  });
+}
+function renderServices(services) {
+  const box = document.getElementById('services');
+  box.innerHTML = '';
+  if (!services.length) {
+    box.className = 'empty';
+    box.textContent = '暂无服务';
+    return;
+  }
+  box.className = '';
+  services.forEach(function (service) {
+    const card = el('div', 'card');
+    card.appendChild(el('span', 'name', service.name));
+    card.appendChild(el('span', 'desc', service.owner ? '由插件 ' + service.owner + ' 提供' : '框架服务'));
+    box.appendChild(card);
+  });
+}
+const uiSnapshot = { version: '', plugins: '', adapters: '', services: '', logs: '' };
+let refreshing = false;
+let firstRender = true;
+
+function selectionActive() {
+  const selection = window.getSelection();
+  return !!selection && selection.toString().length > 0;
+}
+
+function setIfChanged(id, key, text) {
+  if (uiSnapshot[key] === text) return;
+  uiSnapshot[key] = text;
+  document.getElementById(id).textContent = text;
+}
+
+async function refresh() {
+  // 用户正在选择文本时不做 DOM 更新，避免 Edge 在选择/拖动过程中重排导致卡死
+  if (refreshing || selectionActive()) return;
+  refreshing = true;
+  try {
+    const data = await api('/api/overview');
+    setIfChanged('app-version', 'version', data.version ? ' ' + data.version : '');
+    const pluginsKey = JSON.stringify(data.plugins) + JSON.stringify(data.menus);
+    if (pluginsKey !== uiSnapshot.plugins) {
+      uiSnapshot.plugins = pluginsKey;
+      renderPlugins(data.plugins, data.menus);
+    }
+    const adaptersKey = JSON.stringify(data.adapters);
+    if (adaptersKey !== uiSnapshot.adapters) {
+      uiSnapshot.adapters = adaptersKey;
+      renderAdapters(data.adapters);
+    }
+    const servicesKey = JSON.stringify(data.services);
+    if (servicesKey !== uiSnapshot.services) {
+      uiSnapshot.services = servicesKey;
+      renderServices(data.services);
+    }
+    // 只有正在查看「日志」页签时才拉取日志，避免无谓的大响应
+    const logsSection = document.querySelector('main section[data-section="logs"]');
+    if (logsSection && !logsSection.hidden) {
+      const logs = await api('/api/logs');
+      const logText = logs.length
+        ? logs.map(function (record) {
+            return record.time + ' [' + record.level.toUpperCase() + '] ' + record.target + '：' + record.message;
+          }).join('\n')
+        : '暂无日志';
+      setIfChanged('logs', 'logs', logText);
+    }
+    firstRender = false;
+  } catch (error) {
+    if (firstRender) {
+      document.getElementById('plugins').textContent = '加载失败：' + error.message;
+    }
+  } finally {
+    refreshing = false;
+  }
+}
+document.addEventListener('selectionchange', function () {
+  // 选择结束后立即补一次刷新
+  if (!selectionActive() && !firstRender) refresh();
+});
+refresh();
+setInterval(refresh, 5000);
+</script>
+</body>
+</html>

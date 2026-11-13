@@ -139,12 +139,20 @@
         },
         mounted () {
             let pkg_name = getQueryVariable("pkg_name")
-            document.title = decodeURIComponent(pkg_name)
-            this.pkg_name = document.title
+            // 非法百分号编码（如 ?pkg_name=%zz）会让 decodeURIComponent 抛 URIError
+            // 中断 mounted 导致整页白屏，解析失败时回退为原文
+            let decoded_name = pkg_name
+            try {
+                decoded_name = decodeURIComponent(pkg_name)
+            } catch (e) {
+                decoded_name = pkg_name
+            }
+            document.title = decoded_name
+            this.pkg_name = decoded_name
             if(pkg_name == encodeURIComponent("默认包")) {
                 pkg_name = ""
             }
-            let url = "/read_one_pkg?pkg_name=" + pkg_name
+            let url = "/redlang/api/read_one_pkg?pkg_name=" + pkg_name
             console.log(url)
             axios
             .get(url)
@@ -227,7 +235,7 @@
                 }
             },
             dragEnd() { },
-            cron(){ window.open("/crontool.html", "_blank"); },
+            cron(){ window.open("/redlang/crontool.html", "_blank"); },
             openWebTriggerUrl() {
                 const protocol = window.location.protocol; 
                 const host = window.location.host; 
@@ -309,10 +317,10 @@
             },
             save_code(){
                 if(this.select_index != -1) this.save(this.select_index)
-                let pkg_name = getQueryVariable("pkg_name")
-                pkg_name = decodeURIComponent(pkg_name)
+                // 统一用 mounted 里解析好的包名，避免参数缺失/解码异常时写错目标包
+                let pkg_name = this.pkg_name
                 if(pkg_name == "默认包") pkg_name = ""
-                axios.post("/save_one_pkg",{ "pkg_name": pkg_name, data:this.pkg_codes })
+                axios.post("/redlang/api/save_one_pkg",{ "pkg_name": pkg_name, data:this.pkg_codes })
                 .then((res) => {
                     this.toastMessage = res.data['retcode'] == 0 ? "保存成功" : "保存失败";
                     this.showToast = true;

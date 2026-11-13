@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 
-use crate::{httpserver::add_ws_log, mqttclient::call_mqtt_remote, runtime, runtime_context};
+use crate::{httpserver::add_ws_log, runtime, runtime_context};
+use redreply_common::plugin_ports::MqttServiceHandle;
 
 fn add_history_log(msg: &str) -> Result<(), Box<dyn std::error::Error>> {
     runtime_context().session.add_history_log(msg);
@@ -23,11 +24,23 @@ pub async fn get_tmp_dir_async() -> Result<String, Box<dyn std::error::Error + S
     tokio::task::spawn_blocking(get_tmp_dir).await?
 }
 
-// 获取插件的目录，绝对路径，末尾有'\',utf8编码
-pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+/// 数据根目录（默认是可执行文件同级的 plus_dir）。
+///
+/// 自动化测试或无头部署可通过 `REDREPLY_PLUS_DIR` 重定向，避免触碰真实数据。
+fn app_plus_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error + Send + Sync>> {
+    if let Ok(dir) = std::env::var("REDREPLY_PLUS_DIR") {
+        if !dir.is_empty() {
+            return Ok(std::path::PathBuf::from(dir));
+        }
+    }
     let curexedir = std::env::current_exe()?;
     let curdir = curexedir.parent().ok_or("无法获得当前可执行文件的父目录")?;
-    let path = curdir.join("plus_dir");
+    Ok(curdir.join("plus_dir"))
+}
+
+// 获取插件的目录，绝对路径，末尾有'\',utf8编码
+pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    let path = app_plus_dir()?;
     std::fs::create_dir_all(&path)?;
     let path_str = format!(
         "{}{}",
@@ -44,9 +57,7 @@ pub async fn cq_get_app_directory1_async(
 
 // 获取应用目录，绝对路径，末尾有'\',utf8编码
 pub fn cq_get_app_directory2() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-    let curexedir = std::env::current_exe()?;
-    let curdir = curexedir.parent().ok_or("无法获得当前可执行文件的父目录")?;
-    let path = curdir.join("plus_dir").join("default_pkg_dir");
+    let path = app_plus_dir()?.join("default_pkg_dir");
     std::fs::create_dir_all(&path)?;
     let path_str = format!(
         "{}{}",
@@ -76,7 +87,14 @@ pub fn cq_call_api(
     let mut js = js_rst.unwrap();
 
     if !remote_id.is_empty() {
-        let ret_rsp = call_mqtt_remote(platform, self_id, passive_id, js, remote_id);
+        // MQTT 由插件提供：未安装/未启用 mqtt 插件时按“没有MQTT Client”处理
+        let service = crate::framework_services().and_then(|registry| {
+            registry.get::<MqttServiceHandle>("mqtt")
+        });
+        let ret_rsp = match service {
+            Some(service) => service.call_remote(platform, self_id, passive_id, js, remote_id),
+            None => Err("没有MQTT Client".to_string()),
+        };
         if let Ok(ret) = ret_rsp {
             return ret.to_string();
         } else {

@@ -19,6 +19,8 @@ use tokio::sync::RwLock;
 pub mod cqapi;
 pub mod cqevent;
 pub mod email;
+#[cfg(feature = "framework")]
+pub mod framework_bridge;
 pub mod host;
 pub mod httpevent;
 pub mod kook;
@@ -116,7 +118,21 @@ impl BotRegistry {
 
     pub async fn disconnect_and_remove(&self, url: &str) -> bool {
         if let Some(bot) = self.remove(url).await {
-            bot.write().await.disconnect().await;
+            // 连接对象可能正被慢 API 调用占用（call_api 持读锁跨网络 await，最长 30s）。
+            // 写锁限时等待并放到后台任务：超时则本轮放弃断开（Arc 仍持有对象，
+            // 调用结束后自然释放），避免单条慢调用在连接管理循环里阻塞
+            // 所有其它 bot 的重连簿记（队头阻塞）。
+            let bot = bot.clone();
+            tokio::task::spawn(async move {
+                match tokio::time::timeout(std::time::Duration::from_secs(3), bot.write()).await {
+                    Ok(mut guard) => {
+                        guard.disconnect().await;
+                    }
+                    Err(_) => {
+                        // 调用仍在进行中；对象由 Arc 持有，届时随引用释放
+                    }
+                }
+            });
             true
         } else {
             false

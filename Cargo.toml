@@ -8,12 +8,24 @@ edition = "2021"
 [workspace]
 members = [
     ".",
+    "crates/redreply",
     "crates/redreply-adapter",
+    "crates/redreply-bot",
     "crates/redreply-browser",
+    "crates/redreply-common",
+    "crates/plugin-redlang",
+    "crates/plugin-tts",
+    "crates/plugin-browser",
+    "crates/plugin-mqtt",
+    "crates/plugin-pgsql",
+    "crates/plugin-onebot",
+    "crates/plugin-tianwang",
     "crates/msedge-tts",
 ]
 default-members = [
     ".",
+    "crates/redreply",
+    "crates/redreply-bot",
     "crates/redreply-browser",
 ]
 
@@ -46,6 +58,8 @@ uuid = { version = "1.18.1", features = ["v4", "fast-rng"] }
 
 [dependencies]
 redreply-adapter = { path = "crates/redreply-adapter" }
+redreply-bot = { path = "crates/redreply-bot" }
+redreply-common = { path = "crates/redreply-common" }
 fancy-regex = { workspace = true }
 encoding = "0.2.33"
 getrandom = "0.3.3"
@@ -93,7 +107,6 @@ tokio-util = { version = "0.7.16", default-features = false, features = [ "io", 
 http-body-util = "0.1.3"
 hyper-util = { version = "0.1.17", features = ["full"] }
 bytes = "1.10.1"
-crc64 = "2.0.0"
 path-clean = "1.0.1"
 rust-ini = "0.21.3"
 mlua = { version = "0.11.3", features = ["lua54", "vendored"] }
@@ -114,28 +127,12 @@ lettre = { workspace = true }
 scraper = "0.24.0"
 tungstenite = { workspace = true }
 markdown = "1.0.0-alpha.21"
-rumqttc = {git = "https://github.com/super1207/rumqtt",default-features = false}
 regex = { workspace = true }
-
-tokio-postgres = { version = "0.7.15", features = ["with-serde_json-1"] }
-
-[build-dependencies]
-embed-resource = "3.0.6"
-
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55.0"
 xcap = "0.7.1"
-tray-icon = "0.21.2"
-tao = "0.34.5"
-wry = "0.53.5"
 winapi = { version = "0.3.9", features = ["winuser"] }
-dirs = "5.0"
-rfd = "0.15"
-libloading = "0.8.9"
-
-[target.'cfg(not(windows))'.dependencies]
-redreply-browser = { path = "crates/redreply-browser" }
 
 
 [profile.dev]

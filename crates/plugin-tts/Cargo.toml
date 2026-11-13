@@ -1,0 +1,11 @@
+[package]
+name = "plugin-tts"
+version = "0.1.0"
+edition = "2021"
+description = "红色问答 TTS 插件：Edge TTS 语音合成服务"
+license = "AGPL-3.0"
+
+[dependencies]
+redlang = { path = "../.." }
+redreply-bot = { path = "../redreply-bot" }
+msedge-tts = { path = "../msedge-tts", features = ["proxy"] }

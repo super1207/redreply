@@ -1,0 +1,17 @@
+[package]
+name = "plugin-mqtt"
+version = "0.1.0"
+edition = "2021"
+description = "红色问答 MQTT 分布式插件"
+license = "AGPL-3.0"
+
+[dependencies]
+redlang = { path = "../.." }
+redreply-bot = { path = "../redreply-bot" }
+redreply-common = { path = "../redreply-common" }
+hyper = { workspace = true }
+rumqttc = { git = "https://github.com/super1207/rumqtt", default-features = false }
+uuid = { workspace = true }
+bytes = "1.10.1"
+scopeguard = { workspace = true }
+serde_json = { workspace = true }

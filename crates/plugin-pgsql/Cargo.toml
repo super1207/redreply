@@ -1,0 +1,16 @@
+[package]
+name = "plugin-pgsql"
+version = "0.1.0"
+edition = "2021"
+description = "红色问答 PostgreSQL 持久化插件"
+license = "AGPL-3.0"
+
+[dependencies]
+redlang = { path = "../.." }
+redreply-bot = { path = "../redreply-bot" }
+redreply-common = { path = "../redreply-common" }
+hyper = { workspace = true }
+tokio-postgres = { version = "0.7.15", features = ["with-serde_json-1"] }
+tokio = { workspace = true }
+chrono = { workspace = true }
+serde_json = { workspace = true }

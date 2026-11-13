@@ -1,0 +1,17 @@
+[package]
+name = "plugin-tianwang"
+version = "0.1.0"
+edition = "2021"
+description = "红色问答 ChatGPT 聊天插件：基于 OpenAI 兼容接口的 AI 自动回复"
+license = "AGPL-3.0"
+
+[dependencies]
+redlang = { path = "../.." }
+redreply-bot = { path = "../redreply-bot" }
+hyper = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true }
+encoding_rs = "0.8"
+tokio = { workspace = true }
+tokenizers = { version = "0.23", default-features = false, features = ["fancy-regex"] }

@@ -1,41 +1,13 @@
-use crate::ScriptInfo;
+//! 进程级生命周期：信号处理、退出编排、子进程清理。
+//!
+//! 脚本引擎的退出收尾（置退出标志、等待脚本、状态落盘）由插件通过
+//! [`set_shutdown_hook`] 注册，宿主退出前统一调用。
 
-pub fn pkg_can_run(pkg_name: &str, script_type: &str) -> bool {
-    crate::runtime_context()
-        .control
-        .pkg_can_run(pkg_name, script_type)
-}
+static QUITTING: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-pub fn wait_one_pkg_quit(pkg_name: &str, timeout_ms: i64) -> bool {
-    crate::runtime_context()
-        .control
-        .wait_one_pkg_quit(pkg_name, timeout_ms)
-}
-
-pub fn wait_all_pkg_quit(timeout_ms: i64) -> bool {
-    crate::runtime_context()
-        .control
-        .wait_all_pkg_quit(timeout_ms)
-}
-
-pub fn add_running_script_num(pkg_name: &str, script_name: &str, script_type: &str) -> Option<u64> {
-    crate::runtime_context()
-        .control
-        .add_running_script_num(pkg_name, script_name, script_type)
-}
-
-pub fn get_running_script_info() -> Vec<ScriptInfo> {
-    crate::runtime_context().control.running_script_info()
-}
-
-pub fn dec_running_script_num(run_id: u64) {
-    crate::runtime_context()
-        .control
-        .dec_running_script_num(run_id);
-}
-
-pub fn set_start_time(start_time: String) {
-    crate::runtime_context().control.set_start_time(start_time);
+/// 进程是否正在退出（供后台线程提前收手）。
+pub fn is_quitting() -> bool {
+    QUITTING.load(std::sync::atomic::Ordering::SeqCst)
 }
 
 fn kill_all_sub_process() {
@@ -60,21 +32,17 @@ fn kill_all_sub_process() {
 }
 
 pub fn wait_for_quit() -> ! {
-    crate::runtime_context().control.set_quit(true);
+    QUITTING.store(true, std::sync::atomic::Ordering::SeqCst);
     std::thread::spawn(|| {
         std::thread::sleep(core::time::Duration::from_secs(5));
         // 强退看门狗内绝不能 unwrap：日志链路一旦出错，强退失效会导致进程永远退不出
         let _ = crate::cq_add_log_w("退出软件超时(5s)，强制退出!");
-        let _ = crate::cq_add_log_w(&format!("未退出脚本:{:?}", get_running_script_info()));
         kill_all_sub_process();
         std::process::exit(-1);
     });
 
-    while !wait_all_pkg_quit(5000) {}
-    // flush 失败也不能阻止退出（缓存丢失可接受，进程卡死不可接受）
-    if let Err(e) = crate::status::flush_cache_to_db() {
-        let _ = crate::cq_add_log_w(&format!("退出时缓存落盘失败:{e}"));
-    }
+    // 插件注册的收尾（等待脚本退出 + 缓存落盘）；失败也不能阻止退出
+    crate::run_shutdown_hook();
     std::process::exit(0);
 }
 

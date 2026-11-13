@@ -1,55 +1,80 @@
 use std::panic;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::thread;
 
 use cqapi::cq_add_log;
 use rust_embed::RustEmbed;
 
 mod botconn;
-mod browserbridge;
 pub mod config_manager;
-mod control_plane;
-mod cqapi;
-mod cqevent;
-mod cronevent;
-mod httpevent;
-mod httpserver;
-mod initevent;
+pub mod cqapi;
+pub mod httpserver;
 pub mod lifecycle;
-mod mqttclient;
-mod mytool;
-mod onebot11s;
-mod onebot_store;
-mod pgsql;
-mod pyserver;
-mod redlang;
 pub mod resource_manager;
-mod runtime_context;
-mod scheduler_store;
-pub mod script_manager;
-mod script_store;
-mod service_hub;
-mod session_store;
-mod status;
-mod sync_primitives;
-
-#[cfg(test)]
-mod test;
+pub mod runtime_context;
+pub mod service_hub;
+pub mod session_store;
 
 pub use cqapi::{cq_add_log_w, get_tmp_dir};
-pub(crate) use runtime_context::runtime_context;
+pub use redreply_common::{mytool, plugin_ports};
+pub use runtime_context::runtime_context;
 
 pub fn runtime() -> Arc<tokio::runtime::Runtime> {
     runtime_context().services.runtime()
 }
 
+static FRAMEWORK: OnceLock<redreply_bot::Framework> = OnceLock::new();
+static FRAMEWORK_STARTER: OnceLock<Box<dyn Fn() -> Result<(), String> + Send + Sync>> =
+    OnceLock::new();
+static SHUTDOWN_HOOK: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+
+/// 由插件注册退出收尾（置脚本退出标志、等待脚本、状态落盘）。
+pub fn set_shutdown_hook(hook: impl Fn() + Send + Sync + 'static) {
+    let _ = SHUTDOWN_HOOK.set(Box::new(hook));
+}
+
+/// 执行已注册的退出收尾；未注册时直接返回。
+pub(crate) fn run_shutdown_hook() {
+    if let Some(hook) = SHUTDOWN_HOOK.get() {
+        hook();
+    }
+}
+
+/// 由主程序（bin 包）注入框架启动器：组装适配器与插件并启动框架。
+pub fn set_framework_starter<F>(starter: F)
+where
+    F: Fn() -> Result<(), String> + Send + Sync + 'static,
+{
+    let _ = FRAMEWORK_STARTER.set(Box::new(starter));
+}
+
+/// 由主程序在框架启动后注入实例，供宿主内部调用适配器与服务。
+pub fn set_framework(framework: redreply_bot::Framework) {
+    let _ = FRAMEWORK.set(framework);
+}
+
+/// 全局框架实例（启动后可用）。
+pub fn framework() -> Option<&'static redreply_bot::Framework> {
+    FRAMEWORK.get()
+}
+
+/// 框架服务注册表（TTS/浏览器等能力按服务名取用）。
+pub fn framework_services() -> Option<&'static redreply_bot::ServiceRegistry> {
+    FRAMEWORK.get().map(|framework| &**framework.services())
+}
+
+/// 心跳：关闭 auto_close 看门狗。
+pub fn note_heartbeat() {
+    runtime_context().services.set_auto_close(false);
+}
+
 #[derive(Clone, Debug)]
 pub struct ScriptInfo {
-    pub(crate) pkg_name: String,
+    pub pkg_name: String,
     #[allow(dead_code)]
-    pub(crate) script_name: String,
+    pub script_name: String,
     /// 每次运行实例唯一 ID，避免同名脚本并发时 dec 删错条目
-    pub(crate) run_id: u64,
+    pub run_id: u64,
 }
 
 pub struct InputStream {
@@ -68,9 +93,7 @@ pub struct ScriptRelatMsg {
     pub create_time: u64,
 }
 
-pub const PERSISTENT_VALUE_MARKER: &str = "12331549-6D26-68A5-E192-5EBE9A6EB998";
 pub const PAGING_UUID: &str = "5f4bf0da-1673-4e3f-8d7c-4932cc923504";
-pub const CLEAR_UUID: &str = "a1e72c64-4d18-4529-bc19-e61c5a836e8c";
 
 pub const RED_PY_DECODE: &str = r#"
 import base64
@@ -152,36 +175,19 @@ pub fn initialize() -> i32 {
     let _ = runtime_context();
     config_manager::init_global_var();
 
-    redlang::webexfun::init_web_ex_fun_map();
-    redlang::cqexfun::init_cq_ex_fun_map();
-    redlang::exfun::init_ex_fun_map();
-    redlang::init_core_fun_map();
-
     if let Err(error) = resource_manager::release_file() {
         let _ = cq_add_log_w(&error.to_string());
     }
-    if let Err(error) = httpserver::init_http_server() {
-        let _ = cq_add_log_w(&error.to_string());
-    }
-    thread::spawn(|| {
-        if let Err(error) = resource_manager::init_python() {
-            let _ = cq_add_log_w(&error.to_string());
+    // 框架接管 HTTP 服务与适配器连接；脚本引擎、Python 环境等由插件启动时初始化
+    match FRAMEWORK_STARTER.get() {
+        Some(starter) => {
+            if let Err(error) = starter() {
+                let _ = cq_add_log_w(&format!("框架启动失败:{error}"));
+            }
         }
-    });
-    if let Err(error) = script_manager::init_code() {
-        let _ = cq_add_log_w(&error.to_string());
-    }
-    if let Err(error) = botconn::do_conn_event() {
-        let _ = cq_add_log_w(&error.to_string());
-    }
-    if let Err(error) = cronevent::do_cron_event() {
-        let _ = cq_add_log_w(&error.to_string());
-    }
-    if let Err(error) = mqttclient::init_mqttclient() {
-        let _ = cq_add_log_w(&error.to_string());
-    }
-    if let Err(error) = pgsql::init_postgresql_db() {
-        let _ = cq_add_log_w(&error.to_string());
+        None => {
+            let _ = cq_add_log_w("未配置框架启动器，仅运行核心（无适配器与插件）");
+        }
     }
     let _ = cq_add_log("资源初始化完成！");
 

@@ -994,6 +994,123 @@ pub async fn send_qqpri_msg(
     }))
 }
 
+fn stream_err(message: &str) -> serde_json::Value {
+    serde_json::json!({
+        "retcode":1404,
+        "status":"failed",
+        "message":message,
+        "data":{}
+    })
+}
+
+/// C2C 流式消息：start/append/end 三态，正文由调用方每次全量携带（replace 模式）。
+/// 不保存任何会话状态：后续分片的 stream_msg_id 由调用方回传。
+pub async fn send_c2c_stream_msg(
+    self_t: &SelfData,
+    json: &serde_json::Value,
+    passive_id: &str,
+) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
+    let params = read_json_or_default(json, "params", &serde_json::Value::Null);
+    let mode = read_json_str(params, "mode");
+    let content = read_json_str(params, "content");
+    let user_id = read_json_str(params, "user_id");
+    if user_id.is_empty() {
+        return Ok(stream_err("user_id is empty"));
+    }
+    let input_state = match mode.as_str() {
+        "start" | "append" => 1,
+        "end" => 10,
+        _ => return Ok(stream_err("unknown mode")),
+    };
+    // index 从 0 递增：首片固定 0，后续分片由调用方回传
+    let index = if mode == "start" {
+        0
+    } else {
+        match params.get("index").and_then(serde_json::Value::as_u64) {
+            Some(value) => value,
+            None => return Ok(stream_err("index is missing")),
+        }
+    };
+
+    let reply_id = match get_reply_id(self_t, passive_id) {
+        Ok(value) => value,
+        Err(error) => return Ok(stream_err(&format!("{error}"))),
+    };
+    let passive_msg_id = reply_id.raw_ids.first().cloned().unwrap_or_default();
+    if mode == "start" && passive_msg_id.is_empty() {
+        return Ok(stream_err("can't get reply_id"));
+    }
+
+    // 流式帧与普通回复共用同一序号计数：开始时分配一次，后续帧复用，
+    // 避免固定 1 与普通回复的 msg_seq 撞车触发 QQ 去重(40054005)
+    let msg_seq = if mode == "start" {
+        let seq = get_msg_seq(self_t, passive_id)? + 1;
+        set_msg_seq(self_t, passive_id, seq)?;
+        seq
+    } else {
+        let seq = get_msg_seq(self_t, passive_id)?;
+        if seq == 0 {
+            1
+        } else {
+            seq
+        }
+    };
+    let mut json_data = serde_json::json!({
+        "input_mode": "append",
+        "input_state": input_state,
+        "index": index,
+        "content_type": "markdown",
+        "content_raw": content,
+        "msg_seq": msg_seq,
+    });
+    let obj = json_data.as_object_mut().ok_or("stream json not object")?;
+    if !passive_msg_id.is_empty() {
+        obj.insert("msg_id".to_owned(), serde_json::json!(passive_msg_id));
+    }
+    if mode != "start" {
+        let session_id = read_json_str(params, "session_id");
+        if session_id.is_empty() {
+            return Ok(stream_err("session_id is empty"));
+        }
+        obj.insert("stream_msg_id".to_owned(), serde_json::json!(session_id));
+    }
+
+    let api_ret = match do_qq_json_post(
+        self_t,
+        &format!("/v2/users/{user_id}/stream_messages"),
+        json_data,
+    )
+    .await
+    {
+        Ok(value) => value,
+        Err(error) => return Ok(stream_err(&format!("{error}"))),
+    };
+    if mode == "start" {
+        let Some(stream_msg_id) = api_ret.get("id").and_then(serde_json::Value::as_str) else {
+            return Ok(stream_err(&format!("响应缺少 id:{api_ret}")));
+        };
+        return Ok(serde_json::json!({
+            "retcode": 0,
+            "status": "ok",
+            "data": {"session_id": stream_msg_id}
+        }));
+    }
+    if mode == "end" {
+        // QQ 不支持撤回流式消息，这里返回会话ID供脚本记录/续流使用
+        let session_id = read_json_str(params, "session_id");
+        return Ok(serde_json::json!({
+            "retcode": 0,
+            "status": "ok",
+            "data": {"message_id": session_id}
+        }));
+    }
+    Ok(serde_json::json!({
+        "retcode": 0,
+        "status": "ok",
+        "data": {}
+    }))
+}
+
 pub async fn send_group_msg(
     self_t: &SelfData,
     json: &serde_json::Value,
@@ -1380,6 +1497,8 @@ impl BotConnectTrait for QQGuildPublicConnect {
             return send_group_msg(&self_data, json, passive_id, platform).await;
         } else if action == "send_private_msg" {
             return send_private_msg(&self_data, json, passive_id).await;
+        } else if action == "send_stream_msg" {
+            return send_c2c_stream_msg(&self_data, json, passive_id).await;
         } else if action == "get_login_info" {
             return get_login_info(&self_data).await;
         } else if action == "get_group_list" {
