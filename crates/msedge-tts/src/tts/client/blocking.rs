@@ -49,9 +49,7 @@ impl<T: Read + Write> MSEdgeTTSClient<T> {
             .collect();
 
         if audio_bytes.is_empty() {
-            return Err(crate::error::Error::UnexpectedMessage(
-                "TTS returned empty audio".to_owned(),
-            ));
+            return Err(crate::error::Error::EmptyAudio);
         }
 
         Ok(SynthesizedAudio {

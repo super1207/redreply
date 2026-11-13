@@ -8,7 +8,7 @@ use crate::core::astparser::Ast;
 use crate::core::{
     add_fun, rv_array, rv_bin, rv_object, rv_text, RedCommandResult, RedLang, RedValue,
 };
-use redlang::plugin_ports::{TtsOptions, TtsService, TtsServiceHandle, TtsVoice, TtsVoiceSample};
+use redlang::plugin_ports::{TtsOptions, TtsService, TtsServiceHandle, TtsVoice};
 
 fn service() -> Result<Arc<TtsServiceHandle>, Box<dyn std::error::Error>> {
     redlang::framework_services()
@@ -95,15 +95,15 @@ fn list_voices(rl: &mut RedLang, params: &[Ast], tts: &dyn TtsService) -> RedCom
     )))
 }
 
-fn sample_value(sample: TtsVoiceSample) -> Rc<RedValue> {
-    rv_object(BTreeMap::from([
-        ("id".into(), rv_text(sample.id)),
-        ("name".into(), rv_text(sample.name)),
-        ("category".into(), rv_text(sample.category)),
-        ("gender".into(), rv_text(sample.gender)),
-        ("sample_url".into(), rv_text(sample.sample_url)),
-        ("source_url".into(), rv_text(sample.source_url)),
-    ]))
+fn synthesize_sample(rl: &mut RedLang, params: &[Ast], tts: &dyn TtsService) -> RedCommandResult {
+    if params.len() > 1 {
+        return Err(RedLang::make_err("TTS样本 最多接受一个音色参数"));
+    }
+    let voice = rl.get_param_text(params, 0)?;
+    let sample = tts
+        .synthesize_sample(&voice, &rl.get_coremap("代理"))
+        .map_err(|error| RedLang::make_err(&error))?;
+    Ok(Some(rv_bin(sample.audio)))
 }
 
 pub(crate) fn register() {
@@ -113,15 +113,8 @@ pub(crate) fn register() {
     add_fun(vec!["TTS人声"], |rl, params| {
         list_voices(rl, params, service()?.0.as_ref())
     });
-    add_fun(vec!["TTS样本"], |_rl, _params| {
-        Ok(Some(rv_array(
-            service()?
-                .0
-                .samples()
-                .into_iter()
-                .map(sample_value)
-                .collect(),
-        )))
+    add_fun(vec!["TTS样本"], |rl, params| {
+        synthesize_sample(rl, params, service()?.0.as_ref())
     });
 }
 
@@ -234,6 +227,26 @@ mod tests {
         assert_eq!(calls[0].options.volume, -20);
         assert_eq!(calls[0].options.timeout_secs, 20);
         assert_eq!(calls[0].options.retries, 2);
+    }
+
+    #[test]
+    fn sample_synthesizes_the_fixed_phrase_with_the_requested_voice_and_proxy() {
+        let tts = FakeTts::default();
+        let mut rl = RedLang::new();
+        rl.set_coremap("代理", "http://127.0.0.1:7890").unwrap();
+        let sample = synthesize_sample(&mut rl, &params(&["ja-JP-NanamiNeural"]), &tts)
+            .unwrap()
+            .unwrap();
+        assert!(
+            matches!(sample.as_ref(), RedValue::Bin(bytes) if bytes.as_slice() == b"audio fixture")
+        );
+        assert!(synthesize_sample(&mut rl, &params(&["晓晓", "extra"]), &tts).is_err());
+        let calls = tts.calls.lock().unwrap();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].text, "这里是阿飞为你提供的语音测试。");
+        assert_eq!(calls[0].voice, "ja-JP-NanamiNeural");
+        assert_eq!(calls[0].proxy, "http://127.0.0.1:7890");
+        assert_eq!(calls[0].options, TtsOptions::default());
     }
 
     #[test]

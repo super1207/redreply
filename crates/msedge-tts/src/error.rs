@@ -21,6 +21,8 @@ pub enum Error {
     TungsteniteError(#[from] tungstenite::Error),
     #[error("serde json error: {0}")]
     SerdeJsonError(#[from] serde_json::Error),
+    #[error("TTS returned empty audio")]
+    EmptyAudio,
     #[error("unexpected message: {0}")]
     UnexpectedMessage(String),
 }

@@ -78,7 +78,7 @@ pub trait Plugin: Send + Sync + 'static {
 - 启用状态持久化在 `config.json` 的 `disabled_plugins` 数组；管理台可随时启停。
 
 TTS 服务由 `plugin-tts` 实现，通过共享的 `TtsService` 端口提供合成参数、
-在线人声查询和参考样本。`plugin-redlang` 只负责参数解析及结果转换，
+在线人声查询和试听合成。`plugin-redlang` 只负责参数解析及结果转换，
 音频仍交给原有 `【语音】` 命令和适配器处理。调用方式见[文字转语音](tts/README.md)。
 
 ## 事件流

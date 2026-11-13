@@ -111,15 +111,13 @@ pub struct TtsVoice {
     pub aliases: Vec<String>,
 }
 
-/// 已录制的参考试听。存在样本不表示当前后端仍支持合成该人声。
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct TtsVoiceSample {
-    pub id: String,
-    pub name: String,
-    pub category: String,
-    pub gender: String,
-    pub sample_url: String,
-    pub source_url: String,
+/// 使用统一文本生成各音色的试听。
+pub const TTS_SAMPLE_TEXT: &str = "这里是阿飞为你提供的语音测试。";
+
+/// 合成试听及实际交给该音色朗读的文本。
+pub struct TtsVoicePreview {
+    pub audio: Vec<u8>,
+    pub transcript: &'static str,
 }
 
 /// TTS 服务端口。
@@ -155,8 +153,12 @@ pub trait TtsService: Send + Sync {
         Err("当前 TTS 服务不支持查询人声".to_owned())
     }
 
-    fn samples(&self) -> Vec<TtsVoiceSample> {
-        Vec::new()
+    fn synthesize_sample(&self, voice: &str, proxy: &str) -> Result<TtsVoicePreview, String> {
+        self.synthesize(TTS_SAMPLE_TEXT, voice, proxy)
+            .map(|audio| TtsVoicePreview {
+                audio,
+                transcript: TTS_SAMPLE_TEXT,
+            })
     }
 
     /// 插件停用时拒绝后续调用；默认实现保持第三方旧服务兼容。
@@ -192,10 +194,6 @@ impl TtsServiceHandle {
         timeout_secs: u64,
     ) -> std::result::Result<Vec<TtsVoice>, String> {
         self.0.voices(proxy, timeout_secs)
-    }
-
-    pub fn samples(&self) -> Vec<TtsVoiceSample> {
-        self.0.samples()
     }
 
     pub fn shutdown(&self) {

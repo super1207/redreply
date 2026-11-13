@@ -1,14 +1,19 @@
-//! TTS 插件：通过服务注册表提供 Edge 语音合成、实时人声目录和参考试听。
+//! TTS 插件：通过服务注册表提供 Edge 语音合成、实时人声目录和试听。
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use msedge_tts::voice::Voice;
-use redlang::plugin_ports::{TtsOptions, TtsService, TtsServiceHandle, TtsVoice, TtsVoiceSample};
+use redlang::plugin_ports::{
+    TtsOptions, TtsService, TtsServiceHandle, TtsVoice, TtsVoicePreview, TTS_SAMPLE_TEXT,
+};
 use redreply_bot::{Plugin, PluginContext, PluginMeta, Result};
 
 mod catalog;
+
+/// Edge completed synthesis without an audio frame for the requested text and voice.
+const NO_AUDIO_ERROR: &str = "TTS 服务未返回音频，请检查音色是否支持输入文本的语言";
 
 const CACHE_TTL: Duration = Duration::from_secs(300);
 const MAX_REQUESTS: usize = 4;
@@ -218,23 +223,43 @@ fn select_voice(voices: &[Voice], player: &str) -> std::result::Result<Voice, St
     }
 }
 
-impl TtsService for EdgeTtsService {
-    fn synthesize(
+fn sample_translation(locale: &str) -> Option<&'static str> {
+    let language = locale.split('-').next()?;
+    let mut language_match = None;
+    for (code, text) in include_str!("sample_translations.tsv")
+        .lines()
+        .filter_map(|line| line.split_once('\t'))
+    {
+        if code == locale {
+            return Some(text);
+        }
+        if code == language {
+            language_match = Some(text);
+        }
+    }
+    language_match
+}
+
+impl EdgeTtsService {
+    /// Generates a preview with an explicit budget for the original and translated attempts.
+    pub fn synthesize_sample_with_options(
         &self,
-        text: &str,
-        player: &str,
+        voice: &str,
         proxy: &str,
-    ) -> std::result::Result<Vec<u8>, String> {
-        self.synthesize_with_options(text, player, proxy, &TtsOptions::default())
+        options: &TtsOptions,
+    ) -> std::result::Result<TtsVoicePreview, String> {
+        self.synthesize_request(TTS_SAMPLE_TEXT, voice, proxy, options, true)
+            .map(|(audio, transcript)| TtsVoicePreview { audio, transcript })
     }
 
-    fn synthesize_with_options(
+    fn synthesize_request<'a>(
         &self,
-        text: &str,
+        text: &'a str,
         player: &str,
         proxy: &str,
         options: &TtsOptions,
-    ) -> std::result::Result<Vec<u8>, String> {
+        is_sample: bool,
+    ) -> std::result::Result<(Vec<u8>, &'a str), String> {
         options.validate()?;
         if text.trim().is_empty() {
             return Err("TTS 文本不能为空".to_owned());
@@ -257,25 +282,69 @@ impl TtsService for EdgeTtsService {
             config.volume = options.volume;
             config.audio_format = "audio-24khz-48kbitrate-mono-mp3".to_owned();
             self.check_running()?;
-            let audio = if proxy.is_empty() {
-                msedge_tts::tts::client::connect_with_deadline(deadline)
-                    .and_then(|mut client| client.synthesize(text, &config))
-            } else {
-                msedge_tts::tts::client::connect_proxy_with_deadline(proxy, deadline)
-                    .and_then(|mut client| client.synthesize(text, &config))
+            let speak = |phrase: &str| {
+                if proxy.is_empty() {
+                    msedge_tts::tts::client::connect_with_deadline(deadline)
+                        .and_then(|mut client| client.synthesize(phrase, &config))
+                } else {
+                    msedge_tts::tts::client::connect_proxy_with_deadline(proxy, deadline)
+                        .and_then(|mut client| client.synthesize(phrase, &config))
+                }
+            };
+            let mut transcript = text;
+            let mut result = speak(transcript);
+            if is_sample && matches!(result, Err(msedge_tts::error::Error::EmptyAudio)) {
+                if let Some(translated) = voice.locale.as_deref().and_then(sample_translation) {
+                    self.check_running()?;
+                    transcript = translated;
+                    result = speak(transcript);
+                }
             }
-            .map_err(|error| {
-                AttemptError::retryable(format!(
+            let audio = result.map_err(|error| match error {
+                msedge_tts::error::Error::EmptyAudio if is_sample => {
+                    AttemptError::permanent(NO_AUDIO_ERROR.to_owned())
+                }
+                msedge_tts::error::Error::EmptyAudio => {
+                    AttemptError::retryable(NO_AUDIO_ERROR.to_owned())
+                }
+                error => AttemptError::retryable(format!(
                     "TTS 合成失败：{}",
                     redact_proxy(error.to_string(), proxy)
-                ))
+                )),
             })?;
-            if audio.audio_bytes.is_empty() {
-                return Err(AttemptError::retryable("TTS 服务未返回音频".to_owned()));
-            }
             self.check_running()?;
-            Ok(audio.audio_bytes)
+            Ok((audio.audio_bytes, transcript))
         })
+    }
+}
+
+impl TtsService for EdgeTtsService {
+    fn synthesize(
+        &self,
+        text: &str,
+        player: &str,
+        proxy: &str,
+    ) -> std::result::Result<Vec<u8>, String> {
+        self.synthesize_with_options(text, player, proxy, &TtsOptions::default())
+    }
+
+    fn synthesize_with_options(
+        &self,
+        text: &str,
+        player: &str,
+        proxy: &str,
+        options: &TtsOptions,
+    ) -> std::result::Result<Vec<u8>, String> {
+        self.synthesize_request(text, player, proxy, options, false)
+            .map(|(audio, _)| audio)
+    }
+
+    fn synthesize_sample(
+        &self,
+        voice: &str,
+        proxy: &str,
+    ) -> std::result::Result<TtsVoicePreview, String> {
+        self.synthesize_sample_with_options(voice, proxy, &TtsOptions::default())
     }
 
     fn voices(&self, proxy: &str, timeout_secs: u64) -> std::result::Result<Vec<TtsVoice>, String> {
@@ -319,23 +388,6 @@ impl TtsService for EdgeTtsService {
         Ok(result)
     }
 
-    fn samples(&self) -> Vec<TtsVoiceSample> {
-        if self.stopped.load(Ordering::Acquire) {
-            return Vec::new();
-        }
-        catalog::VOICES
-            .iter()
-            .map(|voice| TtsVoiceSample {
-                id: voice.id.to_owned(),
-                name: voice.name.to_owned(),
-                category: voice.category.to_owned(),
-                gender: voice.gender.to_owned(),
-                sample_url: format!("{}{}", catalog::SAMPLE_BASE, voice.sample_file),
-                source_url: catalog::SOURCE_URL.to_owned(),
-            })
-            .collect()
-    }
-
     fn shutdown(&self) {
         self.stopped.store(true, Ordering::Release);
         if let Ok(mut cache) = self.cache.lock() {
@@ -349,7 +401,7 @@ pub struct TtsPlugin;
 impl Plugin for TtsPlugin {
     fn meta(&self) -> PluginMeta {
         PluginMeta::new("tts", env!("CARGO_PKG_VERSION"))
-            .description("Edge TTS 语音合成、实时人声查询和参考试听")
+            .description("Edge TTS 语音合成、实时人声查询和试听")
             .provides("tts")
     }
 
@@ -393,6 +445,19 @@ mod tests {
     }
 
     #[test]
+    fn sample_translations_prefer_locale_and_fall_back_to_language() {
+        let portuguese_brazil = sample_translation("pt-BR").unwrap();
+        let portuguese_portugal = sample_translation("pt-PT").unwrap();
+        assert_ne!(portuguese_brazil, portuguese_portugal);
+        assert_eq!(sample_translation("en-AU"), sample_translation("en-US"));
+        assert_ne!(
+            sample_translation("iu-Cans-CA"),
+            sample_translation("iu-Latn-CA")
+        );
+        assert_eq!(sample_translation("zh-CN"), None);
+    }
+
+    #[test]
     fn full_ids_support_voices_outside_the_reference_catalog() {
         let voices = vec![voice("ja-JP-NanamiNeural")];
         assert_eq!(
@@ -430,7 +495,7 @@ mod tests {
     }
 
     #[test]
-    fn all_reference_samples_have_unique_ids_urls_and_unambiguous_aliases() {
+    fn voice_aliases_have_unique_ids_and_unambiguous_mappings() {
         use std::collections::{HashMap, HashSet};
         let mut ids = HashSet::new();
         let mut aliases = HashMap::new();
@@ -453,16 +518,6 @@ mod tests {
             }
         }
         assert_eq!(ids.len(), 28);
-        let samples = EdgeTtsService::default().samples();
-        assert_eq!(samples.len(), 28);
-        let mut urls = HashSet::new();
-        for sample in samples {
-            assert!(ids.contains(sample.id.as_str()));
-            assert!(sample.sample_url.starts_with(catalog::SAMPLE_BASE));
-            assert!(sample.sample_url.ends_with(".mp3"));
-            assert!(urls.insert(sample.sample_url));
-            assert_eq!(sample.source_url, catalog::SOURCE_URL);
-        }
     }
 
     #[test]
