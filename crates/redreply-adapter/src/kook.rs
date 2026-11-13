@@ -42,6 +42,7 @@ use reqwest::header::HeaderValue;
 struct RawMsgId {
     msg_id: String,
     user_id: String,
+    is_private: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +140,7 @@ impl KookConnect {
             if let Some(id) = result["data"]["msg_id"].as_str() {
                 let raw_id = RawMsgId {
                     msg_id: id.to_owned(),
+                    is_private: normalized == "direct-message/create",
                     user_id: if normalized == "direct-message/create" {
                         read_json_str(payload, "target_id")
                     } else {
@@ -161,6 +163,10 @@ impl KookConnect {
             .as_i64()
             .map(|millis| millis / 1000)
             .unwrap_or_else(|| chrono::Utc::now().timestamp());
+        let mut raw_event = data.clone();
+        if let Some(fields) = raw_event.as_object_mut() {
+            fields.remove("verify_token");
+        }
         let mut event = json!({
             "time": timestamp,
             "self_id": self.self_id.read().unwrap_or_else(|e| e.into_inner()).clone(),
@@ -170,39 +176,86 @@ impl KookConnect {
             "sub_type": kind,
             "channel_type": data["channel_type"],
             "kook": body,
-            "kook_event": data,
+            "kook_event": raw_event,
         });
-        if kind == "message_btn_click" {
-            let user_id = body["user_id"].as_str().filter(|id| !id.is_empty())?;
-            let message_id = body["msg_id"].as_str().filter(|id| !id.is_empty())?;
-            let is_group = data["channel_type"] == "GROUP";
-            let target = body["target_id"]
+        let is_group = data["channel_type"] == "GROUP";
+        let user_id = read_json_str(body, "user_id");
+        let mut channel_id = read_json_str(body, "channel_id");
+        if channel_id.is_empty() && is_group && kind == "message_btn_click" {
+            channel_id = body["target_id"]
                 .as_str()
                 .filter(|id| !id.is_empty())
                 .or_else(|| data["target_id"].as_str())
-                .unwrap_or_default();
+                .unwrap_or_default()
+                .to_owned();
+        }
+        if !channel_id.is_empty() {
+            event["group_id"] = channel_id.into();
+        }
+        if let Some(guild_id) = body["guild_id"].as_str() {
+            event["groups_id"] = guild_id.into();
+        }
+        if !user_id.is_empty() {
             let nickname = body["user_info"]["nickname"]
                 .as_str()
                 .filter(|name| !name.is_empty())
                 .or_else(|| body["user_info"]["username"].as_str())
                 .unwrap_or_default();
-            event["group_id"] = if is_group { target } else { "" }.into();
-            event["groups_id"] = body["guild_id"].as_str().unwrap_or_default().into();
-            event["user_id"] = user_id.into();
+            event["user_id"] = user_id.clone().into();
             event["sender"] = json!({"user_id": user_id, "nickname": nickname});
+        }
+        if let Some(message_id) = body["msg_id"].as_str().filter(|id| !id.is_empty()) {
             event["kook_message_id"] = message_id.into();
             event["message_id"] = self
                 .add_msg_id(&vec![RawMsgId {
                     msg_id: message_id.to_owned(),
-                    user_id: if is_group {
-                        String::new()
-                    } else {
-                        user_id.to_owned()
-                    },
+                    is_private: !is_group,
+                    user_id: if is_group { String::new() } else { user_id },
                 }])
                 .into();
         }
         Some(event)
+    }
+
+    async fn react(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let id = read_json_str(params, "message_id");
+        let messages = self.get_msg_id(&id);
+        let message = messages
+            .last()
+            .ok_or("KOOK 表情回应需要当前消息或 RedReply 消息 ID")?;
+        let mut emoji = read_json_str(params, "emoji");
+        if emoji.is_empty() {
+            emoji = read_json_str(params, "emoji_id");
+        }
+        if emoji.is_empty() {
+            return Err("KOOK 表情回应需要表情 ID".into());
+        }
+        if let Some(ch) = emoji
+            .chars()
+            .next()
+            .filter(|ch| !ch.is_ascii() && emoji.chars().count() == 1)
+        {
+            emoji = format!("[#{};]", ch as u32);
+        }
+        let resource = if message.is_private {
+            "direct-message"
+        } else {
+            "message"
+        };
+        let operation = if params["remove"] == true {
+            "delete-reaction"
+        } else {
+            "add-reaction"
+        };
+        self.native_request(
+            "POST",
+            &format!("{resource}/{operation}"),
+            &json!({"msg_id":message.msg_id,"emoji":emoji}),
+            None,
+            Duration::from_secs(25),
+            echo,
+        )
+        .await
     }
 
     async fn http_get_json(
@@ -348,8 +401,13 @@ impl KookConnect {
             let msg_id = self.send_private_msg(*tp, &user_id, msg, &quote).await?;
 
             msg_ids.push(RawMsgId {
+                is_private: true,
                 msg_id,
-                user_id: self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned(),
+                user_id: self
+                    .self_id
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .to_owned(),
             });
             quote = "".to_owned();
         }
@@ -612,6 +670,7 @@ impl KookConnect {
             .as_str()
             .ok_or("msg_id not str")?;
         let msg_id = self.add_msg_id(&vec![RawMsgId {
+            is_private: true,
             msg_id: raw_msg_id.to_owned(),
             user_id: user_id.to_owned(),
         }]);
@@ -846,6 +905,7 @@ impl KookConnect {
             .as_str()
             .ok_or("msg_id not str")?;
         let msg_id = self.add_msg_id(&vec![RawMsgId {
+            is_private: false,
             msg_id: raw_msg_id.to_owned(),
             user_id: user_id.to_owned(),
         }]);
@@ -1062,7 +1122,11 @@ impl KookConnect {
                 self.deal_group_recall(data).await?;
             }
         } else {
-            let self_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+            let self_id = self
+                .self_id
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .to_owned();
             if user_id != self_id {
                 self.deal_group_message_event(data, user_id).await?;
             }
@@ -1487,21 +1551,23 @@ impl KookConnect {
                     to_send_data.push((10, js.to_string()));
                     last_type = 10;
                 }
-            } else if tp == "record" {
-                let data = it.get("data").ok_or("data not found")?;
+            } else if matches!(tp.as_str(), Some("record" | "file" | "video")) {
+                let data = &it["data"];
                 let file = read_json_str(data, "file");
                 let url = self.upload_asset(&file).await?;
-                let js = serde_json::json!([{
-                        "type": "card",
-                        "theme": "secondary",
-                        "size": "lg",
-                        "modules": [
-                        {
-                            "type": "audio",
-                            "src": url,
-                        }]
-                }]);
-                to_send_data.push((10, js.to_string()));
+                let kind = if tp == "record" {
+                    "audio"
+                } else {
+                    tp.as_str().unwrap_or_default()
+                };
+                let mut module = json!({"type": kind, "src": url});
+                let title = read_json_str(data, "name");
+                if !title.is_empty() {
+                    module["title"] = title.into();
+                }
+                let card =
+                    json!([{"type":"card","theme":"secondary","size":"lg","modules":[module]}]);
+                to_send_data.push((10, card.to_string()));
                 last_type = 10;
             } else {
                 let j = serde_json::json!([it]);
@@ -1622,8 +1688,13 @@ impl KookConnect {
         for (tp, msg) in &to_send_data.clone() {
             let msg_id = self.send_group_msg(*tp, &group_id, msg, &quote).await?;
             msg_ids.push(RawMsgId {
+                is_private: false,
                 msg_id,
-                user_id: self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned(),
+                user_id: self
+                    .self_id
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .to_owned(),
             });
             quote = "".to_owned();
         }
@@ -1638,32 +1709,38 @@ impl KookConnect {
         });
         Ok(send_json)
     }
-    async fn delete_msg(
-        &self,
-        msg_id: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut json: serde_json::Value = serde_json::from_str("{}")?;
-        json["msg_id"] = msg_id.into();
-        let _ret_json = self.http_post_json("/message/delete", &json).await?;
-        Ok(())
-    }
-    async fn deal_ob_delete_msg(
-        &self,
-        params: &serde_json::Value,
-        echo: &serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let msg_id = read_json_str(params, "message_id");
-        let msg_ids = self.get_msg_id(&msg_id);
-        for it in msg_ids {
-            self.delete_msg(&it.msg_id).await?;
+    async fn deal_ob_delete_msg(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let id = read_json_str(params, "message_id");
+        let messages = self.get_msg_id(&id);
+        if messages.is_empty() {
+            return Ok(native_api::reply(
+                1404,
+                &Value::Null,
+                "KOOK 找不到 RedReply 消息 ID",
+                echo,
+            ));
         }
-        let send_json = serde_json::json!({
-            "status":"ok",
-            "retcode":0,
-            "data": {},
-            "echo":echo
-        });
-        Ok(send_json)
+        for message in messages {
+            let endpoint = if message.is_private {
+                "direct-message/delete"
+            } else {
+                "message/delete"
+            };
+            let result = self
+                .native_request(
+                    "POST",
+                    endpoint,
+                    &json!({"msg_id":message.msg_id}),
+                    None,
+                    Duration::from_secs(25),
+                    echo,
+                )
+                .await?;
+            if result["retcode"] != 0 {
+                return Ok(result);
+            }
+        }
+        Ok(native_api::reply(0, &json!({}), "", echo))
     }
     async fn deal_ob_get_login_info(
         &self,
@@ -2375,9 +2452,7 @@ impl BotConnectTrait for KookConnect {
             let _ = cq_add_log_w(&format!("KOOK 停止共享播放失败：{error}"));
         }
         if let Some(stop_tx) = &self.stop_tx {
-            let _ = stop_tx
-                .send_timeout(true, Duration::from_secs(1))
-                .await;
+            let _ = stop_tx.send_timeout(true, Duration::from_secs(1)).await;
         }
     }
 
@@ -2550,6 +2625,7 @@ impl BotConnectTrait for KookConnect {
         let def = serde_json::json!({});
         let params = json.get("params").unwrap_or(&def);
         let send_json = match action {
+            "set_msg_emoji_like" => native_api::action_result(self.react(params, echo).await, echo),
             "kook_api" => native_api::action_result(self.call_native_api(params, echo).await, echo),
             "kook_voice_play" => {
                 native_api::action_result(voice::play(self, params, echo).await, echo)
@@ -2598,7 +2674,7 @@ impl BotConnectTrait for KookConnect {
                 serde_json::json!({
                     "status":"ok",
                     "retcode":0,
-                    "data": {"yes":false},
+                    "data": {"yes":true},
                     "echo":echo
                 })
             }
@@ -2723,5 +2799,30 @@ mod native_tests {
             "native-id"
         );
         assert!(notice.get("message_type").is_none());
+    }
+}
+
+#[cfg(test)]
+mod advanced_native_tests {
+    use super::*;
+
+    #[test]
+    fn voice_members_and_reactions_use_the_actual_channel() {
+        let bot = KookConnect::build("");
+        let mut event = json!({"type":255,"channel_type":"GROUP","target_id":"guild",
+            "extra":{"type":"joined_channel","body":{"channel_id":"voice","user_id":"member"}}});
+        let notice = bot.native_event(&event).unwrap();
+        assert_eq!(notice["group_id"], "voice");
+        assert_eq!(notice["user_id"], "member");
+        assert!(notice.get("message_id").is_none());
+
+        event["extra"] = json!({"type":"added_reaction","body":{
+            "msg_id":"original","channel_id":"text","user_id":"member","emoji":{"id":"emoji"}
+        }});
+        let notice = bot.native_event(&event).unwrap();
+        assert_eq!(notice["group_id"], "text");
+        let messages = bot.get_msg_id(notice["message_id"].as_str().unwrap());
+        assert!(!messages[0].is_private);
+        assert_eq!(messages[0].msg_id, "original");
     }
 }

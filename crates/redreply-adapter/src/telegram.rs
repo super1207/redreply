@@ -15,6 +15,7 @@ use crate::mytool::{
 };
 use crate::{native_api, AdapterResult};
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -42,6 +43,81 @@ struct MsgIdPair {
     raw_msg_ids: Vec<RawMsgId>,
 }
 
+const MAX_DOWNLOAD_BYTES: usize = 20 * 1024 * 1024;
+
+fn download_url(token: &str, path: &str) -> AdapterResult<reqwest::Url> {
+    let mut url = reqwest::Url::parse("https://api.telegram.org")?;
+    let mut segments = url
+        .path_segments_mut()
+        .expect("Telegram base URL supports path segments");
+    segments.push("file").push(&format!("bot{token}"));
+    for segment in path.split('/') {
+        if segment.is_empty() || matches!(segment, "." | "..") || segment.contains('\\') {
+            return Err("Telegram 返回了无效的下载路径".into());
+        }
+        segments.push(segment);
+    }
+    drop(segments);
+    Ok(url)
+}
+
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Topic {
+    thread: Option<i64>,
+    direct: Option<i64>,
+}
+
+impl Topic {
+    fn from_message(message: &Value) -> Self {
+        Self {
+            thread: (message["is_topic_message"] == true)
+                .then(|| message["message_thread_id"].as_i64())
+                .flatten(),
+            direct: message["direct_messages_topic"]["topic_id"].as_i64(),
+        }
+    }
+
+    fn from_params(params: &Value) -> AdapterResult<Self> {
+        fn parse(params: &Value, field: &str) -> AdapterResult<Option<i64>> {
+            let Some(value) = params.get(field).filter(|value| !value.is_null()) else {
+                return Ok(None);
+            };
+            let id = value
+                .as_i64()
+                .or_else(|| value.as_str()?.parse().ok())
+                .filter(|id| *id > 0)
+                .ok_or_else(|| format!("Telegram {field} 必须为正整数"))?;
+            Ok(Some(id))
+        }
+        let thread = parse(params, "message_thread_id")?;
+        let direct = parse(params, "direct_messages_topic_id")?;
+        if thread.is_some() && direct.is_some() {
+            return Err("Telegram 两类话题 ID 不能同时发送".into());
+        }
+        Ok(Self { thread, direct })
+    }
+
+    fn fields(&self) -> impl Iterator<Item = (&'static str, i64)> {
+        [
+            ("message_thread_id", self.thread),
+            ("direct_messages_topic_id", self.direct),
+        ]
+        .into_iter()
+        .filter_map(|(name, id)| Some((name, id?)))
+    }
+
+    fn apply(&self, payload: &mut Value) {
+        for (field, id) in self.fields() {
+            payload[field] = id.into();
+        }
+    }
+
+    fn apply_form(&self, form: reqwest::multipart::Form) -> reqwest::multipart::Form {
+        self.fields()
+            .fold(form, |form, (field, id)| form.text(field, id.to_string()))
+    }
+}
+
 impl TeleTramConnect {
     pub fn build(url: &str) -> Self {
         Self {
@@ -57,7 +133,10 @@ impl TeleTramConnect {
     }
 
     fn add_username2userid(&self, username: &str, user_id: i64) {
-        let mut lk = self.username2userid.write().unwrap_or_else(|e| e.into_inner());
+        let mut lk = self
+            .username2userid
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         // 简单防膨胀：超过上限先清空
         if lk.len() > 100_000 {
             lk.clear();
@@ -66,7 +145,11 @@ impl TeleTramConnect {
     }
 
     fn get_username2userid(&self, username: &str) -> Option<i64> {
-        self.username2userid.read().unwrap_or_else(|e| e.into_inner()).get(username).cloned()
+        self.username2userid
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .get(username)
+            .cloned()
     }
 
     fn request_client_builder(&self) -> AdapterResult<reqwest::ClientBuilder> {
@@ -119,8 +202,116 @@ impl TeleTramConnect {
         Ok(reply)
     }
 
+    async fn download_file(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let file_id = params["file_id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or("Telegram 下载需要 file_id")?;
+        let metadata = self
+            .call_native_api(
+                &json!({"method": "getFile", "body": {"file_id": file_id}}),
+                echo,
+            )
+            .await?;
+        if metadata["retcode"] != 0 {
+            return Ok(metadata);
+        }
+        let file = &metadata["data"];
+        let path = file["file_path"]
+            .as_str()
+            .ok_or("Telegram getFile 未返回 file_path")?;
+        let token = self
+            .token
+            .read()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        let url = download_url(&token, path)?;
+        let limit = MAX_DOWNLOAD_BYTES as u64;
+        let limit_error = "Telegram 文件超过 20 MB 下载上限";
+        if file["file_size"].as_u64().is_some_and(|size| size > limit) {
+            return Err(limit_error.into());
+        }
+        let mut response = self
+            .request_client_builder()?
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(25))
+            .build()?
+            .get(url)
+            .send()
+            .await
+            .map_err(|error| error.without_url())?;
+        if !response.status().is_success() {
+            return Ok(native_api::reply(
+                response.status().as_u16().into(),
+                &Value::Null,
+                "Telegram 下载失败",
+                echo,
+            ));
+        }
+        if response.content_length().is_some_and(|size| size > limit) {
+            return Err(limit_error.into());
+        }
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response
+            .chunk()
+            .await
+            .map_err(|error| error.without_url())?
+        {
+            if chunk.len() > MAX_DOWNLOAD_BYTES - bytes.len() {
+                return Err(limit_error.into());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        Ok(native_api::reply(
+            0,
+            &json!({
+                "file_id": file["file_id"],
+                "file_unique_id": file["file_unique_id"],
+                "file_size": bytes.len(),
+                "base64": STANDARD.encode(&bytes),
+            }),
+            "",
+            echo,
+        ))
+    }
+
+    async fn react(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let id = read_json_str(params, "message_id");
+        let target = self.get_msg_id(&id);
+        let Some(message) = target.last() else {
+            return Err("Telegram 表情回应需要当前消息或 RedReply 消息 ID".into());
+        };
+        let legacy = read_json_str(params, "emoji_id");
+        let emoji = params["emoji"].as_str().unwrap_or(&legacy);
+        let numeric = emoji.parse::<u32>().ok().and_then(char::from_u32);
+        let mut character = [0; 4];
+        let emoji = numeric
+            .map(|ch| ch.encode_utf8(&mut character) as &str)
+            .unwrap_or(emoji);
+        let reactions = if emoji.is_empty() {
+            json!([])
+        } else {
+            json!([{"type":"emoji","emoji":emoji}])
+        };
+        self.call_native_api(
+            &json!({
+                "method": "setMessageReaction",
+                "body": {
+                    "chat_id": message.chat_id,
+                    "message_id": message.msg_id.parse::<i64>()?,
+                    "reaction": reactions,
+                }
+            }),
+            echo,
+        )
+        .await
+    }
+
     fn updates_url(&self, offset: Option<i64>, timeout: u64) -> AdapterResult<reqwest::Url> {
-        let mut url = native_api::telegram_url(&self.token.read().unwrap_or_else(|e| e.into_inner()), "getUpdates")?;
+        let mut url = native_api::telegram_url(
+            &self.token.read().unwrap_or_else(|e| e.into_inner()),
+            "getUpdates",
+        )?;
         let mut query = url.query_pairs_mut();
         query.append_pair("timeout", &timeout.to_string());
         query.append_pair(
@@ -136,13 +327,20 @@ impl TeleTramConnect {
 
     fn native_update(&self, kind: &str, event: &Value) -> Value {
         let data = &event[kind];
-        let self_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let self_id = self
+            .self_id
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
         let timestamp = SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
         let chat = data.get("chat").unwrap_or(&data["message"]["chat"]);
-        let from = &data["from"];
+        let from = data
+            .get("from")
+            .or_else(|| data.get("user"))
+            .unwrap_or(&Value::Null);
         let mut notice = json!({
             "time": timestamp,
             "platform": "telegram",
@@ -161,6 +359,8 @@ impl TeleTramConnect {
                 .unwrap_or_default();
             notice["sender"] = json!({"user_id": user_id.to_string(), "nickname": name});
         }
+        let message = data.get("message").unwrap_or(data);
+        Topic::from_message(message).apply(&mut notice);
         if let Some(chat_id) = chat["id"].as_i64() {
             let chat_id = chat_id.to_string();
             notice["chat_id"] = chat_id.clone().into();
@@ -170,15 +370,13 @@ impl TeleTramConnect {
                     notice["group_id"] = chat_id.clone().into();
                 }
             }
-            if kind == "callback_query" {
-                if let Some(message_id) = data["message"]["message_id"].as_i64() {
-                    notice["message_id"] = self
-                        .add_msg_id(&vec![RawMsgId {
-                            msg_id: message_id.to_string(),
-                            chat_id,
-                        }])
-                        .into();
-                }
+            if let Some(message_id) = message["message_id"].as_i64().filter(|id| *id > 0) {
+                notice["message_id"] = self
+                    .add_msg_id(&vec![RawMsgId {
+                        msg_id: message_id.to_string(),
+                        chat_id,
+                    }])
+                    .into();
             }
         }
         notice
@@ -286,7 +484,9 @@ impl TeleTramConnect {
                     .to_string();
                 // 优先映射回内部UUID，插件回传时才能通过 get_msg_id 解析；
                 // 超出映射缓存窗口时回退为 telegram 原生 message_id
-                reply_id = self.get_cq_msg_id(&raw_reply_id).unwrap_or(raw_reply_id);
+                reply_id = self
+                    .get_cq_msg_id(&read_json_str(&message_obj["chat"], "id"), &raw_reply_id)
+                    .unwrap_or(raw_reply_id);
             }
         }
 
@@ -342,7 +542,11 @@ impl TeleTramConnect {
         let user_id = chat["id"].as_i64().ok_or("id not i64")?.to_string();
         let nickname = chat["first_name"].as_str().unwrap_or("");
         let username = chat["username"].as_str().unwrap_or("");
-        let self_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).clone();
+        let self_id = self
+            .self_id
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
 
         let message_obj = &event["message"];
 
@@ -363,7 +567,7 @@ impl TeleTramConnect {
 
         let message = self.to_cq_msg(event).await?;
 
-        let event_json = serde_json::json!({
+        let mut event_json = serde_json::json!({
             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
             "self_id":self_id,
             "post_type":"message",
@@ -381,6 +585,7 @@ impl TeleTramConnect {
             "platform":"telegram",
             "telegram": message_obj,
         });
+        Topic::from_message(&event["message"]).apply(&mut event_json);
         tokio::task::spawn_blocking(move || {
             let json_str = event_json.to_string();
             let _ = cq_add_log(&format!("TELEGRAM_OB_EVENT:{json_str}"));
@@ -431,7 +636,7 @@ impl TeleTramConnect {
             "title":""
         });
         let message = self.to_cq_msg(event).await?;
-        let event_json = serde_json::json!({
+        let mut event_json = serde_json::json!({
             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
             "self_id":*self.self_id.read().unwrap_or_else(|e| e.into_inner()),
             "post_type":"message",
@@ -447,6 +652,7 @@ impl TeleTramConnect {
             "platform":"telegram",
             "telegram": event["message"],
         });
+        Topic::from_message(&event["message"]).apply(&mut event_json);
         tokio::task::spawn_blocking(move || {
             let json_str = event_json.to_string();
             let _ = cq_add_log(&format!("TELEGRAM_OB_EVENT:{json_str}"));
@@ -603,7 +809,11 @@ impl TeleTramConnect {
 
     fn get_json_bool(js: &serde_json::Value, key: &str) -> bool {
         if let Some(j) = js.get(key) {
-            if let Some(value) = j.as_bool() { value } else if let Some(value) = j.as_str() { value == "true" } else {
+            if let Some(value) = j.as_bool() {
+                value
+            } else if let Some(value) = j.as_str() {
+                value == "true"
+            } else {
                 false
             }
         } else {
@@ -615,7 +825,15 @@ impl TeleTramConnect {
         Self::get_json_bool(params, "auto_escape")
     }
     pub fn to_json_str(val: &serde_json::Value) -> String {
-        if let Some(value) = val.as_i64() { return value.to_string(); } if let Some(value) = val.as_u64() { return value.to_string(); } if let Some(value) = val.as_str() { return value.to_string(); }
+        if let Some(value) = val.as_i64() {
+            return value.to_string();
+        }
+        if let Some(value) = val.as_u64() {
+            return value.to_string();
+        }
+        if let Some(value) = val.as_str() {
+            return value.to_string();
+        }
         "".to_owned()
     }
 
@@ -630,11 +848,11 @@ impl TeleTramConnect {
     }
 
     /// 由 telegram 原生 message_id 反查内部 UUID（类似 kook 的 get_cq_msg_id）
-    fn get_cq_msg_id(&self, raw_msg_id: &str) -> Option<String> {
+    fn get_cq_msg_id(&self, chat_id: &str, raw_msg_id: &str) -> Option<String> {
         let lk = self.msg_ids.read().unwrap_or_else(|e| e.into_inner());
-        for msg_id_pair in lk.iter() {
+        for msg_id_pair in lk.iter().rev() {
             for raw_msg in &msg_id_pair.raw_msg_ids {
-                if raw_msg.msg_id == raw_msg_id {
+                if raw_msg.chat_id == chat_id && raw_msg.msg_id == raw_msg_id {
                     return Some(msg_id_pair.msg_id.clone());
                 }
             }
@@ -646,13 +864,13 @@ impl TeleTramConnect {
         &self,
         message_arr: &serde_json::Value,
         group_id: &str,
+        is_group: bool,
     ) -> Result<(Vec<(&str, String, String)>, String), Box<dyn std::error::Error + Send + Sync>>
     {
         // 每个元素为 (类型, 内容, caption)；caption 仅对图片类型有意义
         let mut to_send_data: Vec<(&str, String, String)> = vec![];
         let mut quote = String::new();
         let mut last_type = "text";
-        let is_group = !group_id.is_empty();
         for it in message_arr.as_array().ok_or("message not arr")? {
             let tp = it.get("type").ok_or("type not found")?;
             if tp == "text" {
@@ -666,7 +884,9 @@ impl TeleTramConnect {
                     .to_owned();
                 let s = t;
                 if last_type == "text" && !to_send_data.is_empty() {
-                    if let Some(last) = to_send_data.last_mut() { last.1.push_str(&s); }
+                    if let Some(last) = to_send_data.last_mut() {
+                        last.1.push_str(&s);
+                    }
                 } else {
                     to_send_data.push(("text", s, String::new()));
                     last_type = "text";
@@ -705,7 +925,8 @@ impl TeleTramConnect {
                 );
                 let telegram_id = self.get_msg_id(&cq_id);
                 quote = match telegram_id.first() {
-                    Some(raw) => raw.msg_id.to_owned(),
+                    Some(raw) if raw.chat_id == group_id => raw.msg_id.to_owned(),
+                    Some(_) => return Err("Telegram 引用消息不属于目标聊天".into()),
                     // 查不到内部映射：可能是超出缓存窗口的 telegram 原生 message_id
                     None => cq_id,
                 };
@@ -736,11 +957,23 @@ impl TeleTramConnect {
                     .ok_or("username not found")?;
                 let at_str = &format!(" @{} ", username);
                 if last_type == "text" && !to_send_data.is_empty() {
-                    if let Some(last) = to_send_data.last_mut() { last.1.push_str(at_str); }
+                    if let Some(last) = to_send_data.last_mut() {
+                        last.1.push_str(at_str);
+                    }
                 } else {
                     to_send_data.push(("text", at_str.to_owned(), String::new()));
                     last_type = "text";
                 }
+            } else if matches!(tp.as_str(), Some("file" | "video")) {
+                let data = &it["data"];
+                let file = read_json_str(data, "file");
+                let filename = read_json_str(data, "name");
+                if file.is_empty() {
+                    return Err("Telegram 媒体缺少 file".into());
+                }
+                let media_type = if tp == "file" { "document" } else { "video" };
+                to_send_data.push((media_type, file, filename));
+                last_type = media_type;
             } else if tp == "record" {
                 let data = it.get("data").ok_or("data not found")?;
                 let file = read_json_str(data, "file");
@@ -819,6 +1052,7 @@ impl TeleTramConnect {
         to_send_data: Vec<(&str, String, String)>,
         mut quote: String,
         chat_id: &str,
+        topic: &Topic,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let mut msg_ids = vec![];
         for (tp, msg, caption) in &to_send_data.clone() {
@@ -829,6 +1063,7 @@ impl TeleTramConnect {
                     "chat_id":chat_id.parse::<i64>()?,
                     "text":msg,
                 });
+                topic.apply(&mut data_json);
                 if !quote.is_empty() {
                     data_json["reply_parameters"] = serde_json::json!({
                         "message_id":quote.parse::<i64>()?
@@ -865,6 +1100,7 @@ impl TeleTramConnect {
                 if !caption.is_empty() {
                     data_json["caption"] = serde_json::Value::String(caption.clone());
                 }
+                topic.apply(&mut data_json);
                 if !quote.is_empty() {
                     data_json["reply_parameters"] = serde_json::json!({
                         "message_id":quote.parse::<i64>()?
@@ -934,7 +1170,7 @@ impl TeleTramConnect {
                         )
                         .as_str(),
                     )
-                    .multipart(form)
+                    .multipart(topic.apply_form(form))
                     .build()?;
                 let resp = client.execute(req).await?;
                 let ret_json: serde_json::Value = resp.text().await?.parse()?;
@@ -949,6 +1185,7 @@ impl TeleTramConnect {
                     "chat_id":chat_id.parse::<i64>()?,
                     "audio":msg,
                 });
+                topic.apply(&mut data_json);
                 if !quote.is_empty() {
                     data_json["reply_parameters"] = serde_json::json!({
                         "message_id":quote.parse::<i64>()?
@@ -1015,13 +1252,49 @@ impl TeleTramConnect {
                         )
                         .as_str(),
                     )
-                    .multipart(form)
+                    .multipart(topic.apply_form(form))
                     .build()?;
                 let resp = client.execute(req).await?;
                 let ret_json: serde_json::Value = resp.text().await?.parse()?;
                 let msg_id = Self::telegram_message_id(&ret_json)?;
                 msg_ids.push(RawMsgId {
                     msg_id,
+                    chat_id: chat_id.to_owned(),
+                });
+            } else if matches!(*tp, "document" | "video") {
+                let method = if *tp == "document" {
+                    "sendDocument"
+                } else {
+                    "sendVideo"
+                };
+                let mut payload = json!({"chat_id": chat_id.parse::<i64>()?});
+                topic.apply(&mut payload);
+                if !quote.is_empty() {
+                    payload["reply_parameters"] = json!({"message_id": quote.parse::<i64>()?});
+                    quote.clear();
+                }
+                let mut request = json!({"method":method});
+                if let Some(base64) = msg.strip_prefix("base64://") {
+                    let fallback = if *tp == "video" { "video.mp4" } else { "file" };
+                    let filename = if caption.is_empty() {
+                        fallback
+                    } else {
+                        caption
+                    };
+                    request["files"] = json!({*tp: {"filename":filename,"base64":base64}});
+                } else {
+                    payload[*tp] = msg.as_str().into();
+                }
+                request["body"] = payload;
+                let reply = self.call_native_api(&request, &Value::Null).await?;
+                if reply["retcode"] != 0 {
+                    return Err(format!("Telegram {method}: {}", reply["message"]).into());
+                }
+                let id = reply["data"]["message_id"]
+                    .as_i64()
+                    .ok_or("Telegram 未返回 message_id")?;
+                msg_ids.push(RawMsgId {
+                    msg_id: id.to_string(),
                     chat_id: chat_id.to_owned(),
                 });
             } else if *tp == "music" {
@@ -1090,7 +1363,7 @@ impl TeleTramConnect {
                         )
                         .as_str(),
                     )
-                    .multipart(form)
+                    .multipart(topic.apply_form(form))
                     .build()?;
                 let resp = client.execute(req).await?;
                 let ret_json: serde_json::Value = resp.text().await?.parse()?;
@@ -1131,10 +1404,12 @@ impl TeleTramConnect {
         }
         cq_fix_image_file_in_arr(&mut message_arr);
 
-        let (to_send_data, quote) = self.make_telegram_msg(&message_arr, &group_id).await?;
+        let (to_send_data, quote) = self
+            .make_telegram_msg(&message_arr, &group_id, true)
+            .await?;
 
         let msg_id = self
-            .send_message_inner(to_send_data, quote, &group_id)
+            .send_message_inner(to_send_data, quote, &group_id, &Topic::from_params(params)?)
             .await?;
 
         let send_json = serde_json::json!({
@@ -1173,10 +1448,12 @@ impl TeleTramConnect {
         }
         cq_fix_image_file_in_arr(&mut message_arr);
 
-        let (to_send_data, quote) = self.make_telegram_msg(&message_arr, "").await?;
+        let (to_send_data, quote) = self
+            .make_telegram_msg(&message_arr, &user_id, false)
+            .await?;
 
         let msg_id = self
-            .send_message_inner(to_send_data, quote, &user_id)
+            .send_message_inner(to_send_data, quote, &user_id, &Topic::from_params(params)?)
             .await?;
 
         let send_json = serde_json::json!({
@@ -1190,46 +1467,67 @@ impl TeleTramConnect {
         Ok(send_json)
     }
 
-    async fn deal_ob_delete_msg(
-        &self,
-        params: &serde_json::Value,
-        echo: &serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let msg_id = read_json_str(params, "message_id");
-        let msg_ids = self.get_msg_id(&msg_id);
-        if msg_ids.is_empty() {
-            return Err("msg_id not found")?;
+    async fn deal_ob_delete_msg(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let id = read_json_str(params, "message_id");
+        let messages = self.get_msg_id(&id);
+        if messages.is_empty() {
+            return Ok(native_api::reply(
+                1404,
+                &Value::Null,
+                "Telegram 找不到 RedReply 消息 ID",
+                echo,
+            ));
         }
-        for it in msg_ids {
-            let ret_text = self
-                .proxyrequest(
-                    format!(
-                        "https://api.telegram.org/bot{}/deleteMessage?chat_id={}&message_id={}",
-                        self.token.read().unwrap_or_else(|e| e.into_inner()),
-                        it.chat_id,
-                        it.msg_id
-                    )
-                    .as_str(),
-                )
-                .await?;
-            let ret_json: serde_json::Value = serde_json::from_str(&ret_text)?;
-            let result = ret_json
-                .get("result")
-                .ok_or("result not found")?
-                .as_bool()
-                .ok_or("result not bool")?;
-            if !result {
-                return Err("delete message error")?;
+        for message in messages {
+            let response = self.call_native_api(&json!({
+                "method":"deleteMessage",
+                "body":{"chat_id":message.chat_id,"message_id":message.msg_id.parse::<i64>()?},
+            }), echo).await?;
+            if response["retcode"] != 0 {
+                return Ok(response);
             }
         }
-        let send_json = serde_json::json!({
-            "status":"ok",
-            "retcode":0,
-            "data": {},
-            "echo":echo
-        });
-        Ok(send_json)
+        Ok(native_api::reply(0, &json!({}), "", echo))
     }
+
+    async fn chat_info(&self, action: &str, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let group_id = read_json_str(params, "group_id").parse::<i64>()?;
+        let mut body = json!({"chat_id":group_id});
+        let member = action == "get_group_member_info";
+        if member {
+            body["user_id"] = read_json_str(params, "user_id").parse::<i64>()?.into();
+        }
+        let method = if member { "getChatMember" } else { "getChat" };
+        let mut result = self
+            .call_native_api(&json!({"method":method,"body":body}), echo)
+            .await?;
+        if result["retcode"] == 0 {
+            let data = &result["data"];
+            let mapped = if member {
+                let user = &data["user"];
+                let name = [
+                    user["first_name"].as_str().unwrap_or_default(),
+                    user["last_name"].as_str().unwrap_or_default(),
+                ]
+                .join(" ");
+                let role = match data["status"].as_str() {
+                    Some("creator") => "owner",
+                    Some("administrator") => "admin",
+                    _ => "member",
+                };
+                json!({"group_id":group_id.to_string(),"user_id":read_json_str(user,"id"),
+                    "nickname":name.trim(),"card":"","sex":"unknown","age":0,"area":"",
+                    "level":"","role":role,"title":data["custom_title"].as_str().unwrap_or_default(),
+                    "telegram":data})
+            } else {
+                json!({"group_id":group_id.to_string(),"group_name":data["title"].as_str().unwrap_or_default(),
+                    "telegram":data})
+            };
+            result["data"] = mapped;
+        }
+        Ok(result)
+    }
+
     async fn deal_ob_get_login_info(
         &self,
         _params: &serde_json::Value,
@@ -1348,6 +1646,10 @@ impl BotConnectTrait for TeleTramConnect {
         let def = serde_json::json!({});
         let params = json.get("params").unwrap_or(&def);
         let send_json = match action {
+            "telegram_download" => {
+                native_api::action_result(self.download_file(params, echo).await, echo)
+            }
+            "set_msg_emoji_like" => native_api::action_result(self.react(params, echo).await, echo),
             "telegram_api" => {
                 native_api::action_result(self.call_native_api(params, echo).await, echo)
             }
@@ -1366,14 +1668,11 @@ impl BotConnectTrait for TeleTramConnect {
             // "get_stranger_info" => {
             //     self.deal_ob_get_stranger_info(&params,&echo).await?
             // },
-            // "get_group_info" => {
-            //     self.deal_ob_get_group_info(&params,&echo).await?
-            // },
+            "get_group_info" | "get_group_member_info" => {
+                native_api::action_result(self.chat_info(action, params, echo).await, echo)
+            }
             // "get_group_list" => {
             //     self.deal_ob_get_group_list(&params,&echo).await?
-            // },
-            // "get_group_member_info" => {
-            //     self.deal_ob_get_group_member_info(&params,&echo).await?
             // },
             // "set_group_kick" => {
             //     self.deal_ob_set_group_kick(&params,&echo).await?
@@ -1408,7 +1707,7 @@ impl BotConnectTrait for TeleTramConnect {
                 serde_json::json!({
                     "status":"ok",
                     "retcode":0,
-                    "data": {"yes":false},
+                    "data": {"yes":true},
                     "echo":echo
                 })
             }
@@ -1473,6 +1772,54 @@ mod native_tests {
         let mapped = bot.get_msg_id(notice["message_id"].as_str().unwrap());
         assert_eq!(mapped[0].msg_id, "9");
         assert_eq!(mapped[0].chat_id, "-100123");
+    }
+
+    #[test]
+    fn topic_ids_are_extracted_and_kept_separate_from_normal_replies() {
+        let regular = Topic::from_message(&json!({"message_thread_id":5}));
+        assert_eq!(regular, Topic::default());
+        let topic = Topic::from_message(&json!({"message_thread_id":5,"is_topic_message":true}));
+        let direct = Topic::from_message(&json!({"direct_messages_topic":{"topic_id":8}}));
+        let mut payload = json!({"text":"test"});
+        topic.apply(&mut payload);
+        assert_eq!(payload["message_thread_id"], 5);
+        assert_eq!(Topic::from_params(&payload).unwrap(), topic);
+        direct.apply(&mut payload);
+        assert_eq!(payload["direct_messages_topic_id"], 8);
+        assert!(Topic::from_params(&payload).is_err());
+    }
+
+    #[test]
+    fn telegram_file_download_paths_are_fixed_to_the_bot_origin() {
+        let url = download_url("123:token", "documents/sample.pdf").unwrap();
+        assert_eq!(url.path(), "/file/bot123:token/documents/sample.pdf");
+        assert!(download_url("123:token", "../other").is_err());
+        assert!(download_url("123:token", "https://example.org/file").is_err());
+    }
+
+    #[tokio::test]
+    async fn legacy_media_commands_and_chat_scoped_replies_use_native_ids() {
+        let bot = TeleTramConnect::build("");
+        let a = bot.add_msg_id(&vec![RawMsgId {
+            msg_id: "9".into(),
+            chat_id: "-100".into(),
+        }]);
+        let b = bot.add_msg_id(&vec![RawMsgId {
+            msg_id: "9".into(),
+            chat_id: "-200".into(),
+        }]);
+        assert_eq!(bot.get_cq_msg_id("-100", "9").as_deref(), Some(a.as_str()));
+        let message = json!([
+            {"type":"reply","data":{"id":b}},
+            {"type":"file","data":{"file":"base64://YWJj","name":"sample.txt"}},
+            {"type":"video","data":{"file":"https://example.org/test.mp4"}}
+        ]);
+        let (parts, quote) = bot.make_telegram_msg(&message, "-200", true).await.unwrap();
+        assert_eq!(quote, "9");
+        assert_eq!(parts[0].0, "document");
+        assert_eq!(parts[0].2, "sample.txt");
+        assert_eq!(parts[1].0, "video");
+        assert!(bot.make_telegram_msg(&message, "-100", true).await.is_err());
     }
 
     #[test]

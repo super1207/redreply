@@ -2701,14 +2701,16 @@ onebot事件json对应的RedLang对象。
 取出消息事件或<font color="red">CQ文本</font>中的文本数组。
 
 
-### 表情回应(目前仅少量适配器可用)
+### 表情回应
 
 
-【表情回应@<font color="red">emoji表情</font>@<font color="red">消息ID</font>】
+【表情回应@<font color="red">emoji表情</font>@<font color="red">消息ID</font>@<font color="red">是否添加</font>】
 
 对当前消息进行表情回应，目前仅支持部分emoji。例子：`【表情回应@😘】`
 
 <font color="red">消息ID</font>是可以省略的，默认是当前消息。
+
+KOOK 和 Telegram 支持使用第三个参数 `假` 移除回应。KOOK 支持 Unicode 表情和平台表情 ID。Telegram 可用 `【表情回应@@@假】` 清除当前消息上的机器人回应。
 
 特别说明，在qq平台，支持使用表情ID，如`【表情回应@4】`，支持的表情ID可以在[这里](https://bot.q.qq.com/wiki/develop/api-v2/openapi/emoji/model.html#emoji%E5%88%97%E8%A1%A8)查询。
 
@@ -2760,6 +2762,12 @@ onebot事件json对应的RedLang对象。
 
 调用已连接的 Telegram 机器人原生接口。参数和文件可以省略。返回带有 `retcode`、`data` 和 `message` 的对象。
 
+### Telegram下载文件
+
+【Telegram下载文件@<font color="red">file_id</font>】
+
+使用已连接的 Telegram 机器人下载文件并返回字节集，最大 20 MB。
+
 ### KOOK调用
 
 【KOOK调用@<font color="red">HTTP 方法</font>@<font color="red">接口路径</font>@<font color="red">参数 JSON 对象</font>@<font color="red">上传文件 JSON 对象</font>】
@@ -2770,7 +2778,7 @@ onebot事件json对应的RedLang对象。
 
 【KOOK共享播放@<font color="red">语音频道ID</font>@<font color="red">音源</font>@<font color="red">音量百分比</font>@<font color="red">频道密码</font>】
 
-加入语音频道并推送音频。音量默认 100，密码可以省略。`【KOOK播放状态】` 查询当前状态，`【KOOK停止播放】` 停止并离开频道。
+加入语音频道并推送音频。音源可为单条文本或最多 32 条的数组。音量默认 100，密码可以省略。`【KOOK播放状态】` 查询当前状态，`【KOOK停止播放】` 停止并离开频道。
 
 参见[原生接口与按钮、菜单示例](/adaptar/native-bot-api.md)。
 

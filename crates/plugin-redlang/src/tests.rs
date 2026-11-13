@@ -168,6 +168,7 @@ fn native_platform_commands_are_registered_and_validate_their_inputs() {
     let mut rl = crate::core::RedLang::new();
     for command in [
         "【Telegram调用@getMe】",
+        "【Telegram下载文件@file-id】",
         "【KOOK调用@GET@voice/list】",
         "【KOOK共享播放@channel@https://example.org/song.mp3@65】",
         "【KOOK停止播放】",
@@ -192,5 +193,21 @@ fn documented_native_platform_examples_parse() {
         assert!(crate::core::astparser::parse_to_ast(code).is_ok(), "{code}");
         count += 1;
     }
-    assert!(count >= 7);
+    assert!(count >= 13);
+}
+
+#[test]
+fn telegram_topic_follows_only_the_original_bot_and_chat() {
+    use crate::cqexfun::apply_telegram_topic;
+    use serde_json::json;
+    let event = json!({
+        "self_id":"123", "message_thread_id":9,
+        "telegram":{"message":{"chat":{"id":-100234}}}
+    });
+    let mut payload = json!({});
+    apply_telegram_topic(&event, "123", "-100000", &mut payload);
+    apply_telegram_topic(&event, "456", "-100234", &mut payload);
+    assert_eq!(payload, json!({}));
+    apply_telegram_topic(&event, "123", "-100234", &mut payload);
+    assert_eq!(payload, json!({"message_thread_id":9}));
 }

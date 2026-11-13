@@ -219,6 +219,27 @@ fn resolve_file_name(name: &str, resource: Option<&str>) -> String {
         .unwrap_or_else(|| "未命名".to_string())
 }
 
+pub(crate) fn apply_telegram_topic(
+    event: &serde_json::Value,
+    bot_id: &str,
+    chat_id: &str,
+    params: &mut serde_json::Value,
+) {
+    let native = &event["telegram"];
+    let original_chat = native["chat"]["id"].as_i64()
+        .or_else(|| native["message"]["chat"]["id"].as_i64());
+    if original_chat.is_none() || chat_id.parse::<i64>().ok() != original_chat
+        || event["self_id"].as_str() != Some(bot_id)
+    {
+        return;
+    }
+    for field in ["message_thread_id", "direct_messages_topic_id"] {
+        if let Some(value) = event.get(field) {
+            params[field] = value.clone();
+        }
+    }
+}
+
 pub fn send_one_msg(rl: &RedLang, msg: &str) -> Result<String, Box<dyn std::error::Error>> {
     if msg.is_empty() {
         return Ok("".to_string());
@@ -232,7 +253,7 @@ pub fn send_one_msg(rl: &RedLang, msg: &str) -> Result<String, Box<dyn std::erro
     if msg_type.is_empty() {
         return Ok("".to_string());
     }
-    let send_json: serde_json::Value;
+    let mut send_json: serde_json::Value;
     if msg_type == "group" {
         send_json = serde_json::json!({
             "action":"send_group_msg",
@@ -265,6 +286,13 @@ pub fn send_one_msg(rl: &RedLang, msg: &str) -> Result<String, Box<dyn std::erro
     }
     let self_id = rl.get_exmap("机器人ID");
     let platform = get_platform(rl);
+    if platform == "telegram" {
+        let source = rl.get_exmap("原始事件");
+        let target = if msg_type == "group" { sub_id.clone() } else { rl.get_exmap("发送者ID").to_string() };
+        if let Ok(event) = serde_json::from_str(&source) {
+            apply_telegram_topic(&event, &self_id, &target, &mut send_json["params"]);
+        }
+    }
     let passive_id = rl.get_exmap("消息ID");
     let remote_id = rl.get_exmap("远程MQTT客户端ID");
 
@@ -741,6 +769,25 @@ pub fn init_cq_ex_fun_map() {
         if message_id.is_empty() {
             message_id = self_t.get_exmap("消息ID").to_string();
         }
+        let platform = get_platform(self_t);
+        if matches!(platform.as_str(), "kook" | "telegram") {
+            let remove = self_t.get_param_text(params, 2)? == "假";
+            let result = call_platform_api(self_t, &platform, "set_msg_emoji_like", serde_json::json!({
+                "message_id": message_id,
+                "group_id": self_t.get_exmap("群ID").as_str(),
+                "emoji": if platform == "telegram" && remove { "" } else { &emoji_id },
+                "remove": remove,
+            }))?;
+            if let Some(result) = result {
+                if let RedValue::Object(fields) = result.as_ref() {
+                    if fields.get("retcode").and_then(|value| value.expect_text_value().ok()).as_deref() != Some("0") {
+                        let message = fields.get("message").and_then(|value| value.expect_text_value().ok()).unwrap_or_default();
+                        let _ = cq_add_log_w(&format!("表情回应失败：{message}"));
+                    }
+                }
+            }
+            return Ok(Some(rv_empty()));
+        }
         let emoji_num;
         if let Ok(emoji_id_t) = emoji_id.parse::<i32>() {
             emoji_num = emoji_id_t;
@@ -865,6 +912,24 @@ pub fn init_cq_ex_fun_map() {
         }
         call_platform_api(rl, "telegram", "telegram_api", request)
     });
+    add_fun(vec!["Telegram下载文件"], |rl, params| {
+        let file_id = rl.get_param_text(params, 0)?;
+        let response = call_platform_api(rl, "telegram", "telegram_download", serde_json::json!({"file_id": file_id}))?
+            .ok_or("Telegram 下载未返回响应")?;
+        let RedValue::Object(fields) = response.as_ref() else {
+            return Err(RedLang::make_err("Telegram 下载返回格式错误"));
+        };
+        if fields.get("retcode").and_then(|value| value.expect_text_value().ok()).as_deref() != Some("0") {
+            let message = fields.get("message").and_then(|value| value.expect_text_value().ok())
+                .filter(|message| !message.is_empty()).unwrap_or_else(|| "Telegram 下载失败".to_owned());
+            return Err(RedLang::make_err(&message));
+        }
+        let Some(RedValue::Object(data)) = fields.get("data").map(Rc::as_ref) else {
+            return Err(RedLang::make_err("Telegram 下载未返回文件"));
+        };
+        let base64 = data.get("base64").ok_or("Telegram 下载未返回文件")?.expect_text_value()?;
+        Ok(Some(rv_bin(BASE64_CUSTOM_ENGINE.decode(base64)?)))
+    });
     add_fun(vec!["KOOK调用"], |rl, params| {
         let method = rl.get_param_text(params, 0)?.to_ascii_uppercase();
         let endpoint = rl.get_param_text(params, 1)?;
@@ -877,11 +942,18 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["KOOK共享播放"], |rl, params| {
         let channel = rl.get_param_text(params, 0)?;
-        let source = rl.get_param_text(params, 1)?;
+        let source = rl.get_param(params, 1)?;
         let volume = rl.get_param_text(params, 2)?;
         let password = rl.get_param_text(params, 3)?;
         let volume = if volume.is_empty() { 100 } else { volume.parse::<u64>()? };
-        let mut request = serde_json::json!({"channel_id": channel, "source": source, "volume": volume});
+        let mut request = serde_json::json!({"channel_id":channel,"volume":volume});
+        match source.as_ref() {
+            RedValue::Array(items) => {
+                let sources = items.iter().map(|item| item.expect_text_value()).collect::<Result<Vec<_>, _>>()?;
+                request["sources"] = serde_json::json!(sources);
+            }
+            _ => request["source"] = source.expect_text_value()?.into(),
+        }
         if !password.is_empty() {
             request["password"] = password.into();
         }

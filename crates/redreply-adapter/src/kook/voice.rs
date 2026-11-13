@@ -23,6 +23,8 @@ pub(super) struct Playback {
 #[derive(Debug)]
 struct ActivePlayback {
     channel_id: String,
+    track: usize,
+    total: usize,
     cancel: Option<oneshot::Sender<()>>,
     done: watch::Receiver<Option<Value>>,
 }
@@ -187,10 +189,65 @@ pub(super) async fn native_voice_guard<'a>(
     Ok(Some(state))
 }
 
+struct Track {
+    source: String,
+    protocols: &'static str,
+}
+
+fn tracks(params: &Value) -> AdapterResult<Vec<Track>> {
+    fn track(source: &str) -> AdapterResult<Track> {
+        Ok(Track {
+            source: source.to_owned(),
+            protocols: source_protocols(source)?,
+        })
+    }
+    let Some(sources) = params.get("sources") else {
+        return Ok(vec![track(required_text(params, "source")?)?]);
+    };
+    let sources = sources
+        .as_array()
+        .filter(|items| (1..=32).contains(&items.len()))
+        .ok_or("KOOK 播放列表须包含 1 至 32 条音源")?;
+    sources
+        .iter()
+        .map(|source| track(source.as_str().ok_or("KOOK 播放列表音源须为文本")?))
+        .collect()
+}
+
+async fn start_track(
+    bot: &KookConnect,
+    join: &Value,
+    track: &Track,
+    volume: u64,
+    echo: &Value,
+) -> AdapterResult<Result<Child, Value>> {
+    let response = voice_request(bot, "join", join, echo).await?;
+    if response["retcode"] != 0 {
+        return Ok(Err(response));
+    }
+    let child = VoiceEndpoint::from_response(&response["data"]).and_then(|endpoint| {
+        ffmpeg_command(&track.source, track.protocols, volume, &endpoint)
+            .spawn()
+            .map_err(|error| {
+                format!("无法启动 FFmpeg（需要 PATH 中含有 libopus 的 ffmpeg）：{error}").into()
+            })
+    });
+    match child {
+        Ok(child) => Ok(Ok(child)),
+        Err(error) => {
+            if let Err(cleanup) =
+                voice_call(bot, "leave", &json!({"channel_id":join["channel_id"]})).await
+            {
+                return Err(format!("{error}；{cleanup}").into());
+            }
+            Err(error)
+        }
+    }
+}
+
 pub(super) async fn play(bot: &KookConnect, params: &Value, echo: &Value) -> AdapterResult<Value> {
     let channel_id = required_text(params, "channel_id")?.to_owned();
-    let source = required_text(params, "source")?;
-    let protocols = source_protocols(source)?;
+    let tracks = tracks(params)?;
     let volume = params
         .get("volume")
         .map_or(Some(100), Value::as_u64)
@@ -210,44 +267,28 @@ pub(super) async fn play(bot: &KookConnect, params: &Value, echo: &Value) -> Ada
     if state.active.is_some() {
         return Err("KOOK 正在共享播放，请先停止当前音频".into());
     }
-    let response = voice_request(bot, "join", &join, echo).await?;
-    if response["retcode"] != 0 {
-        return Ok(response);
-    }
-    let data = &response["data"];
-    let child = VoiceEndpoint::from_response(data).and_then(|endpoint| {
-        ffmpeg_command(source, protocols, volume, &endpoint)
-            .spawn()
-            .map_err(|error| {
-                format!("无法启动 FFmpeg（需要 PATH 中含有 libopus 的 ffmpeg）：{error}").into()
-            })
-    });
-    let child = match child {
+    let child = match start_track(bot, &join, &tracks[0], volume, echo).await? {
         Ok(child) => child,
-        Err(error) => {
-            if let Err(cleanup) = voice_call(bot, "leave", &json!({"channel_id": channel_id})).await
-            {
-                return Err(format!("{error}；{cleanup}").into());
-            }
-            return Err(error);
-        }
+        Err(response) => return Ok(response),
     };
     let (cancel, cancelled) = oneshot::channel();
     let (done_tx, done) = watch::channel(None);
+    let total = tracks.len();
     state.active = Some(ActivePlayback {
         channel_id: channel_id.clone(),
+        track: 1,
+        total,
         cancel: Some(cancel),
         done,
     });
     state.last = None;
     let worker = bot.clone();
-    let worker_channel = channel_id.clone();
     tokio::spawn(async move {
-        run(worker, worker_channel, child, cancelled, done_tx).await;
+        run(worker, join, tracks, volume, child, cancelled, done_tx).await;
     });
     Ok(native_api::reply(
         0,
-        &json!({"channel_id": channel_id, "state": "playing"}),
+        &json!({"channel_id":channel_id,"state":"playing","track":1,"total":total}),
         "",
         echo,
     ))
@@ -255,45 +296,53 @@ pub(super) async fn play(bot: &KookConnect, params: &Value, echo: &Value) -> Ada
 
 async fn run(
     bot: KookConnect,
-    channel_id: String,
+    join: Value,
+    tracks: Vec<Track>,
+    volume: u64,
     mut child: Child,
     mut cancelled: oneshot::Receiver<()>,
     done: watch::Sender<Option<Value>>,
 ) {
-    let body = json!({"channel_id": channel_id});
-    let mut keepalive = time::interval_at(
-        time::Instant::now() + Duration::from_secs(40),
-        Duration::from_secs(40),
-    );
-    keepalive.set_missed_tick_behavior(MissedTickBehavior::Delay);
-    let mut result = loop {
-        tokio::select! {
-            biased;
-            _ = &mut cancelled => break json!({"state":"stopped"}),
-            status = child.wait() => break match status {
-                Ok(status) if status.success() => json!({"state":"finished"}),
-                Ok(status) => json!({"state":"failed", "error": format!("FFmpeg 退出：{status}")}),
-                Err(error) => json!({"state":"failed", "error": format!("无法等待 FFmpeg：{error}")}),
-            },
-            _ = keepalive.tick() => {
-                // Let a stop request interrupt an in-flight keep-alive.
-                tokio::select! {
-                    biased;
-                    _ = &mut cancelled => break json!({"state":"stopped"}),
-                    result = voice_call(&bot, "keep-alive", &body) => if let Err(error) = result {
-                        break json!({"state":"failed", "error": error.to_string()});
-                    },
-                }
+    let body = json!({"channel_id":join["channel_id"]});
+    let total = tracks.len();
+    let mut track = 1;
+    let result = loop {
+        let mut result = wait_for_track(&bot, &body, &mut child, &mut cancelled).await;
+        if let Err(error) = voice_call(&bot, "leave", &body).await {
+            result["leave_error"] = error.to_string().into();
+            if result["state"] == "finished" && track < total {
+                result["state"] = "failed".into();
             }
+            break result;
         }
+        if result["state"] != "finished" || track == total {
+            break result;
+        }
+        // Let the provider release the old RTP session before opening a new one.
+        let stopping = tokio::select! {
+            biased;
+            _ = &mut cancelled => true,
+            _ = time::sleep(Duration::from_secs(3)) => false,
+        };
+        if stopping || bot.is_stop.load(Ordering::Relaxed) {
+            break json!({"state":"stopped"});
+        }
+        track += 1;
+        if let Some(active) = bot.playback.lock().await.active.as_mut() {
+            active.track = track;
+        }
+        child = match start_track(&bot, &join, &tracks[track - 1], volume, &Value::Null).await {
+            Ok(Ok(child)) => child,
+            Ok(Err(response)) => {
+                break json!({"state":"failed","retcode":response["retcode"],"error":response["message"]})
+            }
+            Err(error) => break json!({"state":"failed","error":error.to_string()}),
+        };
     };
-    if child.try_wait().ok().flatten().is_none() {
-        let _ = child.kill().await;
-    }
-    if let Err(error) = voice_call(&bot, "leave", &body).await {
-        result["leave_error"] = error.to_string().into();
-    }
-    result["channel_id"] = channel_id.into();
+    let mut result = result;
+    result["channel_id"] = join["channel_id"].clone();
+    result["track"] = track.into();
+    result["total"] = total.into();
     {
         let mut state = bot.playback.lock().await;
         state.active = None;
@@ -312,6 +361,44 @@ async fn run(
     bot.send_to_onebot_client(&event).await;
 }
 
+async fn wait_for_track(
+    bot: &KookConnect,
+    body: &Value,
+    child: &mut Child,
+    cancelled: &mut oneshot::Receiver<()>,
+) -> Value {
+    let mut keepalive = time::interval_at(
+        time::Instant::now() + Duration::from_secs(40),
+        Duration::from_secs(40),
+    );
+    keepalive.set_missed_tick_behavior(MissedTickBehavior::Delay);
+    let result = loop {
+        tokio::select! {
+            biased;
+            _ = &mut *cancelled => break json!({"state":"stopped"}),
+            status = child.wait() => break match status {
+                Ok(status) if status.success() => json!({"state":"finished"}),
+                Ok(status) => json!({"state":"failed", "error": format!("FFmpeg 退出：{status}")}),
+                Err(error) => json!({"state":"failed", "error": format!("无法等待 FFmpeg：{error}")}),
+            },
+            _ = keepalive.tick() => {
+                // Let a stop request interrupt an in-flight keep-alive.
+                tokio::select! {
+                    biased;
+                    _ = &mut *cancelled => break json!({"state":"stopped"}),
+                    result = voice_call(bot, "keep-alive", body) => if let Err(error) = result {
+                        break json!({"state":"failed", "error": error.to_string()});
+                    },
+                }
+            }
+        }
+    };
+    if child.try_wait().ok().flatten().is_none() {
+        let _ = child.kill().await;
+    }
+    result
+}
+
 pub(super) async fn stop(playback: &Mutex<Playback>) -> AdapterResult<Value> {
     let mut done = {
         let mut state = playback.lock().await;
@@ -323,7 +410,7 @@ pub(super) async fn stop(playback: &Mutex<Playback>) -> AdapterResult<Value> {
         }
         active.done.clone()
     };
-    let result = time::timeout(Duration::from_secs(12), done.wait_for(Option::is_some))
+    let result = time::timeout(Duration::from_secs(20), done.wait_for(Option::is_some))
         .await
         .map_err(|_| "KOOK 停止播放超时")?
         .map_err(|_| "KOOK 播放任务已结束")?;
@@ -336,6 +423,8 @@ pub(super) async fn status(playback: &Mutex<Playback>) -> Value {
         Some(active) => json!({
             "state": if active.cancel.is_some() {"playing"} else {"stopping"},
             "channel_id": active.channel_id,
+            "track": active.track,
+            "total": active.total,
         }),
         None => state
             .last
@@ -364,6 +453,21 @@ mod tests {
         );
         data["audio_pt"] = 128.into();
         assert!(VoiceEndpoint::from_response(&data).is_err());
+    }
+
+    #[test]
+    fn playlists_validate_every_source_before_playback() {
+        let valid = json!({"sources":["https://example.org/a.mp3","https://example.org/b.mp3"]});
+        assert_eq!(tracks(&valid).unwrap().len(), 2);
+        assert!(tracks(&json!({"sources":[]})).is_err());
+        assert!(tracks(&json!({"sources":["https://example.org/a.mp3","concat:bad"]})).is_err());
+        assert!(tracks(&json!({"sources":["https://example.org/a.mp3",12]})).is_err());
+        assert_eq!(
+            tracks(&json!({"source":"https://example.org/a.mp3"}))
+                .unwrap()
+                .len(),
+            1
+        );
     }
 
     #[test]

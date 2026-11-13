@@ -119,6 +119,71 @@ Telegram 的群聊和私聊消息继续走原来的消息触发，原始消息�
 【取元素@【变量@播放结果】@retcode】
 ```
 
-每个机器人同时播放一条音源。命令在进程启动后返回；可用 `【KOOK播放状态】` 查询 `data.state`，状态为 `idle`、`playing`、`stopping`、`finished`、`stopped` 或 `failed`。`【KOOK停止播放】` 停止推流并离开频道。音源播完或适配器断开后也会离开频道。播放结束可用 `notice:kook:voice_playback` 触发脚本，通过 `kook.state` 查看结果，通过 `kook.channel_id` 读取语音频道 ID。
+每个机器人同时推送一条音源，也可以依次播放音源数组。命令在进程启动后返回；可用 `【KOOK播放状态】` 查询 `data.state`，状态为 `idle`、`playing`、`stopping`、`finished`、`stopped` 或 `failed`。`【KOOK停止播放】` 停止推流并离开频道。音源播完或适配器断开后也会离开频道。播放结束可用 `notice:kook:voice_playback` 触发脚本，通过 `kook.state` 查看结果，通过 `kook.channel_id` 读取语音频道 ID。
 
 脚本若自行管理语音推流，可用 `【KOOK调用@GET@voice/list】` 和官方的 `voice/join`、`voice/keep-alive`、`voice/leave`。由红色问答管理的播放进行中，应通过 `【KOOK停止播放】` 结束当前推流。[KOOK 语音接口](https://developer.kookapp.cn/doc/http/voice) · [卡片消息](https://developer.kookapp.cn/doc/cardmessage) · [按钮事件](https://developer.kookapp.cn/doc/event/user)
+
+## 进阶用法
+
+### 沿用 RedLang 通用命令
+
+- KOOK 和 Telegram 均可用 `【文件】`、`【视频】` 发送本地文件、字节集或 HTTP(S) 文件地址。Telegram 把文件和视频分别作为文档和视频发送。KOOK 使用文件或视频卡片。
+- 两个平台的 `【表情回应@表情@消息ID】` 均可省略消息 ID，对当前消息执行。Telegram 接受平台支持的 Unicode 表情，KOOK 还接受官方自定义表情 ID。第三个参数填 `假` 可删除回应。KOOK 删除时需要指定表情，Telegram 会清除机器人在该消息上的回应。
+- `【撤回】` 接受 RedReply 消息 ID。KOOK 根据消息来源选择频道或私聊删除接口，Telegram 根据消息 ID 映射找到对应聊天。
+- Telegram 还可通过现有群成员信息查询获取用户及管理员身份，原始数据仍可从返回对象的 `telegram` 字段读取。
+- Telegram 论坛话题、私聊话题和频道私信话题中的普通输出和 `【输出流】` 会保留原话题。原生调用可从 `【事件内容】` 读取 `message_thread_id` 或 `direct_messages_topic_id` 并显式传给 Bot API。话题回调也提供这些字段。
+
+```text
+【表情回应@👍】
+【表情回应@👍@@假】
+```
+
+### Telegram 行内查询、投票和文件
+
+用 BotFather 启用 inline mode。新建「事件触发」脚本，关键词为 `notice:telegram:inline_query`。用户的查询文本在 `telegram.query`。以下示例返回一条可选的文章结果。
+
+```text
+【定义变量@查询ID@【取元素@【事件内容】@telegram@id】】
+【定义变量@参数@【@{"inline_query_id":】【转文本@【变量@查询ID】】【@,"cache_time":0,"results":[{"type":"article","id":"help","title":"帮助","input_message_content":{"message_text":"欢迎使用红色问答"}}]}】】
+【隐藏@【Telegram调用@answerInlineQuery@【变量@参数】】】
+```
+
+通过 `sendPoll` 发起投票。要接收每位投票者的答案，发送非匿名投票并订阅 `poll_answer`，使用事件关键词 `notice:telegram:poll_answer`。从 `telegram.option_ids` 读取选项下标。
+
+```text
+【定义变量@聊天ID@【判空@【群ID】@【发送者ID】】】
+【定义变量@参数@【@{"chat_id":】【转文本@【变量@聊天ID】】【@,"question":"下一次活动选哪天？","options":[{"text":"周六"},{"text":"周日"}],"is_anonymous":false}】】
+【隐藏@【Telegram调用@sendPoll@【变量@参数】】】
+```
+
+【Telegram下载文件@<font color="red">file_id</font>】
+
+通过 Telegram 的 `getFile` 获取下载路径，再使用当前机器人连接下载，返回字节集。下载上限为 20 MB，返回值可交给 `【写文件】` 或 `【文件】`。下面示例适用于收到文档的 Telegram 消息。
+
+```text
+【定义变量@文件ID@【取元素@【事件内容】@telegram@document@file_id】】
+【写文件@【应用目录】telegram-download.bin@【Telegram下载文件@【变量@文件ID】】】
+```
+
+话题管理可调用 `createForumTopic`、`editForumTopic`、`closeForumTopic` 或 `reopenForumTopic`。Mini App、媒体组和消息回应可使用 `answerWebAppQuery`、`sendMediaGroup` 和 `setMessageReaction`。更新订阅、权限和字段以官方文档为准。[行内机器人](https://core.telegram.org/bots/inline) · [Telegram Bot API](https://core.telegram.org/bots/api)
+
+### KOOK 播放列表和频道事件
+
+原有 `【KOOK共享播放】` 的音源参数也接受 `【数组】`，列表最多 32 首。每首结束后释放语音连接，下一首使用新推流端口。原有停止命令会停止整份列表。状态和结束事件包含从 1 开始的 `track` 和总曲目数 `total`。
+
+```text
+【定义变量@音源@【数组@https://example.org/first.mp3@https://example.org/second.mp3】】
+【隐藏@【KOOK共享播放@语音频道ID@【变量@音源】@65】】
+```
+
+用 `notice:kook:joined_channel` 和 `notice:kook:exited_channel` 处理语音成员进出。用 `notice:kook:added_reaction` 和 `notice:kook:deleted_reaction` 处理频道回应。此类事件的 `【发送者ID】` 是实际操作人，`【群ID】` 是发生事件的频道 ID。表情事件中，原消息可通过 `【消息ID】` 用于 RedReply 命令，原始 KOOK ID 位于 `kook_message_id`。
+
+查询语音频道成员使用 `channel/user-list`。拥有对应权限的机器人还可使用 `channel/move-user` 移动成员、`channel/kickout` 踢出语音成员、`message/pin` 置顶消息，或通过 `guild-role/grant` 分配身份组。
+
+```text
+【定义变量@参数@【@{"channel_id":】【转文本@【群ID】】【@}】】
+【定义变量@结果@【KOOK调用@GET@channel/user-list@【变量@参数】】】
+【取长度@【取元素@【变量@结果】@data】】
+```
+
+[KOOK 频道接口](https://developer.kookapp.cn/doc/http/channel) · [频道事件](https://developer.kookapp.cn/doc/event/channel) · [用户事件](https://developer.kookapp.cn/doc/event/user)
