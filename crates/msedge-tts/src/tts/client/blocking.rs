@@ -1,7 +1,8 @@
+pub use crate::deadline::DeadlineStream;
 use crate::error::Result;
 use crate::tts::{
     NativeTlsStream, Payload, SpeechConfig, build_config_message, build_ssml_message,
-    client::SynthesizedAudio, websocket_connect,
+    client::SynthesizedAudio, websocket_connect, websocket_connect_with_deadline,
 };
 use std::io::{Read, Write};
 use std::net::TcpStream;
@@ -41,11 +42,17 @@ impl<T: Read + Write> MSEdgeTTSClient<T> {
             }
         }
 
-        let audio_bytes = audio_bytes
+        let audio_bytes: Vec<u8> = audio_bytes
             .iter()
             .flat_map(|(bytes, index)| &bytes[*index..])
             .copied()
             .collect();
+
+        if audio_bytes.is_empty() {
+            return Err(crate::error::Error::UnexpectedMessage(
+                "TTS returned empty audio".to_owned(),
+            ));
+        }
 
         Ok(SynthesizedAudio {
             audio_format: config.audio_format.clone(),
@@ -60,5 +67,12 @@ pub fn connect() -> Result<MSEdgeTTSClient<TcpStream>> {
     Ok(MSEdgeTTSClient(websocket_connect()?))
 }
 
+/// Connect and synthesize with one absolute deadline, including socket I/O.
+pub fn connect_with_deadline(
+    deadline: std::time::Instant,
+) -> Result<MSEdgeTTSClient<DeadlineStream>> {
+    Ok(MSEdgeTTSClient(websocket_connect_with_deadline(deadline)?))
+}
+
 #[cfg(feature = "proxy")]
-pub use crate::tts::proxy::blocking::connect_proxy;
+pub use crate::tts::proxy::blocking::{connect_proxy, connect_proxy_with_deadline};

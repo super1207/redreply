@@ -1,0 +1,49 @@
+name: TTS Rust
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/tts.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/msedge-tts/**'
+      - 'crates/plugin-tts/**'
+      - 'crates/plugin-redlang/**'
+      - 'crates/redreply-common/**'
+  push:
+    paths:
+      - '.github/workflows/tts.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/msedge-tts/**'
+      - 'crates/plugin-tts/**'
+      - 'crates/plugin-redlang/**'
+      - 'crates/redreply-common/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: TTS (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    env:
+      CARGO_TERM_COLOR: always
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install stable Rust
+        run: rustup update stable --no-self-update
+      - name: Test TTS service and protocol
+        run: cargo +stable test --locked -p plugin-tts -p msedge-tts --lib --features msedge-tts/proxy
+      - name: Test shared TTS service compatibility
+        run: cargo +stable test --locked -p redreply-common plugin_ports::tts_tests
+      - name: Test RedLang TTS commands
+        run: cargo +stable test --locked -p plugin-redlang tts_commands::tests
+      - name: Check application integration
+        run: cargo +stable check --locked -p redreply

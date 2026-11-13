@@ -135,10 +135,10 @@ impl Payload {
                     Ok(None)
                 }
             }
-            tungstenite::Message::Close(_) => {
-                *turn_end = true;
-                Ok(None)
-            }
+            tungstenite::Message::Close(_) => Err(Error::UnexpectedMessage(
+                "WebSocket closed before turn.end; incomplete audio was discarded".to_owned(),
+            )),
+            tungstenite::Message::Ping(_) | tungstenite::Message::Pong(_) => Ok(None),
             _ => Err(Error::UnexpectedMessage(format!(
                 "unexpected message: {}",
                 message
@@ -163,7 +163,11 @@ fn build_config_message(config: &SpeechConfig) -> tungstenite::Message {
 fn build_ssml_message(text: &str, config: &SpeechConfig) -> tungstenite::Message {
     let ssml = format!(
         "<speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' xml:lang='en-US'><voice name='{}'><prosody pitch='{:+}Hz' rate='{:+}%' volume='{:+}%'>{}</prosody></voice></speak>",
-        config.voice_name, config.pitch, config.rate, config.volume, text,
+        escape_xml(&config.voice_name),
+        config.pitch,
+        config.rate,
+        config.volume,
+        escape_xml(text),
     );
     let ssml_message = format!(
         "X-RequestId:{}\r\nContent-Type:application/ssml+xml\r\nX-Timestamp:{}\r\nPath:ssml\r\n\r\n{}",
@@ -174,28 +178,24 @@ fn build_ssml_message(text: &str, config: &SpeechConfig) -> tungstenite::Message
     tungstenite::Message::Text(ssml_message.into())
 }
 
-// try to fix china mainland 403 forbidden issue
-// solution from:
-// https://github.com/rany2/edge-tts/issues/290#issuecomment-2464956570
-fn gen_sec_ms_gec() -> String {
-    use sha2::Digest;
-
-    // UTC time from 1601-01-01
-    let duration = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        + std::time::Duration::from_secs(11644473600);
-    let ticks = duration.as_nanos() / 100;
-    let ticks = ticks - ticks % 3_000_000_000;
-
-    let mut hasher = sha2::Sha256::new();
-    hasher.update(format!("{ticks}6A5AA1D4EAFF4E9FB37E23D68491D6F4"));
-    let hash_code = hasher.finalize();
-    let mut hex_str = String::new();
-    for &byte in hash_code.iter() {
-        hex_str.push_str(&format!("{:02X}", byte));
+/// The public synthesis API accepts plain text, never caller-supplied SSML.
+fn escape_xml(value: &str) -> String {
+    let mut escaped = String::with_capacity(value.len());
+    for character in value.chars() {
+        match character {
+            '&' => escaped.push_str("&amp;"),
+            '<' => escaped.push_str("&lt;"),
+            '>' => escaped.push_str("&gt;"),
+            '\'' => escaped.push_str("&apos;"),
+            '"' => escaped.push_str("&quot;"),
+            '\t' | '\n' | '\r' => escaped.push(character),
+            character if character < '\u{20}' || matches!(character, '\u{fffe}' | '\u{ffff}') => {
+                escaped.push(' ')
+            }
+            character => escaped.push(character),
+        }
     }
-    hex_str
+    escaped
 }
 
 fn build_websocket_request() -> tungstenite::Result<tungstenite::handshake::client::Request> {
@@ -204,14 +204,13 @@ fn build_websocket_request() -> tungstenite::Result<tungstenite::handshake::clie
     use tungstenite::http::header;
 
     let uuid = uuid::Uuid::new_v4().simple().to_string();
-    let sec_ms_gec = gen_sec_ms_gec();
-    let sec_ms_gec_version = "1-130.0.2849.68";
+    let sec_ms_gec = crate::auth::sec_ms_gec();
     let mut request = format!(
         "{}{}&Sec-MS-GEC={}&Sec-MS-GEC-Version={}",
         constants::WSS_URL,
         uuid,
         sec_ms_gec,
-        sec_ms_gec_version
+        constants::SEC_MS_GEC_VERSION
     )
     .into_client_request()?;
     let headers = request.headers_mut();
@@ -223,10 +222,10 @@ fn build_websocket_request() -> tungstenite::Result<tungstenite::handshake::clie
 }
 
 #[cfg(feature = "blocking")]
-type NativeTlsStream<T> = rustls::StreamOwned<rustls::ClientConnection, T>;
+pub(crate) type NativeTlsStream<T> = rustls::StreamOwned<rustls::ClientConnection, T>;
 
 #[cfg(feature = "blocking")]
-fn native_tls_connect<T: std::io::Read + std::io::Write>(
+pub(crate) fn native_tls_connect<T: std::io::Read + std::io::Write>(
     host: &str,
     stream: T,
 ) -> Result<NativeTlsStream<T>> {
@@ -254,7 +253,7 @@ fn native_tls_connect<T: std::io::Read + std::io::Write>(
 
 #[cfg(feature = "blocking")]
 fn websocket_connect() -> Result<tungstenite::WebSocket<NativeTlsStream<std::net::TcpStream>>> {
-    use tungstenite::{ClientHandshake, Error, HandshakeError, error::*};
+    use tungstenite::{Error, error::*};
 
     let request = build_websocket_request()?;
     let host = request
@@ -266,17 +265,80 @@ fn websocket_connect() -> Result<tungstenite::WebSocket<NativeTlsStream<std::net
     let stream = std::net::TcpStream::connect((host.as_str(), 443)).map_err(Error::Io)?;
     stream.set_nodelay(true).map_err(Error::Io)?;
 
-    let stream = native_tls_connect(&host, stream)?;
+    websocket_with_stream(request, &host, stream)
+}
+
+#[cfg(feature = "blocking")]
+fn websocket_connect_with_deadline(
+    deadline: std::time::Instant,
+) -> Result<tungstenite::WebSocket<NativeTlsStream<crate::deadline::DeadlineStream>>> {
+    use tungstenite::{Error, error::*};
+    let request = build_websocket_request()?;
+    let host = request
+        .uri()
+        .host()
+        .ok_or(Error::Url(UrlError::NoHostName))?
+        .to_owned();
+    let stream = crate::deadline::DeadlineStream::connect(&host, 443, deadline)?;
+    websocket_with_stream(request, &host, stream)
+}
+
+#[cfg(feature = "blocking")]
+fn websocket_with_stream<T: std::io::Read + std::io::Write>(
+    request: tungstenite::handshake::client::Request,
+    host: &str,
+    stream: T,
+) -> Result<tungstenite::WebSocket<NativeTlsStream<T>>> {
+    use tungstenite::{ClientHandshake, Error, HandshakeError};
+    let stream = native_tls_connect(host, stream)?;
     let (websocket, _) = ClientHandshake::start(stream, request, None)?
         .handshake()
         .map_err(|e| match e {
             HandshakeError::Failure(e) => e,
-            HandshakeError::Interrupted(_) => {
-                panic!("Bug: blocking handshake not blocked")
-            }
+            HandshakeError::Interrupted(_) => Error::Io(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "TTS WebSocket handshake timed out",
+            )),
         })?;
     Ok(websocket)
 }
 
 #[cfg(feature = "proxy")]
-mod proxy;
+pub(crate) mod proxy;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn plain_text_and_voice_names_cannot_inject_ssml() {
+        let config = SpeechConfig {
+            voice_name: "voice'&<>\"".to_owned(),
+            audio_format: "audio-24khz-48kbitrate-mono-mp3".to_owned(),
+            pitch: -10,
+            rate: 20,
+            volume: -5,
+        };
+        let message = build_ssml_message("你好 <break/> & \"音色\" '\0'", &config);
+        let text = message.to_text().unwrap();
+        assert!(text.contains("name='voice&apos;&amp;&lt;&gt;&quot;'"));
+        assert!(text.contains("你好 &lt;break/&gt; &amp; &quot;音色&quot; &apos; &apos;"));
+        assert!(text.contains("pitch='-10Hz' rate='+20%' volume='-5%'"));
+        assert!(!text.contains("<break/>"));
+    }
+
+    #[test]
+    fn closing_before_turn_end_does_not_accept_partial_audio() {
+        let mut started = true;
+        let mut response = true;
+        let mut ended = false;
+        let result = Payload::process(
+            tungstenite::Message::Close(None),
+            &mut started,
+            &mut response,
+            &mut ended,
+        );
+        assert!(result.is_err());
+        assert!(!ended);
+    }
+}

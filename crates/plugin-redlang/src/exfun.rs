@@ -4539,21 +4539,7 @@ def red_out(sw):
         })?;
         Ok(Some(rv_text(lua_ret)))
     });
-    add_fun(vec!["TTS"], |self_t, params| {
-        let proxy = self_t.get_coremap("代理");
-        let text = self_t.get_param_text(params, 0)?;
-        let mut player = self_t.get_param_text(params, 1)?;
-        if player.is_empty() {
-            player = "YunyangNeural".to_owned();
-        }
-        let handle = redlang::framework_services()
-            .and_then(|services| services.get::<redlang::plugin_ports::TtsServiceHandle>("tts"))
-            .ok_or("TTS 插件未启用")?;
-        let bin_mp3 = handle
-            .synthesize(&text, &player, &proxy)
-            .map_err(|error| Box::<dyn std::error::Error>::from(error))?;
-        Ok(Some(rv_bin(bin_mp3)))
-    });
+    crate::tts_commands::register();
     add_fun(vec!["执行频率"], |self_t, params| {
         self_t.set_coremap("剩余次数", &0.to_string())?;
 

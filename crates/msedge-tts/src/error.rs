@@ -6,6 +6,9 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 
 #[derive(Error, Debug)]
 pub enum Error {
+    #[error("I/O error: {0}")]
+    IoError(#[from] std::io::Error),
+
     #[cfg(feature = "blocking")]
     #[error("ureq error: {0}")]
     UreqError(#[from] ureq::Error),
