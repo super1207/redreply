@@ -168,9 +168,131 @@ KOOK 的平台名为 `kook`。
 - 普通输出和【输出流】会保留当前 Telegram 话题。原生调用可从【事件内容】读取 `message_thread_id` 或 `direct_messages_topic_id` 并按方法要求传入。论坛话题可用 `createForumTopic`、`editForumTopic`、`closeForumTopic`、`reopenForumTopic` 管理。
 - 用 `notice:telegram:chat_join_request` 接收普通入群申请。在该脚本中使用【同意】或【拒绝】。机器人需要邀请用户的管理权限。带 `telegram.query_id` 的入群申请也可用【同意】或【拒绝】，平台要求在 10 秒内处理。
 - 群聊和私聊消息走原有消息触发。其他更新走 `notice:telegram:更新类型`，原始数据位于 `telegram`。在管理台「订阅更新」中按逗号填写 `message,callback_query,inline_query,poll,poll_answer,chat_join_request` 等类型。默认采用 Telegram 的空列表订阅规则。适配器用 `getUpdates` 收件，使用该适配器时请保持同一个 Token 的 webhook 关闭。
-- 媒体组、Mini App 应答、邀请链接、置顶和权限管理可用【Telegram调用】配合官方方法 `sendMediaGroup`、`answerWebAppQuery`、`createChatInviteLink`、`pinChatMessage`、`setChatPermissions`。
+- Mini App 应答、邀请链接、置顶和权限管理可用【Telegram调用】配合官方方法 `answerWebAppQuery`、`createChatInviteLink`、`pinChatMessage`、`setChatPermissions`。
 
 [入群审核](https://core.telegram.org/bots/api#approvechatjoinrequest) · [更新订阅](https://core.telegram.org/bots/api#getupdates)
+
+## 媒体组、贴纸和自定义表情
+
+### 发送媒体组
+
+【媒体组@<font color="red">媒体对象数组</font>】
+
+将 2 至 10 项媒体组合为一个消息片段，用【输出流】或脚本直接输出。每项用【对象】构造，常用字段是 `type`、`media` 和 `caption`。文件内容可用【读文件】得到字节集，再与文件名一起放进 `media` 对象。
+
+```text
+【定义变量@活动相册@【数组
+  @【对象@type@photo@media@https://example.org/first.png@caption@活动现场】
+  @【对象@type@photo@media@【对象
+    @filename@第二张.png@内容@【读文件@【应用目录】第二张.png】
+  】】
+】】
+【定义变量@相册消息@【输出流@【媒体组@【变量@活动相册】】】】
+【变量@相册消息】
+```
+
+- **Telegram** 使用 `sendMediaGroup`。图片、视频和实况照片可同组，文档组和音频组各自只能包含同类文件。可用 `file_id` 或平台允许的 URL。实况照片需要提供 `media` 视频和 `photo` 静态图，均用文件 ID 或上传对象。媒体组继承【输出流】的目标话题和消息引用，不接受键盘。返回的 RedReply 相册 ID 可用于【撤回】。需要逐张编辑时可使用【Telegram调用】发送并读取 `redreply_message_ids`。
+- **KOOK** 将 `photo`、`video`、`audio` 和 `document` 组合到一条卡片内，连续无说明图片按每个图片组最多 9 张分组。媒体来源用 HTTP(S) 链接或上传对象。直接指定卡片样式时继续用【KOOK卡片】。`caption` 用作媒体标题或图片说明。
+
+Telegram 需要静默、保护内容或指定业务连接时，继续用【Telegram调用】构造 `sendMediaGroup` 参数。下面用两条可复用的文件 ID 组相册。
+
+```text
+【定义变量@相册@【Telegram调用@sendMediaGroup@【对象
+  @chat_id@【接口值@整数@【群ID】】
+  @disable_notification@【接口值@逻辑@真】
+  @media@【数组
+    @【对象@type@photo@media@第一张文件ID】
+    @【对象@type@video@media@视频文件ID】
+  】
+】】】
+【取长度@【取元素@【变量@相册】@redreply_message_ids】】
+```
+
+[Telegram 媒体组](https://core.telegram.org/bots/api#sendmediagroup) · [KOOK 卡片媒体](https://developer.kookapp.cn/doc/cardmessage)
+
+### Telegram 贴纸和贴纸包
+
+【贴纸@<font color="red">文件 ID、URL 或上传对象</font>@<font color="red">上传贴纸关联表情</font>】
+
+用【输出流】发送静态 `.webp`、动画 `.tgs` 或视频 `.webm` 贴纸。URL 发送仅适用于静态 WebP。第二个参数在本次上传文件时可填写关联表情。收到贴纸时，从 `telegram.sticker.file_id` 取可重用的文件 ID，从 `telegram.sticker.set_name` 取贴纸包名。需要保存文件时使用【Telegram下载文件】。
+
+```text
+【隐藏@【输出流@【贴纸@【对象
+  @filename@活动贴纸.webp@内容@【读文件@【应用目录】活动贴纸.webp】
+】@🎉】】】
+```
+
+用【Telegram调用】查询或管理贴纸包。下例查询一个贴纸包，并发送第一张贴纸。
+
+```text
+【定义变量@包@【Telegram调用@getStickerSet@【对象@name@贴纸包短名称】】】
+【定义变量@贴纸ID@【取元素@【变量@包】@data@stickers@0@file_id】】
+【隐藏@【输出流@【贴纸@【变量@贴纸ID】】】】
+```
+
+上传供贴纸包使用的文件可调用 `uploadStickerFile`，再把返回的 `data.file_id` 用于 `createNewStickerSet`、`addStickerToSet` 或 `replaceStickerInSet`。用 `setStickerPositionInSet` 排序，`setStickerEmojiList` 更新关联表情，`setStickerKeywords` 更新关键词。使用 `deleteStickerFromSet` 删除指定贴纸。包短名称需以 `_by_机器人用户名` 结尾。
+
+```text
+【定义变量@结果@【Telegram调用@addStickerToSet@【对象
+  @user_id@【接口值@整数@【发送者ID】】
+  @name@album_by_YourBot
+  @sticker@【对象@sticker@已上传的文件ID@format@static@emoji_list@【数组@🎉@👍】】
+】】】
+【取元素@【变量@结果】@retcode】
+```
+
+KOOK 的公开机器人接口提供服务器表情和媒体卡片。发送图片形式的贴纸可用【图片】或【KOOK卡片】，服务器自定义表情用 KMarkdown 的 `(emj)表情名(emj)[表情ID]`。这两种发送方式遵循各自的 KOOK 权限。
+
+[Telegram 贴纸与贴纸包](https://core.telegram.org/bots/api#stickers) · [KOOK KMarkdown 表情](https://developer.kookapp.cn/doc/kmarkdown)
+
+### 自定义表情回应
+
+【表情回应@<font color="red">表情</font>@<font color="red">RedReply 消息 ID</font>@<font color="red">是否添加</font>@<font color="red">选项对象</font>】
+
+- **Telegram** 以文本传入 `custom_emoji_id`，并在选项填 `类型=自定义`。可选 `放大=真` 使用大动画。机器人可以设置一项回应，自定义回应需已经用于该消息或被管理员明确允许。用【Telegram调用】的 `getChat` 查看 `available_reactions`，用 `getCustomEmojiStickers` 查自定义表情资料。第三项传 `假` 清除机器人的回应。删除他人回应时在选项提供一个 `用户ID` 或 `聊天ID`，并满足 Telegram 的管理权限。
+- **KOOK** 支持 Unicode 或官方表情 ID。服务器自定义表情使用 `服务器ID/表情ID` 形式。第三项传 `假` 时仍需指定该表情。可用 `用户ID` 删除该用户对该表情的回应，机器人需有管理消息权限。频道和私聊的回应列表可分别用 `message/reaction-list`、`direct-message/reaction-list` 获取。
+
+```text
+【表情回应@5421234567890123456@@真@【对象@类型@自定义@放大@真】】
+```
+
+```text
+【表情回应@服务器ID/表情ID】
+```
+
+KOOK 的服务器表情可用【KOOK调用】的 `guild-emoji/list`、`guild-emoji/create`、`guild-emoji/update`、`guild-emoji/delete` 管理。上传用 `emoji` 附件字段，文件为 256 KB 以内的 PNG。重命名和删除使用返回的 `id`。
+
+```text
+【定义变量@结果@【KOOK调用@POST@guild-emoji/create@【对象
+  @guild_id@【当前群组】@name@活动庆祝
+】@【对象@emoji@【对象
+  @filename@celebrate.png@mime_type@image/png
+  @内容@【读文件@【应用目录】celebrate.png】
+】】】】
+【取元素@【变量@结果】@data@id】
+```
+
+[Telegram 回应](https://core.telegram.org/bots/api#setmessagereaction) · [管理员删除回应](https://core.telegram.org/bots/api#deletemessagereaction) · [KOOK 服务器表情](https://developer.kookapp.cn/doc/http/guild-emoji)
+
+### 媒体与回应事件
+
+| 事件关键词 | 数据 |
+| --- | --- |
+| `notice:telegram:media_group` | 每项媒体各触发一次。外层 `media_group_id` 可与 `chat_id` 一起分组，业务消息还应区分 `telegram.business_connection_id`。外层 `media` 提供适用时可复用的媒体对象。Telegram 没有整组结束更新。 |
+| `notice:telegram:sticker` | `telegram.sticker` 提供类型、文件 ID、贴纸包等信息。原消息也继续进入普通消息或原生频道、业务事件。 |
+| `notice:telegram:message_reaction` | `telegram.old_reaction`、`telegram.new_reaction`。匿名操作者用外层 `actor_chat_id`。 |
+| `notice:telegram:message_reaction_count` | `telegram.reactions` 是各回应及总数。匿名统计可能延迟。 |
+| `notice:kook:media_group` | 含至少两项可识别媒体的卡片触发一次，外层 `media` 是媒体数组，原卡片仍在 `kook`。 |
+| `notice:kook:added_reaction`、`notice:kook:deleted_reaction`、`notice:kook:private_added_reaction`、`notice:kook:private_deleted_reaction` | `emoji_id` 是回应 ID，`kook.emoji` 保留原生对象。【消息ID】指向被回应的消息。 |
+| `notice:kook:added_emoji`、`notice:kook:updated_emoji`、`notice:kook:removed_emoji` | `kook.id`、`kook.name` 和【当前群组】。 |
+
+Telegram 的两个回应更新需要机器人具备管理员权限，并在管理台的「订阅更新」中显式加入 `message_reaction,message_reaction_count`。处理媒体时订阅相应的 `message`、`channel_post` 或 `business_message`。处理回应事件时用【事件内容】读取数据，例如在 `notice:telegram:message_reaction` 中读取第一项新回应的类型，取消回应时数组为空。
+
+```text
+【取元素@【事件内容】@telegram@new_reaction@0@type】
+```
+
+[Telegram 更新类型](https://core.telegram.org/bots/api#update) · [KOOK 频道回应事件](https://developer.kookapp.cn/doc/event/channel) · [KOOK 私聊回应事件](https://developer.kookapp.cn/doc/event/direct-message) · [KOOK 服务器表情事件](https://developer.kookapp.cn/doc/event/guild)
 
 ## 编辑、转发和批量撤回
 

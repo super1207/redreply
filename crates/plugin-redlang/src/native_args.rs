@@ -116,31 +116,61 @@ pub(super) fn files(
         RedValue::Object(fields) => {
             let mut uploads = Map::new();
             for (field, file) in fields {
-                let RedValue::Object(file) = file.as_ref() else {
-                    return Err(RedLang::make_err(
-                        "每个上传字段需使用含 filename 和 内容 的【对象】",
-                    ));
-                };
-                let name = file
-                    .get("filename")
-                    .ok_or("上传文件缺少 filename")?
-                    .expect_text_value()?;
-                if name.is_empty() {
-                    return Err(RedLang::make_err("上传文件的 filename 不能为空"));
-                }
-                let data = match file.get("内容").map(Rc::as_ref) {
-                    Some(RedValue::Bin(bytes)) => bytes,
-                    _ => return Err(RedLang::make_err("上传文件的 内容 需要字节集")),
-                };
-                uploads.insert(
-                    field.clone(),
-                    serde_json::json!({
-                        "filename": name, "base64": STANDARD.encode(data.as_slice())
-                    }),
-                );
+                uploads.insert(field.clone(), upload_file(file)?);
             }
             Ok(Some(Value::Object(uploads)))
         }
         _ => Err(RedLang::make_err("上传文件参数需使用【对象】")),
     }
+}
+
+
+pub(super) fn upload_file(input: &RedValue) -> Result<Value, Box<dyn Error>> {
+    let RedValue::Object(file) = input else {
+        return Err(RedLang::make_err("上传文件需使用含 filename 和 内容 的【对象】"));
+    };
+    let name = file.get("filename").ok_or("上传文件缺少 filename")?.expect_text_value()?;
+    if name.is_empty() {
+        return Err(RedLang::make_err("上传文件的 filename 不能为空"));
+    }
+    let data = match file.get("内容").map(Rc::as_ref) {
+        Some(RedValue::Bin(bytes)) => bytes,
+        _ => return Err(RedLang::make_err("上传文件的 内容 需要字节集")),
+    };
+    let mut upload = serde_json::json!({"filename":name,"base64":STANDARD.encode(data.as_slice())});
+    if let Some(mime) = file.get("mime_type") {
+        upload["mime_type"] = mime.expect_text_value()?.into();
+    }
+    Ok(upload)
+}
+
+pub(super) fn media_group(input: &RedValue) -> Result<Value, Box<dyn Error>> {
+    let RedValue::Array(items) = input else {
+        return Err(RedLang::make_err("【媒体组】需要媒体【数组】"));
+    };
+    if !(2..=10).contains(&items.len()) {
+        return Err(RedLang::make_err("【媒体组】需要 2 至 10 项"));
+    }
+    let mut media = Vec::with_capacity(items.len());
+    let mut files = Map::new();
+    for (index, item) in items.iter().enumerate() {
+        let RedValue::Object(fields) = item.as_ref() else {
+            return Err(RedLang::make_err("每个媒体项需要【对象】"));
+        };
+        let mut row = Map::new();
+        for (key, entry) in fields {
+            let entry = if matches!(key.as_str(), "media" | "photo" | "thumbnail" | "cover")
+                && matches!(entry.as_ref(), RedValue::Object(_))
+            {
+                let part = format!("media_{index}_{key}");
+                files.insert(part.clone(), upload_file(entry)?);
+                format!("attach://{part}").into()
+            } else {
+                value(entry)?
+            };
+            row.insert(key.clone(), entry);
+        }
+        media.push(Value::Object(row));
+    }
+    Ok(serde_json::json!({"media":media,"files":files}))
 }

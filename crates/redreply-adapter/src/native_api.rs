@@ -134,10 +134,12 @@ pub(crate) fn post(
             .filter(|name| !name.is_empty())
             .ok_or("multipart 文件缺少 filename")?;
         let data = file["base64"].as_str().ok_or("multipart 文件缺少 base64")?;
-        form = form.part(
-            field.to_owned(),
-            reqwest::multipart::Part::bytes(STANDARD.decode(data)?).file_name(filename.to_owned()),
-        );
+        let mut part = reqwest::multipart::Part::bytes(STANDARD.decode(data)?)
+            .file_name(filename.to_owned());
+        if let Some(mime) = file["mime_type"].as_str() {
+            part = part.mime_str(mime)?;
+        }
+        form = form.part(field.to_owned(), part);
     }
     Ok(request.multipart(form))
 }

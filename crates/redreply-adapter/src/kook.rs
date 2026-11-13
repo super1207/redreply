@@ -255,6 +255,8 @@ impl KookConnect {
         }
         let channel_event = matches!(kind, "added_channel" | "updated_channel" | "deleted_channel");
         let role_event = matches!(kind, "added_role" | "updated_role" | "deleted_role");
+        let emoji_event = matches!(kind, "added_emoji" | "updated_emoji" | "removed_emoji");
+        let reaction_event = matches!(kind, "added_reaction" | "deleted_reaction" | "private_added_reaction" | "private_deleted_reaction");
         let mut channel_id = read_json_str(body, "channel_id");
         if channel_event {
             channel_id = read_json_str(body, "id");
@@ -271,7 +273,8 @@ impl KookConnect {
             event["group_id"] = channel_id.clone().into();
         }
         let mut guild_id = read_json_str(body, "guild_id");
-        if guild_id.is_empty() && (channel_event || role_event || matches!(kind, "updated_message" | "deleted_message")) {
+        if guild_id.is_empty() && (channel_event || role_event || emoji_event || (is_group && reaction_event)
+            || matches!(kind, "updated_message" | "deleted_message")) {
             guild_id = read_json_str(data, "target_id");
         }
         if !guild_id.is_empty() {
@@ -294,6 +297,11 @@ impl KookConnect {
         }
         if !peer_id.is_empty() {
             event["chat_id"] = peer_id.clone().into();
+        }
+        if reaction_event {
+            if let Some(id) = body["emoji"]["id"].as_str() {
+                event["emoji_id"] = id.into();
+            }
         }
         if let Some(message_id) = raw_message_id {
             event["kook_message_id"] = message_id.into();
@@ -353,15 +361,20 @@ impl KookConnect {
         } else {
             "message"
         };
-        let operation = if params["remove"] == true {
-            "delete-reaction"
-        } else {
-            "add-reaction"
-        };
+        let remove = params["remove"] == true;
+        let user_id = read_json_str(params, "user_id");
+        if !read_json_str(params, "actor_chat_id").is_empty() || (!remove && !user_id.is_empty()) {
+            return Err("KOOK 仅在删除回应时接受目标用户 ID".into());
+        }
+        let operation = if remove { "delete-reaction" } else { "add-reaction" };
+        let mut body = json!({"msg_id":message.msg_id,"emoji":emoji});
+        if !user_id.is_empty() {
+            body["user_id"] = user_id.into();
+        }
         self.native_request(
             "POST",
             &format!("{resource}/{operation}"),
-            &json!({"msg_id":message.msg_id,"emoji":emoji}),
+            &body,
             None,
             Duration::from_secs(25),
             echo,
@@ -838,7 +851,7 @@ impl KookConnect {
             "platform":"kook",
             "kook":data
         });
-        self.send_to_onebot_client(&event_json).await;
+        self.dispatch_message(&event_json).await;
         Ok(())
     }
 
@@ -1088,7 +1101,7 @@ impl KookConnect {
             "platform":"kook",
             "kook":data
         });
-        self.send_to_onebot_client(&event_json).await;
+        self.dispatch_message(&event_json).await;
         Ok(())
     }
 
@@ -1530,6 +1543,126 @@ impl KookConnect {
             .ok_or("KOOK 上传未返回 URL")?
             .to_owned())
     }
+    fn media_card_modules(items: &[(String, String, String)]) -> Vec<Value> {
+        let mut modules = Vec::new();
+        let mut images = Vec::new();
+        let flush_images = |images: &mut Vec<Value>, modules: &mut Vec<Value>| {
+            if !images.is_empty() {
+                modules.push(json!({"type":"image-group","elements":std::mem::take(images)}));
+            }
+        };
+        for (kind, url, title) in items {
+            if kind == "photo" && title.is_empty() {
+                images.push(json!({"type":"image","src":url}));
+                if images.len() == 9 {
+                    flush_images(&mut images, &mut modules);
+                }
+                continue;
+            }
+            flush_images(&mut images, &mut modules);
+            let module = match kind.as_str() {
+                "photo" => json!({"type":"container","elements":[{"type":"image","src":url}]}),
+                "document" => json!({"type":"file","src":url,"title":title}),
+                _ => json!({"type":kind,"src":url,"title":title}),
+            };
+            if kind == "photo" && !title.is_empty() {
+                modules.push(json!({"type":"section","text":{"type":"plain-text","content":title}}));
+            }
+            modules.push(module);
+        }
+        flush_images(&mut images, &mut modules);
+        modules
+    }
+
+    async fn media_card(&self, group: &Value) -> AdapterResult<String> {
+        let items = group["media"].as_array().ok_or("KOOK 媒体组需要数组")?;
+        if !(2..=10).contains(&items.len()) {
+            return Err("KOOK 媒体组需要 2 至 10 项".into());
+        }
+        let mut sources = Vec::with_capacity(items.len());
+        for item in items {
+            let kind = item["type"].as_str().ok_or("KOOK 媒体项缺少 type")?;
+            if !matches!(kind, "photo" | "video" | "audio" | "document") {
+                return Err("KOOK 媒体组支持图片、视频、音频和文件".into());
+            }
+            let title = read_json_str(item, "caption");
+            let source = item["media"].as_str().ok_or("KOOK 媒体项缺少 media")?;
+            if let Some(part) = source.strip_prefix("attach://") {
+                let upload = &group["files"][part];
+                let filename = upload["filename"].as_str().ok_or("KOOK 媒体缺少上传文件名")?;
+                let encoded = upload["base64"].as_str().ok_or("KOOK 媒体缺少上传附件")?;
+                let title = if title.is_empty() && kind == "document" { filename.to_owned() } else { title };
+                sources.push((kind, format!("base64://{encoded}"), filename, title));
+            } else {
+                let url = reqwest::Url::parse(source)?;
+                if !matches!(url.scheme(), "http" | "https") {
+                    return Err("KOOK 媒体地址须为 HTTP(S) URL".into());
+                }
+                sources.push((kind, source.to_owned(), "", title));
+            }
+        }
+        let mut resolved = Vec::with_capacity(sources.len());
+        for (kind, source, filename, title) in sources {
+            let url = if filename.is_empty() { source } else { self.upload_asset(&source, filename).await? };
+            resolved.push((kind.to_owned(), url, title));
+        }
+        let modules = Self::media_card_modules(&resolved);
+        Self::card_content(&json!([{"type":"card","modules":modules}]))
+    }
+
+    fn media_card_items(data: &Value) -> Vec<Value> {
+        let Some(cards) = data["content"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) else {
+            return Vec::new();
+        };
+        let Some(cards) = cards.as_array() else {
+            return Vec::new();
+        };
+        let mut items = Vec::new();
+        for card in cards {
+            let Some(modules) = card["modules"].as_array() else { continue };
+            for module in modules {
+                let kind = module["type"].as_str().unwrap_or_default();
+                match kind {
+                    "image-group" | "container" => {
+                        if let Some(elements) = module["elements"].as_array() {
+                            items.extend(elements.iter().filter_map(|element| {
+                                let source = element["src"].as_str()?;
+                                (element["type"] == "image").then(|| json!({"type":"photo","media":source}))
+                            }));
+                        }
+                    }
+                    "video" | "audio" | "file" => {
+                        if let Some(source) = module["src"].as_str() {
+                            let kind = if kind == "file" { "document" } else { kind };
+                            items.push(json!({"type":kind,"media":source,"caption":module["title"]}));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        items
+    }
+
+    async fn dispatch_message(&self, event: &Value) {
+        if event["kook"]["type"] == 10 {
+            let items = Self::media_card_items(&event["kook"]);
+            if items.len() >= 2 {
+                let mut notice = event.clone();
+                notice["post_type"] = "notice".into();
+                notice["notice_type"] = "kook".into();
+                notice["sub_type"] = "media_group".into();
+                notice["kook_event"] = json!({"msg_id":event["kook"]["msg_id"]});
+                if let Some(fields) = notice.as_object_mut() {
+                    fields.remove("message_type");
+                }
+                notice["media"] = json!(items);
+                self.send_to_onebot_client(&notice).await;
+            }
+        }
+        self.send_to_onebot_client(event).await;
+    }
+
     async fn make_kook_msg(
         &self,
         message_arr: &serde_json::Value,
@@ -1699,6 +1832,11 @@ impl KookConnect {
                     to_send_data.push((10, js.to_string()));
                     last_type = 10;
                 }
+            } else if tp == "media_group" {
+                let content = it["data"]["content"].as_str().ok_or("KOOK 媒体组缺少内容")?;
+                let group = serde_json::from_str(content)?;
+                to_send_data.push((10, self.media_card(&group).await?));
+                last_type = 10;
             } else if tp == "kook_card" {
                 let content = it["data"]["content"].as_str().ok_or("KOOK 卡片缺少内容")?;
                 let cards = serde_json::from_str(content)?;
@@ -2976,6 +3114,40 @@ mod native_tests {
 #[cfg(test)]
 mod advanced_native_tests {
     use super::*;
+
+    #[tokio::test]
+    async fn media_card_splits_images_at_platform_limit_and_preserves_order() {
+        let bot = KookConnect::build("");
+        let items: Vec<_> = (0..10).map(|index| json!({
+            "type":"photo","media":format!("https://example.org/{index}.png")
+        })).collect();
+        let card = bot.media_card(&json!({"media":items})).await.unwrap();
+        let parsed: Value = serde_json::from_str(&card).unwrap();
+        assert_eq!(parsed[0]["modules"][0]["elements"].as_array().unwrap().len(), 9);
+        assert_eq!(parsed[0]["modules"][1]["elements"].as_array().unwrap().len(), 1);
+        let read = KookConnect::media_card_items(&json!({"content":card}));
+        assert_eq!(read, items);
+    }
+
+    #[test]
+    fn custom_emoji_notices_capture_server_and_reaction_ids() {
+        let bot = KookConnect::build("");
+        let event = json!({"type":255,"channel_type":"GROUP","target_id":"guild",
+            "extra":{"type":"updated_emoji","body":{"id":"guild/example","name":"example"}}
+        });
+        let notice = bot.native_event(&event).unwrap();
+        assert_eq!(notice["groups_id"], "guild");
+        assert_eq!(notice["kook"]["id"], "guild/example");
+        let event = json!({"type":255,"channel_type":"GROUP","target_id":"guild",
+            "extra":{"type":"added_reaction","body":{"msg_id":"msg","channel_id":"channel","user_id":"user",
+                "emoji":{"id":"guild/example","name":"example"}
+            }}
+        });
+        let notice = bot.native_event(&event).unwrap();
+        assert_eq!(notice["groups_id"], "guild");
+        assert_eq!(notice["emoji_id"], "guild/example");
+        assert_eq!(notice["user_id"], "user");
+    }
 
     #[tokio::test]
     async fn editable_output_and_reposted_media_follow_kook_message_types() {

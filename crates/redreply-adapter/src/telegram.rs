@@ -346,30 +346,45 @@ impl TeleTramConnect {
         if !message.business_id.is_empty() {
             return Err("Telegram 业务消息不支持此表情操作".into());
         }
+        let (method, body) = Self::reaction_request(message, params)?;
+        self.native_request(method, &body, None, Duration::from_secs(25), echo).await
+    }
+
+    fn reaction_request(message: &RawMsgId, params: &Value) -> AdapterResult<(&'static str, Value)> {
+        let mut body = json!({
+            "chat_id":message.chat_id.parse::<i64>()?,
+            "message_id":message.msg_id.parse::<i64>()?,
+        });
+        let remove = params["remove"] == true;
+        let user = read_json_str(params, "user_id");
+        let actor = read_json_str(params, "actor_chat_id");
+        if !user.is_empty() || !actor.is_empty() {
+            if !remove || (!user.is_empty() && !actor.is_empty()) {
+                return Err("删除他人回应时需指定一个用户或聊天 ID".into());
+            }
+            if !user.is_empty() {
+                body["user_id"] = user.parse::<i64>()?.into();
+            } else {
+                body["actor_chat_id"] = actor.parse::<i64>()?.into();
+            }
+            return Ok(("deleteMessageReaction", body));
+        }
         let legacy = read_json_str(params, "emoji_id");
         let emoji = params["emoji"].as_str().unwrap_or(&legacy);
-        let numeric = emoji.parse::<u32>().ok().and_then(char::from_u32);
-        let mut character = [0; 4];
-        let emoji = numeric
-            .map(|ch| ch.encode_utf8(&mut character) as &str)
-            .unwrap_or(emoji);
-        let reactions = if emoji.is_empty() {
+        body["reaction"] = if remove || emoji.is_empty() {
             json!([])
+        } else if params["custom"] == true {
+            json!([{"type":"custom_emoji","custom_emoji_id":emoji}])
         } else {
+            let decoded = emoji.parse::<u32>().ok().and_then(char::from_u32);
+            let mut text = [0; 4];
+            let emoji = decoded.map(|ch| ch.encode_utf8(&mut text) as &str).unwrap_or(emoji);
             json!([{"type":"emoji","emoji":emoji}])
         };
-        self.call_native_api(
-            &json!({
-                "method": "setMessageReaction",
-                "body": {
-                    "chat_id": message.chat_id,
-                    "message_id": message.msg_id.parse::<i64>()?,
-                    "reaction": reactions,
-                }
-            }),
-            echo,
-        )
-        .await
+        if !remove && params["is_big"] == true {
+            body["is_big"] = true.into();
+        }
+        Ok(("setMessageReaction", body))
     }
 
     fn updates_url(&self, offset: Option<i64>, timeout: u64) -> AdapterResult<reqwest::Url> {
@@ -426,6 +441,9 @@ impl TeleTramConnect {
                 .or_else(|| from["first_name"].as_str())
                 .unwrap_or_default();
             notice["sender"] = json!({"user_id": user_id.to_string(), "nickname": name});
+        }
+        if let Some(id) = data["actor_chat"]["id"].as_i64() {
+            notice["actor_chat_id"] = id.to_string().into();
         }
         let message = data.get("message").unwrap_or(data);
         Topic::from_message(message).apply(&mut notice);
@@ -602,6 +620,10 @@ impl TeleTramConnect {
                 ret_cq_msg.push_str(&format!("[CQ:image,file={}]", &cq_params_encode(&file_url)));
             }
         }
+        if let Some(file_id) = message_obj["sticker"]["file_id"].as_str() {
+            let sticker = json!({"file_id":file_id});
+            ret_cq_msg.push_str(&format!("[CQ:sticker,content={}]", cq_params_encode(&sticker.to_string())));
+        }
         if !reply_id.is_empty() {
             ret_cq_msg = format!("[CQ:reply,id={}]{}", reply_id, ret_cq_msg);
         }
@@ -739,6 +761,49 @@ impl TeleTramConnect {
         Ok(())
     }
 
+    fn album_item(message: &Value) -> Option<Value> {
+        let mut item = if let Some(photo) = message["live_photo"].as_object() {
+            let still = photo.get("photo").and_then(Value::as_array)
+                .or_else(|| message["photo"].as_array())?.last()?["file_id"].as_str()?;
+            let video = photo.get("file_id")?.as_str()?;
+            json!({"type":"live_photo","media":video,"photo":still})
+        } else if let Some(photo) = message["photo"].as_array().and_then(|photos| photos.last()) {
+            json!({"type":"photo","media":photo["file_id"].as_str()?})
+        } else {
+            ["video", "audio", "document"].into_iter().find_map(|kind| {
+                message[kind]["file_id"].as_str().map(|file| json!({"type":kind,"media":file}))
+            })?
+        };
+        for field in ["caption", "caption_entities"] {
+            if let Some(value) = message.get(field) {
+                item[field] = value.clone();
+            }
+        }
+        Some(item)
+    }
+
+    fn media_notices(&self, kind: &str, event: &Value) -> Vec<Value> {
+        if !matches!(kind, "message" | "channel_post" | "business_message") {
+            return Vec::new();
+        }
+        let message = &event[kind];
+        let mut notices = Vec::new();
+        for (field, notice_type) in [("media_group_id", "media_group"), ("sticker", "sticker")] {
+            if message.get(field).is_some_and(|value| !value.is_null()) {
+                let mut notice = self.notice_for_update(notice_type, message, &event["update_id"]);
+                notice["telegram_update_type"] = kind.into();
+                if let Some(id) = message["media_group_id"].as_str() {
+                    notice["media_group_id"] = id.into();
+                    if let Some(item) = Self::album_item(message) {
+                        notice["media"] = item;
+                    }
+                }
+                notices.push(notice);
+            }
+        }
+        notices
+    }
+
     fn forwarded_notice(&self, kind: &str, event: &Value) -> Option<Value> {
         let message = &event[kind];
         if !matches!(kind, "message" | "channel_post" | "business_message")
@@ -782,6 +847,11 @@ impl TeleTramConnect {
         }
         if let Some(notice) = update.and_then(|kind| self.forwarded_notice(kind, event)) {
             Self::dispatch_notice(notice);
+        }
+        if let Some(kind) = update {
+            for notice in self.media_notices(kind, event) {
+                Self::dispatch_notice(notice);
+            }
         }
         let is_msg = event.get("message").is_some();
         if is_msg {
@@ -993,6 +1063,11 @@ impl TeleTramConnect {
                     to_send_data.push(("text", s, String::new()));
                     last_type = "text";
                 }
+            } else if matches!(tp.as_str(), Some("sticker" | "media_group")) {
+                let content = it["data"]["content"].as_str().ok_or("Telegram 媒体消息缺少内容")?;
+                let kind = if tp == "sticker" { "sticker" } else { "media_group" };
+                to_send_data.push((kind, content.to_owned(), String::new()));
+                last_type = kind;
             } else if tp == "image" {
                 let data = it.get("data").ok_or("data not found")?;
                 let file = data
@@ -1159,6 +1234,28 @@ impl TeleTramConnect {
         Ok(payload)
     }
 
+    fn album_items(group: &Value) -> AdapterResult<&[Value]> {
+        let items = group["media"].as_array().ok_or("Telegram 媒体组需要数组")?;
+        if !(2..=10).contains(&items.len()) {
+            return Err("Telegram 媒体组需要 2 至 10 项".into());
+        }
+        let first = items[0]["type"].as_str().unwrap_or_default();
+        for item in items {
+            let kind = item["type"].as_str().unwrap_or_default();
+            let compatible = match first {
+                "audio" | "document" => kind == first,
+                _ => matches!(kind, "photo" | "video" | "live_photo"),
+            };
+            if !compatible || item["media"].as_str().is_none_or(str::is_empty) {
+                return Err("Telegram 媒体组类型不兼容或缺少 media".into());
+            }
+            if kind == "live_photo" && item["photo"].as_str().is_none_or(str::is_empty) {
+                return Err("Telegram 实况照片需要 photo 和 media".into());
+            }
+        }
+        Ok(items)
+    }
+
     async fn send_message_inner(
         &self,
         to_send_data: Vec<(&str, String, String)>,
@@ -1175,6 +1272,9 @@ impl TeleTramConnect {
         }
         let mut msg_ids = Vec::with_capacity(to_send_data.len());
         let last = to_send_data.len().saturating_sub(1);
+        if reply_markup.is_some() && to_send_data.last().is_some_and(|part| part.0 == "media_group") {
+            return Err("Telegram 媒体组不支持附加键盘".into());
+        }
         for (index, (kind, message, caption)) in to_send_data.into_iter().enumerate() {
             let mut payload = Self::message_payload(
                 chat_id,
@@ -1187,6 +1287,27 @@ impl TeleTramConnect {
                 "text" => {
                     payload["text"] = message.into();
                     "sendMessage"
+                }
+                "sticker" => {
+                    let sticker: Value = serde_json::from_str(&message)?;
+                    if let Some(upload) = sticker.get("upload") {
+                        files["sticker"] = upload.clone();
+                        if let Some(emoji) = sticker["emoji"].as_str() {
+                            payload["emoji"] = emoji.into();
+                        }
+                    } else {
+                        payload["sticker"] = sticker["file_id"].as_str().ok_or("Telegram 贴纸缺少 file_id 或上传文件")?.into();
+                    }
+                    "sendSticker"
+                }
+                "media_group" => {
+                    let group: Value = serde_json::from_str(&message)?;
+                    let media = Self::album_items(&group)?;
+                    payload["media"] = Value::Array(media.to_vec());
+                    if let Some(uploads) = group.get("files") {
+                        files = uploads.clone();
+                    }
+                    "sendMediaGroup"
                 }
                 "url_image" | "file_image" | "url_record" | "file_record" | "document" | "video" => {
                     let (method, field, filename) = match kind {
@@ -1241,14 +1362,16 @@ impl TeleTramConnect {
             if reply["retcode"] != 0 {
                 return Err(format!("Telegram {method}: {}", reply["message"]).into());
             }
-            let id = reply["data"]["message_id"]
-                .as_i64()
-                .ok_or("Telegram 未返回 message_id")?;
-            msg_ids.push(RawMsgId {
-                msg_id: id.to_string(),
-                chat_id: chat_id.to_owned(),
-                business_id: String::new(),
-            });
+            let returned = Self::response_message_ids(method, &payload, &reply["data"]);
+            if returned.is_empty() {
+                return Err("Telegram 未返回 message_id".into());
+            }
+            if returned.len() > 1 {
+                for raw in &returned {
+                    self.message_handle(raw.clone());
+                }
+            }
+            msg_ids.extend(returned);
         }
         if let [message] = msg_ids.as_slice() {
             return Ok(self.message_handle(message.clone()));
@@ -1831,6 +1954,68 @@ impl BotConnectTrait for TeleTramConnect {
 #[cfg(test)]
 mod native_tests {
     use super::*;
+
+    #[test]
+    fn custom_reactions_keep_ids_and_moderation_uses_actor_chat() {
+        let raw = RawMsgId::from_message(&json!({"message_id":9}), &json!(-100), "").unwrap();
+        let (method, body) = TeleTramConnect::reaction_request(&raw, &json!({
+            "custom":true,"emoji":"5421234567890123456","is_big":true
+        })).unwrap();
+        assert_eq!(method, "setMessageReaction");
+        assert_eq!(body["reaction"][0], json!({
+            "type":"custom_emoji","custom_emoji_id":"5421234567890123456"
+        }));
+        assert_eq!(body["is_big"], true);
+        let (_, removed) = TeleTramConnect::reaction_request(&raw, &json!({"remove":true})).unwrap();
+        assert_eq!(removed["reaction"], json!([]));
+        let (method, body) = TeleTramConnect::reaction_request(&raw, &json!({
+            "remove":true,"actor_chat_id":"-1"
+        })).unwrap();
+        assert_eq!(method, "deleteMessageReaction");
+        assert_eq!(body["actor_chat_id"], -1);
+
+        let bot = TeleTramConnect::build("");
+        let event = json!({"update_id":12,"message_reaction":{
+            "chat":{"id":-100,"type":"supergroup"},"message_id":9,"actor_chat":{"id":-1},
+            "old_reaction":[],"new_reaction":[{"type":"custom_emoji","custom_emoji_id":"5421234567890123456"}]
+        }});
+        let notice = bot.native_update("message_reaction", &event);
+        assert!(notice.get("user_id").is_none());
+        assert_eq!(notice["actor_chat_id"], "-1");
+        assert_eq!(bot.get_msg_id(notice["message_id"].as_str().unwrap())[0], raw);
+    }
+
+    #[tokio::test]
+    async fn album_and_sticker_events_reuse_file_ids_and_message_handles() {
+        let bot = TeleTramConnect::build("");
+        let media = json!({"media":[
+            {"type":"photo","media":"photo-id"},
+            {"type":"live_photo","media":"video-id","photo":"still-id"}
+        ]});
+        assert!(TeleTramConnect::album_items(&media).is_ok());
+        let mixed = json!({"media":[{"type":"photo","media":"p"},{"type":"audio","media":"a"}]});
+        assert!(TeleTramConnect::album_items(&mixed).is_err());
+        let event = json!({"update_id":12,"message":{
+            "chat":{"id":-100,"type":"supergroup"},"message_id":9,"media_group_id":"99",
+            "live_photo":{"file_id":"video-id"},"photo":[{"file_id":"still-id"}]
+        }});
+        let album = bot.media_notices("message", &event);
+        assert_eq!(album[0]["sub_type"], "media_group");
+        assert_eq!(album[0]["media_group_id"], "99");
+        assert_eq!(album[0]["media"], media["media"][1]);
+
+        let event = json!({"message":{
+            "chat":{"id":-100,"type":"supergroup"},"message_id":10,
+            "sticker":{"file_id":"sticker-id","is_animated":true}
+        }});
+        let notice = bot.media_notices("message", &event);
+        assert_eq!(notice[0]["telegram"]["sticker"]["file_id"], "sticker-id");
+        let cq = bot.to_cq_msg(&event).await.unwrap();
+        let segments = str_msg_to_arr(&json!(cq)).unwrap();
+        let (parts, _) = bot.make_telegram_msg(&segments, "-100", true).await.unwrap();
+        assert_eq!(parts[0].0, "sticker");
+        assert_eq!(serde_json::from_str::<Value>(&parts[0].1).unwrap()["file_id"], "sticker-id");
+    }
 
     #[test]
     fn forwarding_sorts_unique_ids_and_respects_chat_boundaries() {

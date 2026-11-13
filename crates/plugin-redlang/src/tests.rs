@@ -312,3 +312,23 @@ fn message_management_accepts_redlang_objects_and_checks_invalid_arguments() {
     rl.set_exmap("机器人平台", "kook");
     assert!(rl.parse("【编辑消息@消息ID@文本@卡片】").is_err());
 }
+
+
+#[test]
+fn media_and_sticker_commands_preserve_binary_attachments_and_text_ids() {
+    use serde_json::{json, Value};
+
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    rl.set_exmap("机器人平台", "telegram");
+    let output = rl.parse("【媒体组@【数组@【对象@type@photo@media@0001】@【对象@type@photo@media@【对象@filename@测试.png@内容@【BASE64解码@YWJj】】】】】").unwrap();
+    let segments = redlang::mytool::str_msg_to_arr(&json!(output.expect_text_value().unwrap())).unwrap();
+    let group: Value = serde_json::from_str(segments[0]["data"]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(group["media"][0]["media"], "0001");
+    assert_eq!(group["media"][1]["media"], "attach://media_1_media");
+    assert_eq!(group["files"]["media_1_media"], json!({"filename":"测试.png","base64":"YWJj"}));
+    assert!(rl.parse("【媒体组@【数组】】").is_err());
+    assert!(rl.parse("【贴纸@【对象@filename@sticker.jpg@内容@【BASE64解码@YWJj】】】").is_err());
+    let error = rl.parse("【表情回应@123@@真@【对象@类型@自定义@放大@真】】").unwrap_err();
+    assert!(error.to_string().contains("指定机器人ID"));
+}
