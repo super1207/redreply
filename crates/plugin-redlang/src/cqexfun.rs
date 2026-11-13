@@ -800,26 +800,31 @@ pub fn init_cq_ex_fun_map() {
             return Err(RedLang::make_err("【贴纸】需要 Telegram 机器人来源"));
         }
         let source = rl.get_param(params, 0)?;
-        let mut data = match source.as_ref() {
-            RedValue::Object(_) => serde_json::json!({"upload":native_args::upload_file(&source)?}),
-            _ => {
-                let file = source.expect_text_value()?;
-                if file.is_empty() {
-                    return Err(RedLang::make_err("【贴纸】需要 file_id、URL 或文件对象"));
-                }
-                serde_json::json!({"file_id":file})
-            }
-        };
-        let emoji = rl.get_param_text(params, 1)?;
-        if let Some(upload) = data.get("upload") {
-            let filename = upload["filename"].as_str().unwrap_or_default();
-            if ![".webp", ".tgs", ".webm"].iter().any(|ext| filename.to_ascii_lowercase().ends_with(ext)) {
-                return Err(RedLang::make_err("Telegram 贴纸上传使用 .webp、.tgs 或 .webm"));
-            }
+        let filename = rl.get_param_text(params, 1)?;
+        let emoji = rl.get_param_text(params, 2)?;
+        let data = if let RedValue::Bin(bytes) = source.as_ref() {
+            let lower = filename.to_ascii_lowercase();
+            let mime = if lower.ends_with(".webp") {
+                "image/webp"
+            } else if lower.ends_with(".tgs") {
+                "application/x-tgsticker"
+            } else if lower.ends_with(".webm") {
+                "video/webm"
+            } else {
+                return Err(RedLang::make_err("Telegram 贴纸上传文件名需以 .webp、.tgs 或 .webm 结尾"));
+            };
+            let mut data = serde_json::json!({"upload":native_args::file_part(&filename, bytes, Some(mime))});
             if !emoji.is_empty() {
                 data["emoji"] = emoji.into();
             }
-        }
+            data
+        } else {
+            let file = source.expect_text_value()?;
+            if file.is_empty() || !filename.is_empty() || !emoji.is_empty() {
+                return Err(RedLang::make_err("文件 ID 或链接只填第一项，文件名和表情用于上传字节集"));
+            }
+            serde_json::json!({"file_id":file})
+        };
         Ok(Some(rv_text(format!("[CQ:sticker,content={}]", cq_params_encode(&data.to_string())))))
     });
     add_fun(vec!["文件"], |self_t, params| {
@@ -1048,20 +1053,19 @@ pub fn init_cq_ex_fun_map() {
         let platform = get_platform(self_t);
         if matches!(platform.as_str(), "kook" | "telegram") {
             let remove = self_t.get_param_text(params, 2)? == "假";
-            let options = self_t.get_param(params, 3)?;
-            let options = match options.as_ref() {
-                RedValue::Text(text) if text.is_empty() => serde_json::json!({}),
-                _ => native_args::object(&options)?,
-            };
+            let kind = self_t.get_param_text(params, 3)?;
+            if !matches!(kind.as_str(), "" | "普通" | "自定义") {
+                return Err(RedLang::make_err("回应类型需填普通或自定义"));
+            }
             let request = serde_json::json!({
                 "message_id": message_id,
                 "group_id": self_t.get_exmap("群ID").as_str(),
                 "emoji": emoji_id,
                 "remove": remove,
-                "custom": options["类型"] == "自定义",
-                "is_big": options["放大"] == "真",
-                "user_id": options["用户ID"],
-                "actor_chat_id": options["聊天ID"],
+                "custom": kind == "自定义",
+                "is_big": self_t.get_param_text(params, 4)? == "真",
+                "user_id": self_t.get_param_text(params, 5)?,
+                "actor_chat_id": self_t.get_param_text(params, 6)?,
             });
             let result = call_platform_api(self_t, &platform, "set_msg_emoji_like", request)?;
             if let Some(result) = result {

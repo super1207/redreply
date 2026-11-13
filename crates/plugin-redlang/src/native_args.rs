@@ -124,12 +124,16 @@ pub(super) fn files(
     }
 }
 
-
 pub(super) fn upload_file(input: &RedValue) -> Result<Value, Box<dyn Error>> {
     let RedValue::Object(file) = input else {
-        return Err(RedLang::make_err("上传文件需使用含 filename 和 内容 的【对象】"));
+        return Err(RedLang::make_err(
+            "上传文件需使用含 filename 和 内容 的【对象】",
+        ));
     };
-    let name = file.get("filename").ok_or("上传文件缺少 filename")?.expect_text_value()?;
+    let name = file
+        .get("filename")
+        .ok_or("上传文件缺少 filename")?
+        .expect_text_value()?;
     if name.is_empty() {
         return Err(RedLang::make_err("上传文件的 filename 不能为空"));
     }
@@ -137,11 +141,44 @@ pub(super) fn upload_file(input: &RedValue) -> Result<Value, Box<dyn Error>> {
         Some(RedValue::Bin(bytes)) => bytes,
         _ => return Err(RedLang::make_err("上传文件的 内容 需要字节集")),
     };
-    let mut upload = serde_json::json!({"filename":name,"base64":STANDARD.encode(data.as_slice())});
-    if let Some(mime) = file.get("mime_type") {
-        upload["mime_type"] = mime.expect_text_value()?.into();
+    Ok(file_part(
+        &name,
+        data,
+        file.get("mime_type")
+            .map(|value| value.expect_text_value())
+            .transpose()?
+            .as_deref(),
+    ))
+}
+
+pub(super) fn file_part(name: &str, data: &[u8], mime: Option<&str>) -> Value {
+    let mut upload = serde_json::json!({"filename":name,"base64":STANDARD.encode(data)});
+    if let Some(mime) = mime {
+        upload["mime_type"] = mime.into();
     }
-    Ok(upload)
+    upload
+}
+
+fn media_source(
+    source: &RedValue,
+    filename: &str,
+    key: &str,
+    files: &mut Map<String, Value>,
+) -> Result<Value, Box<dyn Error>> {
+    if let RedValue::Bin(bytes) = source {
+        if filename.is_empty() {
+            return Err(RedLang::make_err("媒体来源是字节集时需填写文件名"));
+        }
+        files.insert(key.to_owned(), file_part(filename, bytes, None));
+        return Ok(format!("attach://{key}").into());
+    }
+    let text = source.expect_text_value()?;
+    if text.is_empty() || !filename.is_empty() {
+        return Err(RedLang::make_err(
+            "请填写媒体链接或文件 ID，文件名仅用于字节集",
+        ));
+    }
+    Ok(text.into())
 }
 
 pub(super) fn media_group(input: &RedValue) -> Result<Value, Box<dyn Error>> {
@@ -154,23 +191,47 @@ pub(super) fn media_group(input: &RedValue) -> Result<Value, Box<dyn Error>> {
     let mut media = Vec::with_capacity(items.len());
     let mut files = Map::new();
     for (index, item) in items.iter().enumerate() {
-        let RedValue::Object(fields) = item.as_ref() else {
-            return Err(RedLang::make_err("每个媒体项需要【对象】"));
+        let RedValue::Array(fields) = item.as_ref() else {
+            return Err(RedLang::make_err(
+                "每项媒体用【数组@类型@来源@说明@文件名】填写",
+            ));
         };
-        let mut row = Map::new();
-        for (key, entry) in fields {
-            let entry = if matches!(key.as_str(), "media" | "photo" | "thumbnail" | "cover")
-                && matches!(entry.as_ref(), RedValue::Object(_))
-            {
-                let part = format!("media_{index}_{key}");
-                files.insert(part.clone(), upload_file(entry)?);
-                format!("attach://{part}").into()
-            } else {
-                value(entry)?
-            };
-            row.insert(key.clone(), entry);
+        let [kind, source, ..] = fields.as_slice() else {
+            return Err(RedLang::make_err("媒体项需要类型和来源"));
+        };
+        let text = |index: usize| -> Result<String, Box<dyn Error>> {
+            fields
+                .get(index)
+                .map(|value| value.expect_text_value())
+                .transpose()
+                .map(Option::unwrap_or_default)
+        };
+        let kind = match kind.expect_text_value()?.as_str() {
+            "图片" => "photo",
+            "视频" => "video",
+            "音频" => "audio",
+            "文件" => "document",
+            "实况照片" => "live_photo",
+            _ => {
+                return Err(RedLang::make_err(
+                    "媒体类型可填图片、视频、音频、文件或实况照片",
+                ))
+            }
+        };
+        if fields.len() > if kind == "live_photo" { 6 } else { 4 } {
+            return Err(RedLang::make_err("媒体项参数过多"));
         }
-        media.push(Value::Object(row));
+        let source = media_source(source, &text(3)?, &format!("media_{index}"), &mut files)?;
+        let mut row = serde_json::json!({"type":kind,"media":source});
+        let caption = text(2)?;
+        if !caption.is_empty() {
+            row["caption"] = caption.into();
+        }
+        if kind == "live_photo" {
+            let photo = fields.get(4).ok_or("实况照片需要静态图来源")?;
+            row["photo"] = media_source(photo, &text(5)?, &format!("photo_{index}"), &mut files)?;
+        }
+        media.push(row);
     }
     Ok(serde_json::json!({"media":media,"files":files}))
 }

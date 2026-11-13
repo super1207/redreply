@@ -2731,15 +2731,15 @@ onebot事件json对应的RedLang对象。
 
 ### 媒体组
 
-【媒体组@<font color="red">媒体对象数组</font>】
+【媒体组@<font color="red">媒体数组</font>】
 
-为 KOOK 或 Telegram 构造 2 至 10 项媒体，用【输出流】或直接输出。每项用【对象】填写 `type` 与 `media`，说明可用 `caption`。上传对象填写 `filename` 和字节集 `内容`。Telegram 使用相册，KOOK 使用媒体卡片。
+为 KOOK 或 Telegram 构造 2 至 10 项媒体，用【输出流】或直接输出。每项用【数组@类型@来源@说明@文件名】。类型填图片、视频、音频或文件。来源是链接、文件 ID 或字节集。说明可省略，字节集需填写文件名。Telegram 使用相册，KOOK 使用媒体卡片。
 
 ### 贴纸
 
-【贴纸@<font color="red">文件 ID、URL 或上传对象</font>@<font color="red">上传贴纸关联表情</font>】
+【贴纸@<font color="red">来源</font>@<font color="red">文件名</font>@<font color="red">关联表情</font>】
 
-为 Telegram 构造贴纸消息。可传 `file_id`、静态 WebP 的 HTTP(S) URL，或含 `filename` 和字节集 `内容` 的上传对象。支持上传 WebP、TGS、WebM。
+为 Telegram 构造贴纸消息。来源可填文件 ID、静态 WebP 的链接或【读文件】返回的字节集。上传字节集时填文件名，后缀为 WebP、TGS 或 WebM，关联表情可省略。
 
 ### 表情回应
 
@@ -2752,7 +2752,7 @@ onebot事件json对应的RedLang对象。
 
 KOOK 和 Telegram 支持使用第三个参数 `假` 移除回应。KOOK 支持 Unicode 表情和平台表情 ID。Telegram 可用 `【表情回应@@@假】` 清除当前消息上的机器人回应。
 
-可选第四项为【对象】。Telegram 添加自定义回应时填写 `类型=自定义`，放大动画可填写 `放大=真`。删除他人回应时第三项填 `假`，第四项可填 `用户ID`，Telegram 也可使用 `聊天ID`。需要对应的平台管理权限。参见[媒体与表情示例](/adaptar/native-bot-api.md)。
+第四项可填 `自定义`，第五项填 `真` 启用 Telegram 放大动画。删除他人的回应时，第三项填 `假`，第六项填用户 ID，Telegram 匿名回应可用第七项的聊天 ID。需要对应的平台管理权限。参见[媒体与表情示例](/adaptar/native-bot-api.md)。
 
 特别说明，在qq平台，支持使用表情ID，如`【表情回应@4】`，支持的表情ID可以在[这里](https://bot.q.qq.com/wiki/develop/api-v2/openapi/emoji/model.html#emoji%E5%88%97%E8%A1%A8)查询。
 
