@@ -102,89 +102,24 @@
 
 ### TTS样本
 
-【TTS样本】
+【TTS样本@<font color="red">音色</font>】
 
-无参数。返回 28 个静态参考样本对象组成的数组。读取列表无需访问网络，播放样本时由浏览器或适配器访问对应的音频地址。
-
-| 返回字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | 文本 | 参考人声的完整 ID。 |
-| `name` | 文本 | 样本中文名称。 |
-| `category` | 文本 | `female` 普通话女声、`male` 普通话男声、`dialect` 方言、`hk` 香港粤语或 `tw` 台湾普通话。 |
-| `gender` | 文本 | `Female` 或 `Male`。 |
-| `sample_url` | 文本 | 参考 MP3 的地址。 |
-| `source_url` | 文本 | 样本来源页面。 |
-
-#### 例子
-
-使用 `【取元素】` 读取第一条样本并发为语音。数组下标从 `0` 开始。
+调用原生 TTS 插件朗读「这里是阿飞为你提供的语音测试。」，返回 MP3 字节集。如果在线服务未返回中文音频，插件用同一音色尝试该语言的译文。音色可以使用完整 ID 或中文别名，留空时使用云扬。此命令使用 `【设置代理】` 的设置，超时和重试采用 `【TTS】` 的默认值。
 
 ```text
-【定义变量@样本@【取元素@【TTS样本】@0】】
-【语音@【取元素@【变量@样本】@sample_url】】
+【语音@【TTS样本@zh-CN-XiaoxiaoNeural】】
 ```
 
 ## 音频试听
 
-点击播放器试听。GitHub 文件预览可使用每行的「打开 MP3」。这里的音频来自[原始参考页](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/index.html)。在线合成时请从 `【TTS人声】` 获取当前可用的音色 ID，再用 `【TTS】` 生成自己的文本。
+[打开全部在线音色试听](voices/README.md)可按语言或地区浏览。每条 MP3 都由 `【TTS样本】` 使用的 Rust TTS 服务合成，目录会标出实际朗读的是「这里是阿飞为你提供的语音测试。」还是译文。
 
-### 普通话女声
+用 `【TTS人声】` 查询当前在线目录。用 `【TTS】` 传入自己的文本，可试听该音色支持的其他语言。
 
-| 音色 | 人声 ID | 试听 |
-| --- | --- | --- |
-| 晓晓 | `zh-CN-XiaoxiaoNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaoxiaoNeural.mp3" aria-label="晓晓试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaoxiaoNeural.mp3) |
-| 晓依 | `zh-CN-XiaoyiNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaoyiNeural.mp3" aria-label="晓依试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaoyiNeural.mp3) |
-| 晓涵 | `zh-CN-XiaohanNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaohanNeural.mp3" aria-label="晓涵试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaohanNeural.mp3) |
-| 晓墨 | `zh-CN-XiaomoNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaomoNeural.mp3" aria-label="晓墨试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaomoNeural.mp3) |
-| 晓睿 | `zh-CN-XiaoruiNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaoruiNeural.mp3" aria-label="晓睿试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaoruiNeural.mp3) |
-| 晓双 | `zh-CN-XiaoshuangNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaoshuangNeural.mp3" aria-label="晓双试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaoshuangNeural.mp3) |
-| 晓梦 | `zh-CN-XiaomengNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaomengNeural.mp3" aria-label="晓梦试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/XiaomengNeural.mp3) |
+维护者可从仓库根目录运行以下命令，将当前在线目录和对应 MP3 导出到新的目录。
 
-### 普通话男声
-
-| 音色 | 人声 ID | 试听 |
-| --- | --- | --- |
-| 云希 | `zh-CN-YunxiNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunxiNeural.mp3" aria-label="云希试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunxiNeural.mp3) |
-| 云扬 | `zh-CN-YunyangNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunyangNeural.mp3" aria-label="云扬试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunyangNeural.mp3) |
-| 云健 | `zh-CN-YunjianNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunjianNeural.mp3" aria-label="云健试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunjianNeural.mp3) |
-| 云夏 | `zh-CN-YunxiaNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunxiaNeural.mp3" aria-label="云夏试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunxiaNeural.mp3) |
-| 云泽 | `zh-CN-YunzeNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunzeNeural.mp3" aria-label="云泽试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunzeNeural.mp3) |
-| 云枫 | `zh-CN-YunfengNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunfengNeural.mp3" aria-label="云枫试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/YunfengNeural.mp3) |
-
-### 方言
-
-| 音色 | 人声 ID | 试听 |
-| --- | --- | --- |
-| 云彪（东北） | `zh-CN-liaoning-YunbiaoNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/liaoning-Yunbiao.mp3" aria-label="云彪（东北）试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/liaoning-Yunbiao.mp3) |
-| 晓北（东北） | `zh-CN-liaoning-XiaobeiNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/liaoning-Xiaobei.mp3" aria-label="晓北（东北）试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/liaoning-Xiaobei.mp3) |
-| 云登（河南） | `zh-CN-henan-YundengNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/henan-Yundeng.mp3" aria-label="云登（河南）试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/henan-Yundeng.mp3) |
-| 云翔（山东） | `zh-CN-shandong-YunxiangNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/shandong-Yunxiang.mp3" aria-label="云翔（山东）试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/shandong-Yunxiang.mp3) |
-| 云熙（四川） | `zh-CN-sichuan-YunxiNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/sichuan-Yunxi.mp3" aria-label="云熙（四川）试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/sichuan-Yunxi.mp3) |
-| 云奇（广西） | `zh-CN-guangxi-YunqiNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/guangxi-Yunqi.mp3" aria-label="云奇（广西）试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/guangxi-Yunqi.mp3) |
-| 晓妮（陕西） | `zh-CN-shaanxi-XiaoniNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/shaanxi-Xiaoni.mp3" aria-label="晓妮（陕西）试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/shaanxi-Xiaoni.mp3) |
-| 云哲（吴语） | `wuu-CN-YunzheNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/wuu-Yunzhe.mp3" aria-label="云哲（吴语）试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/wuu-Yunzhe.mp3) |
-| 晓彤（吴语） | `wuu-CN-XiaotongNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/wuu-Xiaotong.mp3" aria-label="晓彤（吴语）试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/wuu-Xiaotong.mp3) |
-
-### 香港粤语
-
-| 音色 | 人声 ID | 试听 |
-| --- | --- | --- |
-| 晓佳 | `zh-HK-HiuGaaiNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/HK-HiuGaai.mp3" aria-label="晓佳试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/HK-HiuGaai.mp3) |
-| 晓蔓 | `zh-HK-HiuMaanNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/HK-HiuMaan.mp3" aria-label="晓蔓试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/HK-HiuMaan.mp3) |
-| 云龙 | `zh-HK-WanLungNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/HK-WanLung.mp3" aria-label="云龙试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/HK-WanLung.mp3) |
-
-### 台湾普通话
-
-| 音色 | 人声 ID | 试听 |
-| --- | --- | --- |
-| 晓晨 | `zh-TW-HsiaoChenNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/TW-HsiaoChen.mp3" aria-label="晓晨试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/TW-HsiaoChen.mp3) |
-| 晓雨 | `zh-TW-HsiaoYuNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/TW-HsiaoYu.mp3" aria-label="晓雨试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/TW-HsiaoYu.mp3) |
-| 云哲 | `zh-TW-YunJheNeural` | <audio controls preload="none" src="https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/TW-YunJhe.mp3" aria-label="云哲试听"></audio> [打开 MP3](https://jangviktor-web.github.io/novel2voice/scripts/voice_samples/TW-YunJhe.mp3) |
-
-用晓晓实时合成一句试听，可检查当前环境中的合成和语音回复。
-
-```text
-【语音@【TTS@你好，这是一段实时生成的人声试听。@zh-CN-XiaoxiaoNeural】】
+```sh
+cargo run --locked -p plugin-tts --example export_voice_samples -- tts-export
 ```
 
 ## 群聊和私聊例子
@@ -219,6 +154,6 @@
 | 人声查询或合成超时 | 检查运行红色问答的机器能否访问 Edge TTS。网络较慢时可在允许范围内调整总超时。 |
 | 提示请求过多 | 合成和在线人声查询共用 4 个并发请求名额。可等待后重试或降低触发频率。 |
 | 能生成 MP3，聊天中没有语音 | 检查脚本是否用 `【语音】` 输出音频、适配器是否支持语音消息。部分 OneBot 协议端需要 FFmpeg。 |
-| 文档播放器或样本 URL 无法播放 | 用「打开 MP3」检查样本源是否可达。脚本播放链接时，还需检查适配器能否访问该地址。 |
+| 文档播放器无法播放 | 用「MP3」直接打开文件，或在已连接的聊天中运行 `【语音@【TTS样本@音色】】`。 |
 
 参见[语法详细参考](/detailref/)和[框架与插件架构](/plugin-architecture.md)。

@@ -18,6 +18,19 @@
       name: '<span style=\'color: red;\'>RedReply</span>',
       repo: 'https://github.com/super1207/redreply/',
       subMaxLevel: 3,
+      plugins: [
+        function (hook, vm) {
+          hook.beforeEach(function (markdown) {
+            if (/^\/tts\/(?:README)?$/.test(vm.route.path)) {
+              return markdown.replace('(voices/README.md)', '(/tts/voices/)');
+            }
+            if (/^\/tts\/voices\/(?:README)?$/.test(vm.route.path)) {
+              return markdown.replace(/\]\(samples\//g, '](tts/voices/samples/');
+            }
+            return markdown;
+          });
+        }
+      ],
       search: {
         placeholder: '尝试搜索',
         noData: '找不到结果',
