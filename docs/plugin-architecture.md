@@ -77,6 +77,10 @@ pub trait Plugin: Send + Sync + 'static {
 - 插件缺失时按语义自动跳过：服务未注册则调用方明确报错或跳过，事件无人订阅则自然丢弃。
 - 启用状态持久化在 `config.json` 的 `disabled_plugins` 数组；管理台可随时启停。
 
+TTS 服务由 `plugin-tts` 实现，通过共享的 `TtsService` 端口提供合成参数、
+在线人声查询和参考样本。`plugin-redlang` 只负责参数解析及结果转换，
+音频仍交给原有 `【语音】` 命令和适配器处理。调用方式见[文字转语音](tts/README.md)。
+
 ## 事件流
 
 ```
