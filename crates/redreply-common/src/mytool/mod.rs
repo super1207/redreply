@@ -203,19 +203,17 @@ pub fn str_msg_to_arr(
 
 pub fn read_json_str(root: &serde_json::Value, key: &str) -> String {
     if let Some(js_v) = root.get(key) {
-        if js_v.is_u64() {
-            return js_v.as_u64().unwrap().to_string();
+        if let Some(value) = js_v.as_u64() {
+            return value.to_string();
         }
-        if js_v.is_i64() {
-            js_v.as_i64().unwrap().to_string()
-        } else if js_v.is_string() {
-            js_v.as_str().unwrap().to_string()
-        } else {
-            "".to_string()
+        if let Some(value) = js_v.as_i64() {
+            return value.to_string();
         }
-    } else {
-        "".to_string()
+        if let Some(value) = js_v.as_str() {
+            return value.to_string();
+        }
     }
+    String::new()
 }
 
 // 将字符串转化为简体
@@ -247,8 +245,8 @@ pub fn cq_params_encode(data: &str) -> String {
 }
 
 fn json_as_str(json: &Value) -> Result<String, Box<dyn std::error::Error>> {
-    if json.is_number() {
-        return Ok(json.as_number().unwrap().to_string());
+    if let Some(number) = json.as_number() {
+        return Ok(number.to_string());
     }
     let ret = json
         .as_str()
@@ -259,8 +257,8 @@ fn json_as_str(json: &Value) -> Result<String, Box<dyn std::error::Error>> {
 pub fn json_to_cq_str(js: &serde_json::Value) -> Result<String, Box<dyn std::error::Error>> {
     let msg_json = js.get("message").ok_or("json中缺少message字段")?;
     let mut ret: String = String::new();
-    if msg_json.is_string() {
-        return Ok(msg_json.as_str().unwrap().to_owned());
+    if let Some(text) = msg_json.as_str() {
+        return Ok(text.to_owned());
     }
     for i in 0..msg_json.as_array().ok_or("message不是array")?.len() {
         let tp = msg_json[i]
@@ -323,14 +321,21 @@ pub async fn github_proxy() -> Option<String> {
     for url in urls_to_test {
         let tx = tx.clone();
         tokio::spawn(async move {
-            let client = reqwest::Client::builder()
+            let Some(client) = reqwest::Client::builder()
                 .danger_accept_invalid_certs(true)
                 .no_proxy()
                 .build()
-                .unwrap();
-            let uri = reqwest::Url::from_str(&(url.to_owned() +
-				"https://raw.githubusercontent.com/super1207/redreply/master/res/version.txt")).unwrap();
-            let req = client.get(uri).build().unwrap();
+                .ok()
+            else {
+                return;
+            };
+            let Ok(uri) = reqwest::Url::from_str(&(url.to_owned() +
+				"https://raw.githubusercontent.com/super1207/redreply/master/res/version.txt")) else {
+                return;
+            };
+            let Ok(req) = client.get(uri).build() else {
+                return;
+            };
             if let Ok(ret) = client.execute(req).await {
                 if ret.status() == reqwest::StatusCode::OK {
                     let _err = tx.send(url).await;

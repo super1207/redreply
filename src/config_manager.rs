@@ -235,7 +235,7 @@ pub fn init_config() {
 /// Warm and validate the central configuration cache during startup.
 pub fn init_global_var() {
     if let Err(error) = read_config().and_then(|config| parse_startup_config(&config).map(|_| ())) {
-        crate::cq_add_log_w(&format!("配置文件校验失败:{error}")).unwrap();
+        let _ = crate::cq_add_log_w(&format!("配置文件校验失败:{error}"));
     }
 }
 

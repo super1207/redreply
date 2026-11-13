@@ -56,7 +56,7 @@ impl Bot for MockBot {
         request: Value,
     ) -> Result<Value> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        *self.last_route.lock().unwrap() = (platform.to_string(), self_id.to_string());
+        *self.last_route.lock().unwrap_or_else(|e| e.into_inner()) = (platform.to_string(), self_id.to_string());
         Ok(json!({"retcode": 0, "data": request}))
     }
 }
@@ -170,7 +170,7 @@ async fn adapter_connects_calls_api_and_disconnects() {
     assert!(result.is_some());
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     assert_eq!(
-        *last_route.lock().unwrap(),
+        *last_route.lock().unwrap_or_else(|e| e.into_inner()),
         ("mock_sub".to_string(), "10002".to_string())
     );
 

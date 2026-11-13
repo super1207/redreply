@@ -350,7 +350,9 @@ pub fn do_script(
         }
         return Err(RedLang::make_err(&err_str));
     }
-    let out_str_t = out_str_t_rst.unwrap();
+    let Ok(out_str_t) = out_str_t_rst else {
+        return Err(RedLang::make_err("脚本执行结果缺失"));
+    };
 
     if !can_ret_raw {
         // 处理分页指令

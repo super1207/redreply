@@ -50,24 +50,23 @@ fn socks4_proxy(
 ) -> Result<ProxyStream, Socks4ProxyError> {
     use std::net::ToSocketAddrs;
 
-    if proxy.scheme_str().is_none() {
-        return Err(Socks4ProxyError::NoScheme(proxy));
-    }
-    if proxy.host().is_none() {
-        return Err(Socks4ProxyError::NoProxyServerHostName(proxy));
-    }
-    let proxy_host = proxy.host().unwrap();
+    let proxy_host = proxy
+        .host()
+        .ok_or_else(|| Socks4ProxyError::NoProxyServerHostName(proxy.clone()))?;
     if proxy_host.is_empty() {
         return Err(Socks4ProxyError::EmptyProxyServerHostName(proxy));
     }
-    if proxy.port_u16().is_none() {
-        return Err(Socks4ProxyError::NoProxyServerPort(proxy));
-    }
-    let proxy_port = proxy.port_u16().unwrap();
+    let proxy_port = proxy
+        .port_u16()
+        .ok_or_else(|| Socks4ProxyError::NoProxyServerPort(proxy.clone()))?;
+    let scheme = proxy
+        .scheme_str()
+        .ok_or_else(|| Socks4ProxyError::NoScheme(proxy.clone()))?
+        .to_lowercase();
 
     let mut stream = std::net::TcpStream::connect((proxy_host, proxy_port))?;
     stream.set_nodelay(true)?;
-    let request = match proxy.scheme_str().unwrap().to_lowercase().as_str() {
+    let request = match scheme.as_str() {
         "socks4" => {
             let mut socket_addrs = (target_host, 443).to_socket_addrs()?;
             let ipv4 = loop {
@@ -110,20 +109,19 @@ fn socks5_proxy(
 ) -> Result<ProxyStream, Socks5ProxyError> {
     use std::net::ToSocketAddrs;
 
-    if proxy.scheme_str().is_none() {
-        return Err(Socks5ProxyError::NoScheme(proxy));
-    }
-    if proxy.host().is_none() {
-        return Err(Socks5ProxyError::NoProxyServerHostName(proxy));
-    }
-    let proxy_host = proxy.host().unwrap();
+    let proxy_host = proxy
+        .host()
+        .ok_or_else(|| Socks5ProxyError::NoProxyServerHostName(proxy.clone()))?;
     if proxy_host.is_empty() {
         return Err(Socks5ProxyError::EmptyProxyServerHostName(proxy));
     }
-    if proxy.port_u16().is_none() {
-        return Err(Socks5ProxyError::NoProxyServerPort(proxy));
-    }
-    let proxy_port = proxy.port_u16().unwrap();
+    let proxy_port = proxy
+        .port_u16()
+        .ok_or_else(|| Socks5ProxyError::NoProxyServerPort(proxy.clone()))?;
+    let scheme = proxy
+        .scheme_str()
+        .ok_or_else(|| Socks5ProxyError::NoScheme(proxy.clone()))?
+        .to_lowercase();
 
     let mut stream = std::net::TcpStream::connect((proxy_host, proxy_port))?;
     stream.set_nodelay(true)?;
@@ -167,7 +165,7 @@ fn socks5_proxy(
     }
 
     // Client connection
-    let request = match proxy.scheme_str().unwrap().to_lowercase().as_str() {
+    let request = match scheme.as_str() {
         "socks5" => {
             let socket_addr = (target_host, 443).to_socket_addrs()?.next();
             if let Some(ip_addr) = socket_addr {
@@ -209,8 +207,11 @@ fn socks5_proxy(
                     }
                 };
 
-                let socket_addr = stream.peer_addr().unwrap();
-                if socket_addr.ip() == ip && socket_addr.port() == port {
+                let matches_peer = stream
+                    .peer_addr()
+                    .map(|socket_addr| socket_addr.ip() == ip && socket_addr.port() == port)
+                    .unwrap_or(false);
+                if matches_peer {
                     Ok(ProxyStream::TcpStream(stream))
                 } else {
                     let stream = std::net::TcpStream::connect((ip, port))?;
@@ -238,15 +239,13 @@ fn http_proxy(
     username: Option<&str>,
     password: Option<&str>,
 ) -> std::result::Result<ProxyStream, HttpProxyError> {
-    if let Some(proxy_host) = proxy.host() {
-        if proxy_host.is_empty() {
-            return Err(HttpProxyError::EmptyProxyServerHostName(proxy));
-        }
-    } else {
-        return Err(HttpProxyError::NoProxyServerHostName(proxy));
+    let proxy_host = proxy
+        .host()
+        .ok_or_else(|| HttpProxyError::NoProxyServerHostName(proxy.clone()))?;
+    if proxy_host.is_empty() {
+        return Err(HttpProxyError::EmptyProxyServerHostName(proxy));
     }
-
-    let proxy_host = proxy.host().unwrap().to_owned();
+    let proxy_host = proxy_host.to_owned();
 
     let proxy_port = proxy.port_u16().unwrap_or(match proxy.scheme_str() {
         None => 80,

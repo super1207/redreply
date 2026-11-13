@@ -77,7 +77,7 @@ impl KookConnect {
         &self,
         uri: &str,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        cq_add_log(&format!("发送KOOK_GET:{uri}")).unwrap();
+        let _ = cq_add_log(&format!("发送KOOK_GET:{uri}"));
         let uri = reqwest::Url::from_str(&format!("https://www.kookapp.cn/api/v3{uri}"))?;
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
@@ -93,7 +93,7 @@ impl KookConnect {
         let ret = client.execute(req).await?;
         let retbin = ret.bytes().await?.to_vec();
         let ret_str = String::from_utf8(retbin)?;
-        cq_add_log(&format!("KOOK_GET响应:{ret_str}")).unwrap();
+        let _ = cq_add_log(&format!("KOOK_GET响应:{ret_str}"));
         let js: serde_json::Value = serde_json::from_str(&ret_str)?;
         let ret = js.get("data").ok_or("get data err")?;
         Ok(ret.to_owned())
@@ -104,7 +104,7 @@ impl KookConnect {
         // cq_add_log(&format!("KOOK_OB_EVENT:{json_str}")).unwrap();
         tokio::task::spawn_blocking(move || {
             if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
     }
@@ -119,7 +119,7 @@ impl KookConnect {
             .as_secs();
         // 清除久远的记录
         {
-            let mut lk = self.http_cache.write().unwrap();
+            let mut lk = self.http_cache.write().unwrap_or_else(|e| e.into_inner());
             loop {
                 let mut remove_index = 0;
                 for it in &*lk {
@@ -136,7 +136,7 @@ impl KookConnect {
         }
         // 从缓存中返回数据
         if use_cache {
-            let lk = self.http_cache.read().unwrap();
+            let lk = self.http_cache.read().unwrap_or_else(|e| e.into_inner());
             for it in &*lk {
                 if it.0 == uri {
                     return Ok(it.1.clone());
@@ -147,7 +147,7 @@ impl KookConnect {
         let ret_val = self.http_get_json(uri).await?;
         // 更新缓存
         {
-            let mut lk = self.http_cache.write().unwrap();
+            let mut lk = self.http_cache.write().unwrap_or_else(|e| e.into_inner());
             lk.push_back((uri.to_string(), ret_val.clone(), tm));
         }
         Ok(ret_val)
@@ -217,7 +217,7 @@ impl KookConnect {
 
             msg_ids.push(RawMsgId {
                 msg_id,
-                user_id: self.self_id.read().unwrap().to_owned(),
+                user_id: self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned(),
             });
             quote = "".to_owned();
         }
@@ -383,7 +383,7 @@ impl KookConnect {
             msg_id: new_id.to_owned(),
             raw_msg_ids: raw_msg_ids.to_owned(),
         };
-        let mut lk = self.msg_ids.write().unwrap();
+        let mut lk = self.msg_ids.write().unwrap_or_else(|e| e.into_inner());
         lk.push_back(msg_id_pair);
         while lk.len() > 9999 {
             lk.pop_front();
@@ -392,7 +392,7 @@ impl KookConnect {
     }
 
     fn get_msg_id(&self, msg_id: &str) -> Vec<RawMsgId> {
-        let lk = self.msg_ids.read().unwrap();
+        let lk = self.msg_ids.read().unwrap_or_else(|e| e.into_inner());
         for msg_id_pair in lk.iter() {
             if msg_id_pair.msg_id == msg_id {
                 return msg_id_pair.raw_msg_ids.to_owned();
@@ -402,7 +402,7 @@ impl KookConnect {
     }
 
     pub fn get_cq_msg_id(&self, raw_msg_id: &str) -> (String, String) {
-        let lk = self.msg_ids.read().unwrap();
+        let lk = self.msg_ids.read().unwrap_or_else(|e| e.into_inner());
         for msg_id_pair in lk.iter() {
             for raw_msg in &msg_id_pair.raw_msg_ids {
                 if raw_msg.msg_id == raw_msg_id {
@@ -486,7 +486,7 @@ impl KookConnect {
 
         let event_json = serde_json::json!({
             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
-            "self_id":self.self_id.read().unwrap().to_owned(),
+            "self_id":self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned(),
             "post_type":"message",
             "message_type":"private",
             "sub_type":"friend",
@@ -611,7 +611,7 @@ impl KookConnect {
                         let size = md.get("size").ok_or(err)?.as_i64().ok_or(err)?.to_owned();
                         let event_json = serde_json::json!({
                             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
-                            "self_id":self.self_id.read().unwrap().to_owned(),
+                            "self_id":self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned(),
                             "post_type":"notice",
                             "notice_type":"group_upload",
                             "group_id":group_id.to_owned(),
@@ -719,7 +719,7 @@ impl KookConnect {
 
         let event_json = serde_json::json!({
             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
-            "self_id":*self.self_id.read().unwrap(),
+            "self_id":*self.self_id.read().unwrap_or_else(|e| e.into_inner()),
             "post_type":"message",
             "message_type":"group",
             "sub_type":"normal",
@@ -763,7 +763,7 @@ impl KookConnect {
             .ok_or("user_id not str")?;
         let event_json = serde_json::json!({
             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
-            "self_id":self.self_id.read().unwrap().to_owned(),
+            "self_id":self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned(),
             "post_type":"notice",
             "notice_type":"group_increase",
             "sub_type":"approve",
@@ -798,7 +798,7 @@ impl KookConnect {
 
         let event_json = serde_json::json!({
             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
-            "self_id":self.self_id.read().unwrap().to_owned(),
+            "self_id":self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned(),
             "post_type":"notice",
             "notice_type":"group_decrease",
             "sub_type":"leave",
@@ -844,7 +844,7 @@ impl KookConnect {
         // self.get_msg(msg_id_str).await?;
         let event_json = serde_json::json!({
             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
-            "self_id":self.self_id.read().unwrap().to_owned(),
+            "self_id":self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned(),
             "post_type":"notice",
             "notice_type":"group_recall",
             "groups_id":guild_id.to_owned(),
@@ -884,7 +884,7 @@ impl KookConnect {
         // self.get_msg(msg_id_str).await?;
         let event_json = serde_json::json!({
             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
-            "self_id":self.self_id.read().unwrap().to_owned(),
+            "self_id":self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned(),
             "post_type":"notice",
             "notice_type":"friend_recall",
             "user_id": user_id,
@@ -928,7 +928,7 @@ impl KookConnect {
                 self.deal_group_recall(data).await?;
             }
         } else {
-            let self_id = self.self_id.read().unwrap().to_owned();
+            let self_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned();
             if user_id != self_id {
                 self.deal_group_message_event(data, user_id).await?;
             }
@@ -994,7 +994,7 @@ impl KookConnect {
             }
         } else {
             let self_id = self.self_id.clone();
-            if user_id != *self_id.read().unwrap() {
+            if user_id != *self_id.read().unwrap_or_else(|e| e.into_inner()) {
                 self.deal_private_message_event(data, user_id).await?;
             }
         }
@@ -1027,22 +1027,22 @@ impl KookConnect {
             .as_i64()
             .ok_or("s not i64")?;
         if s == 5 {
-            cq_add_log_w("要求重连").unwrap();
+            let _ = cq_add_log_w("要求重连");
             return Ok(5);
         } else if s == 1 {
-            cq_add_log_w(&format!("收到KOOK HELLO包：{}", js)).unwrap();
+            let _ = cq_add_log_w(&format!("收到KOOK HELLO包：{}", js));
             if js["d"]["code"].as_i64().ok_or("HELLO包错误")? != 0 {
                 return Ok(1);
             } else {
-                cq_add_log("连接KOOK成功").unwrap();
+                let _ = cq_add_log("连接KOOK成功");
             }
             //
         } else if s == 3 {
-            cq_add_log("KOOK心跳接收成功").unwrap();
+            let _ = cq_add_log("KOOK心跳接收成功");
             self.recieve_pong
                 .store(true, std::sync::atomic::Ordering::Relaxed);
         } else if s == 0 {
-            cq_add_log(&format!("收到KOOK事件:{}", js)).unwrap();
+            let _ = cq_add_log(&format!("收到KOOK事件:{}", js));
             let d = js.get("d").ok_or("d not found")?;
             let new_sn = js
                 .get("sn")
@@ -1050,26 +1050,25 @@ impl KookConnect {
                 .as_i64()
                 .ok_or("sn not i64")?;
             self.sn.store(new_sn, std::sync::atomic::Ordering::Relaxed);
-            let rst = self.deal_kook_event(d.clone()).await;
-            if rst.is_err() {
-                cq_add_log_w(&format!("处理KOOK事件出错:{}", rst.err().unwrap())).unwrap();
+            if let Err(error) = self.deal_kook_event(d.clone()).await {
+                let _ = cq_add_log_w(&format!("处理KOOK事件出错:{error}"));
             }
         } else {
-            cq_add_log_w(&format!("KOOK收到未知数据：{}", js)).unwrap();
+            let _ = cq_add_log_w(&format!("KOOK收到未知数据：{}", js));
         }
         Ok(0)
     }
     pub fn to_json_str(val: &serde_json::Value) -> String {
-        if val.is_i64() {
-            return val.as_i64().unwrap().to_string();
+        if let Some(value) = val.as_i64() {
+            return value.to_string();
         }
-        if val.is_u64() {
-            return val.as_u64().unwrap().to_string();
+        if let Some(value) = val.as_u64() {
+            return value.to_string();
         }
-        if val.is_string() {
-            return val.as_str().unwrap().to_string();
+        if let Some(value) = val.as_str() {
+            return value.to_string();
         }
-        "".to_owned()
+        String::new()
     }
     pub fn make_kook_text(text: &str) -> String {
         let mut s = String::new();
@@ -1132,7 +1131,7 @@ impl KookConnect {
         if uri.starts_with("http") {
             file_bin = Self::http_post(uri, vec![], &HashMap::new(), false).await?;
         } else if uri.starts_with("base64://") {
-            let b64_str = uri.get(9..).unwrap();
+            let b64_str = uri.get(9..).ok_or("base64 uri 长度不足")?;
             file_bin = base64::Engine::decode(
                 &base64::engine::GeneralPurpose::new(
                     &base64::alphabet::STANDARD,
@@ -1200,8 +1199,9 @@ impl KookConnect {
                     .to_owned();
                 let s = Self::make_kook_text(&t);
                 if last_type == 1 && !to_send_data.is_empty() {
-                    let l = to_send_data.len();
-                    to_send_data.get_mut(l - 1).unwrap().1.push_str(&s);
+                    if let Some(last) = to_send_data.last_mut() {
+                        last.1.push_str(&s);
+                    }
                 } else {
                     to_send_data.push((1, s));
                     last_type = 1;
@@ -1229,8 +1229,9 @@ impl KookConnect {
                 );
                 let at_str = &format!("(met){}(met)", qq);
                 if last_type == 1 && !to_send_data.is_empty() {
-                    let l = to_send_data.len();
-                    to_send_data.get_mut(l - 1).unwrap().1.push_str(at_str);
+                    if let Some(last) = to_send_data.last_mut() {
+                        last.1.push_str(at_str);
+                    }
                 } else {
                     to_send_data.push((1, at_str.to_owned()));
                     last_type = 1;
@@ -1367,8 +1368,9 @@ impl KookConnect {
                 let s = json_to_cq_str(&j).map_err(|x| format!("json_to_cq_str err:{:?}", x))?;
                 let s2 = Self::make_kook_text(&s);
                 if last_type == 1 && !to_send_data.is_empty() {
-                    let l = to_send_data.len();
-                    to_send_data.get_mut(l - 1).unwrap().1.push_str(&s2);
+                    if let Some(last) = to_send_data.last_mut() {
+                        last.1.push_str(&s2);
+                    }
                 } else {
                     to_send_data.push((1, s2));
                     last_type = 1;
@@ -1379,10 +1381,10 @@ impl KookConnect {
     }
     fn get_json_bool(js: &serde_json::Value, key: &str) -> bool {
         if let Some(j) = js.get(key) {
-            if j.is_boolean() {
-                j.as_bool().unwrap()
-            } else if j.is_string() {
-                j.as_str().unwrap() == "true"
+            if let Some(value) = j.as_bool() {
+                value
+            } else if let Some(value) = j.as_str() {
+                value == "true"
             } else {
                 false
             }
@@ -1399,7 +1401,7 @@ impl KookConnect {
         json: &serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let json_str = json.to_string();
-        cq_add_log(&format!("发送KOOK_POST:{uri}\n{}", json_str)).unwrap();
+        let _ = cq_add_log(&format!("发送KOOK_POST:{uri}\n{}", json_str));
         let uri = reqwest::Url::from_str(&format!("https://www.kookapp.cn/api/v3{uri}"))?;
         let client = reqwest::Client::builder()
             .danger_accept_invalid_certs(true)
@@ -1422,7 +1424,7 @@ impl KookConnect {
         let ret = client.execute(req).await?;
         let retbin = ret.bytes().await?.to_vec();
         let ret_str = String::from_utf8(retbin)?;
-        cq_add_log(&format!("KOOK_POST响应:{ret_str}")).unwrap();
+        let _ = cq_add_log(&format!("KOOK_POST响应:{ret_str}"));
         let js: serde_json::Value = serde_json::from_str(&ret_str)?;
         let ret = js.get("data").ok_or("get data err")?;
         Ok(ret.to_owned())
@@ -1481,7 +1483,7 @@ impl KookConnect {
             let msg_id = self.send_group_msg(*tp, &group_id, msg, &quote).await?;
             msg_ids.push(RawMsgId {
                 msg_id,
-                user_id: self.self_id.read().unwrap().to_owned(),
+                user_id: self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned(),
             });
             quote = "".to_owned();
         }
@@ -2229,11 +2231,8 @@ impl BotConnectTrait for KookConnect {
     async fn disconnect(&mut self) {
         self.is_stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        if self.stop_tx.is_some() {
-            let _foo = self
-                .stop_tx
-                .clone()
-                .unwrap()
+        if let Some(stop_tx) = &self.stop_tx {
+            let _ = stop_tx
                 .send_timeout(true, Duration::from_secs(1))
                 .await;
         }
@@ -2255,7 +2254,7 @@ impl BotConnectTrait for KookConnect {
 
         let login_info = self.get_login_info().await?;
 
-        *self.self_id.write().unwrap() = login_info.user_id;
+        *self.self_id.write().unwrap_or_else(|e| e.into_inner()) = login_info.user_id;
 
         let wss_url = self.get_gateway().await?;
         let (ws_stream, _) = match tokio::time::timeout(
@@ -2294,7 +2293,7 @@ impl BotConnectTrait for KookConnect {
                         index_lost_pong += 1;
                     }
                     if index_lost_pong >= 2 {
-                        cq_add_log_w("接收KOOK心跳失败").unwrap();
+                        let _ = cq_add_log_w("接收KOOK心跳失败");
                         break;
                     }
                 }
@@ -2312,10 +2311,10 @@ impl BotConnectTrait for KookConnect {
                         .send(tungstenite::Message::Text(json_str.into()))
                         .await;
                     if heartbeat_result.is_err() {
-                        cq_add_log_w("发送KOOK心跳发送失败").unwrap();
+                        let _ = cq_add_log_w("发送KOOK心跳发送失败");
                         break;
                     } else {
-                        cq_add_log("KOOK心跳发送成功").unwrap();
+                        let _ = cq_add_log("KOOK心跳发送成功");
                     }
                 }
             }
@@ -2330,7 +2329,7 @@ impl BotConnectTrait for KookConnect {
                     reason: "byebye".into(),
                 })))
                 .await;
-            cq_add_log_w("KOOK心跳断开").unwrap();
+            let _ = cq_add_log_w("KOOK心跳断开");
         });
         let is_stop = self.is_stop.clone();
         let url_str_t = self.url.clone();
@@ -2362,10 +2361,9 @@ impl BotConnectTrait for KookConnect {
                                     let kobj = kobj.clone();
                                     let rst = KookConnect::conv_event(&kobj,s).await;
                                     if let Err(err) = rst {
-                                        crate::cqapi::cq_add_log(
+                                        let _ = crate::cqapi::cq_add_log(
                                             format!("KOOK抛出错误:{err:?}").as_str(),
-                                        )
-                                        .unwrap();
+                                        );
                                     } else if let Ok(code) = rst {
                                         // 断开连接
                                         if code != 0 {
@@ -2375,11 +2373,11 @@ impl BotConnectTrait for KookConnect {
                                     }
                                 });
                             }else {
-                                cq_add_log_w("kook ws获取数据错误2").unwrap();
+                                let _ = cq_add_log_w("kook ws获取数据错误2");
                                 break;
                             }
                         }else {
-                            cq_add_log_w("kook ws获取数据错误1").unwrap();
+                            let _ = cq_add_log_w("kook ws获取数据错误1");
                             break;
                         }
                     },
@@ -2390,7 +2388,7 @@ impl BotConnectTrait for KookConnect {
             }
             // 移除conn
             is_stop.store(true, std::sync::atomic::Ordering::Relaxed);
-            cq_add_log_w(&format!("kook连接已经断开(read_halt):{url_str_t}")).unwrap();
+            let _ = cq_add_log_w(&format!("kook连接已经断开(read_halt):{url_str_t}"));
         });
         Ok(())
     }
@@ -2485,7 +2483,7 @@ impl BotConnectTrait for KookConnect {
     }
 
     fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
-        let lk = self.self_id.read().unwrap();
+        let lk = self.self_id.read().unwrap_or_else(|e| e.into_inner());
         if lk.is_empty() {
             return vec![];
         }

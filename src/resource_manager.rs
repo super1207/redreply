@@ -95,7 +95,7 @@ pub fn release_file() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 pub fn get_version() -> String {
-    // 嵌入资源在编译期保证存在，缺失即属异常，按 fail-fast 直接 panic
-    let file = crate::Asset::get("res/version.txt").unwrap();
-    String::from_utf8(file.data.to_vec()).unwrap()
+    crate::Asset::get("res/version.txt")
+        .map(|file| String::from_utf8_lossy(&file.data).trim().to_string())
+        .unwrap_or_default()
 }

@@ -265,7 +265,7 @@ pub fn get_msg_type(
 
     // 根据群ID反查群组ID
     let mut has_guild_id = false;
-    let lk = id_event_map_t.read().unwrap();
+    let lk = id_event_map_t.read().unwrap_or_else(|e| e.into_inner());
     if let Some((_, event)) = lk.get(passive_id) {
         let d = read_json_or_default(event, "d", &serde_json::Value::Null);
         let guild_id = read_json_str(d, "guild_id");
@@ -392,8 +392,7 @@ pub async fn cq_msg_to_qq(
                             .access_token
                             .upgrade()
                             .ok_or("access_token not upgrade")?
-                            .read()
-                            .unwrap()
+                            .read().unwrap_or_else(|e| e.into_inner())
                     ))?,
                 );
                 req.headers_mut().append(
@@ -403,8 +402,7 @@ pub async fn cq_msg_to_qq(
                             .appid
                             .upgrade()
                             .ok_or("appid not upgrade")?
-                            .read()
-                            .unwrap(),
+                            .read().unwrap_or_else(|e| e.into_inner()),
                     )?,
                 );
                 req.headers_mut().append(
@@ -421,8 +419,7 @@ pub async fn cq_msg_to_qq(
                 if msg_type == MsgSrcType::QQGroup {
                     json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
                 }
-                crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str())
-                    .unwrap();
+                let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
                 if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                     let id = read_json_str(&json_val, "id");
                     if !id.is_empty() {
@@ -466,7 +463,7 @@ pub async fn cq_msg_to_qq(
                     .id_event_map
                     .upgrade()
                     .ok_or("id_event_map not upgrade")?;
-                let lk = lk_arc.read().unwrap();
+                let lk = lk_arc.read().unwrap_or_else(|e| e.into_inner());
                 if let Some((_, event)) = lk.get(reply_id) {
                     let d = read_json_obj_or_null(event, "d");
                     let message_id = read_json_str(&d, "id");
@@ -481,7 +478,7 @@ pub async fn cq_msg_to_qq(
                         }
                     }
                 } else {
-                    cq_add_log_w(&format!("消息ID`{reply_id}`失效")).unwrap();
+                    let _ = cq_add_log_w(&format!("消息ID`{reply_id}`失效"));
                 }
             }
         } else if tp == "record" {
@@ -547,8 +544,7 @@ pub async fn cq_msg_to_qq(
                         .access_token
                         .upgrade()
                         .ok_or("access_token not upgrade")?
-                        .read()
-                        .unwrap()
+                        .read().unwrap_or_else(|e| e.into_inner())
                 ))?,
             );
             req.headers_mut().append(
@@ -558,8 +554,7 @@ pub async fn cq_msg_to_qq(
                         .appid
                         .upgrade()
                         .ok_or("appid not upgrade")?
-                        .read()
-                        .unwrap(),
+                        .read().unwrap_or_else(|e| e.into_inner()),
                 )?,
             );
             req.headers_mut().append(
@@ -576,8 +571,7 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str())
-                .unwrap();
+            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -652,8 +646,7 @@ pub async fn cq_msg_to_qq(
                         .access_token
                         .upgrade()
                         .ok_or("access_token not upgrade")?
-                        .read()
-                        .unwrap()
+                        .read().unwrap_or_else(|e| e.into_inner())
                 ))?,
             );
             req.headers_mut().append(
@@ -663,8 +656,7 @@ pub async fn cq_msg_to_qq(
                         .appid
                         .upgrade()
                         .ok_or("appid not upgrade")?
-                        .read()
-                        .unwrap(),
+                        .read().unwrap_or_else(|e| e.into_inner()),
                 )?,
             );
             req.headers_mut().append(
@@ -681,8 +673,7 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str())
-                .unwrap();
+            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -765,8 +756,7 @@ pub async fn cq_msg_to_qq(
                         .access_token
                         .upgrade()
                         .ok_or("access_token not upgrade")?
-                        .read()
-                        .unwrap()
+                        .read().unwrap_or_else(|e| e.into_inner())
                 ))?,
             );
             req.headers_mut().append(
@@ -776,8 +766,7 @@ pub async fn cq_msg_to_qq(
                         .appid
                         .upgrade()
                         .ok_or("appid not upgrade")?
-                        .read()
-                        .unwrap(),
+                        .read().unwrap_or_else(|e| e.into_inner()),
                 )?,
             );
             req.headers_mut().append(
@@ -794,8 +783,7 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str())
-                .unwrap();
+            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -856,8 +844,7 @@ pub fn get_reply_id(
         .id_event_map
         .upgrade()
         .ok_or("id_event_map not upgrade")?
-        .read()
-        .unwrap()
+        .read().unwrap_or_else(|e| e.into_inner())
         .get(passive_id)
     {
         let tp = read_json_str(event, "t");
@@ -979,8 +966,7 @@ pub fn qq_content_to_cqstr(
                     let bot_id = bot_id
                         .upgrade()
                         .ok_or("get bot id error")?
-                        .read()
-                        .unwrap()
+                        .read().unwrap_or_else(|e| e.into_inner())
                         .to_owned();
                     if bot_id == user_id {
                         out_str += &format!("[CQ:at,qq={}]", cq_params_encode(self_id));
@@ -994,8 +980,7 @@ pub fn qq_content_to_cqstr(
                     let bot_id = bot_id
                         .upgrade()
                         .ok_or("get bot id error")?
-                        .read()
-                        .unwrap()
+                        .read().unwrap_or_else(|e| e.into_inner())
                         .to_owned();
                     if bot_id == user_id {
                         out_str += &format!("[CQ:at,qq={}]", cq_params_encode(self_id));
@@ -1007,8 +992,7 @@ pub fn qq_content_to_cqstr(
                     let bot_id = bot_id
                         .upgrade()
                         .ok_or("get bot id error")?
-                        .read()
-                        .unwrap()
+                        .read().unwrap_or_else(|e| e.into_inner())
                         .to_owned();
                     if bot_id == user_id {
                         out_str += &format!("[CQ:at,qq={}]", cq_params_encode(self_id));
@@ -1051,7 +1035,7 @@ pub fn set_event_id(
     let event_id = uuid::Uuid::new_v4().to_string();
     let id_event_map_t = &self_t.id_event_map;
     let binding = id_event_map_t.upgrade().ok_or("id_event_map not upgrade")?;
-    let mut lk = binding.write().unwrap();
+    let mut lk = binding.write().unwrap_or_else(|e| e.into_inner());
     lk.insert(event_id.to_owned(), (event_time, data.clone()));
     let mut to_remove = vec![];
     for (key, (key_tm, _)) in &*lk {
@@ -1077,7 +1061,7 @@ pub fn deal_message_reference(
             return Ok("".to_owned());
         }
         let id_event_map_t = id_event_map.upgrade().ok_or("id_event_map not exist")?;
-        let lk = id_event_map_t.read().unwrap();
+        let lk = id_event_map_t.read().unwrap_or_else(|e| e.into_inner());
         for (key, (_, json)) in &*lk {
             let tp = json.get("t").ok_or("no t in id_event_map")?;
             if tp == "GROUP_AT_MESSAGE_CREATE"
@@ -1214,8 +1198,7 @@ pub async fn do_qq_json_post(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read()
-                .unwrap()
+                .read().unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -1225,8 +1208,7 @@ pub async fn do_qq_json_post(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read()
-                .unwrap(),
+                .read().unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -1354,11 +1336,9 @@ pub async fn wait_qqgroup_audit_result(
 pub fn str_msg_to_arr_safe(
     js: &serde_json::Value,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-    let ret = str_msg_to_arr(js);
-    if let Ok(ret) = ret {
-        Ok(ret)
-    } else {
-        return None.ok_or(format!("str_msg_to_arr error:{}", ret.err().unwrap()))?;
+    match str_msg_to_arr(js) {
+        Ok(value) => Ok(value),
+        Err(error) => Err(format!("str_msg_to_arr error:{error}").into()),
     }
 }
 
@@ -1404,7 +1384,7 @@ fn get_cq_message_reference(
             .id_event_map
             .upgrade()
             .ok_or("id_event_map not upgrade")?;
-        let lk = lk_arc.read().unwrap();
+        let lk = lk_arc.read().unwrap_or_else(|e| e.into_inner());
         if let Some((_, event)) = lk.get(reply_id) {
             let d = read_json_obj_or_null(event, "d");
             let message_id = read_json_str(&d, "id");
@@ -1417,7 +1397,7 @@ fn get_cq_message_reference(
             let ids = message_id.split("|").collect::<Vec<&str>>();
             return Ok(Some(ids[ids.len() - 1].to_owned()));
         } else {
-            cq_add_log_w(&format!("消息ID`{reply_id}`失效")).unwrap();
+            let _ = cq_add_log_w(&format!("消息ID`{reply_id}`失效"));
         }
     }
     Ok(None)
@@ -1457,39 +1437,35 @@ async fn send_guild_msg_node(
             "content":qq_msg_node.content,
         });
         qq_msg_node.content = "".to_owned();
-        if !context.to_reply_id.is_empty() {
-            if context.is_event {
-                json_data.as_object_mut().unwrap().insert(
-                    "event_id".to_owned(),
-                    serde_json::json!(context.to_reply_id),
+        if let Some(object) = json_data.as_object_mut() {
+            if !context.to_reply_id.is_empty() {
+                if context.is_event {
+                    object.insert(
+                        "event_id".to_owned(),
+                        serde_json::json!(context.to_reply_id),
+                    );
+                } else {
+                    object.insert("msg_id".to_owned(), serde_json::json!(context.to_reply_id));
+                }
+            }
+            if let Some(message_reference) = &qq_msg_node.message_reference {
+                object.insert(
+                    "message_reference".to_owned(),
+                    serde_json::json!({
+                        "message_id":message_reference,
+                    }),
                 );
-            } else {
-                json_data
-                    .as_object_mut()
-                    .unwrap()
-                    .insert("msg_id".to_owned(), serde_json::json!(context.to_reply_id));
             }
         }
-
-        if let Some(message_reference) = &qq_msg_node.message_reference {
-            json_data.as_object_mut().unwrap().insert(
-                "message_reference".to_owned(),
-                serde_json::json!({
-                    "message_id":message_reference,
-                }),
-            );
-        }
-        crate::cqapi::cq_add_log(
+        let _ = crate::cqapi::cq_add_log(
             format!(
                 "发送{} API数据(`{}`):{}",
                 context.log_name, context.target_id, json_data
             )
             .as_str(),
-        )
-        .unwrap();
+        );
         let api_ret = do_qq_json_post(self_t, context.path, json_data).await?;
-        crate::cqapi::cq_add_log(format!("接收{} API数据:{}", context.log_name, api_ret).as_str())
-            .unwrap();
+        let _ = crate::cqapi::cq_add_log(format!("接收{} API数据:{}", context.log_name, api_ret).as_str());
         append_api_msg_id(id, &api_ret)?;
     } else {
         for img in &qq_msg_node.imgs {
@@ -1514,19 +1490,17 @@ async fn send_guild_msg_node(
                 qq_msg_node.content = "".to_owned();
             }
 
-            crate::cqapi::cq_add_log(
+            let _ = crate::cqapi::cq_add_log(
                 format!(
                     "发送{} API数据(`{}`):{:?}",
                     context.log_name, context.target_id, form
                 )
                 .as_str(),
-            )
-            .unwrap();
+            );
             let api_ret = do_qq_form_post(self_t, context.path, form).await?;
-            crate::cqapi::cq_add_log(
+            let _ = crate::cqapi::cq_add_log(
                 format!("接收{} API数据:{}", context.log_name, api_ret).as_str(),
-            )
-            .unwrap();
+            );
             append_api_msg_id(id, &api_ret)?;
         }
     }
@@ -1810,8 +1784,7 @@ pub async fn do_qq_form_post(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read()
-                .unwrap()
+                .read().unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -1821,8 +1794,7 @@ pub async fn do_qq_form_post(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read()
-                .unwrap(),
+                .read().unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -1879,8 +1851,7 @@ pub async fn get_login_info(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read()
-                .unwrap()
+                .read().unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -1890,8 +1861,7 @@ pub async fn get_login_info(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read()
-                .unwrap(),
+                .read().unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -1912,7 +1882,7 @@ pub async fn get_login_info(
         "retcode":0,
         "status":"ok",
         "data":{
-            "user_id":*self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap(),
+            "user_id":*self_t.appid.upgrade().ok_or("appid not upgrade")?.read().unwrap_or_else(|e| e.into_inner()),
             "nickname":nickname,
             "avatar":avatar,
         }
@@ -1933,8 +1903,7 @@ pub async fn get_group_list(
             .id_event_map
             .upgrade()
             .ok_or("id_event_map not upgrade")?
-            .read()
-            .unwrap()
+            .read().unwrap_or_else(|e| e.into_inner())
             .get(passive_id)
         {
             let d = read_json_obj_or_null(event, "d");
@@ -1956,8 +1925,7 @@ pub async fn get_group_list(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read()
-                .unwrap()
+                .read().unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -1967,8 +1935,7 @@ pub async fn get_group_list(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read()
-                .unwrap(),
+                .read().unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -2023,8 +1990,7 @@ pub async fn get_stranger_info(
             .appid
             .upgrade()
             .ok_or("appid not upgrade")?
-            .read()
-            .unwrap()
+            .read().unwrap_or_else(|e| e.into_inner())
     {
         return get_login_info(self_t).await;
     }
@@ -2034,8 +2000,7 @@ pub async fn get_stranger_info(
         .id_event_map
         .upgrade()
         .ok_or("id_event_map not upgrade")?
-        .read()
-        .unwrap()
+        .read().unwrap_or_else(|e| e.into_inner())
         .get(passive_id)
     {
         let d = read_json_obj_or_null(event, "d");
@@ -2056,8 +2021,7 @@ pub async fn get_stranger_info(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read()
-                .unwrap()
+                .read().unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -2067,8 +2031,7 @@ pub async fn get_stranger_info(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read()
-                .unwrap(),
+                .read().unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -2106,15 +2069,13 @@ async fn do_qq_delete_request(
         .access_token
         .upgrade()
         .ok_or("access_token not upgrade")?
-        .read()
-        .unwrap()
+        .read().unwrap_or_else(|e| e.into_inner())
         .to_owned();
     let appid = self_t
         .appid
         .upgrade()
         .ok_or("appid not upgrade")?
-        .read()
-        .unwrap()
+        .read().unwrap_or_else(|e| e.into_inner())
         .to_owned();
     let client = reqwest::Client::builder().no_proxy().build()?;
     let mut req = client.delete(uri).build()?;
@@ -2139,7 +2100,7 @@ async fn do_qq_delete_request(
     if status != reqwest::StatusCode::OK {
         let ret_str = ret.text().await?;
         let message = format!("delete_msg failed, status: {}, body: {}", status, ret_str);
-        cq_add_log_w(&message).unwrap();
+        let _ = cq_add_log_w(&message);
         return Ok(Some(message));
     }
     Ok(None)
@@ -2156,8 +2117,7 @@ pub async fn delete_msg(
         .id_event_map
         .upgrade()
         .ok_or("id_event_map not upgrade")?
-        .read()
-        .unwrap()
+        .read().unwrap_or_else(|e| e.into_inner())
         .get(&adapter_message_id)
         .ok_or("event is not found")?
         .1
@@ -2182,7 +2142,7 @@ pub async fn delete_msg(
     {
         let channel_id = read_json_str(&d, "channel_id");
         let group_openid = read_json_str(&d, "group_openid");
-        cq_add_log_w(&format!("delete messageId: {}", message_id)).unwrap();
+        let _ = cq_add_log_w(&format!("delete messageId: {}", message_id));
         for message_id in message_id.split('|').filter(|id| !id.is_empty()) {
             let uri = if !group_openid.is_empty() {
                 reqwest::Url::from_str(&format!(
@@ -2266,15 +2226,13 @@ pub async fn get_group_member_info(
             .appid
             .upgrade()
             .ok_or("appid not upgrade")?
-            .read()
-            .unwrap()
+            .read().unwrap_or_else(|e| e.into_inner())
     {
         user_id = self_t
             .bot_id
             .upgrade()
             .ok_or("bot_id not upgrade")?
-            .read()
-            .unwrap()
+            .read().unwrap_or_else(|e| e.into_inner())
             .to_owned();
     }
 
@@ -2291,8 +2249,7 @@ pub async fn get_group_member_info(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read()
-                .unwrap()
+                .read().unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -2302,8 +2259,7 @@ pub async fn get_group_member_info(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read()
-                .unwrap(),
+                .read().unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -2333,8 +2289,7 @@ pub async fn get_group_member_info(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read()
-                .unwrap()
+                .read().unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -2344,8 +2299,7 @@ pub async fn get_group_member_info(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read()
-                .unwrap(),
+                .read().unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -2360,7 +2314,7 @@ pub async fn get_group_member_info(
     let ret = client.execute(req).await?;
     let ret_str = ret.text().await?;
     let member: serde_json::Value = serde_json::from_str(&ret_str)?;
-    crate::cqapi::cq_add_log(format!("member:{:?}", member).as_str()).unwrap();
+    let _ = crate::cqapi::cq_add_log(format!("member:{:?}", member).as_str());
     let card = read_json_str(&member, "nick");
     let user = read_json_obj_or_null(&member, "user");
     let nickname = read_json_str(&user, "username");
@@ -2420,15 +2374,13 @@ pub async fn set_group_ban(
             .appid
             .upgrade()
             .ok_or("appid not upgrade")?
-            .read()
-            .unwrap()
+            .read().unwrap_or_else(|e| e.into_inner())
     {
         user_id = self_t
             .bot_id
             .upgrade()
             .ok_or("bot_id not upgrade")?
-            .read()
-            .unwrap()
+            .read().unwrap_or_else(|e| e.into_inner())
             .to_owned();
     }
 
@@ -2445,8 +2397,7 @@ pub async fn set_group_ban(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read()
-                .unwrap()
+                .read().unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -2456,8 +2407,7 @@ pub async fn set_group_ban(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read()
-                .unwrap(),
+                .read().unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -2495,8 +2445,7 @@ pub async fn set_group_ban(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read()
-                .unwrap()
+                .read().unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -2506,8 +2455,7 @@ pub async fn set_group_ban(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read()
-                .unwrap(),
+                .read().unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -2523,7 +2471,7 @@ pub async fn set_group_ban(
     if ret.status() != 204 {
         let code = ret.status().as_u16();
         let ret_str = ret.text().await?;
-        cq_add_log_w(&format!("set_group_ban:{:?}", &ret_str)).unwrap();
+        let _ = cq_add_log_w(&format!("set_group_ban:{:?}", &ret_str));
         Ok(serde_json::json!({
             "retcode":code + 1000,
             "status":"failed",

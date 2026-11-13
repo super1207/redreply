@@ -1,6 +1,5 @@
 use std::{
     collections::HashMap,
-    ops::{Index, IndexMut},
     str::FromStr,
     sync::{atomic::AtomicBool, Arc, RwLock},
 };
@@ -127,7 +126,7 @@ impl OneBot11Connect {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         
         let platform = self.get_platform().await?;
-        cq_add_log(&format!("111使用`{platform}`进行音乐卡片签名")).unwrap();
+        let _ = cq_add_log(&format!("111使用`{platform}`进行音乐卡片签名"));
         if !(platform == "lagrange"
             || platform == "llonebot"
             || platform == "cqhttp"
@@ -206,7 +205,7 @@ impl OneBot11Connect {
                 let image_t: String =
                     url::form_urlencoded::byte_serialize(image.as_bytes()).collect();
 
-                cq_add_log(&format!("使用`{music_card_sign}`进行音乐卡片签名")).unwrap();
+                let _ = cq_add_log(&format!("使用`{music_card_sign}`进行音乐卡片签名"));
                 let get_url = format!("{music_card_sign}?url={audio_t}&song={title_t}&singer={content_t}&cover={image_t}&jump={url_t}&format=bilibili");
                 // reqwest::get 不支持链式 timeout，改用带超时的 Client
                 let client = reqwest::Client::builder()
@@ -217,14 +216,13 @@ impl OneBot11Connect {
                 let j: serde_json::Value = serde_json::from_str(&ret_text)?;
                 let code = read_json_str(&j, "code");
                 if code != "1" {
-                    cq_add_log_w(&format!(
+                    let _ = cq_add_log_w(&format!(
                         "使用`{}`进行音乐卡片签名失败:{}",
                         music_card_sign, ret_text
-                    ))
-                    .unwrap();
+                    ));
                     continue;
                 } else {
-                    cq_add_log(&format!("使用`{music_card_sign}`进行音乐卡片签名成功")).unwrap();
+                    let _ = cq_add_log(&format!("使用`{music_card_sign}`进行音乐卡片签名成功"));
                 }
                 let music_json = j["message"].as_str().ok_or("music message is not str")?;
                 *msgobj.get_mut("type").ok_or("get type err")? = serde_json::json!("json");
@@ -297,7 +295,7 @@ impl OneBot11Connect {
                 let uri = read_json_str(data, "file");
                 let file_bin;
                 if uri.starts_with("base64://") {
-                    let b64_str = uri.get(9..).unwrap();
+                    let b64_str = uri.get(9..).ok_or("base64 uri 长度不足")?;
                     file_bin = base64::Engine::decode(
                         &base64::engine::GeneralPurpose::new(
                             &base64::alphabet::STANDARD,
@@ -316,7 +314,7 @@ impl OneBot11Connect {
                 } else {
                     continue;
                 }
-                cq_add_log_w("自动将语音文件转换到silk").unwrap();
+                let _ = cq_add_log_w("自动将语音文件转换到silk");
                 let silk_bin = Self::all_to_silk_async(&file_bin).await?;
                 // 用 silk_bin 替换原来的 file
                 let b64_str = BASE64_CUSTOM_ENGINE.encode(silk_bin);
@@ -371,14 +369,14 @@ impl OneBot11Connect {
     }
 
     pub async fn get_platform(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let read_platform = self.real_platform.read().unwrap().to_owned();
+        let read_platform = self.real_platform.read().unwrap_or_else(|e| e.into_inner()).to_owned();
         if read_platform.is_none() {
             let mut send_json;
             send_json = serde_json::json!({
                 "action":"get_version_info",
                 "params":{}
             });
-            let self_id = self.self_id.read().unwrap().to_owned();
+            let self_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned();
             let ret = self
                 .call_api("onebot11", &self_id, "", &mut send_json)
                 .await?;
@@ -403,10 +401,10 @@ impl OneBot11Connect {
                 None
             };
             if let Some(p) = recognized {
-                *self.real_platform.write().unwrap() = Some(p);
+                *self.real_platform.write().unwrap_or_else(|e| e.into_inner()) = Some(p);
             }
         }
-        let read_platform = self.real_platform.read().unwrap().to_owned();
+        let read_platform = self.real_platform.read().unwrap_or_else(|e| e.into_inner()).to_owned();
         if let Some(platform) = read_platform {
             return Ok(platform);
         }
@@ -431,22 +429,22 @@ impl OneBot11Connect {
 }
 
 fn change_id_to_str(root: &mut serde_json::Value) {
-    if root.is_object() {
-        for (k, v) in root.as_object_mut().unwrap() {
+    if let Some(object) = root.as_object_mut() {
+        for (key, value) in object {
             if matches!(
-                k.as_str(),
+                key.as_str(),
                 "target_id" | "user_id" | "group_id" | "self_id" | "message_id" | "operator_id"
             ) {
-                if v.is_i64() {
-                    (*v) = serde_json::to_value(v.as_i64().unwrap().to_string()).unwrap();
+                if let Some(id) = value.as_i64() {
+                    *value = serde_json::json!(id.to_string());
                 }
-            } else if v.is_array() || v.is_object() {
-                change_id_to_str(v);
+            } else if value.is_array() || value.is_object() {
+                change_id_to_str(value);
             }
         }
-    } else if root.is_array() {
-        for v in root.as_array_mut().unwrap() {
-            change_id_to_str(v);
+    } else if let Some(array) = root.as_array_mut() {
+        for value in array {
+            change_id_to_str(value);
         }
     }
 }
@@ -458,24 +456,23 @@ fn deal_cq_arr(root: &mut serde_json::Value) {
             root["message"] = msg;
         }
     }
-    let message_arr = root.index("message");
-    if !message_arr.is_array() {
+    let Some(message_arr) = root.get_mut("message") else {
         return;
-    }
-    let message_arr = root.index_mut("message");
-    if message_arr.is_array() {
-        for it in message_arr.as_array_mut().unwrap() {
-            let tp = &it["type"];
-            if tp == "at" {
-                let qq = &it["data"]["qq"];
-                it["data"] = serde_json::json!({
-                    "qq":qq
-                });
-            } else if tp == "image" {
-                let url = &it["data"]["url"];
-                if !url.is_string() {
-                    it["data"]["url"] = it["data"]["http_file"].clone();
-                }
+    };
+    let Some(array) = message_arr.as_array_mut() else {
+        return;
+    };
+    for it in array {
+        let tp = &it["type"];
+        if tp == "at" {
+            let qq = &it["data"]["qq"];
+            it["data"] = serde_json::json!({
+                "qq":qq
+            });
+        } else if tp == "image" {
+            let url = &it["data"]["url"];
+            if !url.is_string() {
+                it["data"]["url"] = it["data"]["http_file"].clone();
             }
         }
     }
@@ -487,7 +484,7 @@ impl BotConnectTrait for OneBot11Connect {
         self.is_stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
         if self.stop_tx.is_some() {
-            let _foo = self.stop_tx.clone().unwrap().send(true).await;
+            if let Some(stop_tx) = &self.stop_tx { let _ = stop_tx.send(true).await; }
         }
     }
 
@@ -561,7 +558,7 @@ impl BotConnectTrait for OneBot11Connect {
                         let self_id = read_json_str(&json_dat, "self_id");
                         if !self_id.is_empty() {
                             if let Some(val) = self_id_ptr.upgrade() {
-                                *val.write().unwrap() = self_id;
+                                *val.write().unwrap_or_else(|e| e.into_inner()) = self_id;
                             }
                             else{
                                 break;
@@ -572,13 +569,13 @@ impl BotConnectTrait for OneBot11Connect {
                         let post_type = read_json_str(&json_dat, "post_type");
                         let meta_event_type = read_json_str(&json_dat, "meta_event_type");
                         if meta_event_type != "heartbeat" && echo != "CBC949B6-8C9F-8060-A149-A045ED9AD405" {
-                            crate::cqapi::cq_add_log(format!("OB11收到数据:{}", json_dat).as_str()).unwrap();
+                            let _ = crate::cqapi::cq_add_log(format!("OB11收到数据:{}", json_dat).as_str());
                         }else{
                             continue;
                         }
                         // 添加平台标记
-                        let json_obj = json_dat.as_object_mut().unwrap();
-                        json_obj.insert("platform".to_string(), serde_json::to_value("onebot11").unwrap());
+                        let Some(json_obj) = json_dat.as_object_mut() else { continue; };
+                        json_obj.insert("platform".to_string(), serde_json::json!("onebot11"));
 
                         // 处理message,规范化数据
                         if !post_type.is_empty() {
@@ -600,7 +597,7 @@ impl BotConnectTrait for OneBot11Connect {
                             }else if !post_type.is_empty() { // 是事件
                                 tokio::task::spawn_blocking(move ||{
                                     if let Err(e) = crate::cqevent::do_1207_event(&json_dat.to_string()) {
-                                        crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                                        let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
                                     }
                                 });
                             }else {
@@ -614,7 +611,7 @@ impl BotConnectTrait for OneBot11Connect {
                     }
                     _ = &mut idle => {
                         // 长时间无任何数据（自身心跳也无回复），判定连接已死亡
-                        cq_add_log_w("onebot11 心跳无响应，判定连接已死亡").unwrap();
+                        let _ = cq_add_log_w("onebot11 心跳无响应，判定连接已死亡");
                         break;
                     }
                 }
@@ -623,7 +620,7 @@ impl BotConnectTrait for OneBot11Connect {
             if let Some(val) = is_stop.upgrade() {
                 val.store(true, std::sync::atomic::Ordering::Relaxed);
             }
-            cq_add_log_w(&format!("ws连接已经断开(read_halt):{url_str_t}")).unwrap();
+            let _ = cq_add_log_w(&format!("ws连接已经断开(read_halt):{url_str_t}"));
         });
         let url_str_t = self.url.clone();
         let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
@@ -656,7 +653,7 @@ impl BotConnectTrait for OneBot11Connect {
                 if let Some(val) = is_stop.upgrade() {
                     val.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
-                cq_add_log_w(&format!("ws心跳已断开:{url_str2}")).unwrap();
+                let _ = cq_add_log_w(&format!("ws心跳已断开:{url_str2}"));
             });
             while let Some(msg) = rx_ay.recv().await {
                 let rst = write_half
@@ -672,7 +669,7 @@ impl BotConnectTrait for OneBot11Connect {
             if let Some(val) = is_stop2.upgrade() {
                 val.store(true, std::sync::atomic::Ordering::Relaxed);
             }
-            cq_add_log_w(&format!("ws连接已经断开(write_half):{url_str_t}")).unwrap();
+            let _ = cq_add_log_w(&format!("ws连接已经断开(write_half):{url_str_t}"));
         });
         Ok(())
     }
@@ -768,7 +765,7 @@ impl BotConnectTrait for OneBot11Connect {
                     .get_mut("message")
                     .ok_or("not found message segment")?;
                 if message.is_array() {
-                    let arr = message.as_array().unwrap();
+                    let Some(arr) = message.as_array() else { return Ok(ret_json); };
                     if arr.is_empty() {
                         return Ok(ret_json);
                     }
@@ -788,7 +785,7 @@ impl BotConnectTrait for OneBot11Connect {
             });
         });
 
-        crate::cqapi::cq_add_log(format!("发送数据:{}", json).as_str()).unwrap();
+        let _ = crate::cqapi::cq_add_log(format!("发送数据:{}", json).as_str());
 
         self.tx
             .clone()
@@ -810,7 +807,7 @@ impl BotConnectTrait for OneBot11Connect {
                 return Ok(val);
             },
             _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
-                cq_add_log_w(&format!("接收api返回超时(action:{},echo:{})", action, echo_for_log)).unwrap();
+                let _ = cq_add_log_w(&format!("接收api返回超时(action:{},echo:{})", action, echo_for_log));
                 // 返回结构化失败对象，不再用空串掩盖故障
                 return Ok(serde_json::json!({
                     "status":"failed",
@@ -824,7 +821,7 @@ impl BotConnectTrait for OneBot11Connect {
     }
 
     fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
-        let lk = self.self_id.read().unwrap();
+        let lk = self.self_id.read().unwrap_or_else(|e| e.into_inner());
         let self_id = (*lk).clone();
         let platform = "onebot11".to_owned();
         vec![(platform, self_id)]

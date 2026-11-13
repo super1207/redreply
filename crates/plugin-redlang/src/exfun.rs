@@ -514,7 +514,7 @@ pub fn init_ex_fun_map() {
                         if let Ok(val) = val_rst {
                             val
                         } else {
-                            let _ = cq_add_log_w(&format!("{:?}",val_rst.err().unwrap()));
+                            let _ = cq_add_log_w(&format!("{:?}",val_rst));
                             (vec![],BTreeMap::new())
                         }
                     },
@@ -566,7 +566,7 @@ pub fn init_ex_fun_map() {
                         if let Ok(val) = val_rst {
                             val
                         } else {
-                            let _ = cq_add_log_w(&format!("{:?}",val_rst.err().unwrap()));
+                            let _ = cq_add_log_w(&format!("{:?}",val_rst));
                             (vec![],BTreeMap::new())
                         }
                     },
@@ -740,7 +740,7 @@ pub fn init_ex_fun_map() {
             let chs = text.chars().collect::<Vec<char>>();
             let begen_pos;
             if begin.starts_with("-") {
-                let pos_rev = begin.get(1..).unwrap().parse::<usize>()?;
+                let pos_rev = begin.get(1..).ok_or("参数错误")?.parse::<usize>()?;
                 if pos_rev > chs.len() {
                     return Ok(Some(rv_empty()));
                 } else {
@@ -772,7 +772,7 @@ pub fn init_ex_fun_map() {
         } else if let Ok(arr) = content.expect_array_value() {
             let begen_pos;
             if begin.starts_with("-") {
-                let pos_rev = begin.get(1..).unwrap().parse::<usize>()?;
+                let pos_rev = begin.get(1..).ok_or("参数错误")?.parse::<usize>()?;
                 if pos_rev > arr.len() {
                     return Ok(Some(rv_array(vec![])));
                 } else {
@@ -986,8 +986,8 @@ pub fn init_ex_fun_map() {
                 .collect::<Vec<Rc<RedValue>>>();
             Ok(Some(rv_array(out)))
         } else if mode == 1 {
-            let index0 = index0_str.parse::<usize>().unwrap();
-            let index1 = index1_str.parse::<usize>().unwrap();
+            let index0 = index0_str.parse::<usize>()?;
+            let index1 = index1_str.parse::<usize>()?;
             if let Some(v0) = sub_key_vec.get(index0) {
                 if let Some(v1) = v0.get(index1) {
                     return Ok(Some(rv_text(v1.to_owned())));
@@ -995,7 +995,7 @@ pub fn init_ex_fun_map() {
             }
             Ok(Some(rv_empty()))
         } else if mode == 2 {
-            let index0 = index0_str.parse::<usize>().unwrap();
+            let index0 = index0_str.parse::<usize>()?;
             if let Some(v0) = sub_key_vec.get(index0) {
                 let out = v0
                     .iter()
@@ -1009,7 +1009,7 @@ pub fn init_ex_fun_map() {
             let ret_vec = sub_key_vec
                 .iter()
                 .map(|temp_vec| {
-                    if let Some(v1) = temp_vec.get(index1_str.parse::<usize>().unwrap()) {
+                    if let Some(v1) = temp_vec.get(index1_str.parse::<usize>().unwrap_or(usize::MAX)) {
                         v1.to_owned()
                     } else {
                         "".to_owned()
@@ -1138,15 +1138,14 @@ pub fn init_ex_fun_map() {
             Ok(Some(rv_empty()))
         } else {
             // 说明是取序号
-            let ret: usize;
-            if self_t.xuhao.contains_key(&k) {
-                let x = self_t.xuhao.get_mut(&k).unwrap();
-                ret = *x;
+            let ret = if let Some(x) = self_t.xuhao.get_mut(&k) {
+                let ret = *x;
                 *x += 1;
+                ret
             } else {
                 self_t.xuhao.insert(k.to_owned(), 1);
-                ret = 0;
-            }
+                0
+            };
             Ok(Some(rv_text(ret.to_string())))
         }
     });
@@ -1182,7 +1181,7 @@ pub fn init_ex_fun_map() {
         if let Ok(v) = UtcOffset::current_local_offset() {
             utc_offset = v;
         } else {
-            utc_offset = UtcOffset::from_hms(8, 0, 0).unwrap();
+            utc_offset = UtcOffset::from_hms(8, 0, 0).unwrap_or(UtcOffset::UTC);
         }
         let tm = chrono::NaiveDateTime::parse_from_str(&time_str, FORMAT)?
             .and_utc()
@@ -1562,7 +1561,8 @@ pub fn init_ex_fun_map() {
         } else {
             return Err(RedLang::make_err("0张图片不能进行WEBP合成"));
         }
-        let mut config = webp::WebPConfig::new().unwrap();
+        let mut config = webp::WebPConfig::new()
+            .map_err(|error| RedLang::make_err(&format!("WebP 配置创建失败:{error:?}")))?;
         config.lossless = 1;
         config.quality = 100f32;
         let mut wp = webp::AnimEncoder::new(width, height, &config);
@@ -2798,11 +2798,10 @@ pub fn init_ex_fun_map() {
 
         let output = if cfg!(target_os = "windows") {
             // cmd 的解析规则too复杂，我不想看了 https://learn.microsoft.com/zh-cn/windows-server/administration/windows-commands/cmd
-            let tmp_dir_rst = get_tmp_dir();
-            if tmp_dir_rst.is_err() {
-                return Err(format!("get_tmp_dir err:{:?}", tmp_dir_rst.err().unwrap()).into());
-            }
-            let tmp_dir = tmp_dir_rst.unwrap();
+            let tmp_dir = match get_tmp_dir() {
+                Ok(dir) => dir,
+                Err(error) => return Err(format!("get_tmp_dir err:{error:?}").into()),
+            };
             let tmp_file = uuid::Uuid::new_v4().to_string() + ".cmd";
             let tmp_file_path = PathBuf::from_str(&tmp_dir)?.join(tmp_file);
             let mut gbk_cmd: Vec<u8> = vec![];
@@ -2881,9 +2880,9 @@ pub fn init_ex_fun_map() {
         if pos >= text_chs.len() {
             return Ok(Some(rv_text("-1".to_string())));
         }
-        let text_str = text_chs.get(pos..).unwrap().iter().collect::<String>();
+        let text_str = text_chs.get(pos..).ok_or("位置超出范围")?.iter().collect::<String>();
         if let Some(pos1) = text_str.find(&sub) {
-            let t = text_str.get(0..pos1).unwrap();
+            let t = text_str.get(0..pos1).ok_or("位置超出范围")?;
             let pos2 = t.chars().collect::<Vec<char>>().len();
             return Ok(Some(rv_text((pos + pos2).to_string())));
         }
@@ -3130,7 +3129,10 @@ pub fn init_ex_fun_map() {
             use std::process::Command;
 
             // 拿不到自身路径属异常情况，按 fail-fast 直接 panic
-            let exe_path = env::current_exe().unwrap();
+            let Ok(exe_path) = env::current_exe() else {
+                let _ = redlang::cqapi::cq_add_log_w("无法获取当前程序路径");
+                return;
+            };
             let args: Vec<String> = env::args().skip(1).collect();
 
             let lock_name = uuid::Uuid::new_v4().to_string();
@@ -3364,8 +3366,8 @@ pub fn init_ex_fun_map() {
             }
 
             fn get_two_tou(des: &mut String) -> i64 {
-                let ret1 = get_random().unwrap() % 10_usize + 1;
-                let ret2 = get_random().unwrap() % 10_usize + 1;
+                let ret1 = get_random().unwrap_or(0) % 10_usize + 1;
+                let ret2 = get_random().unwrap_or(0) % 10_usize + 1;
                 des.push_str(&format!("掷出两个面数为10的骰子:{:?}\n", vec![ret1, ret2]));
                 let mut ret = (ret1 - 1) * 10 + ret2 - 1;
                 if ret == 0 {
@@ -3381,7 +3383,7 @@ pub fn init_ex_fun_map() {
                 let f = mp["f"].0.unwrap_or(4);
                 let mut tou_vec: Vec<i64> = vec![];
                 for _i in 0..f {
-                    tou_vec.push(((get_random().unwrap() % 3_usize) as i64) - 1);
+                    tou_vec.push(((get_random().unwrap_or(0) % 3_usize) as i64) - 1);
                 }
                 des.push_str(&format!("掷出{f}个三面骰:{tou_vec:?}\n"));
                 let mut sum: i64 = 0;
@@ -3447,7 +3449,7 @@ pub fn init_ex_fun_map() {
                     let mut ret = get_two_tou(&mut des);
                     let mut p_vec: Vec<i64> = vec![];
                     for _i in 0..p_num {
-                        p_vec.push((get_random().unwrap() % 10_usize + 1) as i64)
+                        p_vec.push((get_random().unwrap_or(0) % 10_usize + 1) as i64)
                     }
                     des.push_str(&format!("掷出{p_num}个惩罚骰:{p_vec:?}\n"));
                     p_vec.sort();
@@ -3464,7 +3466,7 @@ pub fn init_ex_fun_map() {
                     let mut ret = get_two_tou(&mut des);
                     let mut p_vec: Vec<i64> = vec![];
                     for _i in 0..p_num {
-                        p_vec.push((get_random().unwrap() % 10_usize + 1) as i64)
+                        p_vec.push((get_random().unwrap_or(0) % 10_usize + 1) as i64)
                     }
                     des.push_str(&format!("掷出{p_num}个奖励骰:{p_vec:?}\n"));
                     p_vec.sort();
@@ -3492,7 +3494,7 @@ pub fn init_ex_fun_map() {
                 let mut ret = get_two_tou(&mut des);
                 let mut p_vec: Vec<i64> = vec![];
                 for _i in 0..p_num {
-                    p_vec.push((get_random().unwrap() % 10_usize + 1) as i64)
+                    p_vec.push((get_random().unwrap_or(0) % 10_usize + 1) as i64)
                 }
                 des.push_str(&format!("掷出{p_num}个惩罚骰:{p_vec:?}\n"));
                 p_vec.sort();
@@ -3510,7 +3512,7 @@ pub fn init_ex_fun_map() {
                 let mut ret = get_two_tou(&mut des);
                 let mut p_vec: Vec<i64> = vec![];
                 for _i in 0..p_num {
-                    p_vec.push((get_random().unwrap() % 10_usize + 1) as i64)
+                    p_vec.push((get_random().unwrap_or(0) % 10_usize + 1) as i64)
                 }
                 des.push_str(&format!("掷出{p_num}个奖励骰:{p_vec:?}\n"));
                 p_vec.sort();
@@ -3825,7 +3827,7 @@ pub fn init_ex_fun_map() {
                             if let Ok(val) = val_rst {
                                 val
                             } else {
-                                let _ = cq_add_log_w(&format!("{:?}",val_rst.err().unwrap()));
+                                let _ = cq_add_log_w(&format!("{:?}",val_rst));
                                 (vec![],BTreeMap::new())
                             }
                         },
@@ -4190,7 +4192,7 @@ def red_out(sw):
                     if let Ok(val) = val_rst {
                         val
                     } else {
-                        let _ = cq_add_log_w(&format!("{:?}",val_rst.err().unwrap()));
+                        let _ = cq_add_log_w(&format!("{:?}",val_rst));
                         (vec![],BTreeMap::new())
                     }
                 },
@@ -4430,19 +4432,16 @@ def red_out(sw):
             let func1 = scope.create_function_mut(|_, red_code: String| {
                 let mut s_t = s_t.borrow_mut();
                 let ret_str = s_t.parse_to_string(&red_code);
-                if ret_str.is_err() {
-                    return Err(mlua::Error::RuntimeError(
-                        ret_str.err().unwrap().to_string(),
-                    ));
-                }
-                Ok(ret_str.unwrap())
+                ret_str.map_err(|error| mlua::Error::RuntimeError(error.to_string()))
             })?;
             let func3 = scope.create_function_mut(|_, muti_params: MultiValue| {
                 let params_len = muti_params.len();
                 if params_len < 1 {
                     return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                 }
-                let cmd = muti_params.front().unwrap();
+                let Some(cmd) = muti_params.front() else {
+                    return Err(mlua::Error::RuntimeError("参数错误".to_string()));
+                };
                 let red_cmd = if cmd.is_string() {
                     // Lua 字符串允许含非法 UTF-8 字节，to_str 会失败，
                     // 必须用 to_string_lossy 避免 panic（release 下直接 abort 进程）
@@ -4466,12 +4465,7 @@ def red_out(sw):
                 }
                 red_code += "】";
                 let ret_str = s_t.parse_to_string(&red_code);
-                if ret_str.is_err() {
-                    return Err(mlua::Error::RuntimeError(
-                        ret_str.err().unwrap().to_string(),
-                    ));
-                }
-                Ok(ret_str.unwrap())
+                ret_str.map_err(|error| mlua::Error::RuntimeError(error.to_string()))
             })?;
             lua.globals().set("call_red", func1)?;
             lua.globals().set("call_redcmd", func3)?;
@@ -4489,19 +4483,16 @@ def red_out(sw):
             let func1 = scope.create_function_mut(|_, red_code: String| {
                 let mut s_t = s_t.borrow_mut();
                 let ret_str = s_t.parse_to_string(&red_code);
-                if ret_str.is_err() {
-                    return Err(mlua::Error::RuntimeError(
-                        ret_str.err().unwrap().to_string(),
-                    ));
-                }
-                Ok(ret_str.unwrap())
+                ret_str.map_err(|error| mlua::Error::RuntimeError(error.to_string()))
             })?;
             let func3 = scope.create_function_mut(|_, muti_params: MultiValue| {
                 let params_len = muti_params.len();
                 if params_len < 1 {
                     return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                 }
-                let cmd = muti_params.front().unwrap();
+                let Some(cmd) = muti_params.front() else {
+                    return Err(mlua::Error::RuntimeError("参数错误".to_string()));
+                };
                 let red_cmd = if cmd.is_string() {
                     // 同【运行lua】：Lua 字符串可含非法 UTF-8，用 to_string_lossy 避免 panic
                     cmd.as_string().map(|s| s.to_string_lossy()).unwrap_or_default()
@@ -4524,12 +4515,7 @@ def red_out(sw):
                 }
                 red_code += "】";
                 let ret_str = s_t.parse_to_string(&red_code);
-                if ret_str.is_err() {
-                    return Err(mlua::Error::RuntimeError(
-                        ret_str.err().unwrap().to_string(),
-                    ));
-                }
-                Ok(ret_str.unwrap())
+                ret_str.map_err(|error| mlua::Error::RuntimeError(error.to_string()))
             })?;
             lua.globals().set("call_red", func1)?;
             lua.globals().set("call_redcmd", func3)?;
@@ -4978,12 +4964,10 @@ def red_out(sw):
             let index_str = self_t.get_param_text_rc(params, i)?;
             match &*cur_rv {
                 RedValue::Array(arr) => {
-                    let index_rst = index_str.parse::<usize>();
-                    if index_rst.is_err() {
+                    let Ok(index) = index_str.parse::<usize>() else {
                         cur_rv = rv_empty();
                         break;
-                    }
-                    let index = index_rst.unwrap();
+                    };
                     if let Some(v) = arr.get(index) {
                         cur_rv = v.clone();
                     } else {
@@ -5000,12 +4984,10 @@ def red_out(sw):
                     }
                 }
                 RedValue::Text(s) => {
-                    let index_rst = index_str.parse::<usize>();
-                    if index_rst.is_err() {
+                    let Ok(index) = index_str.parse::<usize>() else {
                         cur_rv = rv_empty();
                         break;
-                    }
-                    let index = index_rst.unwrap();
+                    };
                     let v_chs = s.chars().collect::<Vec<char>>();
                     if let Some(v) = v_chs.get(index) {
                         cur_rv = rv_text(v.to_string());

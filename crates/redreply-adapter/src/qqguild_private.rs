@@ -76,12 +76,12 @@ async fn conv_event(
     root: serde_json::Value,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tp = read_json_str(&root, "t");
-    let self_id = (*self_t.appid.upgrade().ok_or("No appid")?.read().unwrap()).to_owned();
+    let self_id = (*self_t.appid.upgrade().ok_or("No appid")?.read().unwrap_or_else(|e| e.into_inner())).to_owned();
     if tp == "READY" {
         let d = root.get("d").ok_or("No d")?;
         let user = read_json_obj_or_null(d, "user");
         let bot_id_t = read_json_str(&user, "id");
-        (*self_t.bot_id.upgrade().ok_or("No bot_id")?.write().unwrap()) = bot_id_t;
+        (*self_t.bot_id.upgrade().ok_or("No bot_id")?.write().unwrap_or_else(|e| e.into_inner())) = bot_id_t;
     } else if conv_group_c2c_event(self_t, &root).await? {
     } else if tp == "DIRECT_MESSAGE_CREATE" {
         let event_id = set_event_id(self_t, &root, 60 * 5)?;
@@ -117,7 +117,7 @@ async fn conv_event(
         });
         tokio::task::spawn_blocking(move || {
             if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
     } else if tp == "GUILD_MEMBER_ADD" {
@@ -146,7 +146,7 @@ async fn conv_event(
         });
         tokio::task::spawn_blocking(move || {
             if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
     } else if tp == "GUILD_MEMBER_REMOVE" {
@@ -175,7 +175,7 @@ async fn conv_event(
         });
         tokio::task::spawn_blocking(move || {
             if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
     }
@@ -236,9 +236,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
     async fn disconnect(&mut self) {
         self.is_stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        if self.stop_tx.is_some() {
-            let _foo = self.stop_tx.clone().unwrap().send(true).await;
-        }
+        if let Some(stop_tx) = &self.stop_tx { let _ = stop_tx.send(true).await; }
     }
 
     fn get_alive(&self) -> bool {
@@ -249,13 +247,13 @@ impl BotConnectTrait for QQGuildPrivateConnect {
         let config_json_str = self.url.get(18..).ok_or("qqguild_private url格式错误")?;
         let config_json: serde_json::Value = serde_json::from_str(config_json_str)?;
         println!("{:?}", config_json);
-        (*self.appid.write().unwrap()) = config_json
+        (*self.appid.write().unwrap_or_else(|e| e.into_inner())) = config_json
             .get("AppID")
             .ok_or("qqguild_private AppID格式错误:没有AppID")?
             .as_str()
             .ok_or("qqguild_private AppID格式错误:AppID不是字符串")?
             .to_owned();
-        let appid = (*self.appid.read().unwrap()).to_owned();
+        let appid = (*self.appid.read().unwrap_or_else(|e| e.into_inner())).to_owned();
         self.appsecret = config_json
             .get("AppSecret")
             .ok_or("qqguild_private AppSecret格式错误:没有AppSecret")?
@@ -269,7 +267,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
             .ok_or("qqguild_private Token格式错误:Token不是字符串")?
             .to_owned();
         let access_token_struct = token_refresh(&appid, &self.appsecret).await?;
-        (*self.access_token.write().unwrap()) = access_token_struct.access_token.to_owned();
+        (*self.access_token.write().unwrap_or_else(|e| e.into_inner())) = access_token_struct.access_token.to_owned();
 
         let ws_url = get_gateway(&access_token_struct.access_token, &appid).await?;
         println!("get_gateway:{}", ws_url);
@@ -277,7 +275,8 @@ impl BotConnectTrait for QQGuildPrivateConnect {
         let request = tungstenite::client::IntoClientRequest::into_client_request(&ws_url)?;
         let ws_rst;
         let port = request.uri().port().map(Into::into).unwrap_or(443);
-        let addr = format!("{}:{}", request.uri().host().unwrap(), port);
+        let host = request.uri().host().ok_or("ws url 缺少 host")?;
+        let addr = format!("{host}:{port}");
         // 显式超时，避免半开连接长时间卡在 connecting
         let socket = tokio::time::timeout(std::time::Duration::from_secs(15), TcpStream::connect(addr))
             .await
@@ -320,17 +319,16 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                             refresh_interval = std::time::Duration::from_secs(secs);
                         }
                         if let Some(access_token) = access_token.upgrade() {
-                            (*access_token.write().unwrap()) = access_token_struct.access_token;
+                            (*access_token.write().unwrap_or_else(|e| e.into_inner())) = access_token_struct.access_token;
                         } else {
                             break;
                         }
                     }
                     Err(err) => {
                         fail_count += 1;
-                        cq_add_log_w(&format!(
+                        let _ = cq_add_log_w(&format!(
                             "刷新access_token失败({fail_count}/3):{err}"
-                        ))
-                        .unwrap();
+                        ));
                         if fail_count >= 3 {
                             break;
                         }
@@ -374,7 +372,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                         let json_dat;
                         if let Some(val) =  get_json_dat(msg) {
                             json_dat = val;
-                            crate::cqapi::cq_add_log(format!("qqguild_private 收到数据:{}", json_dat).as_str()).unwrap();
+                            let _ = crate::cqapi::cq_add_log(format!("qqguild_private 收到数据:{}", json_dat).as_str());
                         }else{
                             continue;
                         }
@@ -397,7 +395,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                             if let Some(sn_opt) = json_dat.get("s") {
                                 if let Some(sn_t) = sn_opt.as_u64() {
                                     if let Some(val) = sn.upgrade() {
-                                        (*val.write().unwrap()) = Some(sn_t);
+                                        (*val.write().unwrap_or_else(|e| e.into_inner())) = Some(sn_t);
                                     }else {
                                         break;
                                     }
@@ -411,16 +409,16 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                             let self_data = self_data.clone();
                             tokio::spawn(async move {
                                 if let Err(e) = conv_event(&self_data,json_dat).await {
-                                    crate::cqapi::cq_add_log_w(format!("err:{:?}", e).as_str()).unwrap();
+                                    let _ = crate::cqapi::cq_add_log_w(format!("err:{:?}", e).as_str());
                                 }
                             });
                         }else if op == "11" { // 心跳
 
                         }else if op == "7" { // 重连
-                            cq_add_log_w("qq要求重连").unwrap();
+                            let _ = cq_add_log_w("qq要求重连");
                             break;
                         }else if op == "9" { // 参数错误
-                            cq_add_log_w("qq参数错误").unwrap();
+                            let _ = cq_add_log_w("qq参数错误");
                             break;
                         }else if op == "12" { // HTTP Callback ACK
 
@@ -435,10 +433,9 @@ impl BotConnectTrait for QQGuildPrivateConnect {
             if let Some(val) = is_stop.upgrade() {
                 val.store(true, std::sync::atomic::Ordering::Relaxed);
             }
-            cq_add_log_w(&format!(
+            let _ = cq_add_log_w(&format!(
                 "qqguild_private 连接已经断开(read_halt):{url_str_t}"
-            ))
-            .unwrap();
+            ));
         });
         let url_str_t = self.url.clone();
         let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
@@ -459,7 +456,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                     }
                     let sn_t;
                     if let Some(val) = sn.upgrade() {
-                        sn_t = *val.read().unwrap();
+                        sn_t = *val.read().unwrap_or_else(|e| e.into_inner());
                     } else {
                         break;
                     }
@@ -477,7 +474,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                 if let Some(val) = is_stop.upgrade() {
                     val.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
-                cq_add_log_w(&format!("qqguild_private 心跳已断开:{url_str2}")).unwrap();
+                let _ = cq_add_log_w(&format!("qqguild_private 心跳已断开:{url_str2}"));
             });
             while let Some(msg) = rx_ay.recv().await {
                 let rst = write_half
@@ -493,10 +490,9 @@ impl BotConnectTrait for QQGuildPrivateConnect {
             if let Some(val) = is_stop2.upgrade() {
                 val.store(true, std::sync::atomic::Ordering::Relaxed);
             }
-            cq_add_log_w(&format!(
+            let _ = cq_add_log_w(&format!(
                 "qqguild_private 连接已经断开(write_half):{url_str_t}"
-            ))
-            .unwrap();
+            ));
         });
         Ok(())
     }
@@ -550,7 +546,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
     }
 
     fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
-        let appid = (*self.appid.read().unwrap()).to_owned();
+        let appid = (*self.appid.read().unwrap_or_else(|e| e.into_inner())).to_owned();
         vec![
             ("qqguild_private".to_owned(), appid.clone()),
             ("qqgroup_public".to_owned(), appid),

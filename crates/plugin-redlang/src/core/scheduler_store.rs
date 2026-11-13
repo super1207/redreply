@@ -54,8 +54,7 @@ impl SchedulerStore {
     /// 移除某包的所有延迟触发任务，避免包删除/重载后旧任务残留
     pub fn remove_pkg_runs(&self, pkg_name: &str) {
         self.one_time_runs
-            .lock()
-            .unwrap()
+            .lock().unwrap_or_else(|e| e.into_inner())
             .retain(|run| run.pkg_name != pkg_name);
     }
 

@@ -100,17 +100,15 @@ fn do_cron_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
             crate::core::scheduler().cron_window(now_time);
         if let Some((large, difference)) = clock_shift {
             if large {
-                cq_add_log_w(&format!(
+                let _ = cq_add_log_w(&format!(
                     "检测到时间大幅倒流 ({} 秒)，进行补偿触发",
                     difference
-                ))
-                .unwrap();
+                ));
             } else {
-                cq_add_log_w(&format!(
+                let _ = cq_add_log_w(&format!(
                     "检测到时间小幅倒流 ({} 秒)，不补偿触发",
                     difference
-                ))
-                .unwrap();
+                ));
             }
         }
         (baseline, trigger_threshold)
@@ -263,7 +261,9 @@ fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
                         rl.exmap = Rc::new(RefCell::new(exmap.clone()));
                         rl.pkg_name = pkg_name_t.to_owned();
                         rl.script_name = script_name_t.to_owned();
-                        rl.set_coremap("隐藏", &sub_data).unwrap();
+                        if let Err(err) = rl.set_coremap("隐藏", &sub_data) {
+                            let _ = cq_add_log_w(&format!("设置隐藏变量失败:{err}"));
+                        }
                         if let Err(err) =
                             crate::cqevent::do_script(&mut rl, &code_t, "normal", false)
                         {

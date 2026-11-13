@@ -223,11 +223,10 @@ fn deal_pushlish(
     let playload = serde_json::from_slice::<serde_json::Value>(&p.payload)?;
     let playload_str = playload.to_string();
     let topic = String::from_utf8_lossy(&p.topic).to_string();
-    cq_add_log(&format!(
+    let _ = cq_add_log(&format!(
         "mqtt client received: {} topic:{}",
         playload_str, topic
-    ))
-    .unwrap();
+    ));
     deal_api_callback(&p, &playload, &topic)?;
     deal_publish_api(&p, &playload, &playload_str, &topic)?;
     deal_remote_event(p, playload, &topic)?;
@@ -256,10 +255,9 @@ fn deal_api_callback(
     } else {
         return Err(format!("topic not match3: {}", topic).into());
     }
-    if correlation_data.is_none() {
+    let Some(correlation_data) = correlation_data.clone() else {
         return Err(format!("topic not match4: {}", topic).into());
-    }
-    let correlation_data = correlation_data.clone().unwrap();
+    };
     let uuid_t: String = String::from_utf8(correlation_data.to_vec())?;
     state().send_echo(&uuid_t, playload.clone())?;
     Ok(())
@@ -346,13 +344,11 @@ fn deal_publish_api(
     let response_topic;
     let correlation_data;
     if let Some(properties) = &p.properties {
-        let response_topic_t = &properties.response_topic;
-        if response_topic_t.is_none() {
+        let Some(topic) = properties.response_topic.clone() else {
             return Ok(());
-        }
-        response_topic = response_topic_t.clone().unwrap();
-        let correlation_data_t = &properties.correlation_data;
-        correlation_data = correlation_data_t;
+        };
+        response_topic = topic;
+        correlation_data = properties.correlation_data.clone();
     } else {
         return Ok(());
     }
@@ -423,9 +419,9 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
         .ok_or("broker_port not number")?;
 
     if let Some(remote_clients) = mqtt_config.get("remote_clients") {
-        if remote_clients.is_array() {
+        if let Some(clients) = remote_clients.as_array() {
             let mut remote_clients_vec = vec![];
-            for client in remote_clients.as_array().unwrap() {
+            for client in clients {
                 let client_str = client.as_str().ok_or("remote_client not string")?;
                 remote_clients_vec.push(client_str.to_string());
             }
@@ -549,8 +545,7 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
                                 }
                             }
                             if let Some(err) = last_err {
-                                cq_add_log_w(&format!("MQTT Client subscribe error: {}", err))
-                                    .unwrap();
+                                let _ = cq_add_log_w(&format!("MQTT Client subscribe error: {}", err));
                             }
                         }
                     }

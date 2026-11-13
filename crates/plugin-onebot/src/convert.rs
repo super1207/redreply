@@ -5,28 +5,31 @@
 
 use redlang::mytool::{read_json_str, str_msg_to_arr};
 
-pub fn red_id_to_ob(red_id: &str) -> i32 {
-    let curr_tm = std::time::SystemTime::now()
+fn now_secs() -> u64 {
+    std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    crate::store::store().red_id_to_ob(red_id, curr_tm)
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0)
+}
+
+pub fn red_id_to_ob(red_id: &str) -> i32 {
+    crate::store::store().red_id_to_ob(red_id, now_secs())
 }
 
 fn change_msg_id_to_i32(root: &mut serde_json::Value) {
-    if root.is_object() {
-        for (k, v) in root.as_object_mut().unwrap() {
-            if k == "message_id" {
-                if v.is_string() {
-                    (*v) = serde_json::json!(red_id_to_ob(v.as_str().unwrap()));
+    if let Some(object) = root.as_object_mut() {
+        for (key, value) in object {
+            if key == "message_id" {
+                if let Some(text) = value.as_str() {
+                    *value = serde_json::json!(red_id_to_ob(text));
                 }
-            } else if v.is_array() || v.is_object() {
-                change_msg_id_to_i32(v);
+            } else if value.is_array() || value.is_object() {
+                change_msg_id_to_i32(value);
             }
         }
-    } else if root.is_array() {
-        for v in root.as_array_mut().unwrap() {
-            change_msg_id_to_i32(v);
+    } else if let Some(array) = root.as_array_mut() {
+        for value in array {
+            change_msg_id_to_i32(value);
         }
     }
 }
@@ -38,55 +41,44 @@ fn mycrc64(data: &str) -> i64 {
 }
 
 fn change_uid_to_i64(root: &mut serde_json::Value) {
-    if root.is_object() {
-        for (k, v) in root.as_object_mut().unwrap() {
+    if let Some(object) = root.as_object_mut() {
+        for (key, value) in object {
             if matches!(
-                k.as_str(),
+                key.as_str(),
                 "target_id" | "user_id" | "group_id" | "self_id" | "message_id" | "operator_id"
             ) {
-                if v.is_string() {
-                    let v_str = v.as_str().unwrap();
-                    if v_str.parse::<i64>().is_err() {
-                        let cksum = mycrc64(v.as_str().unwrap());
-                        crate::store::store().remember_uid(cksum, v.as_str().unwrap().to_owned());
-                        (*v) = serde_json::to_value(cksum).unwrap();
+                if let Some(text) = value.as_str() {
+                    if let Ok(id) = text.parse::<i64>() {
+                        *value = serde_json::json!(id);
                     } else {
-                        (*v) = serde_json::to_value(v_str.parse::<i64>().unwrap()).unwrap();
+                        let checksum = mycrc64(text);
+                        crate::store::store().remember_uid(checksum, text.to_owned());
+                        *value = serde_json::json!(checksum);
                     }
                 }
-            } else if v.is_array() || v.is_object() {
-                change_uid_to_i64(v);
+            } else if value.is_array() || value.is_object() {
+                change_uid_to_i64(value);
             }
         }
-    } else if root.is_array() {
-        for v in root.as_array_mut().unwrap() {
-            change_uid_to_i64(v);
+    } else if let Some(array) = root.as_array_mut() {
+        for value in array {
+            change_uid_to_i64(value);
         }
     }
 }
 
 fn ob_id_to_red(ob_id: i32) -> Option<String> {
-    let curr_tm = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
-    crate::store::store().ob_id_to_red(ob_id, curr_tm)
+    crate::store::store().ob_id_to_red(ob_id, now_secs())
 }
 
 fn change_event_at_and_reply(
     root: &mut serde_json::Value,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let msg_opt = root.get_mut("message");
-    if msg_opt.is_none() {
+    let Some(msg) = root.get_mut("message") else {
         return Ok(());
-    }
-    let msg = msg_opt.unwrap();
+    };
     if msg.is_string() {
-        let r = str_msg_to_arr(msg);
-        if r.is_err() {
-            return Err("str_msg_to_arr err".into());
-        }
-        (*msg) = r.unwrap();
+        *msg = str_msg_to_arr(msg).map_err(|error| error.to_string())?;
     }
     // message 字段可能为 null/数字等非法类型，不能假定必为数组
     let msg_arr = msg
@@ -98,12 +90,12 @@ fn change_event_at_and_reply(
             let data = node.get_mut("data").ok_or("no data in at node")?;
             let qq = data.get_mut("qq").ok_or("no qq in data node")?;
             let qq_str = qq.as_str().ok_or("qq in node not str")?;
-            if qq_str.parse::<i64>().is_err() {
-                let cksum = mycrc64(qq_str);
-                crate::store::store().remember_uid(cksum, qq_str.to_owned());
-                (*qq) = serde_json::to_value(cksum.to_string()).unwrap();
+            if let Ok(qq_int) = qq_str.parse::<i64>() {
+                *qq = serde_json::json!(qq_int.to_string());
             } else {
-                (*qq) = serde_json::to_value(qq_str.parse::<i64>().unwrap().to_string()).unwrap();
+                let checksum = mycrc64(qq_str);
+                crate::store::store().remember_uid(checksum, qq_str.to_owned());
+                *qq = serde_json::json!(checksum.to_string());
             }
         } else if tp == "reply" {
             let data = node.get_mut("data").ok_or("no data in reply node")?;
@@ -112,8 +104,7 @@ fn change_event_at_and_reply(
                 return Err("id in node not str".into());
             }
             let id = data.get_mut("id").ok_or("no id in data node")?;
-            let ob_id = red_id_to_ob(&id_str);
-            (*id) = serde_json::to_value(ob_id.to_string()).unwrap();
+            *id = serde_json::json!(red_id_to_ob(&id_str).to_string());
         }
     }
     Ok(())
@@ -122,27 +113,31 @@ fn change_event_at_and_reply(
 fn change_obid_to_str(
     root: &mut serde_json::Value,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if root.is_object() {
-        for (k, v) in root.as_object_mut().unwrap() {
-            if matches!(k.as_str(), "target_id" | "user_id" | "group_id" | "self_id") {
-                if v.is_i64() {
-                    let ob_uid = v.as_i64().unwrap();
+    if let Some(object) = root.as_object_mut() {
+        for (key, value) in object {
+            if matches!(
+                key.as_str(),
+                "target_id" | "user_id" | "group_id" | "self_id"
+            ) {
+                let ob_uid = if let Some(ob_uid) = value.as_i64() {
+                    Some(ob_uid)
+                } else if let Some(text) = value.as_str() {
+                    Some(text.parse::<i64>()?)
+                } else {
+                    None
+                };
+                if let Some(ob_uid) = ob_uid {
                     if let Some(red_uid) = crate::store::store().red_uid(ob_uid) {
-                        (*v) = serde_json::to_value(red_uid).unwrap();
-                    }
-                } else if v.is_string() {
-                    let ob_uid = v.as_str().unwrap().parse::<i64>()?;
-                    if let Some(red_uid) = crate::store::store().red_uid(ob_uid) {
-                        (*v) = serde_json::to_value(red_uid).unwrap();
+                        *value = serde_json::json!(red_uid);
                     }
                 }
-            } else if v.is_array() || v.is_object() {
-                change_obid_to_str(v)?;
+            } else if value.is_array() || value.is_object() {
+                change_obid_to_str(value)?;
             }
         }
-    } else if root.is_array() {
-        for v in root.as_array_mut().unwrap() {
-            change_obid_to_str(v)?;
+    } else if let Some(array) = root.as_array_mut() {
+        for value in array {
+            change_obid_to_str(value)?;
         }
     }
     Ok(())
@@ -160,11 +155,9 @@ pub fn deal_event_groups(
         .remove("groups_id");
     let platform = read_json_str(root, "platform");
     let self_id = read_json_str(root, "self_id");
-    let group_id_opt = root.get_mut("group_id");
-    if group_id_opt.is_none() {
+    let Some(group_id) = root.get_mut("group_id") else {
         return Ok(());
-    }
-    let group_id = group_id_opt.unwrap();
+    };
     let group_id_int = group_id.as_i64().ok_or("group_id not i64")?;
     let hash_key = format!("{groups_id}|{group_id_int}");
     let new_group_id = mycrc64(&hash_key);
@@ -183,17 +176,11 @@ pub fn deal_event_groups(
 fn change_params_at_and_reply(
     root: &mut serde_json::Value,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    let msg_opt = root.get_mut("message");
-    if msg_opt.is_none() {
+    let Some(msg) = root.get_mut("message") else {
         return Ok(());
-    }
-    let msg = msg_opt.unwrap();
+    };
     if msg.is_string() {
-        let r = str_msg_to_arr(msg);
-        if r.is_err() {
-            return Err("str_msg_to_arr err".into());
-        }
-        (*msg) = r.unwrap();
+        *msg = str_msg_to_arr(msg).map_err(|error| error.to_string())?;
     }
     // message 字段可能为 null/数字等非法类型，不能假定必为数组
     let msg_arr = msg
@@ -261,10 +248,13 @@ fn deal_request_groups(
         // 由适配器/协议端返回明确错误（不会像旧版那样静默丢请求）。
         return Ok(());
     };
-    (*root.get_mut("group_id").unwrap()) = serde_json::json!(real_group_id);
-    root.as_object_mut()
-        .unwrap()
-        .insert("groups_id".to_owned(), serde_json::json!(groups_id));
+    let Some(group_id) = root.get_mut("group_id") else {
+        return Ok(());
+    };
+    *group_id = serde_json::json!(real_group_id);
+    if let Some(object) = root.as_object_mut() {
+        object.insert("groups_id".to_owned(), serde_json::json!(groups_id));
+    }
     Ok(())
 }
 
@@ -313,9 +303,10 @@ fn change_params_msg_id(
     }
     let ob_msg_id_int = ob_msg_id.parse::<i32>()?;
     let red_msg_id = ob_id_to_red(ob_msg_id_int).ok_or("message_id not found")?;
-    root.as_object_mut()
-        .unwrap()
-        .insert("message_id".to_owned(), serde_json::json!(red_msg_id));
+    let Some(object) = root.as_object_mut() else {
+        return Err("params not object".into());
+    };
+    object.insert("message_id".to_owned(), serde_json::json!(red_msg_id));
     Ok(())
 }
 
@@ -326,11 +317,9 @@ pub fn request_to_red(
 ) -> Result<(serde_json::Value, String), Box<dyn std::error::Error + Send + Sync>> {
     let mut root = root.clone();
     let mut passive_id = "".to_string();
-    let params_opt = root.get_mut("params");
-    if params_opt.is_none() {
+    let Some(params) = root.get_mut("params") else {
         return Ok((root, passive_id));
-    }
-    let params = params_opt.unwrap();
+    };
 
     // 处理 passive_id；非数字 ID 没有被动回复映射，跳过而不是让整条请求失败
     let user_id = read_json_str(params, "user_id");

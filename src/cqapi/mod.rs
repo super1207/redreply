@@ -76,15 +76,17 @@ pub fn cq_call_api(
     remote_id: &str,
 ) -> String {
     let js_rst = serde_json::from_str(json_str);
-    if let Err(err) = js_rst {
-        return serde_json::json!({
-            "retcode":-1,
-            "status":"failed",
-            "data":format!("parse input json err:{:?}",err)
-        })
-        .to_string();
-    }
-    let mut js = js_rst.unwrap();
+    let mut js = match js_rst {
+        Ok(value) => value,
+        Err(err) => {
+            return serde_json::json!({
+                "retcode":-1,
+                "status":"failed",
+                "data":format!("parse input json err:{:?}",err)
+            })
+            .to_string();
+        }
+    };
 
     if !remote_id.is_empty() {
         // MQTT 由插件提供：未安装/未启用 mqtt 插件时按“没有MQTT Client”处理
@@ -95,32 +97,32 @@ pub fn cq_call_api(
             Some(service) => service.call_remote(platform, self_id, passive_id, js, remote_id),
             None => Err("没有MQTT Client".to_string()),
         };
-        if let Ok(ret) = ret_rsp {
-            return ret.to_string();
-        } else {
-            let err = ret_rsp.err().unwrap();
-            let _ = cq_add_log_w(&format!("调用mqtt远程失败:{:?}", err));
-            return serde_json::json!({
-                "retcode":-1,
-                "status":"failed",
-                "data":format!("call mqtt remote error:{:?}", err)
-            })
-            .to_string();
+        match ret_rsp {
+            Ok(ret) => return ret.to_string(),
+            Err(err) => {
+                let _ = cq_add_log_w(&format!("调用mqtt远程失败:{:?}", err));
+                return serde_json::json!({
+                    "retcode":-1,
+                    "status":"failed",
+                    "data":format!("call mqtt remote error:{:?}", err)
+                })
+                .to_string();
+            }
         }
     }
     let fut = async {
-        let ret = crate::botconn::call_api(platform, self_id, passive_id, &mut js).await;
-        if let Ok(ret) = ret {
-            return ret.to_string();
-        } else {
-            let _ = cq_add_log_w(&format!("调用api失败:{:?}", ret));
+        match crate::botconn::call_api(platform, self_id, passive_id, &mut js).await {
+            Ok(ret) => ret.to_string(),
+            Err(err) => {
+                let _ = cq_add_log_w(&format!("调用api失败:{:?}", err));
+                serde_json::json!({
+                    "retcode":-1,
+                    "status":"failed",
+                    "data":format!("call api error:{:?}",err)
+                })
+                .to_string()
+            }
         }
-        serde_json::json!({
-            "retcode":-1,
-            "status":"failed",
-            "data":format!("call api error:{:?}",ret.err().unwrap())
-        })
-        .to_string()
     };
     // 已在 runtime worker 上时禁止直接 block_on，否则会死锁
     if let Ok(handle) = tokio::runtime::Handle::try_current() {

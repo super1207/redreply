@@ -35,9 +35,9 @@ const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose =
 
 pub fn get_app_dir(pkg_name: &str) -> Result<String, Box<dyn std::error::Error>> {
     let app_dir = if pkg_name.is_empty() {
-        cq_get_app_directory2().unwrap()
+        cq_get_app_directory2().map_err(|error| error.to_string())?
     } else {
-        let plus_dir_str = cq_get_app_directory1().unwrap();
+        let plus_dir_str = cq_get_app_directory1().map_err(|error| error.to_string())?;
         let pkg_dir = PathBuf::from_str(&plus_dir_str)?.join("pkg_dir");
         pkg_dir
             .join(pkg_name)
@@ -441,12 +441,11 @@ pub fn init_cq_ex_fun_map() {
         );
         let ret_json: serde_json::Value = serde_json::from_str(&cq_ret)?;
         let bot_name = &ret_json["data"]["nickname"];
-        if bot_name.is_string() {
-            let name = bot_name.as_str().unwrap().to_owned();
+        if let Some(name) = bot_name.as_str() {
             if name.is_empty() {
                 return Ok(Some(rv_text("露娜sama".to_owned())));
             }
-            Ok(Some(rv_text(name)))
+            Ok(Some(rv_text(name.to_owned())))
         } else {
             Ok(Some(rv_text("露娜sama".to_owned())))
         }

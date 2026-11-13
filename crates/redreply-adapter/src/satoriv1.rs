@@ -68,7 +68,7 @@ async fn http_post(
     }
     let ret = client.execute(req).await?;
     let ret_str = ret.text().await?;
-    crate::cqapi::cq_add_log(&format!("接收数据:{ret_str}")).unwrap();
+    let _ = crate::cqapi::cq_add_log(&format!("接收数据:{ret_str}"));
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
     Ok(json_val)
 }
@@ -351,7 +351,7 @@ impl Satoriv1Connect {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let op = read_json_str(&json_data, "op");
         if op != "2" {
-            crate::cqapi::cq_add_log(format!("SATORI收到数据:{}", json_data).as_str()).unwrap();
+            let _ = crate::cqapi::cq_add_log(format!("SATORI收到数据:{}", json_data).as_str());
         }
         if op == "2" {
             // 心跳回复
@@ -363,14 +363,14 @@ impl Satoriv1Connect {
                 .ok_or("logins不存在")?
                 .as_array()
                 .ok_or("logins不是数组")?;
-            let mut lk = platforms_t.write().unwrap();
+            let mut lk = platforms_t.write().unwrap_or_else(|e| e.into_inner());
             lk.clear();
             for item in logins {
                 let platform = read_json_str(item, "platform");
                 let self_id = item["user"]["id"]
                     .as_str()
                     .ok_or("login中不存在user-id字段")?;
-                cq_add_log_w(&format!("add account:`{}`:`{}`", platform, self_id)).unwrap();
+                let _ = cq_add_log_w(&format!("add account:`{}`:`{}`", platform, self_id));
                 lk.push((platform, self_id.to_owned()));
             }
         } else if op == "0" {
@@ -386,7 +386,7 @@ impl Satoriv1Connect {
                 }
                 let platforms_t = platforms.upgrade().ok_or("upgrade platforms失败")?;
                 let mut index = usize::MAX;
-                let mut lk = platforms_t.write().unwrap();
+                let mut lk = platforms_t.write().unwrap_or_else(|e| e.into_inner());
                 for i in 0..lk.len() {
                     if lk[i].0 == platform && lk[i].1 == self_id {
                         index = i;
@@ -396,12 +396,11 @@ impl Satoriv1Connect {
                 if type_t == "login-removed" {
                     if index != usize::MAX {
                         lk.remove(index);
-                        cq_add_log_w(&format!("remove account:`{}`:`{}`", platform, self_id))
-                            .unwrap();
+                        let _ = cq_add_log_w(&format!("remove account:`{}`:`{}`", platform, self_id));
                     }
                 } else {
                     if index == usize::MAX {
-                        cq_add_log_w(&format!("add account:`{}`:`{}`", platform, self_id)).unwrap();
+                        let _ = cq_add_log_w(&format!("add account:`{}`:`{}`", platform, self_id));
                         lk.push((platform, self_id));
                     }
                 }
@@ -437,8 +436,7 @@ impl Satoriv1Connect {
                     group_groups_map
                         .upgrade()
                         .ok_or("upgrade group_groups_map失败")?
-                        .write()
-                        .unwrap()
+                        .write().unwrap_or_else(|e| e.into_inner())
                         .insert(key, guild_id.to_owned());
                     if content.starts_with("<chronocat:poke") {
                         // chronocat的戳一戳事件
@@ -472,8 +470,7 @@ impl Satoriv1Connect {
                                     if let Err(e) =
                                         crate::cqevent::do_1207_event(&event_json.to_string())
                                     {
-                                        crate::cqapi::cq_add_log(format!("{:?}", e).as_str())
-                                            .unwrap();
+                                        let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
                                     }
                                 });
                             }
@@ -508,7 +505,7 @@ impl Satoriv1Connect {
                         });
                         tokio::task::spawn_blocking(move || {
                             if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
                             }
                         });
                     }
@@ -520,7 +517,7 @@ impl Satoriv1Connect {
                         .ok_or("upgrade user_channel_map失败")?;
                     {
                         // 简单防膨胀：超过上限先清空
-                        let mut lk = user_channel_mp.write().unwrap();
+                        let mut lk = user_channel_mp.write().unwrap_or_else(|e| e.into_inner());
                         if lk.len() > 100_000 {
                             lk.clear();
                         }
@@ -547,7 +544,7 @@ impl Satoriv1Connect {
                     });
                     tokio::task::spawn_blocking(move || {
                         if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                            crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                            let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
                         }
                     });
                 }
@@ -578,7 +575,7 @@ impl Satoriv1Connect {
 
                 tokio::task::spawn_blocking(move || {
                     if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                        crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                        let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
                     }
                 });
             } else if type_t == "guild-member-removed" {
@@ -616,7 +613,7 @@ impl Satoriv1Connect {
 
                 tokio::task::spawn_blocking(move || {
                     if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                        crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                        let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
                     }
                 });
             } else if type_t == "message-deleted" {
@@ -659,7 +656,7 @@ impl Satoriv1Connect {
                     });
                     tokio::task::spawn_blocking(move || {
                         if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                            crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                            let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
                         }
                     });
                 } else {
@@ -671,7 +668,7 @@ impl Satoriv1Connect {
                         .ok_or("upgrade user_channel_map失败")?;
                     {
                         // 简单防膨胀：超过上限先清空
-                        let mut lk = user_channel_mp.write().unwrap();
+                        let mut lk = user_channel_mp.write().unwrap_or_else(|e| e.into_inner());
                         if lk.len() > 100_000 {
                             lk.clear();
                         }
@@ -688,7 +685,7 @@ impl Satoriv1Connect {
                     });
                     tokio::task::spawn_blocking(move || {
                         if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                            crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                            let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
                         }
                     });
                 }
@@ -749,19 +746,17 @@ impl Satoriv1Connect {
             let js_str = to_send.to_string();
             let out_str = js_str.get(0..2000);
             if let Some(out_str) = out_str {
-                crate::cqapi::cq_add_log(
+                let _ = crate::cqapi::cq_add_log(
                     format!(
                         "发送数据(platform:{platform},self_id:{self_id}):{}...",
                         out_str
                     )
                     .as_str(),
-                )
-                .unwrap();
+                );
             } else {
-                crate::cqapi::cq_add_log(
+                let _ = crate::cqapi::cq_add_log(
                     format!("发送数据(platform:{platform},self_id:{self_id}):{}", js_str).as_str(),
-                )
-                .unwrap();
+                );
             }
         }
 
@@ -794,8 +789,7 @@ impl Satoriv1Connect {
         let key = format!("{platform} {self_id} {user_id}");
         let channel_id = self_t
             .user_channel_map
-            .read()
-            .unwrap()
+            .read().unwrap_or_else(|e| e.into_inner())
             .get(&key)
             .ok_or("user_id not match any channel")?
             .to_owned();
@@ -841,19 +835,17 @@ impl Satoriv1Connect {
             let js_str = to_send.to_string();
             let out_str = js_str.get(0..2000);
             if let Some(out_str) = out_str {
-                crate::cqapi::cq_add_log(
+                let _ = crate::cqapi::cq_add_log(
                     format!(
                         "发送数据(platform:{platform},self_id:{self_id}):{}...",
                         out_str
                     )
                     .as_str(),
-                )
-                .unwrap();
+                );
             } else {
-                crate::cqapi::cq_add_log(
+                let _ = crate::cqapi::cq_add_log(
                     format!("发送数据(platform:{platform},self_id:{self_id}):{}", js_str).as_str(),
-                )
-                .unwrap();
+                );
             }
         }
 
@@ -887,19 +879,17 @@ impl Satoriv1Connect {
             let js_str = to_send.to_string();
             let out_str = js_str.get(0..2000);
             if let Some(out_str) = out_str {
-                crate::cqapi::cq_add_log(
+                let _ = crate::cqapi::cq_add_log(
                     format!(
                         "发送数据(platform:{platform},self_id:{self_id}):{}...",
                         out_str
                     )
                     .as_str(),
-                )
-                .unwrap();
+                );
             } else {
-                crate::cqapi::cq_add_log(
+                let _ = crate::cqapi::cq_add_log(
                     format!("发送数据(platform:{platform},self_id:{self_id}):{}", js_str).as_str(),
-                )
-                .unwrap();
+                );
             }
         }
 
@@ -996,8 +986,7 @@ impl Satoriv1Connect {
             let key = format!("{platform} {self_id} {id}");
             self_t
                 .group_groups_map
-                .write()
-                .unwrap()
+                .write().unwrap_or_else(|e| e.into_inner())
                 .insert(key, groups_id.to_owned());
             ret_group.push(serde_json::json!({
                 "group_id":id,
@@ -1026,8 +1015,7 @@ impl Satoriv1Connect {
             let key = format!("{platform} {self_id} {group_id}");
             groups_id = self_t
                 .group_groups_map
-                .read()
-                .unwrap()
+                .read().unwrap_or_else(|e| e.into_inner())
                 .get(&key)
                 .ok_or("groups_id is not exist")?
                 .to_owned();
@@ -1093,14 +1081,13 @@ impl Satoriv1Connect {
             "user_id":user_id
         });
 
-        crate::cqapi::cq_add_log(
+        let _ = crate::cqapi::cq_add_log(
             format!(
                 "发送数据(platform:{platform},self_id:{self_id}):{}",
                 to_send
             )
             .as_str(),
-        )
-        .unwrap();
+        );
         let user = http_post(
             &format!("{}/user.get", self_t.http_url),
             platform,
@@ -1148,14 +1135,13 @@ impl Satoriv1Connect {
             "message_id":message_id,
         });
 
-        crate::cqapi::cq_add_log(
+        let _ = crate::cqapi::cq_add_log(
             format!(
                 "发送数据(platform:{platform},self_id:{self_id}):{}",
                 to_send
             )
             .as_str(),
-        )
-        .unwrap();
+        );
 
         http_post(
             &format!("{}/message.delete", self_t.http_url),
@@ -1215,13 +1201,13 @@ impl Satoriv1Connect {
         }
         let guild = &satori_msg["guild"];
         let mut message_type = "group".to_owned();
-        if !guild.is_object() || guild.as_object().unwrap().is_empty() {
+        if guild.as_object().map_or(true, |object| object.is_empty()) {
             message_type = "private".to_owned();
         }
 
         let user = &satori_msg["user"];
         let sender;
-        if user.is_object() && !user.as_object().unwrap().is_empty() {
+        if user.as_object().is_some_and(|object| !object.is_empty()) {
             if message_type == "group" {
                 sender = serde_json::json!({
                     "user_id":read_json_str(user, "id"),
@@ -1267,9 +1253,7 @@ impl BotConnectTrait for Satoriv1Connect {
     async fn disconnect(&mut self) {
         self.is_stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        if self.stop_tx.is_some() {
-            let _foo = self.stop_tx.clone().unwrap().send(true).await;
-        }
+        if let Some(stop_tx) = &self.stop_tx { let _ = stop_tx.send(true).await; }
     }
 
     fn get_alive(&self) -> bool {
@@ -1371,7 +1355,7 @@ impl BotConnectTrait for Satoriv1Connect {
                         let group_groups_map_t = group_groups_map.clone();
                         tokio::spawn(async move {
                             if let Err(e) = Satoriv1Connect::conv_event(json_dat,platforms_t,user_channel_map_t,group_groups_map_t).await {
-                                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
                             }
                         });
                     },
@@ -1381,7 +1365,7 @@ impl BotConnectTrait for Satoriv1Connect {
                     }
                     _ = &mut idle => {
                         // 长时间无任何数据（心跳 pong 无响应），判定连接已死亡
-                        cq_add_log_w("satori 心跳无响应，判定连接已死亡").unwrap();
+                        let _ = cq_add_log_w("satori 心跳无响应，判定连接已死亡");
                         break;
                     }
                 }
@@ -1390,7 +1374,7 @@ impl BotConnectTrait for Satoriv1Connect {
             if let Some(val) = is_stop.upgrade() {
                 val.store(true, std::sync::atomic::Ordering::Relaxed);
             }
-            cq_add_log_w(&format!("satori连接已经断开(read_halt):{url_str_t}")).unwrap();
+            let _ = cq_add_log_w(&format!("satori连接已经断开(read_halt):{url_str_t}"));
         });
         let url_str_t = self.url.clone();
         let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
@@ -1421,7 +1405,7 @@ impl BotConnectTrait for Satoriv1Connect {
                 if let Some(val) = is_stop.upgrade() {
                     val.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
-                cq_add_log_w(&format!("satori心跳已断开:{url_str2}")).unwrap();
+                let _ = cq_add_log_w(&format!("satori心跳已断开:{url_str2}"));
             });
             while let Some(msg) = rx_ay.recv().await {
                 let rst = write_half
@@ -1437,7 +1421,7 @@ impl BotConnectTrait for Satoriv1Connect {
             if let Some(val) = is_stop2.upgrade() {
                 val.store(true, std::sync::atomic::Ordering::Relaxed);
             }
-            cq_add_log_w(&format!("satori连接已经断开(write_half):{url_str_t}")).unwrap();
+            let _ = cq_add_log_w(&format!("satori连接已经断开(write_half):{url_str_t}"));
         });
         Ok(())
     }
@@ -1484,7 +1468,7 @@ impl BotConnectTrait for Satoriv1Connect {
     }
 
     fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
-        let lk = self.platforms.read().unwrap();
+        let lk = self.platforms.read().unwrap_or_else(|e| e.into_inner());
         (*lk).clone()
     }
 }

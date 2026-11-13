@@ -91,7 +91,7 @@ impl EmailConnect {
         if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(());
         }
-        let self_id = self.self_id.read().unwrap().to_owned();
+        let self_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned();
         let message = fetch.iter().next().ok_or("no message")?;
         let body = message.body().ok_or("no body")?;
         let raw_message_b64 = base64::engine::general_purpose::STANDARD.encode(body);
@@ -146,9 +146,9 @@ impl EmailConnect {
             "platform":"email"
         });
         let json_str = event_json.to_string();
-        cq_add_log(&format!("EMAIL_OB_EVENT:{json_str}")).unwrap();
+        let _ = cq_add_log(&format!("EMAIL_OB_EVENT:{json_str}"));
         if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
-            crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+            let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
         }
         Ok(())
     }
@@ -157,19 +157,18 @@ impl EmailConnect {
         &self,
         imap_session: &mut imap::Session<T>,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        cq_add_log(&format!("邮件协议已经连接:{}", self.url)).unwrap();
+        let _ = cq_add_log(&format!("邮件协议已经连接:{}", self.url));
 
         // 首次运行时，获取当前最大 UID 作为基准，不处理历史未读邮件
         // 必须使用 uid_search：search 返回的是 sequence number，不是 UID
-        if *self.last_uid.read().unwrap() == 0 {
+        if *self.last_uid.read().unwrap_or_else(|e| e.into_inner()) == 0 {
             let uids = imap_session.uid_search("UNSEEN")?;
             if let Some(&max_uid) = uids.iter().max() {
-                *self.last_uid.write().unwrap() = max_uid;
-                cq_add_log(&format!(
+                *self.last_uid.write().unwrap_or_else(|e| e.into_inner()) = max_uid;
+                let _ = cq_add_log(&format!(
                     "首次运行，跳过历史未读邮件，设置基准 UID: {}",
                     max_uid
-                ))
-                .unwrap();
+                ));
             }
         }
 
@@ -179,7 +178,7 @@ impl EmailConnect {
                 break;
             }
             // 使用增量拉取：只搜索 UID 大于 last_uid 的未读邮件
-            let last_uid = *self.last_uid.read().unwrap();
+            let last_uid = *self.last_uid.read().unwrap_or_else(|e| e.into_inner());
             // checked_add 防止 u32 溢出 panic
             let query = format!("UID {}:* UNSEEN", last_uid.checked_add(1).unwrap_or(u32::MAX));
             let uids = imap_session.uid_search(&query)?;
@@ -198,13 +197,12 @@ impl EmailConnect {
                     let mut is_large = false;
                     if let Some(m) = size_fetch.iter().next() {
                         if let Some(s) = m.size {
-                            cq_add_log(&format!("邮件大小:uid: {}, size: {}", uid, s)).unwrap();
+                            let _ = cq_add_log(&format!("邮件大小:uid: {}, size: {}", uid, s));
                             if s > 16 * 1024 * 1024 {
-                                cq_add_log_w(&format!(
+                                let _ = cq_add_log_w(&format!(
                                     "邮件过大(>16MB)，跳过处理。uid: {}, size: {}",
                                     uid, s
-                                ))
-                                .unwrap();
+                                ));
                                 is_large = true;
                             }
                         }
@@ -213,13 +211,13 @@ impl EmailConnect {
                     if !is_large {
                         let fetcharr = imap_session.uid_fetch(uid.to_string(), "RFC822")?;
                         if let Err(err) = self.deal_fetcharr(&fetcharr) {
-                            cq_add_log_w(&format!("邮件处理错误:{:?}", err)).unwrap();
+                            let _ = cq_add_log_w(&format!("邮件处理错误:{:?}", err));
                         }
                     }
                     // 设置已读标记，现在不标记已读了
                     // imap_session.uid_store(uid.to_string(), "+FLAGS (\\Seen)")?;
                     // 更新 last_uid
-                    let mut last_uid_lock = self.last_uid.write().unwrap();
+                    let mut last_uid_lock = self.last_uid.write().unwrap_or_else(|e| e.into_inner());
                     if uid > *last_uid_lock {
                         *last_uid_lock = uid;
                     }
@@ -262,11 +260,11 @@ impl EmailConnect {
         let smtp_ssl = config_json["smtp_ssl"]
             .as_bool()
             .ok_or("email url格式错误: smtp_ssl 不是布尔值")?;
-        *self.smtp_server.write().unwrap() = smtp_server;
-        *self.smtp_port.write().unwrap() = smtp_port as u16;
-        *self.self_id.write().unwrap() = username.to_owned();
-        *self.password.write().unwrap() = password.to_owned();
-        *self.smtp_ssl.write().unwrap() = smtp_ssl.to_owned();
+        *self.smtp_server.write().unwrap_or_else(|e| e.into_inner()) = smtp_server;
+        *self.smtp_port.write().unwrap_or_else(|e| e.into_inner()) = smtp_port as u16;
+        *self.self_id.write().unwrap_or_else(|e| e.into_inner()) = username.to_owned();
+        *self.password.write().unwrap_or_else(|e| e.into_inner()) = password.to_owned();
+        *self.smtp_ssl.write().unwrap_or_else(|e| e.into_inner()) = smtp_ssl.to_owned();
         let imap_port_u16 =
             u16::try_from(imap_port).map_err(|_| "email url格式错误: imap_port 非法")?;
         if imap_ssl {
@@ -320,11 +318,7 @@ impl EmailConnect {
     }
     fn get_json_bool(js: &serde_json::Value, key: &str) -> bool {
         if let Some(j) = js.get(key) {
-            if j.is_boolean() {
-                j.as_bool().unwrap()
-            } else if j.is_string() {
-                j.as_str().unwrap() == "true"
-            } else {
+            if let Some(value) = j.as_bool() { value } else if let Some(value) = j.as_str() { value == "true" } else {
                 false
             }
         } else {
@@ -410,11 +404,11 @@ impl EmailConnect {
         cq_fix_image_file_in_arr(&mut message_arr);
 
         let user_id = read_json_str(params, "user_id");
-        let bot_id = self.self_id.read().unwrap().to_owned();
+        let bot_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned();
 
-        let server = self.smtp_server.read().unwrap().to_owned();
-        let port = self.smtp_port.read().unwrap().to_owned();
-        let password = self.password.read().unwrap().to_owned();
+        let server = self.smtp_server.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+        let port = self.smtp_port.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+        let password = self.password.read().unwrap_or_else(|e| e.into_inner()).to_owned();
 
         let (plain, html) = self.make_email_msg(&message_arr).await?;
         if plain.is_empty() && html.is_empty() {
@@ -442,7 +436,7 @@ impl EmailConnect {
             .header(lettre::message::header::ContentType::TEXT_PLAIN)
             .multipart(multipart)?;
         let creds = lettre::transport::smtp::authentication::Credentials::new(bot_id, password);
-        let use_ssl = self.smtp_ssl.read().unwrap().to_owned();
+        let use_ssl = self.smtp_ssl.read().unwrap_or_else(|e| e.into_inner()).to_owned();
         let mailer;
         if use_ssl {
             if port == 465 {
@@ -465,14 +459,14 @@ impl EmailConnect {
                 .credentials(creds)
                 .build();
         }
-        cq_add_log(&format!("sending email:{}", message_arr)).unwrap();
+        let _ = cq_add_log(&format!("sending email:{}", message_arr));
         let send_ret = match mailer.send(email).await {
             Ok(_) => "ok".to_owned(),
             Err(e) => format!("{:?}", e),
         };
         if send_ret == "ok" {
             let msg_id = Uuid::new_v4().to_string();
-            cq_add_log(&format!("send email ok:{msg_id}")).unwrap();
+            let _ = cq_add_log(&format!("send email ok:{msg_id}"));
             Ok(serde_json::json!({
                 "status": "ok",
                 "retcode": 0,
@@ -509,7 +503,7 @@ impl BotConnectTrait for EmailConnect {
         let self_t = self.clone();
         thread::spawn(move || {
             if let Err(e) = self_t.do_connect() {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
             self_t
                 .is_stop
@@ -551,7 +545,7 @@ impl BotConnectTrait for EmailConnect {
     }
 
     fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
-        let lk = self.self_id.read().unwrap();
+        let lk = self.self_id.read().unwrap_or_else(|e| e.into_inner());
         if lk.is_empty() {
             return vec![];
         }

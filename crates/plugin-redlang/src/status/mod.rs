@@ -28,7 +28,7 @@ impl StatusStore {
     }
 
     fn the_500ms_timer(&self) -> Result<(), Box<dyn std::error::Error>> {
-        let mut last_flush = self.last_flush.lock().unwrap();
+        let mut last_flush = self.last_flush.lock().unwrap_or_else(|e| e.into_inner());
         if last_flush.elapsed() >= Duration::from_secs(10) {
             self.flush_cache_to_db()?;
             *last_flush = Instant::now();
@@ -113,7 +113,7 @@ impl StatusStore {
         bot_id: &str,
         to_add: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        let mut cache = self.cache.lock().unwrap();
+        let mut cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         let key = (platform.to_string(), bot_id.to_string(), to_add.to_string());
         *cache.entry(key).or_insert(0) += 1;
         Ok(())
@@ -160,7 +160,7 @@ impl StatusStore {
         }
 
         // 合并内存缓存中的数据
-        let cache = self.cache.lock().unwrap();
+        let cache = self.cache.lock().unwrap_or_else(|e| e.into_inner());
         for ((platform, bot_id, field), delta) in cache.iter() {
             let key = (platform.clone(), bot_id.clone());
             let entry = result_map.entry(key.clone()).or_insert(serde_json::json!({

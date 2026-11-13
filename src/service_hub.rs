@@ -15,7 +15,13 @@ impl ServiceHub {
 
     pub fn runtime(&self) -> Arc<tokio::runtime::Runtime> {
         self.runtime
-            .get_or_init(|| Arc::new(tokio::runtime::Runtime::new().unwrap()))
+            .get_or_init(|| match tokio::runtime::Runtime::new() {
+                Ok(runtime) => Arc::new(runtime),
+                Err(error) => {
+                    eprintln!("无法创建 tokio runtime: {error}");
+                    std::process::exit(1);
+                }
+            })
             .clone()
     }
 

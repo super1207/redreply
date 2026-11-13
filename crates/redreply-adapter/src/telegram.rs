@@ -53,7 +53,7 @@ impl TeleTramConnect {
     }
 
     fn add_username2userid(&self, username: &str, user_id: i64) {
-        let mut lk = self.username2userid.write().unwrap();
+        let mut lk = self.username2userid.write().unwrap_or_else(|e| e.into_inner());
         // 简单防膨胀：超过上限先清空
         if lk.len() > 100_000 {
             lk.clear();
@@ -62,13 +62,13 @@ impl TeleTramConnect {
     }
 
     fn get_username2userid(&self, username: &str) -> Option<i64> {
-        self.username2userid.read().unwrap().get(username).cloned()
+        self.username2userid.read().unwrap_or_else(|e| e.into_inner()).get(username).cloned()
     }
 
     fn get_req_client(&self) -> Result<reqwest::Client, Box<dyn std::error::Error + Send + Sync>> {
         let proxy;
         {
-            let lk = self.proxy.read().unwrap();
+            let lk = self.proxy.read().unwrap_or_else(|e| e.into_inner());
             proxy = lk.to_owned();
         }
         if proxy.is_empty() {
@@ -208,7 +208,7 @@ impl TeleTramConnect {
                     .proxyrequest(
                         format!(
                             "https://api.telegram.org/bot{}/getFile?file_id={}",
-                            self.token.read().unwrap(),
+                            self.token.read().unwrap_or_else(|e| e.into_inner()),
                             photo_file_id
                         )
                         .as_str(),
@@ -221,7 +221,7 @@ impl TeleTramConnect {
                     .ok_or("file_path not str")?;
                 let file_url = format!(
                     "https://api.telegram.org/file/bot{}/{}",
-                    self.token.read().unwrap(),
+                    self.token.read().unwrap_or_else(|e| e.into_inner()),
                     file_path
                 );
                 ret_cq_msg.push_str(&format!("[CQ:image,file={}]", &cq_params_encode(&file_url)));
@@ -241,7 +241,7 @@ impl TeleTramConnect {
         let user_id = chat["id"].as_i64().ok_or("id not i64")?.to_string();
         let nickname = chat["first_name"].as_str().unwrap_or("");
         let username = chat["username"].as_str().unwrap_or("");
-        let self_id = self.self_id.read().unwrap().clone();
+        let self_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).clone();
 
         let message_obj = &event["message"];
 
@@ -281,9 +281,9 @@ impl TeleTramConnect {
         });
         tokio::task::spawn_blocking(move || {
             let json_str = event_json.to_string();
-            cq_add_log(&format!("TELEGRAM_OB_EVENT:{json_str}")).unwrap();
+            let _ = cq_add_log(&format!("TELEGRAM_OB_EVENT:{json_str}"));
             if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
         Ok(())
@@ -331,7 +331,7 @@ impl TeleTramConnect {
         let message = self.to_cq_msg(event).await?;
         let event_json = serde_json::json!({
             "time":SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs(),
-            "self_id":*self.self_id.read().unwrap(),
+            "self_id":*self.self_id.read().unwrap_or_else(|e| e.into_inner()),
             "post_type":"message",
             "message_type":"group",
             "sub_type":"normal",
@@ -346,9 +346,9 @@ impl TeleTramConnect {
         });
         tokio::task::spawn_blocking(move || {
             let json_str = event_json.to_string();
-            cq_add_log(&format!("TELEGRAM_OB_EVENT:{json_str}")).unwrap();
+            let _ = cq_add_log(&format!("TELEGRAM_OB_EVENT:{json_str}"));
             if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
         Ok(())
@@ -364,7 +364,7 @@ impl TeleTramConnect {
                 .as_i64()
                 .map(|id| id.to_string())
             {
-                if from_id == *self.self_id.read().unwrap() {
+                if from_id == *self.self_id.read().unwrap_or_else(|e| e.into_inner()) {
                     return Ok(());
                 }
             }
@@ -387,28 +387,26 @@ impl TeleTramConnect {
 
         let mut url = format!(
             "https://api.telegram.org/bot{}/getUpdates",
-            self.token.read().unwrap()
+            self.token.read().unwrap_or_else(|e| e.into_inner())
         );
         let result = match self.proxyrequest(&url).await {
             Ok(ret) => match Self::parse_updates_result(&ret) {
                 Ok(result) => result,
                 Err(err) => {
-                    cq_add_log_w(&format!(
+                    let _ = cq_add_log_w(&format!(
                         "telegram bot {} recv warning:{}",
-                        self.self_id.read().unwrap(),
+                        self.self_id.read().unwrap_or_else(|e| e.into_inner()),
                         err
-                    ))
-                    .unwrap();
+                    ));
                     Vec::new()
                 }
             },
             Err(err) => {
-                cq_add_log_w(&format!(
+                let _ = cq_add_log_w(&format!(
                     "telegram bot {} recv warning:{}",
-                    self.self_id.read().unwrap(),
+                    self.self_id.read().unwrap_or_else(|e| e.into_inner()),
                     err
-                ))
-                .unwrap();
+                ));
                 Vec::new()
             }
         };
@@ -430,24 +428,23 @@ impl TeleTramConnect {
             if let Some(last_update_id) = last_update_id {
                 url = format!(
                     "https://api.telegram.org/bot{}/getUpdates?offset={}&timeout=8",
-                    self.token.read().unwrap(),
+                    self.token.read().unwrap_or_else(|e| e.into_inner()),
                     last_update_id
                 );
             } else {
                 url = format!(
                     "https://api.telegram.org/bot{}/getUpdates?timeout=8",
-                    self.token.read().unwrap()
+                    self.token.read().unwrap_or_else(|e| e.into_inner())
                 );
             }
             let ret = match self.proxyrequest(&url).await {
                 Ok(ret) => ret,
                 Err(err) => {
-                    cq_add_log_w(&format!(
+                    let _ = cq_add_log_w(&format!(
                         "telegram bot {} recv warning:{}",
-                        self.self_id.read().unwrap(),
+                        self.self_id.read().unwrap_or_else(|e| e.into_inner()),
                         err
-                    ))
-                    .unwrap();
+                    ));
                     tokio::time::sleep(Duration::from_secs(2)).await;
                     continue;
                 }
@@ -458,12 +455,11 @@ impl TeleTramConnect {
             let result = match Self::parse_updates_result(&ret) {
                 Ok(result) => result,
                 Err(err) => {
-                    cq_add_log_w(&format!(
+                    let _ = cq_add_log_w(&format!(
                         "telegram bot {} recv warning:{}",
-                        self.self_id.read().unwrap(),
+                        self.self_id.read().unwrap_or_else(|e| e.into_inner()),
                         err
-                    ))
-                    .unwrap();
+                    ));
                     tokio::time::sleep(Duration::from_secs(2)).await;
                     continue;
                 }
@@ -479,23 +475,21 @@ impl TeleTramConnect {
                 );
             }
             for event in result.clone() {
-                cq_add_log(&format!(
+                let _ = cq_add_log(&format!(
                     "telegram bot {} recv:{}",
-                    self.self_id.read().unwrap(),
+                    self.self_id.read().unwrap_or_else(|e| e.into_inner()),
                     event
-                ))
-                .unwrap();
+                ));
                 let self_clone = self.clone();
                 tokio::spawn(async move {
                     match self_clone.deal_event(&event).await {
                         Ok(_) => {}
                         Err(err) => {
-                            cq_add_log_w(&format!(
+                            let _ = cq_add_log_w(&format!(
                                 "telegram bot {} deal event error:{}",
-                                self_clone.self_id.read().unwrap(),
+                                self_clone.self_id.read().unwrap_or_else(|e| e.into_inner()),
                                 err
-                            ))
-                            .unwrap();
+                            ));
                         }
                     }
                 });
@@ -506,11 +500,7 @@ impl TeleTramConnect {
 
     fn get_json_bool(js: &serde_json::Value, key: &str) -> bool {
         if let Some(j) = js.get(key) {
-            if j.is_boolean() {
-                j.as_bool().unwrap()
-            } else if j.is_string() {
-                j.as_str().unwrap() == "true"
-            } else {
+            if let Some(value) = j.as_bool() { value } else if let Some(value) = j.as_str() { value == "true" } else {
                 false
             }
         } else {
@@ -522,20 +512,12 @@ impl TeleTramConnect {
         Self::get_json_bool(params, "auto_escape")
     }
     pub fn to_json_str(val: &serde_json::Value) -> String {
-        if val.is_i64() {
-            return val.as_i64().unwrap().to_string();
-        }
-        if val.is_u64() {
-            return val.as_u64().unwrap().to_string();
-        }
-        if val.is_string() {
-            return val.as_str().unwrap().to_string();
-        }
+        if let Some(value) = val.as_i64() { return value.to_string(); } if let Some(value) = val.as_u64() { return value.to_string(); } if let Some(value) = val.as_str() { return value.to_string(); }
         "".to_owned()
     }
 
     fn get_msg_id(&self, msg_id: &str) -> Vec<RawMsgId> {
-        let lk = self.msg_ids.read().unwrap();
+        let lk = self.msg_ids.read().unwrap_or_else(|e| e.into_inner());
         for msg_id_pair in lk.iter() {
             if msg_id_pair.msg_id == msg_id {
                 return msg_id_pair.raw_msg_ids.to_owned();
@@ -546,7 +528,7 @@ impl TeleTramConnect {
 
     /// 由 telegram 原生 message_id 反查内部 UUID（类似 kook 的 get_cq_msg_id）
     fn get_cq_msg_id(&self, raw_msg_id: &str) -> Option<String> {
-        let lk = self.msg_ids.read().unwrap();
+        let lk = self.msg_ids.read().unwrap_or_else(|e| e.into_inner());
         for msg_id_pair in lk.iter() {
             for raw_msg in &msg_id_pair.raw_msg_ids {
                 if raw_msg.msg_id == raw_msg_id {
@@ -581,8 +563,7 @@ impl TeleTramConnect {
                     .to_owned();
                 let s = t;
                 if last_type == "text" && !to_send_data.is_empty() {
-                    let l = to_send_data.len();
-                    to_send_data.get_mut(l - 1).unwrap().1.push_str(&s);
+                    if let Some(last) = to_send_data.last_mut() { last.1.push_str(&s); }
                 } else {
                     to_send_data.push(("text", s, String::new()));
                     last_type = "text";
@@ -605,7 +586,7 @@ impl TeleTramConnect {
                     to_send_data.push(("url_image", file.to_owned(), caption));
                     last_type = "url_image";
                 } else if file.starts_with("base64://") {
-                    let b64_str = file.get(9..).unwrap();
+                    let b64_str = file.get(9..).ok_or("base64 uri 长度不足")?;
                     to_send_data.push(("file_image", b64_str.to_owned(), caption));
                     last_type = "file_image";
                 }
@@ -639,7 +620,7 @@ impl TeleTramConnect {
                     .proxyrequest(
                         format!(
                             "https://api.telegram.org/bot{}/getChatMember?chat_id={}&user_id={}",
-                            self.token.read().unwrap(),
+                            self.token.read().unwrap_or_else(|e| e.into_inner()),
                             group_id,
                             qq
                         )
@@ -652,8 +633,7 @@ impl TeleTramConnect {
                     .ok_or("username not found")?;
                 let at_str = &format!(" @{} ", username);
                 if last_type == "text" && !to_send_data.is_empty() {
-                    let l = to_send_data.len();
-                    to_send_data.get_mut(l - 1).unwrap().1.push_str(at_str);
+                    if let Some(last) = to_send_data.last_mut() { last.1.push_str(at_str); }
                 } else {
                     to_send_data.push(("text", at_str.to_owned(), String::new()));
                     last_type = "text";
@@ -665,7 +645,7 @@ impl TeleTramConnect {
                     to_send_data.push(("url_record", file.to_owned(), String::new()));
                     last_type = "url_record";
                 } else if file.starts_with("base64://") {
-                    let b64_str = file.get(9..).unwrap();
+                    let b64_str = file.get(9..).ok_or("base64 uri 长度不足")?;
                     to_send_data.push(("file_record", b64_str.to_owned(), String::new()));
                     last_type = "file_record";
                 }
@@ -708,7 +688,7 @@ impl TeleTramConnect {
             msg_id: new_id.to_owned(),
             raw_msg_ids: raw_msg_ids.to_owned(),
         };
-        let mut lk = self.msg_ids.write().unwrap();
+        let mut lk = self.msg_ids.write().unwrap_or_else(|e| e.into_inner());
         lk.push_back(msg_id_pair);
         while lk.len() > 9999 {
             lk.pop_front();
@@ -756,7 +736,7 @@ impl TeleTramConnect {
                     .post(
                         format!(
                             "https://api.telegram.org/bot{}/sendMessage",
-                            self.token.read().unwrap()
+                            self.token.read().unwrap_or_else(|e| e.into_inner())
                         )
                         .as_str(),
                     )
@@ -792,7 +772,7 @@ impl TeleTramConnect {
                     .post(
                         format!(
                             "https://api.telegram.org/bot{}/sendPhoto",
-                            self.token.read().unwrap()
+                            self.token.read().unwrap_or_else(|e| e.into_inner())
                         )
                         .as_str(),
                     )
@@ -847,7 +827,7 @@ impl TeleTramConnect {
                     .post(
                         format!(
                             "https://api.telegram.org/bot{}/sendPhoto",
-                            self.token.read().unwrap()
+                            self.token.read().unwrap_or_else(|e| e.into_inner())
                         )
                         .as_str(),
                     )
@@ -876,7 +856,7 @@ impl TeleTramConnect {
                     .post(
                         format!(
                             "https://api.telegram.org/bot{}/sendAudio",
-                            self.token.read().unwrap()
+                            self.token.read().unwrap_or_else(|e| e.into_inner())
                         )
                         .as_str(),
                     )
@@ -928,7 +908,7 @@ impl TeleTramConnect {
                     .post(
                         format!(
                             "https://api.telegram.org/bot{}/sendAudio",
-                            self.token.read().unwrap()
+                            self.token.read().unwrap_or_else(|e| e.into_inner())
                         )
                         .as_str(),
                     )
@@ -1003,7 +983,7 @@ impl TeleTramConnect {
                     .post(
                         format!(
                             "https://api.telegram.org/bot{}/sendAudio",
-                            self.token.read().unwrap()
+                            self.token.read().unwrap_or_else(|e| e.into_inner())
                         )
                         .as_str(),
                     )
@@ -1011,7 +991,7 @@ impl TeleTramConnect {
                     .build()?;
                 let resp = client.execute(req).await?;
                 let ret_json: serde_json::Value = resp.text().await?.parse()?;
-                cq_add_log(&format!("music card ret:{:?}", ret_json)).unwrap();
+                let _ = cq_add_log(&format!("music card ret:{:?}", ret_json));
                 let msg_id = Self::telegram_message_id(&ret_json)?;
                 msg_ids.push(RawMsgId {
                     msg_id,
@@ -1122,7 +1102,7 @@ impl TeleTramConnect {
                 .proxyrequest(
                     format!(
                         "https://api.telegram.org/bot{}/deleteMessage?chat_id={}&message_id={}",
-                        self.token.read().unwrap(),
+                        self.token.read().unwrap_or_else(|e| e.into_inner()),
                         it.chat_id,
                         it.msg_id
                     )
@@ -1156,7 +1136,7 @@ impl TeleTramConnect {
             .proxyrequest(
                 format!(
                     "https://api.telegram.org/bot{}/getMe",
-                    self.token.read().unwrap()
+                    self.token.read().unwrap_or_else(|e| e.into_inner())
                 )
                 .as_str(),
             )
@@ -1201,7 +1181,7 @@ impl BotConnectTrait for TeleTramConnect {
             .as_str()
             .ok_or("proxy not str")?;
         // 先重置再赋值，避免二次 connect 时累积双份数据
-        *self.proxy.write().unwrap() = proxy.to_owned();
+        *self.proxy.write().unwrap_or_else(|e| e.into_inner()) = proxy.to_owned();
         let ret_text = self
             .proxyrequest(format!("https://api.telegram.org/bot{}/getMe", token).as_str())
             .await?;
@@ -1222,20 +1202,19 @@ impl BotConnectTrait for TeleTramConnect {
             .as_str()
             .ok_or("username not str")?;
         self.add_username2userid(&format!("@{username}"), self_id.parse()?);
-        *self.self_id.write().unwrap() = self_id.clone();
-        *self.token.write().unwrap() = token.to_owned();
-        cq_add_log(&format!("telegram bot {} connect success", self_id)).unwrap();
+        *self.self_id.write().unwrap_or_else(|e| e.into_inner()) = self_id.clone();
+        *self.token.write().unwrap_or_else(|e| e.into_inner()) = token.to_owned();
+        let _ = cq_add_log(&format!("telegram bot {} connect success", self_id));
         let self_t = self.clone();
         tokio::task::spawn(async move {
             match self_t.do_recv_loop().await {
                 Ok(_) => {}
                 Err(err) => {
-                    cq_add_log(&format!(
+                    let _ = cq_add_log(&format!(
                         "telegram bot {} recv error:{}",
-                        self_t.self_id.read().unwrap(),
+                        self_t.self_id.read().unwrap_or_else(|e| e.into_inner()),
                         err
-                    ))
-                    .unwrap();
+                    ));
                 }
             };
             self_t
@@ -1357,7 +1336,7 @@ impl BotConnectTrait for TeleTramConnect {
     }
 
     fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
-        let lk = self.self_id.read().unwrap();
+        let lk = self.self_id.read().unwrap_or_else(|e| e.into_inner());
         if lk.is_empty() {
             return vec![];
         }

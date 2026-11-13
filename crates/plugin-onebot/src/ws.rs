@@ -34,11 +34,9 @@ pub async fn handle_request(
 
     let mut access_token = String::new();
     let params = get_params_from_uri(request.uri());
-    if params.contains_key("access_token") {
-        let ac = params.get("access_token").unwrap();
+    if let Some(ac) = params.get("access_token") {
         access_token = ac.to_owned();
-    } else if request.headers().contains_key("Authorization") {
-        let au = request.headers().get("Authorization").unwrap();
+    } else if let Some(au) = request.headers().get("Authorization") {
         access_token = au
             .to_str()
             .map_err(|error| HttpError::bad_request(error.to_string()))?
@@ -107,8 +105,8 @@ async fn serve_onebot_websocket(
     // 发送生命周期事件
     let tm = SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+        .map(|duration| duration.as_secs())
+        .unwrap_or(0);
     let connect_event = serde_json::json!({
         "time":tm,
         "self_id":self_id,
@@ -159,12 +157,13 @@ async fn deal_msg(
         // 转json
         let msg_text = msg_t?.to_text()?.to_owned();
         let req_json_rst = serde_json::from_str(&msg_text);
-        if req_json_rst.is_err() {
-            let _ = cq_add_log_w(&format!("req json err:{:?}", req_json_rst.err()));
-            continue;
-        }
-        // 转red请求
-        let req_json: serde_json::Value = req_json_rst.unwrap();
+        let req_json: serde_json::Value = match req_json_rst {
+            Ok(value) => value,
+            Err(error) => {
+                let _ = cq_add_log_w(&format!("req json err:{error:?}"));
+                continue;
+            }
+        };
         let echo = req_json.get("echo").cloned();
         let root_rst = crate::convert::request_to_red(&req_json, &platform, &self_id);
         let (root, passive_id) = match root_rst {

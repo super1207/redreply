@@ -264,35 +264,28 @@ pub fn cq_fix_image_file_in_arr(arr: &mut serde_json::Value) {
 
 pub fn read_json_str(root: &serde_json::Value, key: &str) -> String {
     if let Some(js_v) = root.get(key) {
-        if js_v.is_u64() {
-            return js_v.as_u64().unwrap().to_string();
+        if let Some(value) = js_v.as_u64() {
+            return value.to_string();
         }
-        if js_v.is_i64() {
-            return js_v.as_i64().unwrap().to_string();
+        if let Some(value) = js_v.as_i64() {
+            return value.to_string();
         }
-        if js_v.is_string() {
-            return js_v.as_str().unwrap().to_string();
+        if let Some(value) = js_v.as_str() {
+            return value.to_string();
         }
     }
     String::new()
 }
 
 pub fn read_json_obj<'a>(root: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
-    if let Some(js_v) = root.get(key) {
-        if js_v.is_object() && !js_v.as_object().unwrap().is_empty() {
-            return Some(js_v);
-        }
-    }
-    None
+    root.get(key)
+        .filter(|value| value.as_object().is_some_and(|object| !object.is_empty()))
 }
 
 pub fn read_json_obj_or_null(root: &serde_json::Value, key: &str) -> serde_json::Value {
-    if let Some(js_v) = root.get(key) {
-        if js_v.is_object() && !js_v.as_object().unwrap().is_empty() {
-            return js_v.clone();
-        }
-    }
-    serde_json::json!({})
+    read_json_obj(root, key)
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}))
 }
 
 pub fn read_json_or_default<'a>(
@@ -304,8 +297,8 @@ pub fn read_json_or_default<'a>(
 }
 
 fn json_as_str(json: &Value) -> crate::AdapterResult<String> {
-    if json.is_number() {
-        return Ok(json.as_number().unwrap().to_string());
+    if let Some(number) = json.as_number() {
+        return Ok(number.to_string());
     }
     let ret = json
         .as_str()
@@ -316,8 +309,8 @@ fn json_as_str(json: &Value) -> crate::AdapterResult<String> {
 pub fn json_to_cq_str(js: &serde_json::Value) -> crate::AdapterResult<String> {
     let msg_json = js.get("message").ok_or("json中缺少message字段")?;
     let mut ret = String::new();
-    if msg_json.is_string() {
-        return Ok(msg_json.as_str().unwrap().to_owned());
+    if let Some(text) = msg_json.as_str() {
+        return Ok(text.to_owned());
     }
     for item in msg_json.as_array().ok_or("message不是array")? {
         let tp = item

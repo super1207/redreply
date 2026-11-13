@@ -297,8 +297,8 @@ pub async fn deal_api(
         tokio::task::spawn_blocking(move || {
             let js = js;
             let code = &js["data"];
-            if code.is_string() {
-                let rst = set_gobal_filter_code(code.as_str().unwrap());
+            if let Some(code) = code.as_str() {
+                let rst = set_gobal_filter_code(code);
                 if rst.is_err() {
                     let ret = json!({
                         "retcode":-1,
@@ -341,8 +341,8 @@ pub async fn deal_api(
         tokio::task::spawn_blocking(move || {
             let js = js;
             let code = &js["data"];
-            if code.is_string() {
-                let rst = set_gobal_init_code(code.as_str().unwrap());
+            if let Some(code) = code.as_str() {
+                let rst = set_gobal_init_code(code);
                 if rst.is_err() {
                     let ret = json!({
                         "retcode":-1,
@@ -630,23 +630,15 @@ pub async fn deal_api(
             rl.script_name = "网页调试".to_owned();
             rl.can_wrong = true;
             let ret_rst = rl.parse_to_string(&code);
-            let res;
-            let ret;
-            if let Ok(ret_str) = ret_rst {
-                ret = ret_str;
-                res = serde_json::json!({
-                    "retcode":0,
-                    "data":ret
-                })
-                .to_string();
-            } else {
-                ret = format!("{}", ret_rst.err().unwrap());
-                res = serde_json::json!({
-                    "retcode":-1,
-                    "data":ret
-                })
-                .to_string();
-            }
+            let (ret, retcode) = match ret_rst {
+                Ok(ret_str) => (ret_str, 0),
+                Err(err) => (format!("{err}"), -1),
+            };
+            let res = serde_json::json!({
+                "retcode":retcode,
+                "data":ret
+            })
+            .to_string();
             let rst = tx.send(res);
             if rst.is_err() {
                 let _ = cq_add_log_w(&format!("Error:{:?}", rst.err()));

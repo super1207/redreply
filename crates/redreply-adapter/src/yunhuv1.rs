@@ -62,7 +62,7 @@ impl Yunhuv1Connect {
             msg_id: new_id.to_owned(),
             raw_msg_ids: raw_msg_ids.to_owned(),
         };
-        let mut lk = self.msg_ids.write().unwrap();
+        let mut lk = self.msg_ids.write().unwrap_or_else(|e| e.into_inner());
         lk.push_back(msg_id_pair);
         while lk.len() > 9999 {
             lk.pop_front();
@@ -171,7 +171,8 @@ impl Yunhuv1Connect {
                 if let Some(at_users) = yh_content["at"].as_array().filter(|a| !a.is_empty()) {
                     let mut last_index = 0;
                     let at_ids: Vec<&str> = at_users.iter().filter_map(|v| v.as_str()).collect();
-                    let re = Regex::new(r"@[^\s\u{200B}]+").unwrap();
+                    let re = Regex::new(r"@[^\s\u{200B}]+")
+                        .map_err(|error| serde_json::Error::custom(error.to_string()))?;
 
                     for (i, mat) in re.find_iter(text_content).enumerate() {
                         if mat.start() > last_index {
@@ -213,12 +214,12 @@ impl Yunhuv1Connect {
         &self,
         event: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let ob_evt = self.to_ob_event(&self.self_id.read().unwrap(), event)?;
+        let ob_evt = self.to_ob_event(&self.self_id.read().unwrap_or_else(|e| e.into_inner()), event)?;
         tokio::task::spawn_blocking(move || {
             let json_str = ob_evt.to_string();
-            cq_add_log(&format!("YUNTU_OB_EVENT:{json_str}")).unwrap();
+            let _ = cq_add_log(&format!("YUNTU_OB_EVENT:{json_str}"));
             if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
-                crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
         Ok(())
@@ -229,17 +230,16 @@ impl Yunhuv1Connect {
             if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
-            let url_proxy = self.url_proxy.read().unwrap().to_owned();
+            let url_proxy = self.url_proxy.read().unwrap_or_else(|e| e.into_inner()).to_owned();
             // 容错处理：单次请求/解析失败只记录日志并稍后重试，不直接断开
             let ret = match self.proxyrequest(&url_proxy).await {
                 Ok(ret) => ret,
                 Err(err) => {
-                    cq_add_log_w(&format!(
+                    let _ = cq_add_log_w(&format!(
                         "yunhu bot {} recv warning:{}",
-                        self.self_id.read().unwrap(),
+                        self.self_id.read().unwrap_or_else(|e| e.into_inner()),
                         err
-                    ))
-                    .unwrap();
+                    ));
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     continue;
                 }
@@ -250,12 +250,11 @@ impl Yunhuv1Connect {
             let event_json: serde_json::Value = match serde_json::from_str(&ret) {
                 Ok(val) => val,
                 Err(err) => {
-                    cq_add_log_w(&format!(
+                    let _ = cq_add_log_w(&format!(
                         "yunhu bot {} recv warning:{}",
-                        self.self_id.read().unwrap(),
+                        self.self_id.read().unwrap_or_else(|e| e.into_inner()),
                         err
-                    ))
-                    .unwrap();
+                    ));
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     continue;
                 }
@@ -263,35 +262,32 @@ impl Yunhuv1Connect {
             let eventarr = match event_json.as_array() {
                 Some(arr) => arr,
                 None => {
-                    cq_add_log_w(&format!(
+                    let _ = cq_add_log_w(&format!(
                         "yunhu bot {} recv warning:eventarr not array:{}",
-                        self.self_id.read().unwrap(),
+                        self.self_id.read().unwrap_or_else(|e| e.into_inner()),
                         ret
-                    ))
-                    .unwrap();
+                    ));
                     tokio::time::sleep(std::time::Duration::from_secs(2)).await;
                     continue;
                 }
             };
             for event in eventarr {
                 let event = event.clone();
-                cq_add_log(&format!(
+                let _ = cq_add_log(&format!(
                     "yunhu bot {} recv:{}",
-                    self.self_id.read().unwrap(),
+                    self.self_id.read().unwrap_or_else(|e| e.into_inner()),
                     event
-                ))
-                .unwrap();
+                ));
                 let self_clone = self.clone();
                 tokio::spawn(async move {
                     match self_clone.deal_event(&event).await {
                         Ok(_) => {}
                         Err(err) => {
-                            cq_add_log_w(&format!(
+                            let _ = cq_add_log_w(&format!(
                                 "yunhu bot {} deal event error:{}",
-                                self_clone.self_id.read().unwrap(),
+                                self_clone.self_id.read().unwrap_or_else(|e| e.into_inner()),
                                 err
-                            ))
-                            .unwrap();
+                            ));
                         }
                     }
                 });
@@ -311,7 +307,7 @@ impl Yunhuv1Connect {
         chat_id: &str,
         chat_type: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let token = self.token.read().unwrap().to_owned();
+        let token = self.token.read().unwrap_or_else(|e| e.into_inner()).to_owned();
         let client = self.get_req_client()?;
         let url_t = format!(
             "https://chat-go.jwzhd.com/open-apis/v1/bot/send?token={}",
@@ -341,7 +337,7 @@ impl Yunhuv1Connect {
                 let ret = client.execute(req).await?;
                 let retbin = ret.bytes().await?.to_vec();
                 let ret_str = String::from_utf8(retbin)?;
-                cq_add_log(&format!("YUNTU_POST响应:{ret_str}")).unwrap();
+                let _ = cq_add_log(&format!("YUNTU_POST响应:{ret_str}"));
                 let ret_json: Value = serde_json::from_str(&ret_str)?;
                 let raw_msg_id = ret_json["data"]["messageInfo"]["msgId"]
                     .as_str()
@@ -373,7 +369,7 @@ impl Yunhuv1Connect {
                 let ret = client.execute(req).await?;
                 let retbin = ret.bytes().await?.to_vec();
                 let ret_str = String::from_utf8(retbin)?;
-                cq_add_log(&format!("YUNTU_POST响应:{ret_str}")).unwrap();
+                let _ = cq_add_log(&format!("YUNTU_POST响应:{ret_str}"));
                 let ret_json: Value = serde_json::from_str(&ret_str)?;
                 let raw_msg_id = ret_json["data"]["messageInfo"]["msgId"]
                     .as_str()
@@ -385,7 +381,7 @@ impl Yunhuv1Connect {
                     chat_type: chat_type.to_owned(),
                 });
             } else {
-                cq_add_log_w(&format!("YUNTU_POST不支持的消息类型:{data_type}")).unwrap();
+                let _ = cq_add_log_w(&format!("YUNTU_POST不支持的消息类型:{data_type}"));
             }
         }
         let ob_msg_id = self.add_msg_id(&raw_msg_ids);
@@ -452,7 +448,7 @@ impl Yunhuv1Connect {
             return Err("msg_id not found")?;
         }
 
-        let token = self.token.read().unwrap().to_owned();
+        let token = self.token.read().unwrap_or_else(|e| e.into_inner()).to_owned();
         let client = self.get_req_client()?;
         let url_t = format!(
             "https://chat-go.jwzhd.com/open-apis/v1/bot/recall?token={}",
@@ -474,7 +470,7 @@ impl Yunhuv1Connect {
             let ret = client.execute(req).await?;
             let retbin = ret.bytes().await?.to_vec();
             let ret_str = String::from_utf8(retbin)?;
-            cq_add_log(&format!("YUNTU_POST响应:{ret_str}")).unwrap();
+            let _ = cq_add_log(&format!("YUNTU_POST响应:{ret_str}"));
             let ret_json: Value = match serde_json::from_str(&ret_str) {
                 Ok(val) => val,
                 Err(_) => {
@@ -509,11 +505,7 @@ impl Yunhuv1Connect {
 
     fn get_json_bool(js: &serde_json::Value, key: &str) -> bool {
         if let Some(j) = js.get(key) {
-            if j.is_boolean() {
-                j.as_bool().unwrap()
-            } else if j.is_string() {
-                j.as_str().unwrap() == "true"
-            } else {
+            if let Some(value) = j.as_bool() { value } else if let Some(value) = j.as_str() { value == "true" } else {
                 false
             }
         } else {
@@ -525,7 +517,7 @@ impl Yunhuv1Connect {
         &self,
         file_bin: Vec<u8>,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let token = self.token.read().unwrap().to_owned();
+        let token = self.token.read().unwrap_or_else(|e| e.into_inner()).to_owned();
         let uri = reqwest::Url::from_str(&format!(
             "https://chat-go.jwzhd.com/open-apis/v1/image/upload?token={token}"
         ))?;
@@ -538,7 +530,7 @@ impl Yunhuv1Connect {
         let ret = client.execute(req).await?;
         let retbin = ret.bytes().await?.to_vec();
         let ret_str = String::from_utf8(retbin)?;
-        cq_add_log(&format!("YUNTU_UPLOAD响应:{ret_str}")).unwrap();
+        let _ = cq_add_log(&format!("YUNTU_UPLOAD响应:{ret_str}"));
         let js: serde_json::Value = serde_json::from_str(&ret_str)?;
         let image_key = js
             .get("data")
@@ -592,7 +584,7 @@ impl Yunhuv1Connect {
         if uri.starts_with("http") {
             file_bin = Self::http_post(uri, vec![], &HashMap::new(), false).await?;
         } else if uri.starts_with("base64://") {
-            let b64_str = uri.get(9..).unwrap();
+            let b64_str = uri.get(9..).ok_or("base64 uri 长度不足")?;
             file_bin = base64::Engine::decode(
                 &base64::engine::GeneralPurpose::new(
                     &base64::alphabet::STANDARD,
@@ -633,8 +625,7 @@ impl Yunhuv1Connect {
                     .to_owned();
                 let s = t;
                 if last_type == "text" && !to_send_data.is_empty() {
-                    let l = to_send_data.len();
-                    to_send_data.get_mut(l - 1).unwrap().1.push_str(&s);
+                    if let Some(last) = to_send_data.last_mut() { last.1.push_str(&s); }
                 } else {
                     to_send_data.push(("text", s));
                     last_type = "text";
@@ -673,19 +664,11 @@ impl Yunhuv1Connect {
         Ok((to_send_data, quote))
     }
     fn to_json_str(val: &serde_json::Value) -> String {
-        if val.is_i64() {
-            return val.as_i64().unwrap().to_string();
-        }
-        if val.is_u64() {
-            return val.as_u64().unwrap().to_string();
-        }
-        if val.is_string() {
-            return val.as_str().unwrap().to_string();
-        }
+        if let Some(value) = val.as_i64() { return value.to_string(); } if let Some(value) = val.as_u64() { return value.to_string(); } if let Some(value) = val.as_str() { return value.to_string(); }
         "".to_owned()
     }
     fn get_msg_id(&self, msg_id: &str) -> Vec<RawMsgId> {
-        let lk = self.msg_ids.read().unwrap();
+        let lk = self.msg_ids.read().unwrap_or_else(|e| e.into_inner());
         for msg_id_pair in lk.iter() {
             if msg_id_pair.msg_id == msg_id {
                 return msg_id_pair.raw_msg_ids.to_owned();
@@ -732,21 +715,20 @@ impl BotConnectTrait for Yunhuv1Connect {
         url_proxy.query_pairs_mut().append_pair("timeout", "10000");
 
         // 先重置再赋值，避免二次 connect 时累积双份数据
-        *self.self_id.write().unwrap() = self_id.to_owned();
-        *self.url_proxy.write().unwrap() = url_proxy.as_str().to_owned();
-        *self.token.write().unwrap() = token.to_owned();
-        cq_add_log(&format!("yunhu bot {} connect success", self_id)).unwrap();
+        *self.self_id.write().unwrap_or_else(|e| e.into_inner()) = self_id.to_owned();
+        *self.url_proxy.write().unwrap_or_else(|e| e.into_inner()) = url_proxy.as_str().to_owned();
+        *self.token.write().unwrap_or_else(|e| e.into_inner()) = token.to_owned();
+        let _ = cq_add_log(&format!("yunhu bot {} connect success", self_id));
         let self_t = self.clone();
         tokio::task::spawn(async move {
             match self_t.do_recv_loop().await {
                 Ok(_) => {}
                 Err(err) => {
-                    cq_add_log(&format!(
+                    let _ = cq_add_log(&format!(
                         "yunhu bot {} recv error:{}",
-                        self_t.self_id.read().unwrap(),
+                        self_t.self_id.read().unwrap_or_else(|e| e.into_inner()),
                         err
-                    ))
-                    .unwrap();
+                    ));
                 }
             };
             self_t
@@ -834,7 +816,7 @@ impl BotConnectTrait for Yunhuv1Connect {
     }
 
     fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
-        let lk = self.self_id.read().unwrap();
+        let lk = self.self_id.read().unwrap_or_else(|e| e.into_inner());
         if lk.is_empty() {
             return vec![];
         }

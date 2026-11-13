@@ -78,7 +78,10 @@ impl SidecarBrowser {
                 if library.is_none() {
                     *library = Some(std::sync::Arc::new(BrowserLibrary::load()?));
                 }
-                library.as_ref().unwrap().clone()
+                library
+                    .as_ref()
+                    .ok_or_else(|| std::io::Error::other("browser DLL not loaded"))?
+                    .clone()
             };
             library.execute(&request.to_string())
         }

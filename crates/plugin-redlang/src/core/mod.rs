@@ -1021,12 +1021,9 @@ pub fn init_core_fun_map() {
                         op_stack.push(it);
                     } else if it == ")" {
                         loop {
-                            let pop_it = op_stack.pop();
-                            if pop_it.is_none() {
-                                let k: Option<char> = None;
-                                k.ok_or("括号没有成对出现".to_string())?;
-                            }
-                            let pop_it_t = pop_it.unwrap();
+                            let Some(pop_it_t) = op_stack.pop() else {
+                                return Err("括号没有成对出现".to_string().into());
+                            };
                             if pop_it_t == "(" {
                                 break;
                             }
@@ -1065,7 +1062,11 @@ pub fn init_core_fun_map() {
             let mut out_vec2: Vec<String> = vec![];
             for it in out_vec {
                 if it.starts_with('N') {
-                    out_vec2.push(it.get(1..).unwrap().to_string());
+                    out_vec2.push(
+                        it.get(1..)
+                            .ok_or("表达式操作数缺失")?
+                            .to_string(),
+                    );
                 } else if it == "真" || it == "假" {
                     out_vec2.push(it.to_owned());
                 } else if it == "^" {
@@ -1711,12 +1712,9 @@ pub fn init_core_fun_map() {
         let pkg_name = &self_t.pkg_name;
 
         // 如果旧命令不存在，则什么也不做
-        let exret = get_core_cmd(&old_cmd, pkg_name);
-        if exret.is_none() {
+        let Some(fun) = get_core_cmd(&old_cmd, pkg_name) else {
             return Ok(Some(rv_empty()));
-        }
-        // 构造新命令
-        let fun = exret.unwrap();
+        };
         let k = new_cmd.to_uppercase();
         let k_t: String = text::str_to_ft(&k);
 

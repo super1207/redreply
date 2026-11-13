@@ -183,7 +183,7 @@ fn gen_sec_ms_gec() -> String {
     // UTC time from 1601-01-01
     let duration = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         + std::time::Duration::from_secs(11644473600);
     let ticks = duration.as_nanos() / 100;
     let ticks = ticks - ticks % 3_000_000_000;
@@ -215,10 +215,22 @@ fn build_websocket_request() -> tungstenite::Result<tungstenite::handshake::clie
     )
     .into_client_request()?;
     let headers = request.headers_mut();
-    headers.insert(header::PRAGMA, "no-cache".parse().unwrap());
-    headers.insert(header::CACHE_CONTROL, "no-cache".parse().unwrap());
-    headers.insert(header::USER_AGENT, constants::USER_AGENT.parse().unwrap());
-    headers.insert(header::ORIGIN, constants::ORIGIN.parse().unwrap());
+    headers.insert(
+        header::PRAGMA,
+        header::HeaderValue::from_static("no-cache"),
+    );
+    headers.insert(
+        header::CACHE_CONTROL,
+        header::HeaderValue::from_static("no-cache"),
+    );
+    headers.insert(
+        header::USER_AGENT,
+        header::HeaderValue::from_static(constants::USER_AGENT),
+    );
+    headers.insert(
+        header::ORIGIN,
+        header::HeaderValue::from_static(constants::ORIGIN),
+    );
     Ok(request)
 }
 

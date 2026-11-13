@@ -61,8 +61,7 @@ impl SessionStore {
         let flag = format!("{self_id}|{group_id}");
         Ok(self
             .message_ids
-            .read()
-            .unwrap()
+            .read().unwrap_or_else(|e| e.into_inner())
             .get(&flag)
             .cloned()
             .unwrap_or_default())
@@ -74,8 +73,7 @@ impl SessionStore {
 
     pub fn remove_input_stream(&self, echo: &str) {
         self.input_streams
-            .write()
-            .unwrap()
+            .write().unwrap_or_else(|e| e.into_inner())
             .retain(|input_stream| input_stream.echo != echo);
     }
 
@@ -162,8 +160,7 @@ impl SessionStore {
 
     pub fn related_message_ids(&self, key: &str) -> Vec<String> {
         self.script_related_messages
-            .read()
-            .unwrap()
+            .read().unwrap_or_else(|e| e.into_inner())
             .get(key)
             .map(|value| value.msg_id_vec.clone())
             .unwrap_or_default()
@@ -194,8 +191,7 @@ impl SessionStore {
     pub fn remove_package_related_messages(&self, pkg_name: &str) {
         let prefix = format!("{pkg_name}|");
         self.script_related_messages
-            .write()
-            .unwrap()
+            .write().unwrap_or_else(|e| e.into_inner())
             .retain(|key, _| !key.starts_with(&prefix));
     }
 

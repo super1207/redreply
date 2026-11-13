@@ -119,8 +119,7 @@ pub async fn legacy_handle(
                     .add_log_session(uid.clone(), tx)
                     .await;
                 if let Err(e) = serve_websocket(websocket, rx).await {
-                    cq_add_log_w(&format!("watchlog Error in websocket connection: {}", e))
-                        .unwrap();
+                    let _ = cq_add_log_w(&format!("watchlog Error in websocket connection: {}", e));
                 }
                 // 线程结束，删除对应的entry
                 runtime_context().session.remove_log_session(&uid).await;

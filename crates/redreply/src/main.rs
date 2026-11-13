@@ -206,11 +206,16 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             let _ = proxy_menu.send_event(UserEvent::MenuEvent(event));
         }));
 
-        let icon_data = redlang::Asset::get("res/favicon.ico").unwrap().data;
-        let image = image::load_from_memory(&icon_data).unwrap().into_rgba8();
+        let icon_data = redlang::Asset::get("res/favicon.ico")
+            .ok_or("missing res/favicon.ico")?
+            .data;
+        let image = image::load_from_memory(&icon_data)
+            .map_err(|error| format!("load favicon: {error}"))?
+            .into_rgba8();
         let (width, height) = image.dimensions();
         let rgba = image.into_raw();
-        let icon = tray_icon::Icon::from_rgba(rgba, width, height).expect("Failed to open icon");
+        let icon = tray_icon::Icon::from_rgba(rgba, width, height)
+            .map_err(|error| format!("Failed to open icon: {error:?}"))?;
 
         let tray_icon_t = tray_icon::TrayIconBuilder::new()
             .with_tooltip("欢迎使用红色问答")
@@ -327,8 +332,8 @@ fn main() {
     {
         let d = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis()
+            .map(|duration| duration.as_millis())
+            .unwrap_or(0)
             .to_string();
         plugin_redlang::lifecycle::set_start_time(d);
     }
@@ -342,13 +347,13 @@ fn main() {
         utc_offset = v;
     } else {
         // 中国是东八区，所以这里写8 hour
-        utc_offset = UtcOffset::from_hms(8, 0, 0).unwrap();
+        utc_offset = UtcOffset::from_hms(8, 0, 0).unwrap_or(UtcOffset::UTC);
     }
 
     tracing_subscriber::fmt()
         .with_timer(tracing_subscriber::fmt::time::OffsetTime::new(
             utc_offset,
-            time::format_description::parse(format).unwrap(),
+            time::format_description::parse(format).unwrap_or_default(),
         ))
         .with_max_level(tracing::Level::INFO)
         .init();

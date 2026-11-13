@@ -48,7 +48,7 @@ async fn framework_manages_onebot11_adapter_end_to_end() {
             .events()
             .subscribe("test", 0, EventFilter::new(), move |event| {
                 events.fetch_add(1, Ordering::SeqCst);
-                *last_event.lock().unwrap() = Some(event.clone());
+                *last_event.lock().unwrap_or_else(|e| e.into_inner()) = Some(event.clone());
                 EventAction::Continue
             });
     }
@@ -131,7 +131,7 @@ async fn framework_manages_onebot11_adapter_end_to_end() {
         "适配器事件应进入框架 EventBus"
     );
     {
-        let event = last_event.lock().unwrap().clone().unwrap();
+        let event = last_event.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap();
         assert_eq!(event.platform, "onebot11");
         assert_eq!(event.self_id, "10001");
         assert_eq!(event.post_type, "message");

@@ -20,7 +20,9 @@ pub fn get_local_python_uid() -> Result<String, Box<dyn std::error::Error>> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
-    let mut command = std::process::Command::new(get_python_cmd_name().unwrap());
+    let mut command = std::process::Command::new(
+        get_python_cmd_name().map_err(|error| error.to_string())?,
+    );
     #[cfg(windows)]
     let output = command
         .creation_flags(0x08000000)
@@ -69,7 +71,7 @@ fn create_python_env() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
     match status {
         Ok(status) => {
-            cq_add_log(&format!("python服务创建:{status}")).unwrap();
+            let _ = cq_add_log(&format!("python服务创建:{status}"));
             Ok(())
         }
         Err(err) => Err(format!("python环境创建失败:{err}").into()),
@@ -221,8 +223,9 @@ conn_fun()
         // 进程退出中(is_quitting)则停止，避免关机窗口内反复拉起。
         let mut backoff_secs: u64 = 3;
         loop {
+            let python_cmd = get_python_cmd_name().unwrap_or_else(|_| "python".to_owned());
             #[cfg(windows)]
-            let status = std::process::Command::new(get_python_cmd_name().unwrap())
+            let status = std::process::Command::new(&python_cmd)
                 .creation_flags(0x08000000)
                 .env("PATH", &new_env)
                 .arg("-c")
@@ -232,7 +235,7 @@ conn_fun()
                 .status();
 
             #[cfg(not(windows))]
-            let status = std::process::Command::new(get_python_cmd_name().unwrap())
+            let status = std::process::Command::new(&python_cmd)
                 .env("PATH", &new_env)
                 .arg("-c")
                 .arg(code)

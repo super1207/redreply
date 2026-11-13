@@ -281,17 +281,17 @@ mod tests {
         let order = Arc::new(std::sync::Mutex::new(Vec::new()));
         let low_order = order.clone();
         bus.subscribe("low", 0, EventFilter::new(), move |_| {
-            low_order.lock().unwrap().push("low");
+            low_order.lock().unwrap_or_else(|e| e.into_inner()).push("low");
             EventAction::Continue
         });
         let high_order = order.clone();
         bus.subscribe("high", 10, EventFilter::new(), move |_| {
-            high_order.lock().unwrap().push("high");
+            high_order.lock().unwrap_or_else(|e| e.into_inner()).push("high");
             EventAction::Continue
         });
         let report = bus.publish(&event());
         assert_eq!(report.delivered, 2);
-        assert_eq!(*order.lock().unwrap(), vec!["high", "low"]);
+        assert_eq!(*order.lock().unwrap_or_else(|e| e.into_inner()), vec!["high", "low"]);
     }
 
     #[test]

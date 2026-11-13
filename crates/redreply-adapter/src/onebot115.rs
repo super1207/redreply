@@ -35,7 +35,7 @@ async fn http_post(
         .build()?;
     let ret = client.execute(req).await?;
     let ret_str = ret.text().await?;
-    crate::cqapi::cq_add_log(&format!("接收数据:{ret_str}")).unwrap();
+    let _ = crate::cqapi::cq_add_log(&format!("接收数据:{ret_str}"));
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
     Ok(json_val)
 }
@@ -92,9 +92,7 @@ impl BotConnectTrait for OneBot115Connect {
     async fn disconnect(&mut self) {
         self.is_stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        if self.stop_tx.is_some() {
-            let _foo = self.stop_tx.clone().unwrap().send(true).await;
-        }
+        if let Some(stop_tx) = &self.stop_tx { let _ = stop_tx.send(true).await; }
     }
 
     fn get_alive(&self) -> bool {
@@ -105,13 +103,13 @@ impl BotConnectTrait for OneBot115Connect {
         // println!("正在连接ovo：{}",self.url);
 
         // 先清空再填充，避免二次 connect 时重复累积
-        self.platforms.write().unwrap().clear();
+        self.platforms.write().unwrap_or_else(|e| e.into_inner()).clear();
         {
             let mut to_send = serde_json::json!({
                 "action":"get_bot_list"
             });
             let myself = self.call_api("", "", "", &mut to_send).await?;
-            cq_add_log_w(&format!("收到数据：{}", myself)).unwrap();
+            let _ = cq_add_log_w(&format!("收到数据：{}", myself));
             let bot_arr = myself
                 .get("data")
                 .ok_or("data not found")?
@@ -129,8 +127,7 @@ impl BotConnectTrait for OneBot115Connect {
                     .as_str()
                     .ok_or("bot_id not str")?;
                 self.platforms
-                    .write()
-                    .unwrap()
+                    .write().unwrap_or_else(|e| e.into_inner())
                     .push((platform.to_string(), bot_id.to_string()));
             }
         }
@@ -182,7 +179,7 @@ impl BotConnectTrait for OneBot115Connect {
                         let post_type = read_json_str(&json_dat, "post_type").to_owned();
                         let meta_event_type = read_json_str(&json_dat, "meta_event_type");
                         if meta_event_type != "heartbeat"{
-                            crate::cqapi::cq_add_log(format!("OVO收到数据:{}", json_dat).as_str()).unwrap();
+                            let _ = crate::cqapi::cq_add_log(format!("OVO收到数据:{}", json_dat).as_str());
                         }
                         tokio::spawn(async move {
                             if post_type.is_empty() { // 是api回复
@@ -190,7 +187,7 @@ impl BotConnectTrait for OneBot115Connect {
                             }else { // 是事件
                                 tokio::task::spawn_blocking(move ||{
                                     if let Err(e) = crate::cqevent::do_1207_event(&json_dat.to_string()) {
-                                        crate::cqapi::cq_add_log(format!("{:?}", e).as_str()).unwrap();
+                                        let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
                                     }
                                 });
                             }
@@ -202,7 +199,7 @@ impl BotConnectTrait for OneBot115Connect {
                     }
                     _ = &mut idle => {
                         // 长时间无任何数据（自身心跳也无回复），判定连接已死亡
-                        cq_add_log_w("ovo 心跳无响应，判定连接已死亡").unwrap();
+                        let _ = cq_add_log_w("ovo 心跳无响应，判定连接已死亡");
                         break;
                     }
                 }
@@ -211,7 +208,7 @@ impl BotConnectTrait for OneBot115Connect {
             if let Some(val) = is_stop.upgrade() {
                 val.store(true, std::sync::atomic::Ordering::Relaxed);
             }
-            cq_add_log_w(&format!("ovo连接已经断开(read_halt):{url_str_t}")).unwrap();
+            let _ = cq_add_log_w(&format!("ovo连接已经断开(read_halt):{url_str_t}"));
         });
         let url_str_t = self.url.clone();
         let is_stop = Arc::<AtomicBool>::downgrade(&self.is_stop);
@@ -243,7 +240,7 @@ impl BotConnectTrait for OneBot115Connect {
                 if let Some(val) = is_stop.upgrade() {
                     val.store(true, std::sync::atomic::Ordering::Relaxed);
                 }
-                cq_add_log_w(&format!("ovo心跳已断开:{url_str2}")).unwrap();
+                let _ = cq_add_log_w(&format!("ovo心跳已断开:{url_str2}"));
             });
             while let Some(msg) = rx_ay.recv().await {
                 let rst = write_half
@@ -259,7 +256,7 @@ impl BotConnectTrait for OneBot115Connect {
             if let Some(val) = is_stop2.upgrade() {
                 val.store(true, std::sync::atomic::Ordering::Relaxed);
             }
-            cq_add_log_w(&format!("ovo连接已经断开(write_half):{url_str_t}")).unwrap();
+            let _ = cq_add_log_w(&format!("ovo连接已经断开(write_half):{url_str_t}"));
         });
         Ok(())
     }
@@ -299,7 +296,7 @@ impl BotConnectTrait for OneBot115Connect {
         json_obj.insert("platform".to_string(), serde_json::to_value(platform)?);
 
         // 处理日志
-        crate::cqapi::cq_add_log(format!("发送数据:{}", json).as_str()).unwrap();
+        let _ = crate::cqapi::cq_add_log(format!("发送数据:{}", json).as_str());
 
         let mut http_url = self.url.to_owned();
         http_url = http_url.replacen("ovo://", "http://", 1);
@@ -308,7 +305,7 @@ impl BotConnectTrait for OneBot115Connect {
     }
 
     fn get_platform_and_self_id(&self) -> Vec<(String, String)> {
-        let lk = self.platforms.read().unwrap();
+        let lk = self.platforms.read().unwrap_or_else(|e| e.into_inner());
         (*lk).clone()
     }
 }

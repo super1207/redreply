@@ -65,8 +65,7 @@ impl ScriptStore {
 
     pub fn add_package_name(&self, package_name: impl Into<String>) {
         self.package_names
-            .write()
-            .unwrap()
+            .write().unwrap_or_else(|e| e.into_inner())
             .insert(package_name.into());
     }
 
@@ -99,8 +98,7 @@ impl ScriptStore {
     ) -> Result<Option<RedValueData>, Box<dyn Error>> {
         Ok(self
             .const_map
-            .read()
-            .unwrap()
+            .read().unwrap_or_else(|e| e.into_inner())
             .get(pkg_name)
             .and_then(|values| values.get(val_name))
             .cloned())
@@ -173,8 +171,7 @@ impl ScriptStore {
         command_body: String,
     ) -> Result<(), Box<dyn Error>> {
         self.command_map
-            .write()
-            .unwrap()
+            .write().unwrap_or_else(|e| e.into_inner())
             .entry(pkg_name.to_owned())
             .or_default()
             .insert(command_name, command_body);
@@ -183,8 +180,7 @@ impl ScriptStore {
 
     pub fn get_command(&self, pkg_name: &str, command_name: &str) -> Option<String> {
         self.command_map
-            .read()
-            .unwrap()
+            .read().unwrap_or_else(|e| e.into_inner())
             .get(pkg_name)
             .and_then(|commands| commands.get(command_name))
             .cloned()
@@ -250,8 +246,7 @@ impl ScriptStore {
 
         let prefix = format!("{pkg_name}{PACKAGE_COMMAND_MARKER}");
         self.command_functions
-            .write()
-            .unwrap()
+            .write().unwrap_or_else(|e| e.into_inner())
             .retain(|name, _| !name.starts_with(&prefix));
     }
 
