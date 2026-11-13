@@ -264,3 +264,30 @@ fn telegram_join_request_reuses_existing_approval_and_refusal() {
     assert_eq!(telegram_join_request(&event, false), Some(("declineChatJoinRequest", expected)));
     assert!(telegram_join_request(&json!({"notice_type":"telegram","sub_type":"chat_join_request"}), true).is_none());
 }
+
+
+#[test]
+fn telegram_explicit_topics_and_join_request_queries() {
+    use crate::cqexfun::{telegram_join_request, telegram_output_topic};
+    use serde_json::json;
+
+    assert_eq!(telegram_output_topic("", "").unwrap(), None);
+    assert_eq!(telegram_output_topic("23", "").unwrap(), Some(("message_thread_id", 23)));
+    assert_eq!(telegram_output_topic("9", "频道私信").unwrap(), Some(("direct_messages_topic_id", 9)));
+    assert!(telegram_output_topic("0", "").is_err());
+    assert!(telegram_output_topic("2", "语音").is_err());
+
+    let event = json!({
+        "notice_type":"telegram","sub_type":"chat_join_request",
+        "telegram":{"query_id":"q-42","chat":{"id":-100234},"from":{"id":42}}
+    });
+    assert_eq!(telegram_join_request(&event, false), Some((
+        "answerChatJoinRequestQuery",
+        json!({"chat_join_request_query_id":"q-42","result":"decline"}),
+    )));
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    assert!(rl.parse("【置顶消息】").unwrap_err().to_string().contains("机器人来源"));
+    rl.set_exmap("机器人平台", "telegram");
+    assert!(rl.parse("【输出流@消息@@0】").unwrap_err().to_string().contains("正整数"));
+}

@@ -111,6 +111,45 @@ impl Topic {
 
 }
 
+const SEND_PERMISSIONS: &[&str] = &[
+    "can_send_messages", "can_send_audios", "can_send_documents", "can_send_photos",
+    "can_send_videos", "can_send_video_notes", "can_send_voice_notes", "can_send_polls",
+    "can_send_other_messages", "can_add_web_page_previews",
+];
+const OTHER_PERMISSIONS: &[&str] = &[
+    "can_react_to_messages", "can_edit_tag", "can_change_info", "can_invite_users",
+    "can_pin_messages", "can_manage_topics",
+];
+
+fn mute_permissions(chat: &Value, member: &Value, muted: bool) -> Value {
+    let defaults = &chat["permissions"];
+    let current = if member["status"] == "restricted" { member } else { defaults };
+    let mut permissions = serde_json::Map::new();
+    for &field in SEND_PERMISSIONS {
+        permissions.insert(field.to_owned(), Value::Bool(!muted && defaults[field] == true));
+    }
+    for &field in OTHER_PERMISSIONS {
+        let value = current[field].as_bool()
+            .or_else(|| match field {
+                "can_react_to_messages" => current["can_send_messages"].as_bool(),
+                "can_edit_tag" | "can_manage_topics" => current["can_pin_messages"].as_bool(),
+                _ => None,
+            })
+            .unwrap_or(false);
+        permissions.insert(field.to_owned(), value.into());
+    }
+    Value::Object(permissions)
+}
+
+fn topic_service_event(message: &Value) -> Option<&'static str> {
+    [
+        "forum_topic_created", "forum_topic_edited", "forum_topic_closed",
+        "forum_topic_reopened", "general_forum_topic_hidden", "general_forum_topic_unhidden",
+    ]
+    .into_iter()
+    .find(|field| message[*field].is_object())
+}
+
 impl TeleTramConnect {
     pub fn build(url: &str) -> Self {
         Self {
@@ -332,7 +371,10 @@ impl TeleTramConnect {
     }
 
     fn native_update(&self, kind: &str, event: &Value) -> Value {
-        let data = &event[kind];
+        self.notice_for_update(kind, &event[kind], &event["update_id"])
+    }
+
+    fn notice_for_update(&self, kind: &str, data: &Value, update_id: &Value) -> Value {
         let self_id = self
             .self_id
             .read()
@@ -354,7 +396,7 @@ impl TeleTramConnect {
             "post_type": "notice",
             "notice_type": "telegram",
             "sub_type": kind,
-            "update_id": event["update_id"],
+            "update_id": update_id,
             "telegram": data,
         });
         if let Some(user_id) = from["id"].as_i64() {
@@ -679,8 +721,15 @@ impl TeleTramConnect {
         let update = event
             .as_object()
             .and_then(|fields| fields.keys().find(|key| key.as_str() != "update_id"));
-        if let Some(kind) = update.filter(|_| !ordinary_message) {
-            let notice = self.native_update(kind, event);
+        let notice = if ordinary_message {
+            let message = &event["message"];
+            topic_service_event(message).map(|kind| {
+                self.notice_for_update(kind, message, &event["update_id"])
+            })
+        } else {
+            update.map(|kind| self.native_update(kind, event))
+        };
+        if let Some(notice) = notice {
             tokio::task::spawn_blocking(move || {
                 if let Err(error) = crate::cqevent::do_1207_event(&notice.to_string()) {
                     let _ = cq_add_log_w(&format!("Telegram 原生事件处理失败：{error}"));
@@ -1271,6 +1320,67 @@ impl TeleTramConnect {
         Ok(native_api::reply(0, &json!({}), "", echo))
     }
 
+    async fn pin_message(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let id = read_json_str(params, "message_id");
+        let messages = self.get_msg_id(&id);
+        let message = messages.last().ok_or("Telegram 找不到 RedReply 消息 ID")?;
+        let method = if params["remove"] == true { "unpinChatMessage" } else { "pinChatMessage" };
+        let mut body = json!({
+            "chat_id":message.chat_id.parse::<i64>()?,
+            "message_id":message.msg_id.parse::<i64>()?,
+        });
+        if params["remove"] != true && params["silent"] == true {
+            body["disable_notification"] = true.into();
+        }
+        self.native_request(method, &body, None, Duration::from_secs(25), echo).await
+    }
+
+    async fn set_group_ban(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let chat_id = read_json_str(params, "group_id").parse::<i64>()?;
+        let user_id = read_json_str(params, "user_id").parse::<i64>()?;
+        let duration = params["duration"].as_u64().ok_or("Telegram 禁言时间需要非负整数")?;
+        if duration != 0 && !(30..=366 * 86400).contains(&duration) {
+            return Err("Telegram 定时禁言支持 30 秒至 366 天，0 表示解除禁言".into());
+        }
+
+        let timeout = Duration::from_secs(8);
+        let chat_request = json!({"chat_id":chat_id});
+        let member_request = json!({"chat_id":chat_id,"user_id":user_id});
+        let (chat, member) = tokio::try_join!(
+            self.native_request("getChat", &chat_request, None, timeout, echo),
+            self.native_request("getChatMember", &member_request, None, timeout, echo),
+        )?;
+        if chat["retcode"] != 0 {
+            return Ok(chat);
+        }
+        if member["retcode"] != 0 {
+            return Ok(member);
+        }
+        let chat = &chat["data"];
+        let member = &member["data"];
+        if chat["type"] != "supergroup" || !chat["permissions"].is_object() {
+            return Err("Telegram 禁言需要能读取默认权限的超级群".into());
+        }
+        if duration == 0 && member["status"] != "restricted" {
+            return Ok(native_api::reply(0, &Value::Bool(true), "", echo));
+        }
+        if duration != 0 && member["status"] != "member" && member["status"] != "restricted" {
+            return Err("Telegram 禁言只适用于当前群的普通成员".into());
+        }
+        if member["status"] == "restricted" && member["is_member"] != true {
+            return Err("目标用户已不在 Telegram 群中".into());
+        }
+        let mut body = json!({
+            "chat_id": chat_id, "user_id": user_id, "use_independent_chat_permissions": true,
+            "permissions": mute_permissions(chat, member, duration != 0),
+        });
+        if duration != 0 {
+            // Measure from the write, after fetching the current permissions.
+            body["until_date"] = (chrono::Utc::now().timestamp() + duration as i64).into();
+        }
+        self.native_request("restrictChatMember", &body, None, timeout, echo).await
+    }
+
     async fn chat_info(&self, action: &str, params: &Value, echo: &Value) -> AdapterResult<Value> {
         let group_id = read_json_str(params, "group_id").parse::<i64>()?;
         let mut body = json!({"chat_id":group_id});
@@ -1452,18 +1562,26 @@ impl BotConnectTrait for TeleTramConnect {
             "get_group_info" | "get_group_member_info" => {
                 native_api::action_result(self.chat_info(action, params, echo).await, echo)
             }
-            // "get_group_list" => {
-            //     self.deal_ob_get_group_list(&params,&echo).await?
-            // },
-            // "set_group_kick" => {
-            //     self.deal_ob_set_group_kick(&params,&echo).await?
-            // },
-            // "set_group_leave" => {
-            //     self.deal_ob_set_group_leave(&params,&echo).await?
-            // },
-            // "set_group_name" => {
-            //     self.deal_ob_set_group_name(&params,&echo).await?
-            // },
+            "set_msg_pin" => {
+                native_api::action_result(self.pin_message(params, echo).await, echo)
+            }
+            "set_group_ban" => {
+                native_api::action_result(self.set_group_ban(params, echo).await, echo)
+            }
+            "set_group_leave" | "set_group_name" => {
+                let id = read_json_str(params, "group_id");
+                let chat_id = id.parse::<i64>()?;
+                let (method, body) = if action == "set_group_name" {
+                    let title = read_json_str(params, "group_name");
+                    ("setChatTitle", json!({"chat_id":chat_id,"title":title}))
+                } else {
+                    ("leaveChat", json!({"chat_id":chat_id}))
+                };
+                native_api::action_result(
+                    self.native_request(method, &body, None, Duration::from_secs(25), echo).await,
+                    echo,
+                )
+            }
             // "set_group_card" => {
             //     self.deal_ob_set_group_card(&params,&echo).await?
             // },
@@ -1538,6 +1656,42 @@ impl BotConnectTrait for TeleTramConnect {
 #[cfg(test)]
 mod native_tests {
     use super::*;
+
+    #[test]
+    fn topic_service_notice_keeps_the_message_and_thread() {
+        let bot = TeleTramConnect::build("");
+        let message = json!({
+            "message_id":12,"message_thread_id":9,"is_topic_message":true,
+            "chat":{"id":-100123,"type":"supergroup"},
+            "from":{"id":1},"forum_topic_closed":{}
+        });
+        let kind = topic_service_event(&message).unwrap();
+        assert_eq!(kind, "forum_topic_closed");
+        let notice = bot.notice_for_update(kind, &message, &json!(42));
+        assert_eq!(notice["update_id"], 42);
+        assert_eq!(notice["group_id"], "-100123");
+        assert_eq!(notice["message_thread_id"], 9);
+        assert_eq!(notice["telegram"], message);
+        assert!(topic_service_event(&json!({"text":"normal"})).is_none());
+    }
+
+    #[test]
+    fn mute_changes_sending_rights_without_granting_extra_permissions() {
+        let chat = json!({"permissions":{
+            "can_send_messages":true,"can_send_photos":false,"can_invite_users":true,
+            "can_pin_messages":false
+        }});
+        let member = json!({"status":"restricted","can_react_to_messages":true,"can_invite_users":false});
+        let muted = mute_permissions(&chat, &member, true);
+        assert!(SEND_PERMISSIONS.iter().all(|field| muted[*field] == false));
+        assert_eq!(muted["can_react_to_messages"], true);
+        assert_eq!(muted["can_invite_users"], false);
+        let restored = mute_permissions(&chat, &member, false);
+        assert_eq!(restored["can_send_messages"], true);
+        assert_eq!(restored["can_send_photos"], false);
+        assert_eq!(restored["can_invite_users"], false);
+        assert_eq!(restored["can_pin_messages"], false);
+    }
 
     #[test]
     fn callback_retains_provider_and_redreply_chat_context() {

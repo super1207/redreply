@@ -2346,6 +2346,8 @@ return ""
 [{"群ID":"123","群名": "群名称1"}, {"群ID":"456","群名": "群名称2"}]
 ```
 
+KOOK 支持【取群列表@服务器ID】。省略服务器 ID 时使用当前服务器或从当前频道查询所属服务器，并返回各页的文字频道。
+
 注意，不要轻易在QQ平台使用此命令，当群过多时，可能会导致机器人卡顿。
 
 ### 取发送者信息
@@ -2421,8 +2423,14 @@ return ""
 
 【禁言@<font color="red">时间(秒)</font>】
 
-禁言当前发消息的人，0表示解除禁言。
+禁言当前发消息的人，0表示解除禁言。Telegram 超级群支持 30 秒至 366 天，0 恢复群默认的发送权限。
 
+
+### 置顶消息
+
+【置顶消息@<font color="red">RedReply 消息 ID</font>@<font color="red">是否置顶</font>@<font color="red">是否静默</font>】
+
+适用于 KOOK 频道和 Telegram。消息 ID 省略时使用当前消息，第二个参数默认 `真`，填 `假` 取消置顶。第三个参数仅 Telegram 使用，填 `真` 时静默置顶。
 
 ### 输出流
 
@@ -2431,7 +2439,9 @@ return ""
 
 【输出流@<font color="red">内容</font>@<font color="red">Telegram 键盘对象</font>】
 
-Telegram 可选的第二个参数接受【对象】，用于设置行内键盘或回复键盘。发送多段消息时，键盘附在最后一段。
+【输出流@<font color="red">内容</font>@<font color="red">Telegram 键盘对象</font>@<font color="red">Telegram 话题 ID</font>@<font color="red">Telegram 话题类型</font>】
+
+Telegram 可选的第二个参数接受【对象】，用于设置行内键盘或回复键盘。发送多段消息时，键盘附在最后一段。第三个参数可指定话题 ID，第四个参数默认为 `话题`，频道私信填 `频道私信`。省略话题 ID 时沿用当前消息话题。
 
 发送一条消息，然后返回消息ID，注意，输出流不支持【分页】。如果消息发送失败，则返回空文本。
 
@@ -2754,7 +2764,9 @@ KOOK 和 Telegram 支持使用第三个参数 `假` 移除回应。KOOK 支持 U
 
 【OB调用@<font color="red">onebot要求的json文本</font>】
 
-此命令用于发送原始onebot数据，以调用框架不支持，以及尚未支持的功能。
+【OB调用@<font color="red">OneBot 请求对象</font>】
+
+可直接用【对象】传入 `action`、`params` 等字段。比如 `【OB调用@【对象@action@get_group_info@params@【对象@group_id@【群ID】】】】`。
 
 此命令返回api调用返回的RedLang对象。若调用失败或超时，返回空文本。
 

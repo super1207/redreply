@@ -166,11 +166,242 @@ KOOK 的平台名为 `kook`。
 ### 话题、审核与更新订阅
 
 - 普通输出和【输出流】会保留当前 Telegram 话题。原生调用可从【事件内容】读取 `message_thread_id` 或 `direct_messages_topic_id` 并按方法要求传入。论坛话题可用 `createForumTopic`、`editForumTopic`、`closeForumTopic`、`reopenForumTopic` 管理。
-- 用 `notice:telegram:chat_join_request` 接收普通入群申请。在该脚本中使用【同意】或【拒绝】。机器人需要邀请用户的管理权限。带验证流程的 `chat_join_request_query` 可按官方方法调用 `answerChatJoinRequestQuery`。
+- 用 `notice:telegram:chat_join_request` 接收普通入群申请。在该脚本中使用【同意】或【拒绝】。机器人需要邀请用户的管理权限。带 `telegram.query_id` 的入群申请也可用【同意】或【拒绝】，平台要求在 10 秒内处理。
 - 群聊和私聊消息走原有消息触发。其他更新走 `notice:telegram:更新类型`，原始数据位于 `telegram`。在管理台「订阅更新」中按逗号填写 `message,callback_query,inline_query,poll,poll_answer,chat_join_request` 等类型。默认采用 Telegram 的空列表订阅规则。适配器用 `getUpdates` 收件，使用该适配器时请保持同一个 Token 的 webhook 关闭。
 - 媒体组、Mini App 应答、邀请链接、置顶和权限管理可用【Telegram调用】配合官方方法 `sendMediaGroup`、`answerWebAppQuery`、`createChatInviteLink`、`pinChatMessage`、`setChatPermissions`。
 
 [入群审核](https://core.telegram.org/bots/api#approvechatjoinrequest) · [更新订阅](https://core.telegram.org/bots/api#getupdates)
+
+## Telegram 群与频道管理
+
+Telegram 聊天 ID 可从【群ID】或事件中的 `telegram.chat.id` 取得。以用户名指定频道时，用原始字符串保留前导 `@`，例如 `【@@example_channel】`。管理接口返回的 `retcode` 为 `0` 时操作成功。
+
+### 聊天资料、成员与置顶
+
+| 用途 | 接口与参数 |
+| --- | --- |
+| 查询聊天资料 | `getChat` 使用 `chat_id`，返回 `data.title`、`data.description`、`data.permissions` 等可用字段。 |
+| 更新标题、简介、头像 | `setChatTitle` 用 `title`，`setChatDescription` 用 `description`，`setChatPhoto` 用字节集上传字段 `photo`。删除头像用 `deleteChatPhoto`。 |
+| 查询成员、管理员与人数 | `getChatMember`、`getChatAdministrators`、`getChatMemberCount`。现有【权限】可查询 Telegram 群里的发送者角色，【BOT权限】可查询机器人的角色。 |
+| 移除与封禁 | `banChatMember` 使用整数 `user_id`。解封用 `unbanChatMember`，若只想操作已被封禁的成员，设置 `only_if_banned` 为真。 |
+| 退出 | `leaveChat` 使用 `chat_id`，由机器人退出目标群或频道。 |
+
+```text
+【定义变量@结果@【Telegram调用@setChatDescription@【对象
+  @chat_id@【接口值@整数@【群ID】】
+  @description@这里发布活动安排和通知
+】】】
+【取元素@【变量@结果】@retcode】
+```
+
+【置顶消息】默认操作当前消息，也可以传【输出流】返回的 RedReply 消息 ID。用 `【置顶消息@@假】` 取消当前消息的置顶。第三个参数填 `真` 时 Telegram 静默置顶。该命令也可用于 KOOK 文字频道。清空某个 Telegram 话题的置顶列表用 `unpinAllForumTopicMessages`。
+
+```text
+【置顶消息】
+```
+
+[Telegram 聊天资料](https://core.telegram.org/bots/api#getchat) · [管理员查询](https://core.telegram.org/bots/api#getchatadministrators) · [置顶](https://core.telegram.org/bots/api#pinchatmessage)
+
+### 默认权限、成员限制与管理员
+
+`setChatPermissions` 设置普通成员的默认权限。先用 `getChat` 查看 `data.permissions`，并在写入时填入要保留的其他权限。下例显式设置一套只允许发文本的权限。独立权限模式会分别处理各项发送权限。
+
+```text
+【定义变量@结果@【Telegram调用@setChatPermissions@【对象
+  @chat_id@【接口值@整数@【群ID】】
+  @use_independent_chat_permissions@【接口值@逻辑@真】
+  @permissions@【对象
+    @can_send_messages@【接口值@逻辑@真】
+    @can_send_photos@【接口值@逻辑@假】
+    @can_send_videos@【接口值@逻辑@假】
+    @can_send_polls@【接口值@逻辑@假】
+    @can_send_other_messages@【接口值@逻辑@假】
+    @can_add_web_page_previews@【接口值@逻辑@假】
+  】
+】】】
+【取元素@【变量@结果】@retcode】
+```
+
+- 在超级群用【禁言@300】暂停当前发送者的消息发送权限 300 秒。时长范围为 30 秒至 366 天。【禁言@0】把发送权限恢复为群默认值，其他权限沿用成员当前设置。机器人需有 `can_restrict_members`。需要对某个成员逐项控制权限时，用 `restrictChatMember`，传 `user_id`、`permissions` 和可选的 Unix 秒 `until_date`。
+- 在超级群或频道用 `promoteChatMember` 管理管理员权限。聊天类型决定可用字段，例如超级群的 `can_manage_topics`、频道的 `can_post_messages`。只填写机器人有权授予的权限。撤销管理员时按官方接口传入各项布尔权限为假。
+- 在 `notice:telegram:chat_member` 读取 `telegram.old_chat_member`、`telegram.new_chat_member` 和 `telegram.from`。需显式订阅 `chat_member` 并具备管理员身份。机器人自身变更使用 `notice:telegram:my_chat_member`。
+
+```text
+【定义变量@结果@【Telegram调用@promoteChatMember@【对象
+  @chat_id@【接口值@整数@【群ID】】
+  @user_id@【接口值@整数@目标用户ID】
+  @can_manage_topics@【接口值@逻辑@真】
+】】】
+【取元素@【变量@结果】@retcode】
+```
+
+[默认权限](https://core.telegram.org/bots/api#setchatpermissions) · [成员限制](https://core.telegram.org/bots/api#restrictchatmember) · [管理员权限](https://core.telegram.org/bots/api#promotechatmember)
+
+### 邀请链接与审核
+
+| 用途 | Telegram Bot API |
+| --- | --- |
+| 创建、编辑、撤销额外邀请 | `createChatInviteLink`、`editChatInviteLink`、`revokeChatInviteLink`。保存返回的 `data.invite_link`。 |
+| 重建主邀请 | `exportChatInviteLink` 返回新主邀请，原主邀请随即撤销。 |
+| 频道付费订阅邀请 | `createChatSubscriptionInviteLink` 与 `editChatSubscriptionInviteLink`，用 `revokeChatInviteLink` 撤销。 |
+| 接收入群申请 | `notice:telegram:chat_join_request`，从 `telegram.invite_link` 查看邀请来源。用【同意】或【拒绝】处理。 |
+
+```text
+【定义变量@邀请@【Telegram调用@createChatInviteLink@【对象
+  @chat_id@【接口值@整数@【群ID】】
+  @name@活动审核入口
+  @creates_join_request@【接口值@逻辑@真】
+】】】
+【取元素@【变量@邀请】@data@invite_link】
+```
+
+机器人需有邀请权限，并管理自己创建的链接。启用 `creates_join_request` 时省略 `member_limit`。下例撤销之前保存的邀请链接，替换其中的链接占位值。
+
+```text
+【定义变量@结果@【Telegram调用@revokeChatInviteLink@【对象
+  @chat_id@【接口值@整数@【群ID】】@invite_link@已保存的邀请链接
+】】】
+【取元素@【变量@结果】@retcode】
+```
+
+如需把带 `query_id` 的请求交给其他管理员，可用 `answerChatJoinRequestQuery` 传 `chat_join_request_query_id` 和 `result=queue`。
+
+[邀请链接](https://core.telegram.org/bots/api#createchatinvitelink) · [频道订阅邀请](https://core.telegram.org/bots/api#createchatsubscriptioninvitelink) · [入群审核](https://core.telegram.org/bots/api#answerchatjoinrequestquery)
+
+### 论坛话题与频道私信话题
+
+论坛超级群和已启用话题模式的私聊使用 `createForumTopic` 创建话题，保存 `data.message_thread_id`，再用 `editForumTopic`、`closeForumTopic`、`reopenForumTopic` 或 `deleteForumTopic` 管理。其中关闭和重开用于论坛超级群。创建或编辑时可选用 `getForumTopicIconStickers` 返回的自定义图标。话题创建、编辑、关闭、重开以及 General 话题的隐藏、取消隐藏，可用 `notice:telegram:forum_topic_created`、`notice:telegram:forum_topic_edited`、`notice:telegram:forum_topic_closed`、`notice:telegram:forum_topic_reopened`、`notice:telegram:general_forum_topic_hidden`、`notice:telegram:general_forum_topic_unhidden`。原始消息在 `telegram`。可以用 `editGeneralForumTopic`、`closeGeneralForumTopic`、`reopenGeneralForumTopic`、`hideGeneralForumTopic` 和 `unhideGeneralForumTopic` 管理 General 话题。
+
+下例在当前群创建话题，成功后用【输出流】发往新话题。第三个参数为正整数话题 ID。频道私信则在第四个参数填 `频道私信`，第三个参数传原生 `direct_messages_topic_id` 对应的 ID。
+
+```text
+【定义变量@结果@【Telegram调用@createForumTopic@【对象
+  @chat_id@【接口值@整数@【群ID】】@name@周末活动
+】】】
+【判等@【取元素@【变量@结果】@retcode】@0@
+  【取元素@【变量@结果】@message】
+  @【隐藏@【输出流@请在此话题报名@@【取元素@【变量@结果】@data@message_thread_id】】】
+】
+```
+
+若要关闭触发当前脚本的论坛话题，用该事件的 `message_thread_id`。重开时将方法改为 `reopenForumTopic`。
+
+```text
+【定义变量@结果@【Telegram调用@closeForumTopic@【对象
+  @chat_id@【接口值@整数@【群ID】】
+  @message_thread_id@【接口值@整数@【取元素@【事件内容】@message_thread_id】】
+】】】
+【取元素@【变量@结果】@retcode】
+```
+
+[话题接口](https://core.telegram.org/bots/api#createforumtopic) · [话题服务消息](https://core.telegram.org/bots/api#message)
+
+## KOOK 服务器与频道管理
+
+在 KOOK，【群ID】是频道 ID，【当前群组】是服务器 ID。在 CRON 或私聊中管理服务器时可显式填服务器 ID。【取群列表@服务器ID】会遍历分页并返回文字频道，省略时使用当前服务器或从当前频道查询所属服务器。完整频道类型和分组信息用 `channel/list` 查询。
+
+### 频道与成员
+
+| 用途 | KOOK 接口 |
+| --- | --- |
+| 服务器及成员查询 | GET `guild/list`、`guild/view`、`guild/user-list`。成员列表可用 `search` 或整数 `role_id` 筛选。 |
+| 频道查询 | GET `channel/list` 传 `guild_id`，GET `channel/view` 传 `target_id`。 |
+| 创建、更新、删除频道 | POST `channel/create`、`channel/update`、`channel/delete`。更新和删除用 `channel_id`。 |
+| 成员昵称、踢出、离开 | POST `guild/nickname`、`guild/kickout`、`guild/leave`。踢出用 `target_id`。 |
+| 封禁与解除 | GET `blacklist/list`、POST `blacklist/create` 和 `blacklist/delete`。写入用 `guild_id` 和 `target_id`。 |
+| 语音闭麦、静音 | GET `guild-mute/list`、POST `guild-mute/create` 和 `guild-mute/delete`。整数 `type` 为 1 时闭麦，为 2 时静音。 |
+
+```text
+【定义变量@结果@【KOOK调用@POST@channel/update@【对象
+  @channel_id@【群ID】
+  @topic@周末活动报名处
+  @slow_mode@【接口值@整数@5000】
+】】】
+【取元素@【变量@结果】@retcode】
+```
+
+`slow_mode` 在更新接口里以毫秒计，只能使用官方列出的档位。频道增删改事件用 `notice:kook:added_channel`、`notice:kook:updated_channel`、`notice:kook:deleted_channel`。脚本可直接读取【群ID】和【当前群组】。频道置顶变动事件用 `notice:kook:pinned_message` 和 `notice:kook:unpinned_message`。
+
+频道或群聊改名也可以沿用【OB调用】的 `set_group_name`。下例在 KOOK 修改当前频道名，在 Telegram 修改当前群或频道标题。
+
+```text
+【定义变量@结果@【OB调用@【对象@action@set_group_name@params@【对象
+  @group_id@【群ID】@group_name@活动公告
+】】】】
+【取元素@【变量@结果】@retcode】
+```
+
+[KOOK 频道](https://developer.kookapp.cn/doc/http/channel) · [KOOK 服务器](https://developer.kookapp.cn/doc/http/guild) · [黑名单](https://developer.kookapp.cn/doc/http/blacklist) · [频道事件](https://developer.kookapp.cn/doc/event/channel)
+
+### 身份组与频道权限覆盖
+
+- 服务器角色用 `guild-role/list` 查询，`guild-role/create`、`guild-role/update`、`guild-role/delete` 管理，`guild-role/grant`、`guild-role/revoke` 分配和撤销。此处的 `role_id` 为整数，`user_id` 为文本。
+- 频道权限用 `channel-role/index` 查询，`channel-role/create`、`channel-role/update`、`channel-role/delete` 管理覆盖。用 `channel-role/sync` 同步父分组权限。`type` 是 `role_id` 或 `user_id`，对应的 `value` 为文本。权限掩码 `allow` 和 `deny` 用整数。
+- 【权限】和【BOT权限】按服务器所有者和身份组的管理员权限位判断。要查询单项权限，读取角色位掩码和频道覆盖规则。身份组变动用 `notice:kook:added_role`、`notice:kook:updated_role`、`notice:kook:deleted_role`，从【当前群组】取服务器 ID。
+
+下面修改已存在的频道权限覆盖，允许指定身份组查看频道，禁止发布消息。先用 `channel-role/index` 核对并合并需要保留的其他权限位。
+
+```text
+【定义变量@结果@【KOOK调用@POST@channel-role/update@【对象
+  @channel_id@【群ID】@type@role_id@value@702
+  @allow@【接口值@整数@2048】@deny@【接口值@整数@4096】
+】】】
+【取元素@【变量@结果】@retcode】
+```
+
+[身份组与权限位](https://developer.kookapp.cn/doc/http/guild-role) · [频道权限](https://developer.kookapp.cn/doc/http/channel) · [身份组事件](https://developer.kookapp.cn/doc/event/guild-role)
+
+### 邀请链接
+
+用 `invite/create` 创建服务器或频道邀请，至少填写 `guild_id` 或 `channel_id` 之一。下例创建一小时有效、可用五次的频道邀请。
+
+```text
+【定义变量@邀请@【KOOK调用@POST@invite/create@【对象
+  @channel_id@【群ID】@duration@【接口值@整数@3600】@setting_times@【接口值@整数@5】
+】】】
+【取元素@【变量@邀请】@data@url】
+```
+
+GET `invite/list` 可按服务器或频道查邀请。POST `invite/delete` 使用 `url_code`。GET `invite/invitees` 按 `id` 或 `invite_url` 查询被邀请用户，传入 `page`、`page_size` 分页。创建、查询和删除依赖相应的邀请权限。
+
+```text
+【定义变量@名单@【KOOK调用@GET@invite/invitees@【对象
+  @id@邀请码@page@【接口值@整数@1】@page_size@【接口值@整数@20】
+】】】
+【取元素@【变量@名单】@data@count】
+```
+
+```text
+【定义变量@结果@【KOOK调用@POST@invite/delete@【对象
+  @channel_id@【群ID】@url_code@邀请码
+】】】
+【取元素@【变量@结果】@retcode】
+```
+
+[KOOK 邀请接口](https://developer.kookapp.cn/doc/http/invite)
+
+### 帖子频道与分区
+
+GET `category/list` 查询分区，GET `thread/list` 查询帖子，GET `thread/view` 查询详情。POST `thread/create` 使用服务器、帖子频道和标题，主楼用卡片数组。GET `thread/post` 查询回复，必填 `channel_id`、`thread_id`、`order` 和 `page`，后者按官方字段类型传文本。POST `thread/delete` 用 `thread_id` 删除整帖，传 `post_id` 时只删该条评论或回复。
+
+```text
+【定义变量@帖子@【KOOK调用@POST@thread/create@【对象
+  @channel_id@帖子频道ID@guild_id@【当前群组】@title@活动报名
+  @content@【数组@【对象@type@card@modules@【数组@【对象@type@section@text@请在本帖回复报名】】】】
+】】】
+【取元素@【变量@帖子】@data@id】
+```
+
+POST `thread/reply` 的 `content` 是回复文本。回复某一楼时再传 `reply_id`，填写该楼的评论或回复 ID。
+
+```text
+【定义变量@回复@【KOOK调用@POST@thread/reply@【对象
+  @channel_id@帖子频道ID@thread_id@帖子ID@content@本次活动将在周六举行
+】】】
+【取元素@【变量@回复】@retcode】
+```
+
+[KOOK 帖子接口](https://developer.kookapp.cn/doc/http/thread)
 
 ## KOOK 卡片、文件与共享播放
 

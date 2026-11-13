@@ -41,6 +41,7 @@ use reqwest::header::HeaderValue;
 #[derive(Debug, Clone)]
 struct RawMsgId {
     msg_id: String,
+    channel_id: String,
     user_id: String,
     is_private: bool,
 }
@@ -188,6 +189,11 @@ impl KookConnect {
             if let Some(id) = result["data"]["msg_id"].as_str() {
                 let raw_id = RawMsgId {
                     msg_id: id.to_owned(),
+                    channel_id: if normalized == "message/create" {
+                        read_json_str(payload, "target_id")
+                    } else {
+                        String::new()
+                    },
                     is_private: normalized == "direct-message/create",
                     user_id: if normalized == "direct-message/create" {
                         read_json_str(payload, "target_id")
@@ -227,8 +233,16 @@ impl KookConnect {
             "kook_event": raw_event,
         });
         let is_group = data["channel_type"] == "GROUP";
-        let user_id = read_json_str(body, "user_id");
+        let mut user_id = read_json_str(body, "user_id");
+        if user_id.is_empty() && matches!(kind, "pinned_message" | "unpinned_message") {
+            user_id = read_json_str(body, "operator_id");
+        }
+        let channel_event = matches!(kind, "added_channel" | "updated_channel" | "deleted_channel");
+        let role_event = matches!(kind, "added_role" | "updated_role" | "deleted_role");
         let mut channel_id = read_json_str(body, "channel_id");
+        if channel_event {
+            channel_id = read_json_str(body, "id");
+        }
         if channel_id.is_empty() && is_group && kind == "message_btn_click" {
             channel_id = body["target_id"]
                 .as_str()
@@ -238,9 +252,13 @@ impl KookConnect {
                 .to_owned();
         }
         if !channel_id.is_empty() {
-            event["group_id"] = channel_id.into();
+            event["group_id"] = channel_id.clone().into();
         }
-        if let Some(guild_id) = body["guild_id"].as_str() {
+        let mut guild_id = read_json_str(body, "guild_id");
+        if guild_id.is_empty() && (channel_event || role_event) {
+            guild_id = read_json_str(data, "target_id");
+        }
+        if !guild_id.is_empty() {
             event["groups_id"] = guild_id.into();
         }
         if !user_id.is_empty() {
@@ -257,12 +275,32 @@ impl KookConnect {
             event["message_id"] = self
                 .add_msg_id(&vec![RawMsgId {
                     msg_id: message_id.to_owned(),
+                    channel_id,
                     is_private: !is_group,
                     user_id: if is_group { String::new() } else { user_id },
                 }])
                 .into();
         }
         Some(event)
+    }
+
+    async fn pin_message(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let id = read_json_str(params, "message_id");
+        let messages = self.get_msg_id(&id);
+        let message = messages.last().ok_or("KOOK 找不到 RedReply 消息 ID")?;
+        if message.is_private || message.channel_id.is_empty() {
+            return Err("KOOK 只支持置顶已知频道中的消息".into());
+        }
+        let endpoint = if params["remove"] == true { "message/unpin" } else { "message/pin" };
+        self.native_request(
+            "POST",
+            endpoint,
+            &json!({"msg_id":message.msg_id,"target_id":message.channel_id}),
+            None,
+            Duration::from_secs(25),
+            echo,
+        )
+        .await
     }
 
     async fn react(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
@@ -450,6 +488,7 @@ impl KookConnect {
 
             msg_ids.push(RawMsgId {
                 is_private: true,
+                channel_id: String::new(),
                 msg_id,
                 user_id: self
                     .self_id
@@ -471,6 +510,26 @@ impl KookConnect {
         Ok(send_json)
     }
 
+    fn member_role(guild: &Value, member: &Value, user_id: &str) -> &'static str {
+        if guild["user_id"].as_str() == Some(user_id) {
+            return "owner";
+        }
+        let Some(roles) = guild["roles"].as_array() else {
+            return "member";
+        };
+        let assigned = member["roles"].as_array();
+        let admin = roles.iter().any(|role| {
+            let Some(id) = role["role_id"].as_u64() else {
+                return false;
+            };
+            let applies = id == 0 || assigned.is_some_and(|roles| {
+                roles.iter().any(|role| role.as_u64() == Some(id))
+            });
+            applies && role["permissions"].as_u64().is_some_and(|bits| bits & 1 != 0)
+        });
+        if admin { "admin" } else { "member" }
+    }
+
     async fn get_guild_member_info(
         &self,
         guild_id: &str,
@@ -486,26 +545,7 @@ impl KookConnect {
         let guild_info = self
             .http_get_json_t(&format!("/guild/view?guild_id={guild_id}"), use_cache)
             .await?;
-        let owner_id = guild_info
-            .get("user_id")
-            .ok_or("get user_id err")?
-            .as_str()
-            .ok_or("user_id not str")?;
-        let role;
-        if owner_id == user_id {
-            role = "owner";
-        } else {
-            let roles = stranger_info
-                .get("roles")
-                .ok_or("get roles err")?
-                .as_array()
-                .ok_or("roles not arr")?;
-            if !roles.is_empty() {
-                role = "admin";
-            } else {
-                role = "member";
-            }
-        }
+        let role = Self::member_role(&guild_info, &stranger_info, user_id);
         Ok(GroupMemberInfo {
             group_id: "".to_owned(),
             groups_id: guild_id.to_owned(),
@@ -719,6 +759,7 @@ impl KookConnect {
             .ok_or("msg_id not str")?;
         let msg_id = self.add_msg_id(&vec![RawMsgId {
             is_private: true,
+            channel_id: String::new(),
             msg_id: raw_msg_id.to_owned(),
             user_id: user_id.to_owned(),
         }]);
@@ -964,6 +1005,7 @@ impl KookConnect {
             .ok_or("msg_id not str")?;
         let msg_id = self.add_msg_id(&vec![RawMsgId {
             is_private: false,
+            channel_id: group_id.to_owned(),
             msg_id: raw_msg_id.to_owned(),
             user_id: user_id.to_owned(),
         }]);
@@ -1748,6 +1790,7 @@ impl KookConnect {
             let msg_id = self.send_group_msg(*tp, &group_id, msg, &quote).await?;
             msg_ids.push(RawMsgId {
                 is_private: false,
+                channel_id: group_id.to_owned(),
                 msg_id,
                 user_id: self
                     .self_id
@@ -1904,64 +1947,62 @@ impl KookConnect {
         Ok(send_json)
     }
 
-    async fn get_group_list(
-        &self,
-        guild_id: &str,
-    ) -> Result<Vec<GroupInfo>, Box<dyn std::error::Error + Send + Sync>> {
-        let ret_json = self
-            .http_get_json_t(&format!("/channel/list?guild_id={guild_id}"), false)
-            .await?;
-        let channel_arr = ret_json
-            .get("items")
-            .ok_or("get items err")?
-            .as_array()
-            .ok_or("items not arr")?;
-        let mut ret_arr = vec![];
-        for it2 in channel_arr {
-            let id = it2
-                .get("id")
-                .ok_or("get id err")?
-                .as_str()
-                .ok_or("id not str")?;
-
-            let group_name = it2
-                .get("name")
-                .ok_or("get name err")?
-                .as_str()
-                .ok_or("name not str")?;
-
-            let tp = it2
-                .get("type")
-                .ok_or("get type err")?
-                .as_i64()
-                .ok_or("type not i64")?;
-            let is_category = Self::get_json_bool(it2, "is_category");
-
-            if !is_category && tp == 1 {
-                ret_arr.push(GroupInfo {
-                    group_id: id.to_owned(),
-                    group_name: group_name.to_owned(),
-                    member_count: 0,
-                    max_member_count: 0,
-                });
+    async fn deal_ob_get_group_list(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let mut guild_id = read_json_str(params, "groups_id");
+        let timeout = Duration::from_secs(8);
+        if guild_id.is_empty() {
+            let channel_id = read_json_str(params, "group_id");
+            if channel_id.is_empty() {
+                return Err("KOOK 群列表需要服务器 ID 或当前频道".into());
+            }
+            let channel = self.native_request(
+                "GET", "channel/view", &json!({"target_id":channel_id}), None, timeout, echo,
+            ).await?;
+            if channel["retcode"] != 0 {
+                return Ok(channel);
+            }
+            guild_id = read_json_str(&channel["data"], "guild_id");
+            if guild_id.is_empty() {
+                return Err("KOOK 频道没有返回服务器 ID".into());
             }
         }
-        Ok(ret_arr)
+
+        let mut channels = Vec::new();
+        let mut page = 1;
+        loop {
+            let response = self.native_request(
+                "GET", "channel/list", &json!({"guild_id":guild_id,"page":page}), None, timeout, echo,
+            ).await?;
+            if response["retcode"] != 0 {
+                return Ok(response);
+            }
+            let data = &response["data"];
+            let items = data["items"].as_array().ok_or("KOOK 频道列表缺少 items")?;
+            channels.extend(items.iter().filter_map(Self::text_channel_group));
+            let total_pages = data["meta"]["page_total"].as_u64().unwrap_or(page);
+            if items.is_empty() || page >= total_pages {
+                break;
+            }
+            page += 1;
+        }
+        Ok(native_api::reply(0, &json!(channels), "", echo))
     }
-    async fn deal_ob_get_group_list(
-        &self,
-        params: &serde_json::Value,
-        echo: &serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let guild_id = read_json_str(params, "groups_id");
-        let info = self.get_group_list(&guild_id).await?;
-        let send_json = serde_json::json!({
-            "status":"ok",
-            "retcode":0,
-            "data": info,
-            "echo":echo
-        });
-        Ok(send_json)
+
+    fn text_channel_group(channel: &Value) -> Option<GroupInfo> {
+        let category = Self::get_json_bool(channel, "is_category") || channel["is_category"] == 1;
+        if category || channel["type"] != 1 {
+            return None;
+        }
+        let group_id = read_json_str(channel, "id");
+        if group_id.is_empty() {
+            return None;
+        }
+        Some(GroupInfo {
+            group_id,
+            group_name: channel["name"].as_str()?.to_owned(),
+            member_count: 0,
+            max_member_count: 0,
+        })
     }
     async fn get_group_member_info(
         &self,
@@ -1986,26 +2027,7 @@ impl KookConnect {
         let guild_info = self
             .http_get_json_t(&format!("/guild/view?guild_id={guild_id}"), use_cache)
             .await?;
-        let owner_id = guild_info
-            .get("user_id")
-            .ok_or("get user_id err")?
-            .as_str()
-            .ok_or("user_id not str")?;
-        let role;
-        if owner_id == user_id {
-            role = "owner";
-        } else {
-            let roles = stranger_info
-                .get("roles")
-                .ok_or("get roles err")?
-                .as_array()
-                .ok_or("roles not arr")?;
-            if !roles.is_empty() {
-                role = "admin";
-            } else {
-                role = "member";
-            }
-        }
+        let role = Self::member_role(&guild_info, &stranger_info, user_id);
         Ok(GroupMemberInfo {
             group_id: group_id.to_owned(),
             user_id: user_id.to_owned(),
@@ -2070,99 +2092,31 @@ impl KookConnect {
         });
         Ok(send_json)
     }
-    async fn set_group_kick(
-        &self,
-        group_id: &str,
-        user_id: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let group_info = self
-            .http_get_json_t(&format!("/channel/view?target_id={group_id}"), true)
-            .await?;
-        let guild_id = group_info
-            .get("guild_id")
-            .ok_or("get guild_id err")?
-            .as_str()
-            .ok_or("guild_id not str")?;
-        let mut json: serde_json::Value = serde_json::from_str("{}")?;
-        json["guild_id"] = guild_id.into();
-        json["target_id"] = user_id.into();
-        let _ret_json = self.http_post_json("/guild/kickout", &json).await?;
-        Ok(())
-    }
-    async fn deal_ob_set_group_kick(
-        &self,
-        params: &serde_json::Value,
-        echo: &serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let group_id = read_json_str(params, "group_id");
-        let user_id = read_json_str(params, "user_id");
-        self.set_group_kick(&group_id, &user_id).await?;
-        let send_json = serde_json::json!({
-            "status":"ok",
-            "retcode":0,
-            "data": {},
-            "echo":echo
-        });
-        Ok(send_json)
-    }
-    async fn set_group_leave(
-        &self,
-        group_id: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let group_info = self
-            .http_get_json_t(&format!("/channel/view?target_id={group_id}"), true)
-            .await?;
-        let guild_id = group_info
-            .get("guild_id")
-            .ok_or("get guild_id err")?
-            .as_str()
-            .ok_or("guild_id not str")?;
-        let mut json: serde_json::Value = serde_json::from_str("{}")?;
-        json["guild_id"] = guild_id.into();
-        let _ret_json = self.http_post_json("/guild/leave", &json).await?;
-        Ok(())
-    }
-    async fn deal_ob_set_group_leave(
-        &self,
-        params: &serde_json::Value,
-        echo: &serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let group_id = read_json_str(params, "group_id");
-        self.set_group_leave(&group_id).await?;
-        let send_json = serde_json::json!({
-            "status":"ok",
-            "retcode":0,
-            "data": {},
-            "echo":echo
-        });
-        Ok(send_json)
-    }
-    async fn set_group_name(
-        &self,
-        group_id: &str,
-        name: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let mut json: serde_json::Value = serde_json::from_str("{}")?;
-        json["channel_id"] = group_id.into();
-        json["name"] = name.into();
-        let _ret_json = self.http_post_json("/channel/update", &json).await?;
-        Ok(())
-    }
-    async fn deal_ob_set_group_name(
-        &self,
-        params: &serde_json::Value,
-        echo: &serde_json::Value,
-    ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
-        let group_id = read_json_str(params, "group_id");
-        let group_name = read_json_str(params, "group_name");
-        self.set_group_name(&group_id, &group_name).await?;
-        let send_json = serde_json::json!({
-            "status":"ok",
-            "retcode":0,
-            "data": {},
-            "echo":echo
-        });
-        Ok(send_json)
+    async fn manage_group(&self, action: &str, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let channel_id = read_json_str(params, "group_id");
+        let timeout = Duration::from_secs(8);
+        if action == "set_group_name" {
+            let name = read_json_str(params, "group_name");
+            return self.native_request(
+                "POST", "channel/update", &json!({"channel_id":channel_id,"name":name}),
+                None, timeout, echo,
+            ).await;
+        }
+        let channel = self.native_request(
+            "GET", "channel/view", &json!({"target_id":channel_id}), None, timeout, echo,
+        ).await?;
+        if channel["retcode"] != 0 {
+            return Ok(channel);
+        }
+        let guild_id = channel["data"]["guild_id"].as_str().ok_or("KOOK 缺少服务器 ID")?;
+        let mut body = json!({"guild_id":guild_id});
+        let endpoint = if action == "set_group_kick" {
+            body["target_id"] = read_json_str(params, "user_id").into();
+            "guild/kickout"
+        } else {
+            "guild/leave"
+        };
+        self.native_request("POST", endpoint, &body, None, timeout, echo).await
     }
     async fn set_group_card(
         &self,
@@ -2306,6 +2260,9 @@ impl KookConnect {
             .ok_or("get guild_id err")?
             .as_str()
             .ok_or("guild_id not str")?;
+        let guild_info = self
+            .http_get_json_t(&format!("/guild/view?guild_id={guild_id}"), true)
+            .await?;
         let mut ret_vec: Vec<GroupMemberInfo> = vec![];
         let ret_json = self
             .http_get_json_t(&format!("/guild/user-list?guild_id={guild_id}"), false)
@@ -2316,23 +2273,8 @@ impl KookConnect {
             .as_array()
             .ok_or("items not arr")?;
         for it in items {
-            let role;
-            let is_master = Self::get_json_bool(it, "is_master");
-            if is_master {
-                role = "owner";
-            } else {
-                let roles = it
-                    .get("roles")
-                    .ok_or("get roles err")?
-                    .as_array()
-                    .ok_or("roles not arr")?;
-                if !roles.is_empty() {
-                    role = "admin";
-                } else {
-                    role = "member";
-                }
-            }
             let user_id = read_json_str(it, "id");
+            let role = Self::member_role(&guild_info, it, &user_id);
             let info = GroupMemberInfo {
                 group_id: group_id.to_owned(),
                 user_id: user_id.to_owned(),
@@ -2400,23 +2342,8 @@ impl KookConnect {
                 .as_array()
                 .ok_or("items not arr")?
             {
-                let role;
-                let is_master = Self::get_json_bool(it, "is_master");
-                if is_master {
-                    role = "owner";
-                } else {
-                    let roles = it
-                        .get("roles")
-                        .ok_or("get roles err")?
-                        .as_array()
-                        .ok_or("roles not arr")?;
-                    if !roles.is_empty() {
-                        role = "admin";
-                    } else {
-                        role = "member";
-                    }
-                }
                 let user_id = read_json_str(it, "id");
+                let role = Self::member_role(&guild_info, it, &user_id);
                 let info = GroupMemberInfo {
                     group_id: group_id.to_owned(),
                     user_id: user_id.to_owned(),
@@ -2684,6 +2611,7 @@ impl BotConnectTrait for KookConnect {
         let def = serde_json::json!({});
         let params = json.get("params").unwrap_or(&def);
         let send_json = match action {
+            "set_msg_pin" => native_api::action_result(self.pin_message(params, echo).await, echo),
             "set_msg_emoji_like" => native_api::action_result(self.react(params, echo).await, echo),
             "kook_api" => native_api::action_result(self.call_native_api(params, echo).await, echo),
             "kook_voice_play" => {
@@ -2712,11 +2640,13 @@ impl BotConnectTrait for KookConnect {
             "get_login_info" => self.deal_ob_get_login_info(params, echo).await?,
             "get_stranger_info" => self.deal_ob_get_stranger_info(params, echo).await?,
             "get_group_info" => self.deal_ob_get_group_info(params, echo).await?,
-            "get_group_list" => self.deal_ob_get_group_list(params, echo).await?,
+            "get_group_list" => {
+                native_api::action_result(self.deal_ob_get_group_list(params, echo).await, echo)
+            }
             "get_group_member_info" => self.deal_ob_get_group_member_info(params, echo).await?,
-            "set_group_kick" => self.deal_ob_set_group_kick(params, echo).await?,
-            "set_group_leave" => self.deal_ob_set_group_leave(params, echo).await?,
-            "set_group_name" => self.deal_ob_set_group_name(params, echo).await?,
+            "set_group_kick" | "set_group_leave" | "set_group_name" => {
+                native_api::action_result(self.manage_group(action, params, echo).await, echo)
+            }
             "set_group_card" => self.deal_ob_set_group_card(params, echo).await?,
             "get_friend_list" => self.deal_ob_get_friend_list(params, echo).await?,
             "get_group_member_list" => self.deal_ob_get_group_member_list(params, echo).await?,
@@ -2864,6 +2794,44 @@ mod native_tests {
 #[cfg(test)]
 mod advanced_native_tests {
     use super::*;
+
+    #[test]
+    fn group_management_uses_real_permissions_and_channel_context() {
+        let guild = json!({"user_id":"10","roles":[
+            {"role_id":0,"permissions":2048},
+            {"role_id":5,"permissions":4096},
+            {"role_id":6,"permissions":1}
+        ]});
+        assert_eq!(KookConnect::member_role(&guild, &json!({"roles":[]}), "10"), "owner");
+        assert_eq!(KookConnect::member_role(&guild, &json!({"roles":[5]}), "11"), "member");
+        assert_eq!(KookConnect::member_role(&guild, &json!({"roles":[5,6]}), "11"), "admin");
+        assert!(KookConnect::text_channel_group(&json!({"id":"1","type":2,"name":"语音"})).is_none());
+        assert!(KookConnect::text_channel_group(&json!({"id":"1","type":1,"is_category":1,"name":"分组"})).is_none());
+        assert_eq!(KookConnect::text_channel_group(&json!({"id":"2","type":1,"name":"聊天"})).unwrap().group_id, "2");
+
+        let bot = KookConnect::build("");
+        let channel = bot.native_event(&json!({
+            "channel_type":"GROUP","type":255,"target_id":"guild",
+            "extra":{"type":"deleted_channel","body":{"id":"channel"}}
+        })).unwrap();
+        assert_eq!(channel["group_id"], "channel");
+        assert_eq!(channel["groups_id"], "guild");
+        let role = bot.native_event(&json!({
+            "channel_type":"GROUP","type":255,"target_id":"guild",
+            "extra":{"type":"updated_role","body":{"role_id":6}}
+        })).unwrap();
+        assert_eq!(role["groups_id"], "guild");
+        assert!(role.get("group_id").is_none());
+
+        let pin = bot.native_event(&json!({
+            "channel_type":"GROUP","type":255,"target_id":"guild",
+            "extra":{"type":"pinned_message","body":{"channel_id":"channel","operator_id":"11","msg_id":"message"}}
+        })).unwrap();
+        let ids = bot.get_msg_id(pin["message_id"].as_str().unwrap());
+        assert_eq!(pin["user_id"], "11");
+        assert_eq!(ids[0].msg_id, "message");
+        assert_eq!(ids[0].channel_id, "channel");
+    }
 
     #[tokio::test]
     async fn native_cards_use_the_wire_format_and_normal_message_path() {

@@ -91,6 +91,15 @@ pub(crate) fn telegram_join_request(
         return None;
     }
     let request = &event["telegram"];
+    if let Some(query_id) = request["query_id"].as_str().filter(|id| !id.is_empty()) {
+        return Some((
+            "answerChatJoinRequestQuery",
+            serde_json::json!({
+                "chat_join_request_query_id": query_id,
+                "result": if approve { "approve" } else { "decline" },
+            }),
+        ));
+    }
     let chat_id = request["chat"]["id"].as_i64()?;
     let user_id = request["from"]["id"].as_i64()?;
     let method = if approve {
@@ -114,15 +123,19 @@ fn handle_telegram_join_request(
         "telegram",
         "telegram_api",
         serde_json::json!({"method": method, "body": body}),
-    )?
-    .ok_or("Telegram 入群审核未返回响应")?;
+    )?;
+    check_native_command(response, "Telegram 入群审核")
+}
+
+fn check_native_command(result: Option<Rc<RedValue>>, action: &str) -> RedCommandResult {
+    let response = result.ok_or_else(|| RedLang::make_err(&format!("{action}未返回响应")))?;
     let RedValue::Object(fields) = response.as_ref() else {
-        return Err(RedLang::make_err("Telegram 入群审核返回格式错误"));
+        return Err(RedLang::make_err(&format!("{action}返回格式错误")));
     };
     let code = fields.get("retcode").ok_or("缺少 retcode")?.expect_text_value()?;
     if code != "0" {
         let message = fields.get("message").ok_or("缺少 message")?.expect_text_value()?;
-        return Err(RedLang::make_err(&format!("Telegram 入群审核失败（{code}）{message}")));
+        return Err(RedLang::make_err(&format!("{action}失败（{code}）{message}")));
     }
     Ok(Some(rv_empty()))
 }
@@ -269,14 +282,32 @@ pub(crate) fn apply_telegram_topic(
     }
 }
 
-pub fn send_one_msg(rl: &RedLang, msg: &str) -> Result<String, Box<dyn std::error::Error>> {
-    send_one_msg_with_markup(rl, msg, None)
+pub(crate) fn telegram_output_topic(
+    id: &str,
+    kind: &str,
+) -> Result<Option<(&'static str, i64)>, Box<dyn std::error::Error>> {
+    if id.is_empty() && kind.is_empty() {
+        return Ok(None);
+    }
+    let field = match kind {
+        "" | "话题" => "message_thread_id",
+        "频道私信" => "direct_messages_topic_id",
+        _ => return Err(RedLang::make_err("Telegram 话题类型需为话题或频道私信")),
+    };
+    let id = id.parse::<i64>().ok().filter(|id| *id > 0)
+        .ok_or_else(|| RedLang::make_err("Telegram 话题 ID 需要正整数"))?;
+    Ok(Some((field, id)))
 }
 
-fn send_one_msg_with_markup(
+pub fn send_one_msg(rl: &RedLang, msg: &str) -> Result<String, Box<dyn std::error::Error>> {
+    send_one_msg_with_options(rl, msg, None, None)
+}
+
+fn send_one_msg_with_options(
     rl: &RedLang,
     msg: &str,
     reply_markup: Option<serde_json::Value>,
+    topic: Option<(&'static str, i64)>,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if msg.is_empty() {
         return Ok("".to_string());
@@ -329,7 +360,9 @@ fn send_one_msg_with_markup(
         }
         let source = rl.get_exmap("原始事件");
         let target = if msg_type == "group" { sub_id.clone() } else { rl.get_exmap("发送者ID").to_string() };
-        if let Ok(event) = serde_json::from_str(&source) {
+        if let Some((field, id)) = topic {
+            send_json["params"][field] = id.into();
+        } else if let Ok(event) = serde_json::from_str(&source) {
             apply_telegram_topic(&event, &self_id, &target, &mut send_json["params"]);
         }
     }
@@ -378,10 +411,38 @@ fn send_one_msg_with_markup(
     Ok(msg_id)
 }
 
+fn group_member_role(rl: &RedLang, user_id: &str) -> RedCommandResult {
+    let platform = get_platform(rl);
+    let result = call_platform_api(rl, &platform, "get_group_member_info", serde_json::json!({
+        "group_id":rl.get_exmap("群ID").as_str(),"user_id":user_id,
+    }))?.ok_or("获取群成员权限未返回响应")?;
+    let RedValue::Object(result) = result.as_ref() else {
+        return Err(RedLang::make_err("获取群成员权限返回格式错误"));
+    };
+    let Some(RedValue::Object(data)) = result.get("data").map(Rc::as_ref) else {
+        return Err(RedLang::make_err("获取群成员权限失败"));
+    };
+    let role = data.get("role").ok_or("群成员权限响应缺少 role")?.expect_text_value()?;
+    let role = match role.as_str() {
+        "admin" => "管理",
+        "owner" => "群主",
+        "member" => "群员",
+        _ => return Err(RedLang::make_err("群成员权限响应中的 role 无效")),
+    };
+    Ok(Some(rv_text(role.to_owned())))
+}
+
 pub fn init_cq_ex_fun_map() {
-    add_fun(vec!["取群列表", "群列表"], |self_t, _params| {
-        let groups_id = &*self_t.get_exmap("群组ID");
-        let send_json = if groups_id.is_empty() {
+    add_fun(vec!["取群列表", "群列表"], |self_t, params| {
+        let groups_id = self_t.get_exmap("群组ID");
+        let send_json = if get_platform(self_t) == "kook" {
+            let explicit = self_t.get_param_text(params, 0)?;
+            let guild_id = if explicit.is_empty() { groups_id.as_str() } else { &explicit };
+            serde_json::json!({
+                "action":"get_group_list",
+                "params":{"groups_id":guild_id,"group_id":self_t.get_exmap("群ID").as_str()},
+            })
+        } else if groups_id.is_empty() {
             serde_json::json!({
                 "action":"get_group_list",
                 "params":{}
@@ -390,7 +451,7 @@ pub fn init_cq_ex_fun_map() {
             serde_json::json!({
                 "action":"get_group_list",
                 "params":{
-                    "groups_id":groups_id
+                    "groups_id":groups_id.as_str()
                 }
             })
         };
@@ -563,8 +624,14 @@ pub fn init_cq_ex_fun_map() {
         }
     });
     add_fun(vec!["权限", "发送者权限"], |self_t, _params| {
-        let role = self_t.get_exmap("发送者权限");
-        Ok(Some(rv_text(role.to_string())))
+        let user = self_t.get_exmap("发送者ID");
+        if get_platform(self_t) == "telegram"
+            && !self_t.get_exmap("群ID").is_empty()
+            && user.parse::<i64>().is_ok_and(|id| id > 0)
+        {
+            return group_member_role(self_t, &user);
+        }
+        Ok(Some(rv_text(self_t.get_exmap("发送者权限").to_string())))
     });
     // add_fun(vec!["发送者名片"],|self_t,_params|{
     //     let card = self_t.get_exmap("发送者名片");
@@ -780,16 +847,17 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["禁言"], |self_t, params| {
         let ban_time = self_t.get_param_text(params, 0)?;
-        let user_id_str = self_t.get_exmap("发送者ID").to_string();
-        let group_id_str = self_t.get_exmap("群ID").to_string();
-        let send_json = serde_json::json!({
-            "action":"set_group_ban",
-            "params":{
-                "group_id": group_id_str,
-                "user_id": user_id_str,
-                "duration":ban_time.parse::<usize>()?
-            }
+        let user_id = self_t.get_exmap("发送者ID");
+        let group_id = self_t.get_exmap("群ID");
+        let params = serde_json::json!({
+            "group_id": group_id.as_str(), "user_id": user_id.as_str(),
+            "duration": ban_time.parse::<usize>()?,
         });
+        if get_platform(self_t) == "telegram" {
+            let result = call_platform_api(self_t, "telegram", "set_group_ban", params)?;
+            return check_native_command(result, "Telegram 禁言");
+        }
+        let send_json = serde_json::json!({"action":"set_group_ban","params":params});
         let self_id = self_t.get_exmap("机器人ID");
         let platform = get_platform(self_t);
         let passive_id = self_t.get_exmap("消息ID");
@@ -802,6 +870,26 @@ pub fn init_cq_ex_fun_map() {
             &remote_id,
         );
         Ok(Some(rv_empty()))
+    });
+    add_fun(vec!["置顶消息"], |rl, params| {
+        let platform = get_platform(rl);
+        if !matches!(platform.as_str(), "kook" | "telegram") {
+            return Err(RedLang::make_err("【置顶消息】需要 KOOK 或 Telegram 机器人来源"));
+        }
+        let mut id = rl.get_param_text(params, 0)?;
+        if id.is_empty() {
+            id = rl.get_exmap("消息ID").to_string();
+        }
+        let remove = match rl.get_param_text(params, 1)?.as_str() {
+            "" | "真" => false,
+            "假" => true,
+            _ => return Err(RedLang::make_err("置顶参数需为真或假")),
+        };
+        let silent = rl.get_param_text(params, 2)? == "真";
+        let result = call_platform_api(rl, &platform, "set_msg_pin", serde_json::json!({
+            "message_id":id,"remove":remove,"silent":silent,
+        }))?;
+        check_native_command(result, "置顶消息")
     });
     add_fun(vec!["表情回应"], |self_t, params| {
         let emoji_id = self_t.get_param_text(params, 0)?;
@@ -873,7 +961,14 @@ pub fn init_cq_ex_fun_map() {
         } else {
             None
         };
-        match send_one_msg_with_markup(self_t, &msg, markup) {
+        let topic = if get_platform(self_t) == "telegram" && params.len() > 2 {
+            let id = self_t.get_param_text(params, 2)?;
+            let kind = self_t.get_param_text(params, 3)?;
+            telegram_output_topic(&id, &kind)?
+        } else {
+            None
+        };
+        match send_one_msg_with_options(self_t, &msg, markup, topic) {
             Ok(msg_id) => Ok(Some(rv_text(msg_id))),
             Err(e) => {
                 let _ = cq_add_log_w(&format!("输出流失败，{}", e));
@@ -943,7 +1038,11 @@ pub fn init_cq_ex_fun_map() {
         return Ok(Some(json_value_to_red(&raw_json)?));
     });
     add_fun(vec!["OB调用"], |self_t, params| {
-        let content = self_t.get_param_text(params, 0)?;
+        let input = self_t.get_param(params, 0)?;
+        let content = match input.as_ref() {
+            RedValue::Text(text) => text.as_ref().clone(),
+            _ => native_args::object(&input)?.to_string(),
+        };
         let self_id = self_t.get_exmap("机器人ID");
         let platform = get_platform(self_t);
         let passive_id = self_t.get_exmap("消息ID");
@@ -1608,42 +1707,8 @@ pub fn init_cq_ex_fun_map() {
         }
         Ok(Some(rv_object(ret_obj)))
     });
-    add_fun(vec!["BOT权限"], |self_t, _params| {
-        let group_id = self_t.get_exmap("群ID");
-        let user_id = self_t.get_exmap("机器人ID");
-        let send_json = serde_json::json!({
-            "action":"get_group_member_info",
-            "params":{
-                "group_id":group_id.to_string(),
-                "user_id":user_id.to_string()
-            }
-        });
-        let self_id = self_t.get_exmap("机器人ID");
-        let platform = get_platform(self_t);
-        let passive_id = self_t.get_exmap("消息ID");
-        let remote_id = self_t.get_exmap("远程MQTT客户端ID");
-        let cq_ret = cq_call_api(
-            &platform,
-            &self_id,
-            &passive_id,
-            &send_json.to_string(),
-            &remote_id,
-        );
-        let ret_json: serde_json::Value = serde_json::from_str(&cq_ret)?;
-        let err = format!("获取BOT权限失败:{ret_json}");
-        let dat_json = ret_json.get("data").ok_or(err)?;
-        let role = read_json_str(dat_json, "role");
-        let role_ret;
-        if role == "admin" {
-            role_ret = "管理"
-        } else if role == "owner" {
-            role_ret = "群主"
-        } else if role == "member" {
-            role_ret = "群员"
-        } else {
-            return Err(RedLang::make_err("获取BOT权限失败:返回的json中无role字段"));
-        }
-        Ok(Some(rv_text(role_ret.to_string())))
+    add_fun(vec!["BOT权限"], |rl, _params| {
+        group_member_role(rl, &rl.get_exmap("机器人ID"))
     });
     add_fun(vec!["伪造OB事件"], |self_t, params| {
         let ob_event = self_t.get_param_text(params, 0)?;
