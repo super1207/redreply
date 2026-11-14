@@ -84,7 +84,7 @@ fn content(rl: &mut RedLang, params: &[Ast]) -> Result<Value> {
         let mut media = Vec::new();
         for (index, value) in array(&input)?.iter().enumerate() {
             let row = array(value)?;
-            let [id, kind, ..] = row.as_ref() else {
+            let [id, kind, ..] = row else {
                 return Err("富文本资源请填【数组@标识@类型@来源@文件名】".into());
             };
             let id = id.expect_text_value()?;

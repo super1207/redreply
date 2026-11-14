@@ -37,16 +37,15 @@ pub(super) fn validate(
     if effect && (!private || parts.iter().any(|part| part.0 == "telegram_paid_media")) {
         return Err("消息效果只适用于支持该选项的私聊消息".into());
     }
-    if options.contains_key("suggested_post_parameters") {
-        if topic.direct.is_none()
+    if options.contains_key("suggested_post_parameters")
+        && (topic.direct.is_none()
             || parts.len() != 1
             || !business_id.is_empty()
             || parts
                 .iter()
-                .any(|part| matches!(part.0, "media_group" | "telegram_checklist"))
-        {
-            return Err("建议帖需要频道私信话题及单条支持建议帖的消息".into());
-        }
+                .any(|part| matches!(part.0, "media_group" | "telegram_checklist")))
+    {
+        return Err("建议帖需要频道私信话题及单条支持建议帖的消息".into());
     }
     if let Some(ephemeral) = options.get("ephemeral_message_parameters") {
         let callback = ephemeral["callback_query_id"]
@@ -64,8 +63,7 @@ pub(super) fn validate(
         {
             return Err("Telegram 临时消息的接收者、回调或替换选项无效".into());
         }
-        if (!receiver && !callback)
-            || (private && !callback)
+        if (private || !receiver) && !callback
             || topic.direct.is_some()
             || options.contains_key("suggested_post_parameters")
             || parts.len() != 1
@@ -87,7 +85,7 @@ pub(super) fn validate(
         }
         if options
             .get("ephemeral_reply_id")
-            .is_some_and(|id| !id.as_i64().is_some_and(|id| id > 0))
+            .is_some_and(|id| id.as_i64().is_none_or(|id| id <= 0))
             || ephemeral["replace_callback_query_message"] == true && !callback
         {
             return Err("Telegram 临时回复缺少有效的回调或消息ID".into());
@@ -103,6 +101,32 @@ pub(super) fn validate(
         return Err("必须使用临时消息回复临时消息".into());
     }
     Ok(())
+}
+
+pub(super) fn apply(options: &Value, payload: &mut Value) {
+    for field in [
+        "disable_notification",
+        "protect_content",
+        "message_effect_id",
+        "suggested_post_parameters",
+        "ephemeral_message_parameters",
+    ] {
+        if let Some(value) = options.get(field) {
+            payload[field] = value.clone();
+        }
+    }
+    if let Some(ephemeral) = options.get("ephemeral_message_parameters") {
+        if ephemeral.get("receiver_user_id").is_none() {
+            let object = payload
+                .as_object_mut()
+                .expect("Telegram message payload is an object");
+            object.remove("chat_id");
+            object.remove("message_thread_id");
+            object.remove("reply_parameters");
+        } else if let Some(id) = options.get("ephemeral_reply_id") {
+            payload["reply_parameters"] = json!({"ephemeral_message_id":id});
+        }
+    }
 }
 
 #[cfg(test)]
@@ -162,31 +186,5 @@ mod tests {
         assert!(validate(&ephemeral, &parts, &topic, false, "", None).is_err());
         let directed = json!({"reply_parameters":{"ephemeral_message_id":42},"ephemeral_message_parameters":{"receiver_user_id":21}});
         assert!(validate(&directed, &parts, &topic, false, "", None).is_ok());
-    }
-}
-
-pub(super) fn apply(options: &Value, payload: &mut Value) {
-    for field in [
-        "disable_notification",
-        "protect_content",
-        "message_effect_id",
-        "suggested_post_parameters",
-        "ephemeral_message_parameters",
-    ] {
-        if let Some(value) = options.get(field) {
-            payload[field] = value.clone();
-        }
-    }
-    if let Some(ephemeral) = options.get("ephemeral_message_parameters") {
-        if ephemeral.get("receiver_user_id").is_none() {
-            let object = payload
-                .as_object_mut()
-                .expect("Telegram message payload is an object");
-            object.remove("chat_id");
-            object.remove("message_thread_id");
-            object.remove("reply_parameters");
-        } else if let Some(id) = options.get("ephemeral_reply_id") {
-            payload["reply_parameters"] = json!({"ephemeral_message_id":id});
-        }
     }
 }

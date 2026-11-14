@@ -1510,6 +1510,7 @@ impl TeleTramConnect {
         Ok((method, data["files"].clone()))
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn send_message_inner(
         &self,
         to_send_data: Vec<(&str, String, String)>,
@@ -2093,7 +2094,7 @@ impl TeleTramConnect {
         let options = &params["send_options"];
         if options.get("ephemeral_message_parameters").is_some()
             || options.get("message_effect_id").is_some()
-                && (ids.len() != 1 || !body["chat_id"].as_i64().is_some_and(|id| id > 0))
+                && (ids.len() != 1 || body["chat_id"].as_i64().is_none_or(|id| id <= 0))
             || options.get("suggested_post_parameters").is_some()
                 && (ids.len() != 1 || !body["direct_messages_topic_id"].is_number())
         {
@@ -2772,12 +2773,12 @@ mod native_tests {
     #[tokio::test]
     async fn legacy_media_commands_and_chat_scoped_replies_use_native_ids() {
         let bot = TeleTramConnect::build("");
-        let a = bot.add_msg_id(&vec![RawMsgId {
+        let a = bot.add_msg_id(&[RawMsgId {
             msg_id: "9".into(),
             chat_id: "-100".into(),
             business_id: String::new(),
         }]);
-        let b = bot.add_msg_id(&vec![RawMsgId {
+        let b = bot.add_msg_id(&[RawMsgId {
             msg_id: "9".into(),
             chat_id: "-200".into(),
             business_id: String::new(),
