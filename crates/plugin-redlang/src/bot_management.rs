@@ -4,6 +4,12 @@ use super::*;
 mod assets;
 #[path = "bot_business.rs"]
 pub(crate) mod business;
+#[path = "bot_location.rs"]
+pub(crate) mod location;
+#[path = "bot_payments.rs"]
+pub(crate) mod payments;
+#[path = "bot_templates.rs"]
+pub(crate) mod templates;
 
 fn required<'a>(value: &'a str, label: &str) -> Result<&'a str> {
     if value.is_empty() {
@@ -44,6 +50,17 @@ fn guild(rl: &RedLang, value: &str) -> Result<String> {
         .as_str()
         .ok_or("未找到频道所属服务器")?
         .to_owned())
+}
+
+pub(crate) fn kook_chat_code(event: &Value) -> Option<&str> {
+    let kook = &event["kook"];
+    [
+        &kook["chat_code"],
+        &kook["extra"]["chat_code"],
+        &kook["extra"]["code"],
+    ]
+    .into_iter()
+    .find_map(|value| value.as_str().filter(|code| !code.is_empty()))
 }
 
 fn insert_text(body: &mut Value, field: &str, value: &str) {
@@ -913,6 +930,53 @@ fn kook_permissions(data: &Value) -> Value {
 
 fn register_kook() {
     add_fun(vec!["KOOK帖子"], kook_threads);
+    add_fun(vec!["KOOK私聊会话"], |rl, params| {
+        let [operation, target, size] = text_params::<3>(rl, params, 0)?;
+        let record = |row: &Value| {
+            json!({"会话码":row["code"],"上次阅读时间":row["last_read_time"],
+            "最后消息时间":row["latest_msg_time"],"未读数":row["unread_count"],"用户":kook_user(&row["target_info"]),
+            "好友":row["is_friend"],"已屏蔽对方":row["is_blocked"],"被对方屏蔽":row["is_target_blocked"]})
+        };
+        match operation.as_str() {
+            "列表" | "" => {
+                let mut body = json!({});
+                if !target.is_empty() {
+                    body["page"] = positive_id(&target)?.into();
+                }
+                if !size.is_empty() {
+                    body["page_size"] = bounded(&size, 1, 50, "每页数量")?.into();
+                }
+                let data = kook(rl, "GET", "user-chat/list", body)?;
+                mapped_list(&data["data"]["items"], record)
+            }
+            "详情" | "删除" => {
+                let event: Value =
+                    serde_json::from_str(&rl.get_exmap("原始事件")).unwrap_or_default();
+                let code = if target.is_empty() {
+                    kook_chat_code(&event).unwrap_or_default()
+                } else {
+                    &target
+                };
+                let body = json!({"chat_code":required(code,"私聊会话码")?});
+                if operation == "详情" {
+                    output(&record(&kook(rl, "GET", "user-chat/view", body)?["data"]))
+                } else {
+                    kook(rl, "POST", "user-chat/delete", body)?;
+                    empty()
+                }
+            }
+            "创建" => {
+                let data = kook(
+                    rl,
+                    "POST",
+                    "user-chat/create",
+                    json!({"target_id":context(rl,&target,"发送者ID")?}),
+                )?;
+                output(&record(&data["data"]))
+            }
+            _ => Err("私聊会话操作请填列表、详情、创建或删除".into()),
+        }
+    });
     add_fun(vec!["KOOK服务器"], |rl, params| {
         let [operation, target] = text_params::<2>(rl, params, 0)?;
         let record = |row: &Value| {
@@ -1122,7 +1186,7 @@ fn register_kook() {
                 let event: Value =
                     serde_json::from_str(&rl.get_exmap("原始事件")).unwrap_or_default();
                 let code = if second.is_empty() {
-                    event["kook"]["chat_code"].as_str().unwrap_or_default()
+                    kook_chat_code(&event).unwrap_or_default()
                 } else {
                     &second
                 };
@@ -1164,6 +1228,19 @@ fn register_kook() {
     add_fun(vec!["KOOK语音管理"], |rl, params| {
         let op = rl.get_param_text(params, 0)?;
         match op.as_str() {
+            "用户所在频道" => {
+                let [user, server, page, size] = text_params::<4>(rl, params, 1)?;
+                let mut body =
+                    json!({"user_id":context(rl,&user,"发送者ID")?,"guild_id":guild(rl,&server)?});
+                if !page.is_empty() {
+                    body["page"] = positive_id(&page)?.into();
+                }
+                if !size.is_empty() {
+                    body["page_size"] = bounded(&size, 1, 50, "每页数量")?.into();
+                }
+                let data = kook(rl, "GET", "channel-user/get-joined-channel", body)?;
+                mapped_list(&data["data"]["items"], kook_channel)
+            }
             "限制列表" => {
                 let server = rl.get_param_text(params, 1)?;
                 let data = kook(
@@ -1251,6 +1328,9 @@ fn register_kook() {
 
 pub(super) fn register() {
     assets::register();
+    templates::register();
+    payments::register();
+    location::register();
     business::register();
     add_fun(vec!["Telegram应答查询"], |rl, params| {
         let rows = rl.get_param(params, 0)?;

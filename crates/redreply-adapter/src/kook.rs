@@ -38,6 +38,8 @@ mod voice;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 
+const TEMPLATE_SEGMENT: i32 = -1;
+
 #[derive(Debug, Clone)]
 struct RawMsgId {
     msg_id: String,
@@ -160,6 +162,64 @@ impl KookConnect {
         Ok(Some(body))
     }
 
+    fn pipe_url(params: &Value) -> AdapterResult<reqwest::Url> {
+        let token = params["token"].as_str().filter(|token| !token.is_empty())
+            .ok_or("KOOK 管道需要入管道令牌")?;
+        let mut url = native_api::kook_url("message/send-pipemsg")?;
+        let mut query = url.query_pairs_mut();
+        query.append_pair("access_token", token);
+        if let Some(kind) = params["type"].as_i64() {
+            if !matches!(kind, 9 | 10) {
+                return Err("KOOK 管道消息类型无效".into());
+            }
+            query.append_pair("type", &kind.to_string());
+        }
+        if let Some(target) = params["target_id"].as_str().filter(|target| !target.is_empty()) {
+            query.append_pair("target_id", target);
+        }
+        drop(query);
+        Ok(url)
+    }
+
+    async fn send_pipe_message(params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let url = Self::pipe_url(params)?;
+        let client = reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(Duration::from_secs(25))
+            .build()?;
+        let token = params["token"].as_str().ok_or("KOOK 管道缺少令牌")?;
+        let request = native_api::post(client.post(url), &params["body"], None)?;
+        let (status, body) = native_api::response(request, "KOOK").await?;
+        let mut result = native_api::kook_reply(status, &body, echo);
+        if let Some(message) = result["message"].as_str() {
+            result["message"] = message.replace(token, "[已隐藏]").into();
+        }
+        Ok(result)
+    }
+
+    async fn send_template_segment(&self, msg: &str, target: &str, quote: &str, private: bool) -> AdapterResult<String> {
+        let spec: Value = serde_json::from_str(msg)?;
+        let id = spec["template_id"].as_str().filter(|id| !id.is_empty()).ok_or("KOOK 模板消息缺少模板ID")?;
+        let content = spec["content"].as_str().ok_or("KOOK 模板消息缺少参数")?;
+        let mut body = json!({"template_id":id,"content":content,"target_id":target});
+        if let Some(kind) = spec["type"].as_i64() {
+            if !matches!(kind,9 | 10) {
+                return Err("KOOK 模板消息类型无效".into());
+            }
+            body["type"] = kind.into();
+        }
+        if !quote.is_empty() {
+            body["quote"] = quote.into();
+        }
+        let endpoint = if private { "direct-message/create" } else { "message/create" };
+        let result = self.native_request("POST", endpoint, &body, None, Duration::from_secs(25), &Value::Null).await?;
+        if result["retcode"] != 0 {
+            return Err(result["message"].as_str().unwrap_or("KOOK 模板消息发送失败").to_owned().into());
+        }
+        Ok(result["data"]["msg_id"].as_str().ok_or("KOOK 模板消息未返回消息ID")?.to_owned())
+    }
+
     async fn call_native_api(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
         let endpoint = params["endpoint"].as_str().ok_or("缺少 KOOK API 路径")?;
         let verb = params["http_method"]
@@ -255,6 +315,10 @@ impl KookConnect {
         }
         let channel_event = matches!(kind, "added_channel" | "updated_channel" | "deleted_channel");
         let role_event = matches!(kind, "added_role" | "updated_role" | "deleted_role");
+        let blacklist_event = matches!(kind, "added_block_list" | "deleted_block_list");
+        if blacklist_event {
+            user_id = read_json_str(body, "operator_id");
+        }
         let emoji_event = matches!(kind, "added_emoji" | "updated_emoji" | "removed_emoji");
         let reaction_event = matches!(kind, "added_reaction" | "deleted_reaction" | "private_added_reaction" | "private_deleted_reaction");
         let mut channel_id = read_json_str(body, "channel_id");
@@ -273,7 +337,7 @@ impl KookConnect {
             event["group_id"] = channel_id.clone().into();
         }
         let mut guild_id = read_json_str(body, "guild_id");
-        if guild_id.is_empty() && (channel_event || role_event || emoji_event || (is_group && reaction_event)
+        if guild_id.is_empty() && (channel_event || role_event || emoji_event || blacklist_event || (is_group && reaction_event)
             || matches!(kind, "updated_message" | "deleted_message")) {
             guild_id = read_json_str(data, "target_id");
         }
@@ -522,7 +586,11 @@ impl KookConnect {
 
         let mut msg_ids = vec![];
         for (tp, msg) in &to_send_data.clone() {
-            let msg_id = self.send_private_msg(*tp, &user_id, msg, &quote).await?;
+            let msg_id = if *tp == TEMPLATE_SEGMENT {
+                self.send_template_segment(msg, &user_id, &quote, true).await?
+            } else {
+                self.send_private_msg(*tp, &user_id, msg, &quote).await?
+            };
 
             msg_ids.push(RawMsgId {
                 is_private: true,
@@ -1842,6 +1910,10 @@ impl KookConnect {
                 let cards = serde_json::from_str(content)?;
                 to_send_data.push((10, Self::card_content(&cards)?));
                 last_type = 10;
+            } else if tp == "kook_template" {
+                let content = it["data"]["content"].as_str().ok_or("KOOK 模板消息缺少内容")?;
+                to_send_data.push((TEMPLATE_SEGMENT, content.to_owned()));
+                last_type = TEMPLATE_SEGMENT;
             } else if matches!(tp.as_str(), Some("record" | "file" | "video")) {
                 let data = &it["data"];
                 let file = read_json_str(data, "file");
@@ -1977,7 +2049,11 @@ impl KookConnect {
 
         let mut msg_ids = vec![];
         for (tp, msg) in &to_send_data.clone() {
-            let msg_id = self.send_group_msg(*tp, &group_id, msg, &quote).await?;
+            let msg_id = if *tp == TEMPLATE_SEGMENT {
+                self.send_template_segment(msg, &group_id, &quote, false).await?
+            } else {
+                self.send_group_msg(*tp, &group_id, msg, &quote).await?
+            };
             msg_ids.push(RawMsgId {
                 is_private: false,
                 channel_id: group_id.to_owned(),
@@ -2050,11 +2126,17 @@ impl KookConnect {
         let [raw] = messages.as_slice() else {
             return Err("编辑需要指向一条 KOOK 消息的 RedReply ID".into());
         };
-        if params["kind"] != "text" && params["kind"] != "card" {
-            return Err("KOOK 支持编辑 KMarkdown 或卡片".into());
+        if !matches!(params["kind"].as_str(), Some("text" | "card" | "template")) {
+            return Err("KOOK 支持编辑 KMarkdown、卡片或模板".into());
         }
         let mut body = params["body"].clone();
         native_api::object(&body)?;
+        if params["kind"] == "template" {
+            if body["template_id"].as_str().is_none_or(str::is_empty) || !body["content"].is_string() {
+                return Err("KOOK 模板编辑缺少模板ID或参数".into());
+            }
+            body.as_object_mut().ok_or("模板参数格式错误")?.remove("type");
+        }
         body["msg_id"] = raw.msg_id.as_str().into();
         let endpoint = if raw.is_private { "direct-message/update" } else { "message/update" };
         self.call_native_api(&json!({"http_method":"POST","endpoint":endpoint,"body":body}), echo).await
@@ -2928,6 +3010,7 @@ impl BotConnectTrait for KookConnect {
             "set_msg_pin" => native_api::action_result(self.pin_message(params, echo).await, echo),
             "set_msg_emoji_like" => native_api::action_result(self.react(params, echo).await, echo),
             "kook_api" => native_api::action_result(self.call_native_api(params, echo).await, echo),
+            "kook_pipe_message" => native_api::action_result(Self::send_pipe_message(params, echo).await, echo),
             "kook_voice_play" => {
                 native_api::action_result(voice::play(self, params, echo).await, echo)
             }
@@ -3114,6 +3197,20 @@ mod native_tests {
 #[cfg(test)]
 mod advanced_native_tests {
     use super::*;
+
+    #[test]
+    fn pipe_destination_and_token_remain_separate_from_the_body() {
+        let url = KookConnect::pipe_url(&json!({
+            "token":"a&b=/","type":10,"target_id":"002","body":{"参数1":"保留"}
+        })).unwrap();
+        assert_eq!(url.host_str(),Some("www.kookapp.cn"));
+        assert_eq!(url.path(),"/api/v3/message/send-pipemsg");
+        assert_eq!(url.query_pairs().collect::<HashMap<_,_>>(), HashMap::from([
+            ("access_token".into(),"a&b=/".into()),("type".into(),"10".into()),("target_id".into(),"002".into())
+        ]));
+        assert!(KookConnect::pipe_url(&json!({"token":""})).is_err());
+        assert!(KookConnect::pipe_url(&json!({"token":"t","type":12})).is_err());
+    }
 
     #[tokio::test]
     async fn media_card_splits_images_at_platform_limit_and_preserves_order() {

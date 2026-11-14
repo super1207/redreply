@@ -215,6 +215,9 @@ fn inline_button(button: &RedValue) -> Result<Value> {
     let label = row_text(button, 0)?;
     let value = row_text(button, 1)?;
     let action = row_text(button, 2)?;
+    if button.len() == 3 && !label.is_empty() && action == "支付" && value.is_empty() {
+        return Ok(json!({"text":label,"pay":true}));
+    }
     if !(2..=3).contains(&button.len()) || label.is_empty() || value.is_empty() {
         return Err("行内按钮用【数组@按钮文字@值@动作】填写".into());
     }
@@ -232,7 +235,7 @@ fn inline_button(button: &RedValue) -> Result<Value> {
             https_url(&value)?;
             Ok(json!({"text":label,"web_app":{"url":value}}))
         }
-        _ => Err("行内按钮动作请填回调、链接或小程序".into()),
+        _ => Err("行内按钮动作请填回调、链接、小程序或支付".into()),
     }
 }
 
@@ -240,10 +243,38 @@ pub(super) fn edit_keyboard(content: &RedValue) -> Result<Value> {
     if matches!(content, RedValue::Text(text) if text.is_empty()) {
         return Ok(json!({"inline_keyboard":[]}));
     }
-    let markup = crate::native_args::object(content)?;
+    let markup = telegram_keyboard_value(content)?;
     if !markup["inline_keyboard"].is_array() {
         return Err("编辑消息只接受行内键盘".into());
     }
+    Ok(markup)
+}
+
+pub(super) fn telegram_keyboard_value(content: &RedValue) -> Result<Value> {
+    fn convert(value: &mut Value) {
+        match value {
+            Value::Object(fields) => {
+                for (key, child) in fields {
+                    if matches!(
+                        key.as_str(),
+                        "pay" | "remove_keyboard" | "resize_keyboard" | "one_time_keyboard"
+                    ) {
+                        match child.as_str() {
+                            Some("真") => *child = true.into(),
+                            Some("假") => *child = false.into(),
+                            _ => (),
+                        }
+                    } else {
+                        convert(child);
+                    }
+                }
+            }
+            Value::Array(items) => items.iter_mut().for_each(convert),
+            _ => (),
+        }
+    }
+    let mut markup = crate::native_args::object(content)?;
+    convert(&mut markup);
     Ok(markup)
 }
 
@@ -556,6 +587,21 @@ pub(super) fn event_field(event: &Value, field: &str) -> RedCommandResult {
             business["chat"]["id"].clone()
         }
         "商务会话ID" => Value::Null,
+        "支付信息" => management::payments::event_payment(event),
+        "位置" => management::location::event_location(&business["location"]),
+        "场所" => management::location::event_venue(&business["venue"]),
+        "联系人" => management::location::event_contact(&business["contact"]),
+        "私聊会话码" => management::kook_chat_code(event).into(),
+        "黑名单变动"
+            if matches!(
+                event["sub_type"].as_str(),
+                Some("added_block_list" | "deleted_block_list")
+            ) =>
+        {
+            let body = &event["kook"];
+            json!({"用户ID数组":body["user_id"],"操作人ID":body["operator_id"],"原因":body["remark"],"服务器ID":event["groups_id"]})
+        }
+        "黑名单变动" => Value::Null,
         "消息文字" => business
             .get("text")
             .or_else(|| business.get("caption"))

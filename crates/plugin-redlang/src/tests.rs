@@ -200,6 +200,94 @@ fn documented_native_platform_examples_parse() {
 }
 
 #[test]
+fn positional_payments_and_kook_templates_build_expected_calls() {
+    use crate::cqexfun::TEST_PLATFORM_CALL;
+    use serde_json::{json, Value};
+    use std::{cell::RefCell, rc::Rc};
+
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let record = calls.clone();
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| {
+        *handler = Some(Box::new(move |platform, action, args| {
+            let data = match (action,args["endpoint"].as_str(),args["method"].as_str()) {
+                ("send_private_msg",_,_) => json!({"message_id":"sent"}),
+                (_,Some("template/create"),_) => json!({"model":{"id":"239"}}),
+                ("kook_pipe_message",_,_) => json!({"msg_id":"sent-native"}),
+                (_,_,Some("createInvoiceLink")) => json!("https://t.me/test"),
+                _ => Value::Null,
+            };
+            record.borrow_mut().push((platform.to_owned(), action.to_owned(), args));
+            json!({"retcode":0,"data":data})
+        }));
+    });
+    let read = |rl: &mut crate::core::RedLang, script| rl.parse(script).unwrap().expect_text_value().unwrap();
+    rl.set_exmap("机器人平台","kook");
+    rl.set_exmap("机器人ID","bot");
+    rl.set_exmap("发送者ID","49");
+    assert_eq!(read(&mut rl,"【KOOK模板管理@创建@通知@正文@文字@【数组@测试】】"),"239");
+    read(&mut rl,"【KOOK模板管理@创建@卡片@【KOOK卡片@通知】@卡片】");
+    read(&mut rl,"【输出流@【KOOK模板消息@239@【数组@001@测试】】】");
+    rl.parse("【编辑消息@old@【KOOK模板消息@239】@模板】").unwrap();
+    assert_eq!(read(&mut rl,"【KOOK管道消息@令牌@【数组@周末】@模板】"),"sent-native");
+    read(&mut rl,"【KOOK管道消息@令牌@通知@文字@频道】");
+
+    rl.set_exmap("机器人平台","telegram");
+    rl.set_exmap("机器人ID","1");
+    assert!(rl.parse("【Telegram发票@商品@说明@order@【数组@【数组@甲@1】@【数组@乙@2】】】").is_err());
+    assert_eq!(read(&mut rl,"【Telegram发票链接@会员@说明@member@25@@@【数组@@@@@@真】】"),"https://t.me/test");
+    read(&mut rl,"【输出流@【Telegram发票@手册@纸质手册@001@100@HKD@令牌@【数组@【数组@运费询价】】】@【Telegram键盘@【数组@【数组@【数组@立即支付@@支付】】】】】");
+    read(&mut rl,"【输出流@【Telegram付费媒体@5@【数组@【数组@图片@【BASE64解码@YWJj】@@预览.png】】@media】】");
+    rl.set_exmap("原始事件",&json!({"platform":"telegram","self_id":"1","notice_type":"telegram","sub_type":"shipping_query",
+        "telegram":{"id":"ship","from":{"id":49},"invoice_payload":"001","shipping_address":{"country_code":"HK"}}}).to_string());
+    assert_eq!(read(&mut rl,"【取元素@【事件内容@支付信息】@地址@国家代码】"),"HK");
+    read(&mut rl,"【同意@【数组@【数组@pickup@自提@0】】】");
+    assert!(rl.parse("【同意@【数组@【数组@pickup@自提@0】@【数组@pickup@重复@0】】】").is_err());
+    rl.set_exmap("原始事件",&json!({"platform":"telegram","self_id":"1","notice_type":"telegram","sub_type":"pre_checkout_query",
+        "telegram":{"id":"check","from":{"id":49}}}).to_string());
+    read(&mut rl,"【同意】");
+    assert!(rl.parse("【拒绝】").is_err());
+    read(&mut rl,"【拒绝@库存不足】");
+    rl.set_exmap("原始事件",&json!({"platform":"telegram","self_id":"1","notice_type":"telegram","sub_type":"successful_payment",
+        "telegram":{"from":{"id":49},"successful_payment":{"currency":"XTR","telegram_payment_charge_id":"paid-1","total_amount":25}}}).to_string());
+    read(&mut rl,"【Telegram星币@退款】");
+    read(&mut rl,"【Telegram星币@恢复续订@49@paid-1】");
+    assert!(rl.parse("【Telegram位置@NaN@22.3193】").is_err());
+    read(&mut rl,"【输出流@【Telegram位置@114.1694@22.3193@@600】】");
+    rl.parse("【编辑消息@live@【数组@114.1701@22.3199】@实时位置】").unwrap();
+    rl.parse("【编辑消息@live@@停止位置】").unwrap();
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| *handler = None);
+
+    let calls = calls.borrow();
+    assert_eq!(calls.len(),17);
+    let template: Value = serde_json::from_str(calls[0].2["body"]["test_data"].as_str().unwrap()).unwrap();
+    assert_eq!(template,json!({"参数1":"测试"}));
+    assert_eq!(calls[1].2["body"]["msgtype"],2);
+    assert_eq!(calls[2].2["message"][0]["type"],"kook_template");
+    assert_eq!(calls[3].2["body"]["template_id"],"239");
+    assert_eq!(calls[4].2, json!({"token":"令牌","body":{"参数1":"周末"}}));
+    assert_eq!(calls[5].2["type"],9);
+    assert_eq!(calls[6].2["body"]["subscription_period"],2_592_000);
+    let invoice: Value = serde_json::from_str(calls[7].2["message"][0]["data"]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(invoice["payload"],"001");
+    assert_eq!(invoice["need_shipping_address"],true);
+    assert_eq!(calls[7].2["reply_markup"]["inline_keyboard"][0][0]["pay"],true);
+    let media: Value = serde_json::from_str(calls[8].2["message"][0]["data"]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(media["body"]["media"][0]["media"],"attach://media_0");
+    assert_eq!(media["files"]["media_0"]["filename"],"预览.png");
+    assert_eq!(calls[9].2["body"]["shipping_options"][0]["prices"][0]["amount"],0);
+    assert_eq!(calls[10].2["body"],json!({"pre_checkout_query_id":"check","ok":true}));
+    assert_eq!(calls[11].2["body"]["error_message"],"库存不足");
+    assert_eq!(calls[12].2["body"],json!({"user_id":49,"telegram_payment_charge_id":"paid-1"}));
+    assert_eq!(calls[13].2["body"]["is_canceled"],false);
+    let live: Value = serde_json::from_str(calls[14].2["message"][0]["data"]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(live["live_period"],600);
+    assert_eq!(calls[15].2["body"]["longitude"],114.1701);
+    assert_eq!(calls[16].2["kind"],"stop_location");
+}
+
+#[test]
 fn positional_bot_commands_build_wire_requests_from_real_scripts() {
     use crate::cqexfun::TEST_PLATFORM_CALL;
     use serde_json::{json, Value};

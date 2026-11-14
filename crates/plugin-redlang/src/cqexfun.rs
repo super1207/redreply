@@ -1010,6 +1010,10 @@ pub fn init_cq_ex_fun_map() {
         }
         let content = rl.get_param(params, 1)?;
         let kind = rl.get_param_text(params, 2)?;
+        if platform == "kook" && kind == "模板" {
+            let body = crate::bot_commands::management::templates::template_message(&content)?;
+            return call_platform_api(rl,&platform,"edit_msg",serde_json::json!({"message_id":id,"kind":"template","body":body}));
+        }
         let mut body = if params.len() > 3 {
             let options = rl.get_param(params, 3)?;
             match options.as_ref() {
@@ -1046,13 +1050,26 @@ pub fn init_cq_ex_fun_map() {
             }
             ("telegram", "媒体") => ("media", "media", native_args::object(&content)?),
             ("telegram", "清单") => ("checklist", "checklist", business::checklist(&content)?),
+            ("telegram", "实时位置") => {
+                let values = content.as_array().ok_or("新位置请用【数组@经度@纬度@精度米数@有效秒数@方向角@接近提醒米数】")?;
+                body = crate::bot_commands::management::location::live_edit_fields(values)?;
+                ("live_location", "", serde_json::Value::Null)
+            }
+            ("telegram", "停止位置") => {
+                if !matches!(content.as_ref(), RedValue::Text(text) if text.is_empty()) {
+                    return Err(RedLang::make_err("停止实时位置时第二项留空"));
+                }
+                ("stop_location", "", serde_json::Value::Null)
+            }
             ("kook", "" | "文本") => ("text", "content", content.expect_text_value()?.into()),
             ("kook", "卡片") => {
                 ("card", "content", crate::bot_commands::card_for_edit(&content)?)
             }
             _ => return Err(RedLang::make_err("当前平台不支持这种编辑类型")),
         };
-        body[field] = value;
+        if !field.is_empty() {
+            body[field] = value;
+        }
         let mut request = serde_json::json!({"message_id":id,"kind":kind,"body":body});
         if platform == "telegram" {
             let attachments = rl.get_param(params, 4)?;
@@ -1084,6 +1101,8 @@ pub fn init_cq_ex_fun_map() {
                     "text" => "editMessageText",
                     "caption" => "editMessageCaption",
                     "keyboard" => "editMessageReplyMarkup",
+                    "live_location" => "editMessageLiveLocation",
+                    "stop_location" => "stopMessageLiveLocation",
                     _ => "editMessageMedia",
                 };
                 let mut body = request["body"].take();
@@ -1263,7 +1282,7 @@ pub fn init_cq_ex_fun_map() {
             let value = self_t.get_param(params, 1)?;
             match value.as_ref() {
                 RedValue::Text(text) if text.is_empty() => None,
-                _ => Some(native_args::object(&value)?),
+                _ => Some(crate::bot_commands::telegram_keyboard_value(&value)?),
             }
         } else {
             None
@@ -2053,6 +2072,11 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["同意"], |self_t, params| {
         let raw_data = self_t.get_exmap("原始事件");
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
+        if get_platform(self_t) == "telegram" && raw_json["notice_type"] == "telegram"
+            && matches!(raw_json["sub_type"].as_str(),Some("shipping_query" | "pre_checkout_query"))
+        {
+            return crate::bot_commands::management::payments::answer(self_t,params,&raw_json,true);
+        }
         if get_platform(self_t) == "telegram"
             && raw_json["notice_type"] == "telegram" && raw_json["sub_type"] == "chat_join_request"
         {
@@ -2109,6 +2133,11 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["拒绝"], |self_t, params| {
         let raw_data = self_t.get_exmap("原始事件");
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
+        if get_platform(self_t) == "telegram" && raw_json["notice_type"] == "telegram"
+            && matches!(raw_json["sub_type"].as_str(),Some("shipping_query" | "pre_checkout_query"))
+        {
+            return crate::bot_commands::management::payments::answer(self_t,params,&raw_json,false);
+        }
         if get_platform(self_t) == "telegram"
             && raw_json["notice_type"] == "telegram" && raw_json["sub_type"] == "chat_join_request"
         {

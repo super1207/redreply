@@ -816,6 +816,21 @@ impl TeleTramConnect {
         Some(notice)
     }
 
+    fn structured_message_notice(&self, kind: &str, event: &Value) -> Option<Value> {
+        if !matches!(kind, "message" | "channel_post" | "business_message"
+            | "edited_message" | "edited_channel_post" | "edited_business_message") {
+            return None;
+        }
+        let message = &event[kind];
+        let service = if kind.starts_with("edited_") {
+            message["location"].is_object().then_some("edited_location")?
+        } else {
+            ["successful_payment", "refunded_payment", "venue", "location", "contact"].into_iter()
+                .find(|key| message[*key].is_object())?
+        };
+        Some(self.notice_for_update(service, message, &event["update_id"]))
+    }
+
     fn dispatch_notice(notice: Value) {
         tokio::task::spawn_blocking(move || {
             if let Err(error) = crate::cqevent::do_1207_event(&notice.to_string()) {
@@ -849,6 +864,9 @@ impl TeleTramConnect {
             Self::dispatch_notice(notice);
         }
         if let Some(kind) = update {
+            if let Some(notice) = self.structured_message_notice(kind,event) {
+                Self::dispatch_notice(notice);
+            }
             for notice in self.media_notices(kind, event) {
                 Self::dispatch_notice(notice);
             }
@@ -1064,11 +1082,17 @@ impl TeleTramConnect {
                     to_send_data.push(("text", s, String::new()));
                     last_type = "text";
                 }
-            } else if matches!(tp.as_str(), Some("sticker" | "media_group" | "telegram_checklist")) {
+            } else if matches!(tp.as_str(),Some("sticker" | "media_group" | "telegram_checklist" | "telegram_invoice"
+                | "telegram_paid_media" | "telegram_location" | "telegram_venue" | "telegram_contact")) {
                 let content = it["data"]["content"].as_str().ok_or("Telegram 媒体消息缺少内容")?;
                 let kind = match tp.as_str() {
                     Some("sticker") => "sticker",
                     Some("media_group") => "media_group",
+                    Some("telegram_invoice") => "telegram_invoice",
+                    Some("telegram_paid_media") => "telegram_paid_media",
+                    Some("telegram_location") => "telegram_location",
+                    Some("telegram_venue") => "telegram_venue",
+                    Some("telegram_contact") => "telegram_contact",
                     _ => "telegram_checklist",
                 };
                 to_send_data.push((kind, content.to_owned(), String::new()));
@@ -1290,6 +1314,18 @@ impl TeleTramConnect {
         if *topic != Topic::default() && to_send_data.iter().any(|part| part.0 == "telegram_checklist") {
             return Err("Telegram 商务清单没有话题参数".into());
         }
+        if !business_id.is_empty() && to_send_data.iter().any(|part| part.0 == "telegram_invoice") {
+            return Err("发送发票需使用机器人身份，商务账户可创建星币发票链接".into());
+        }
+        if let Some(markup) = reply_markup {
+            let first = &markup["inline_keyboard"][0][0]["pay"];
+            let pays = markup["inline_keyboard"].as_array().into_iter().flatten()
+                .flat_map(|row| row.as_array().into_iter().flatten()).filter(|button| button["pay"] == true).count();
+            let invoice = to_send_data.last().is_some_and(|part| part.0 == "telegram_invoice");
+            if (invoice && (first != &Value::Bool(true) || pays != 1)) || (!invoice && pays != 0) {
+                return Err("自定义支付键盘只能用于发票，且首个按钮必须是唯一的支付按钮".into());
+            }
+        }
         for (index, (kind, message, caption)) in to_send_data.into_iter().enumerate() {
             let mut payload = Self::message_payload(
                 chat_id,
@@ -1330,6 +1366,42 @@ impl TeleTramConnect {
                 "telegram_checklist" => {
                     payload["checklist"] = serde_json::from_str(&message)?;
                     "sendChecklist"
+                }
+                "telegram_invoice" => {
+                    let invoice: Value = serde_json::from_str(&message)?;
+                    for field in ["title","description","payload","provider_token","currency","prices","max_tip_amount",
+                        "suggested_tip_amounts","provider_data","photo_url","photo_size","photo_width","photo_height",
+                        "need_name","need_phone_number","need_email","need_shipping_address","send_phone_number_to_provider",
+                        "send_email_to_provider","is_flexible","start_parameter"] {
+                        if let Some(value) = invoice.get(field) {
+                            payload[field] = value.clone();
+                        }
+                    }
+                    "sendInvoice"
+                }
+                "telegram_paid_media" => {
+                    let data: Value = serde_json::from_str(&message)?;
+                    for field in ["star_count","media","payload","caption","show_caption_above_media"] {
+                        if let Some(value) = data["body"].get(field) {
+                            payload[field] = value.clone();
+                        }
+                    }
+                    files = data["files"].clone();
+                    "sendPaidMedia"
+                }
+                "telegram_location" | "telegram_venue" | "telegram_contact" => {
+                    let details: Value = serde_json::from_str(&message)?;
+                    let (method,fields): (&str,&[&str]) = match kind {
+                        "telegram_location" => ("sendLocation",&["latitude","longitude","horizontal_accuracy","live_period","heading","proximity_alert_radius"]),
+                        "telegram_venue" => ("sendVenue",&["latitude","longitude","title","address","foursquare_id","foursquare_type","google_place_id","google_place_type"]),
+                        _ => ("sendContact",&["phone_number","first_name","last_name","vcard"]),
+                    };
+                    for field in fields {
+                        if let Some(value) = details.get(*field) {
+                            payload[*field] = value.clone();
+                        }
+                    }
+                    method
                 }
                 "url_image" | "file_image" | "url_record" | "file_record" | "document" | "video" => {
                     let (method, field, filename) = match kind {
@@ -1576,6 +1648,8 @@ impl TeleTramConnect {
             Some("caption") => "editMessageCaption",
             Some("keyboard") => "editMessageReplyMarkup",
             Some("media") => "editMessageMedia",
+            Some("live_location") => "editMessageLiveLocation",
+            Some("stop_location") => "stopMessageLiveLocation",
             Some("checklist") if !raw.business_id.is_empty() => "editMessageChecklist",
             Some("checklist") => return Err("Telegram 清单编辑需要商务消息".into()),
             _ => return Err("未知的 Telegram 消息编辑类型".into()),
@@ -2282,6 +2356,29 @@ mod native_tests {
         let returned = TeleTramConnect::response_message_ids("sendChecklist",
             &json!({"business_connection_id":"business-a"}), &json!({"message_id":5,"chat":{"id":22}}));
         assert_eq!(returned,vec![raw]);
+    }
+
+    #[tokio::test]
+    async fn invoice_segments_and_payment_events_keep_their_payloads() {
+        let bot = TeleTramConnect::build("");
+        let invoice = json!({"title":"手册","description":"电子版","payload":"0001",
+            "currency":"XTR","provider_token":"","prices":[{"label":"手册","amount":25}]});
+        let message = json!([{"type":"telegram_invoice","data":{"content":invoice.to_string()}}]);
+        let (parts,_) = bot.make_telegram_msg(&message,"49",false,"").await.unwrap();
+        assert_eq!(parts[0].0,"telegram_invoice");
+        assert_eq!(serde_json::from_str::<Value>(&parts[0].1).unwrap(),invoice);
+        let invalid_keyboard = json!({"inline_keyboard":[[{"text":"下一步","callback_data":"a"}]]});
+        let error = bot.send_message_inner(parts,String::new(),"49",&Topic::default(),Some(&invalid_keyboard),"").await.unwrap_err();
+        assert!(error.to_string().contains("支付按钮"));
+        for field in ["successful_payment","refunded_payment"] {
+            let event = json!({"update_id":10,"message":{"message_id":5,"chat":{"id":49,"type":"private"},
+                "from":{"id":49},field:{"invoice_payload":"0001","total_amount":25,"telegram_payment_charge_id":"p1"}}});
+            let notice = bot.structured_message_notice("message",&event).unwrap();
+            assert_eq!(notice["sub_type"],field);
+            assert_eq!(notice["user_id"],"49");
+            assert_eq!(notice["telegram"][field]["invoice_payload"],"0001");
+            assert!(bot.structured_message_notice("edited_message",&event).is_none());
+        }
     }
 
     #[test]
