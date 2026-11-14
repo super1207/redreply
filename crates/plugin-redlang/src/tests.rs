@@ -191,9 +191,101 @@ fn documented_native_platform_examples_parse() {
     for block in document.split("```text\n").skip(1) {
         let code = block.split_once("```").unwrap().0;
         assert!(crate::core::astparser::parse_to_ast(code).is_ok(), "{code}");
+        for raw in ["【Telegram调用", "【KOOK调用", "【OB调用", "【接口值"] {
+            assert!(!code.contains(raw), "{code}");
+        }
         count += 1;
     }
     assert!(count >= 13);
+}
+
+#[test]
+fn positional_bot_commands_build_wire_requests_from_real_scripts() {
+    use crate::cqexfun::TEST_PLATFORM_CALL;
+    use serde_json::{json, Value};
+    use std::{cell::RefCell, rc::Rc};
+
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    let requests = Rc::new(RefCell::new(Vec::new()));
+    let record = requests.clone();
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| *handler = Some(Box::new(move |platform, action, args| {
+        let data = match (args["method"].as_str(), args["endpoint"].as_str()) {
+            (Some("getChatAdministrators"), _) => json!([
+                {"user":{"id":45,"first_name":"小明","is_bot":false},"status":"creator"}
+            ]),
+            (Some("createForumTopic"), _) => json!({"message_thread_id":55}),
+            (Some("createChatSubscriptionInviteLink"), _) => json!({"invite_link":"https://t.me/+paid"}),
+            (Some("getUserProfilePhotos"), _) => json!({"photos":[[
+                {"file_id":"smaller","width":32,"height":32},
+                {"file_id":"large-photo","width":128,"height":128}
+            ]]}),
+            (_, Some("thread/create")) => json!({"id":"post-id"}),
+            (_, Some("message/list")) => json!({"items":[{"id":"original-id","author":{"id":"99"},"content":"报名"}]}),
+            (_, Some("asset/create")) => json!({"url":"https://example.org/upload.pdf"}),
+            _ if action == "kook_voice_status" => json!({"state":"playing","track":2,"total":4}),
+            _ => Value::Null,
+        };
+        record.borrow_mut().push((platform.to_owned(), action.to_owned(), args));
+        json!({"retcode":0,"data":data})
+    })));
+    let text = |rl: &mut crate::core::RedLang, script| rl.parse(script).unwrap().expect_text_value().unwrap();
+
+    rl.set_exmap("机器人平台", "telegram");
+    rl.set_exmap("群ID", "-100123");
+    rl.set_exmap("原始事件", &json!({"notice_type":"telegram","sub_type":"inline_query","telegram":
+        {"id":"query-id","query":"搜索","offset":"two"}}).to_string());
+    assert_eq!(text(&mut rl,"【事件内容@查询内容】"),"搜索");
+    assert_eq!(text(&mut rl,"【事件内容@查询偏移】"),"two");
+    text(&mut rl,"【Telegram应答查询@【数组@【数组@001@帮助@欢迎使用红色问答】】】");
+    assert!(rl.parse("【Telegram应答查询@【数组@【数组@a@甲@内容】@【数组@a@乙@内容】】】").is_err());
+    assert_eq!(text(&mut rl,"【取长度@【群成员@管理员】】"),"1");
+    assert_eq!(text(&mut rl,"【取元素@【群成员@管理员@@真】@0@身份】"),"群主");
+    assert_eq!(text(&mut rl,"【Telegram话题@创建@周末活动@@蓝色】"),"55");
+    text(&mut rl,"【Telegram群权限@设置@【数组@文本@文件】】");
+    rl.parse("【编辑消息@handle@【数组@图片@【BASE64解码@YWJj】@说明@新图.png】@媒体@HTML】").unwrap();
+    rl.parse("【转发消息@handle@-100456@群聊@真@真@15】").unwrap();
+
+    rl.set_exmap("机器人平台", "kook");
+    rl.set_exmap("群ID", "channel");
+    rl.set_exmap("群组ID", "guild");
+    text(&mut rl,"【KOOK频道@编辑@@@活动说明@5】");
+    assert_eq!(text(&mut rl,"【KOOK帖子@发布@活动报名@【KOOK卡片@请回复报名】】"),"post-id");
+    assert_eq!(text(&mut rl,"【取元素@【KOOK频道消息@之前@10@@older-id】@0@正文】"),"报名");
+    assert_eq!(text(&mut rl,"【KOOK上传文件@【BASE64解码@YWJj】@说明.pdf】"),"https://example.org/upload.pdf");
+    text(&mut rl,"【KOOK频道权限@设置@身份组@702@【数组@查看频道】@【数组@发布消息】】");
+    assert!(rl.parse("【KOOK频道权限@设置@身份组@702@【数组@查看频道】@2048】").is_err());
+    assert_eq!(text(&mut rl,"【KOOK播放状态@状态】"),"播放中");
+    rl.set_exmap("机器人平台","telegram");
+    assert_eq!(text(&mut rl,"【取元素@【取头像@123@文件ID列表@0@1】@0】"),"large-photo");
+    rl.parse("【编辑消息@inline-id@活动已开始@@@@行内】").unwrap();
+    text(&mut rl,"【邀请链接@创建付费@100@活动会员@-100123】");
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| *handler = None);
+
+    let requests = requests.borrow();
+    assert_eq!(requests.len(), 16);
+    assert_eq!(requests[0].2, json!({"method":"answerInlineQuery","body":{"inline_query_id":"query-id",
+        "cache_time":0,"is_personal":false,"next_offset":"","results":[{"type":"article","id":"001",
+        "title":"帮助","input_message_content":{"message_text":"欢迎使用红色问答"}}]}}));
+    assert_eq!(requests[1].2["body"], json!({"chat_id":-100123}));
+    assert_eq!(requests[2].2["body"]["return_bots"], true);
+    assert_eq!(requests[3].2["body"]["icon_color"], 0x6FB9F0);
+    assert_eq!(requests[4].2["body"]["permissions"]["can_send_documents"],true);
+    assert_eq!(requests[4].2["body"]["permissions"]["can_send_photos"],false);
+    assert_eq!(requests[5].2["body"]["media"]["parse_mode"],"HTML");
+    assert_eq!(requests[5].2["files"]["media_0"]["filename"],"新图.png");
+    assert_eq!(requests[6].2["message_thread_id"],15);
+    assert_eq!(requests[6].2["copy"],true);
+    assert_eq!(requests[7].2["body"],json!({"channel_id":"channel","topic":"活动说明","slow_mode":5000}));
+    let card: Value = serde_json::from_str(requests[8].2["body"]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(card[0]["modules"][0]["text"]["content"],"请回复报名");
+    assert_eq!(requests[9].2["body"],json!({"target_id":"channel","page_size":10,"flag":"before","msg_id":"older-id"}));
+    assert_eq!(requests[10].2["files"]["file"],json!({"filename":"说明.pdf","base64":"YWJj"}));
+    assert_eq!(requests[11].2["body"],json!({"channel_id":"channel","type":"role_id","value":"702","allow":2048,"deny":4096}));
+    assert_eq!(requests[12].1,"kook_voice_status");
+    assert_eq!(requests[13].2["body"],json!({"user_id":123,"offset":0,"limit":1}));
+    assert_eq!(requests[14].2,json!({"method":"editMessageText","body":{"inline_message_id":"inline-id","text":"活动已开始"}}));
+    assert_eq!(requests[15].2["body"]["subscription_period"],2_592_000);
 }
 
 #[test]

@@ -8,6 +8,9 @@ use crate::core::{
 use crate::cqexfun::{apply_telegram_topic, call_platform_api_value, get_platform};
 use crate::exfun::json_value_to_red;
 
+#[path = "bot_management.rs"]
+pub(super) mod management;
+
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
 fn text_params<const N: usize>(
@@ -469,7 +472,7 @@ fn invite_options(
     Ok(())
 }
 
-fn kook_invite(rl: &RedLang, method: &str, path: &str, body: Value) -> Result<Value> {
+fn kook(rl: &RedLang, method: &str, path: &str, body: Value) -> Result<Value> {
     call_platform_api_value(
         rl,
         "kook",
@@ -525,13 +528,76 @@ pub(super) fn event_field(event: &Value, field: &str) -> RedCommandResult {
                 .collect::<Vec<_>>())
         }
         "投票人数" if event["sub_type"] == "poll" => telegram["total_voter_count"].clone(),
-        "投票选项" | "投票人数" => Value::Null,
-        _ => return Err("事件内容可填按钮值、平台消息ID、投票选项或投票人数".into()),
+        "查询内容" if event["sub_type"] == "inline_query" => telegram["query"].clone(),
+        "查询偏移" if event["sub_type"] == "inline_query" => telegram["offset"].clone(),
+        "话题ID" => event["message_thread_id"]
+            .as_i64()
+            .or_else(|| telegram["message_thread_id"].as_i64())
+            .into(),
+        "频道私信话题ID" => event["direct_messages_topic_id"]
+            .as_i64()
+            .or_else(|| telegram["direct_messages_topic"]["topic_id"].as_i64())
+            .into(),
+        "文件ID" => telegram["document"]["file_id"].clone(),
+        "文件名" => telegram["document"]["file_name"]
+            .as_str()
+            .or_else(|| event["file"]["name"].as_str())
+            .into(),
+        "文件链接" => event["file"]["url"].clone(),
+        "贴纸文件ID" => telegram["sticker"]["file_id"].clone(),
+        "贴纸包" => telegram["sticker"]["set_name"].clone(),
+        "曲目序号" => event["kook"]["track"].clone(),
+        "曲目总数" => event["kook"]["total"].clone(),
+        "播放状态" => playback_state(&event["kook"]["state"]),
+        "转发来源类型" => match telegram["forward_origin"]["type"].as_str() {
+            Some("user") => "用户".into(),
+            Some("hidden_user") => "隐藏用户".into(),
+            Some("chat") => "群聊".into(),
+            Some("channel") => "频道".into(),
+            _ => Value::Null,
+        },
+        "新回应" | "旧回应" => {
+            let key = if field == "新回应" {
+                "new_reaction"
+            } else {
+                "old_reaction"
+            };
+            json!(telegram[key]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .map(telegram_reaction)
+                .collect::<Vec<_>>())
+        }
+        "投票选项" | "投票人数" | "查询内容" | "查询偏移" => Value::Null,
+        _ => return Err(format!("【事件内容】不支持字段 {field}").into()),
     };
     output(&value)
 }
 
+fn telegram_reaction(row: &Value) -> Value {
+    match row["type"].as_str() {
+        Some("emoji") => json!({"类型":"普通","表情":row["emoji"]}),
+        Some("custom_emoji") => json!({"类型":"自定义","表情":row["custom_emoji_id"]}),
+        Some("paid") => json!({"类型":"付费"}),
+        _ => json!({"类型":"其他"}),
+    }
+}
+
+pub(super) fn playback_state(state: &Value) -> Value {
+    match state.as_str() {
+        Some("idle") => "空闲".into(),
+        Some("playing") => "播放中".into(),
+        Some("stopping") => "停止中".into(),
+        Some("finished") => "已播完".into(),
+        Some("stopped") => "已停止".into(),
+        Some("failed") => "失败".into(),
+        _ => Value::Null,
+    }
+}
+
 pub(super) fn register() {
+    management::register();
     add_fun(vec!["Telegram命令菜单"], |rl, params| {
         let operation = rl.get_param_text(params, 0)?;
         let (scope_start, method) = match operation.as_str() {
@@ -670,6 +736,57 @@ pub(super) fn register() {
             return Err("【邀请链接】需要 KOOK 或 Telegram 机器人来源".into());
         }
         match operation.as_str() {
+            "主链接" | "创建付费" | "编辑付费" if platform == "telegram" => {
+                let [first, name, target] = text_params::<3>(rl, params, 1)?;
+                if name.chars().count() > 32 {
+                    return Err("邀请名称最多 32 字".into());
+                }
+                let mut body = invite_target(
+                    rl,
+                    &platform,
+                    if operation == "主链接" {
+                        &first
+                    } else {
+                        &target
+                    },
+                    "",
+                )?;
+                if !name.is_empty() {
+                    body["name"] = if name == "清空" && operation == "编辑付费" {
+                        ""
+                    } else {
+                        &name
+                    }
+                    .into();
+                }
+                let method = match operation.as_str() {
+                    "主链接" => "exportChatInviteLink",
+                    "创建付费" => {
+                        let price = first
+                            .parse::<i64>()
+                            .ok()
+                            .filter(|v| (1..=10_000).contains(v))
+                            .ok_or("订阅价格请填写 1 至 10000")?;
+                        body["subscription_price"] = price.into();
+                        body["subscription_period"] = 2_592_000.into();
+                        "createChatSubscriptionInviteLink"
+                    }
+                    _ => {
+                        https_url(&first)?;
+                        body["invite_link"] = first.into();
+                        "editChatSubscriptionInviteLink"
+                    }
+                };
+                let data = telegram(rl, method, body)?;
+                let link = if operation == "主链接" {
+                    &data["data"]
+                } else {
+                    &data["data"]["invite_link"]
+                };
+                Ok(Some(rv_text(
+                    link.as_str().ok_or("平台未返回邀请链接")?.to_owned(),
+                )))
+            }
             "创建" | "编辑" => {
                 let edit = operation == "编辑";
                 if edit && platform != "telegram" {
@@ -688,7 +805,7 @@ pub(super) fn register() {
                 } else if platform == "telegram" {
                     telegram(rl, "createChatInviteLink", body)?["data"]["invite_link"].clone()
                 } else {
-                    kook_invite(rl, "POST", "invite/create", body)?["data"]["url"].clone()
+                    kook(rl, "POST", "invite/create", body)?["data"]["url"].clone()
                 };
                 Ok(Some(rv_text(
                     link.as_str().ok_or("平台未返回邀请链接")?.to_owned(),
@@ -703,7 +820,7 @@ pub(super) fn register() {
                     telegram(rl, "revokeChatInviteLink", body)?;
                 } else {
                     body["url_code"] = invite_code(&link)?.into();
-                    kook_invite(rl, "POST", "invite/delete", body)?;
+                    kook(rl, "POST", "invite/delete", body)?;
                 }
                 Ok(Some(rv_empty()))
             }
@@ -711,7 +828,7 @@ pub(super) fn register() {
                 let [id, kind, page] = text_params::<3>(rl, params, 1)?;
                 let mut body = invite_target(rl, &platform, &id, &kind)?;
                 body["page"] = positive_id(if page.is_empty() { "1" } else { &page })?.into();
-                let response = kook_invite(rl, "GET", "invite/list", body)?;
+                let response = kook(rl, "GET", "invite/list", body)?;
                 let items = response["data"]["items"]
                     .as_array()
                     .ok_or("平台未返回邀请列表")?;
@@ -726,10 +843,10 @@ pub(super) fn register() {
                 if !guild.is_empty() {
                     body["guild_id"] = guild.into();
                 }
-                let result = kook_invite(rl, "GET", "invite/invitees", body)?;
+                let result = kook(rl, "GET", "invite/invitees", body)?;
                 output(&result["data"]["count"])
             }
-            _ => Err("邀请操作请填创建、撤销、Telegram 编辑、KOOK 列表或受邀人数".into()),
+            _ => Err("邀请操作支持创建、撤销、Telegram 编辑及付费邀请、KOOK 列表和受邀人数".into()),
         }
     });
 }

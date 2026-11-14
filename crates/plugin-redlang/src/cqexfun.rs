@@ -65,6 +65,14 @@ fn call_platform_api(
     Ok(Some(json_value_to_red(&response)?))
 }
 
+#[cfg(test)]
+type TestPlatformCall = Box<dyn Fn(&str, &str, serde_json::Value) -> serde_json::Value>;
+
+#[cfg(test)]
+thread_local! {
+    pub(crate) static TEST_PLATFORM_CALL: RefCell<Option<TestPlatformCall>> = RefCell::new(None);
+}
+
 pub(super) fn call_platform_api_value(
     rl: &RedLang,
     platform: &str,
@@ -73,6 +81,12 @@ pub(super) fn call_platform_api_value(
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     if get_platform(rl) != platform {
         return Err(RedLang::make_err(&format!("此命令需要 {platform} 机器人来源")));
+    }
+    #[cfg(test)]
+    if let Some(response) = TEST_PLATFORM_CALL.with_borrow(|handler| {
+        handler.as_ref().map(|handler| handler(platform, action, params.clone()))
+    }) {
+        return Ok(response);
     }
     let self_id = rl.get_exmap("机器人ID");
     if self_id.is_empty() {
@@ -557,6 +571,11 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["取头像"], |self_t, params| {
         let user_id = self_t.get_param_text(params, 0).unwrap_or_default();
         let platform = get_platform(self_t);
+        if platform == "telegram" && self_t.get_param_text(params, 1)? == "文件ID列表" {
+            let offset = self_t.get_param_text(params, 2)?;
+            let limit = self_t.get_param_text(params, 3)?;
+            return crate::bot_commands::management::telegram_avatars(self_t, &user_id, &offset, &limit);
+        }
         // 官方QQ平台：头像 CDN 支持用 AppID + OpenID 直接拼 URL
         if platform == "qqgroup_public"
             || platform == "qqguild_public"
@@ -925,6 +944,7 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["编辑消息"], |rl, params| {
         let platform = management_platform(rl)?;
         let mut id = rl.get_param_text(params, 0)?;
+        let explicit_id = !id.is_empty();
         if id.is_empty() {
             id = rl.get_exmap("消息ID").to_string();
         }
@@ -934,16 +954,35 @@ pub fn init_cq_ex_fun_map() {
             let options = rl.get_param(params, 3)?;
             match options.as_ref() {
                 RedValue::Text(text) if text.is_empty() => serde_json::json!({}),
+                RedValue::Text(text) if platform == "telegram" => {
+                    let mode = match text.as_str() {
+                        "Markdown" => "MarkdownV2",
+                        "HTML" => "HTML",
+                        _ => return Err(RedLang::make_err("格式请填 Markdown、HTML 或留空")),
+                    };
+                    serde_json::json!({"parse_mode":mode})
+                }
                 _ => native_args::object(&options)?,
             }
         } else {
             serde_json::json!({})
         };
+        let mut upload = None;
         let (kind, field, value) = match (platform.as_str(), kind.as_str()) {
             ("telegram", "" | "文本") => ("text", "text", content.expect_text_value()?.into()),
             ("telegram", "说明") => ("caption", "caption", content.expect_text_value()?.into()),
             ("telegram", "键盘") => {
                 ("keyboard", "reply_markup", crate::bot_commands::edit_keyboard(&content)?)
+            }
+            ("telegram", "媒体") if content.as_array().is_some() => {
+                let (mut media, files) = native_args::media_item(&content, 0)?;
+                if let Some(mode) = body.as_object_mut().and_then(|obj| obj.remove("parse_mode")) {
+                    media["parse_mode"] = mode;
+                }
+                if !files.is_empty() {
+                    upload = Some(serde_json::Value::Object(files));
+                }
+                ("media", "media", media)
             }
             ("telegram", "媒体") => ("media", "media", native_args::object(&content)?),
             ("kook", "" | "文本") => ("text", "content", content.expect_text_value()?.into()),
@@ -955,9 +994,39 @@ pub fn init_cq_ex_fun_map() {
         body[field] = value;
         let mut request = serde_json::json!({"message_id":id,"kind":kind,"body":body});
         if platform == "telegram" {
-            if let Some(files) = native_args::files(rl, params, 4)? {
+            let attachments = rl.get_param(params, 4)?;
+            match attachments.as_ref() {
+                RedValue::Text(text) if text.is_empty() => (),
+                RedValue::Object(fields) if fields.contains_key("inline_keyboard") => {
+                    request["body"]["reply_markup"] = crate::bot_commands::edit_keyboard(&attachments)?;
+                }
+                _ if upload.is_some() => return Err(RedLang::make_err("媒体数组已经包含上传内容")),
+                _ => upload = native_args::files_value(&attachments)?,
+            }
+            if let Some(files) = upload {
                 request["files"] = files;
             }
+        }
+        match rl.get_param_text(params, 5)?.as_str() {
+            "" => (),
+            "行内" if platform == "telegram" => {
+                if !explicit_id {
+                    return Err(RedLang::make_err("编辑行内消息需填写平台行内消息ID"));
+                }
+                if request.get("files").is_some() {
+                    return Err(RedLang::make_err("Telegram 行内媒体编辑请使用已有文件ID或直链"));
+                }
+                let method = match kind {
+                    "text" => "editMessageText",
+                    "caption" => "editMessageCaption",
+                    "keyboard" => "editMessageReplyMarkup",
+                    _ => "editMessageMedia",
+                };
+                let mut body = request["body"].take();
+                body["inline_message_id"] = id.into();
+                return call_platform_api(rl,&platform,"telegram_api",serde_json::json!({"method":method,"body":body}));
+            }
+            _ => return Err(RedLang::make_err("编辑目标类型请留空或在 Telegram 中填行内")),
         }
         call_platform_api(rl, &platform, "edit_msg", request)
     });
@@ -981,7 +1050,16 @@ pub fn init_cq_ex_fun_map() {
         }
         let options = rl.get_param(params, 3)?;
         let options = match options.as_ref() {
-            RedValue::Text(text) if text.is_empty() => serde_json::json!({}),
+            RedValue::Text(copy) => {
+                let silent = rl.get_param_text(params, 4)?;
+                for value in [copy.as_str(), silent.as_str()] {
+                    if !matches!(value, "" | "真" | "假") {
+                        return Err(RedLang::make_err("复制和静默请填真或假"));
+                    }
+                }
+                serde_json::json!({"复制":copy.as_str(),"静默":silent,
+                    "话题ID":rl.get_param_text(params, 5)?,"话题类型":rl.get_param_text(params, 6)?})
+            }
             _ => native_args::object(&options)?,
         };
         if ids.is_empty() || ids.iter().any(|id| id.is_empty()) || target.is_empty() {
@@ -1291,8 +1369,25 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["KOOK停止播放"], |rl, _| {
         call_platform_api(rl, "kook", "kook_voice_stop", serde_json::json!({}))
     });
-    add_fun(vec!["KOOK播放状态"], |rl, _| {
-        call_platform_api(rl, "kook", "kook_voice_status", serde_json::json!({}))
+    add_fun(vec!["KOOK播放状态"], |rl, params| {
+        let field = rl.get_param_text(params, 0)?;
+        if field.is_empty() {
+            return call_platform_api(rl, "kook", "kook_voice_status", serde_json::json!({}));
+        }
+        let response = call_platform_api_value(rl, "kook", "kook_voice_status", serde_json::json!({}))?;
+        if response["retcode"] != 0 {
+            return Err(RedLang::make_err(response["message"].as_str().unwrap_or("无法查询播放状态")));
+        }
+        let data = &response["data"];
+        let value = match field.as_str() {
+            "状态" => crate::bot_commands::playback_state(&data["state"]),
+            "当前曲目" => data["track"].clone(),
+            "曲目总数" => data["total"].clone(),
+            "频道ID" => data["channel_id"].clone(),
+            "错误" => data["error"].clone(),
+            _ => return Err(RedLang::make_err("播放状态可查询状态、当前曲目、曲目总数、频道ID或错误")),
+        };
+        Ok(Some(json_value_to_red(&value)?))
     });
     add_fun(vec!["CQ码解析"], |self_t, params| {
         let data_str = self_t.get_param_text(params, 0)?;

@@ -110,7 +110,11 @@ pub(super) fn files(
     index: usize,
 ) -> Result<Option<Value>, Box<dyn Error>> {
     let input = rl.get_param(params, index)?;
-    match input.as_ref() {
+    files_value(&input)
+}
+
+pub(super) fn files_value(input: &RedValue) -> Result<Option<Value>, Box<dyn Error>> {
+    match input {
         RedValue::Text(text) if text.trim().is_empty() => Ok(None),
         RedValue::Text(text) => Ok(Some(legacy_object(text)?)),
         RedValue::Object(fields) => {
@@ -191,47 +195,57 @@ pub(super) fn media_group(input: &RedValue) -> Result<Value, Box<dyn Error>> {
     let mut media = Vec::with_capacity(items.len());
     let mut files = Map::new();
     for (index, item) in items.iter().enumerate() {
-        let RedValue::Array(fields) = item.as_ref() else {
-            return Err(RedLang::make_err(
-                "每项媒体用【数组@类型@来源@说明@文件名】填写",
-            ));
-        };
-        let [kind, source, ..] = fields.as_slice() else {
-            return Err(RedLang::make_err("媒体项需要类型和来源"));
-        };
-        let text = |index: usize| -> Result<String, Box<dyn Error>> {
-            fields
-                .get(index)
-                .map(|value| value.expect_text_value())
-                .transpose()
-                .map(Option::unwrap_or_default)
-        };
-        let kind = match kind.expect_text_value()?.as_str() {
-            "图片" => "photo",
-            "视频" => "video",
-            "音频" => "audio",
-            "文件" => "document",
-            "实况照片" => "live_photo",
-            _ => {
-                return Err(RedLang::make_err(
-                    "媒体类型可填图片、视频、音频、文件或实况照片",
-                ))
-            }
-        };
-        if fields.len() > if kind == "live_photo" { 6 } else { 4 } {
-            return Err(RedLang::make_err("媒体项参数过多"));
-        }
-        let source = media_source(source, &text(3)?, &format!("media_{index}"), &mut files)?;
-        let mut row = serde_json::json!({"type":kind,"media":source});
-        let caption = text(2)?;
-        if !caption.is_empty() {
-            row["caption"] = caption.into();
-        }
-        if kind == "live_photo" {
-            let photo = fields.get(4).ok_or("实况照片需要静态图来源")?;
-            row["photo"] = media_source(photo, &text(5)?, &format!("photo_{index}"), &mut files)?;
-        }
+        let (row, attachments) = media_item(item, index)?;
         media.push(row);
+        files.extend(attachments);
     }
     Ok(serde_json::json!({"media":media,"files":files}))
+}
+
+pub(super) fn media_item(
+    item: &RedValue,
+    index: usize,
+) -> Result<(Value, Map<String, Value>), Box<dyn Error>> {
+    let mut files = Map::new();
+    let RedValue::Array(fields) = item else {
+        return Err(RedLang::make_err(
+            "每项媒体用【数组@类型@来源@说明@文件名】填写",
+        ));
+    };
+    let [kind, source, ..] = fields.as_slice() else {
+        return Err(RedLang::make_err("媒体项需要类型和来源"));
+    };
+    let text = |index: usize| -> Result<String, Box<dyn Error>> {
+        fields
+            .get(index)
+            .map(|value| value.expect_text_value())
+            .transpose()
+            .map(Option::unwrap_or_default)
+    };
+    let kind = match kind.expect_text_value()?.as_str() {
+        "图片" => "photo",
+        "视频" => "video",
+        "音频" => "audio",
+        "文件" => "document",
+        "实况照片" => "live_photo",
+        _ => {
+            return Err(RedLang::make_err(
+                "媒体类型可填图片、视频、音频、文件或实况照片",
+            ))
+        }
+    };
+    if fields.len() > if kind == "live_photo" { 6 } else { 4 } {
+        return Err(RedLang::make_err("媒体项参数过多"));
+    }
+    let source = media_source(source, &text(3)?, &format!("media_{index}"), &mut files)?;
+    let mut row = serde_json::json!({"type":kind,"media":source});
+    let caption = text(2)?;
+    if !caption.is_empty() {
+        row["caption"] = caption.into();
+    }
+    if kind == "live_photo" {
+        let photo = fields.get(4).ok_or("实况照片需要静态图来源")?;
+        row["photo"] = media_source(photo, &text(5)?, &format!("photo_{index}"), &mut files)?;
+    }
+    Ok((row, files))
 }
