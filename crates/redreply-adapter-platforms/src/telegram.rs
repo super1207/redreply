@@ -1455,7 +1455,21 @@ impl TeleTramConnect {
 
     fn native_media(data: &Value, payload: &mut Value) -> AdapterResult<(&'static str, Value)> {
         let (method, required, fields): (_, _, &[&str]) = match data["kind"].as_str() {
-            Some("voice") => ("sendVoice", "voice", &["duration", "caption", "parse_mode"]),
+            Some("photo") => (
+                "sendPhoto",
+                "photo",
+                &["caption", "parse_mode", "caption_entities"],
+            ),
+            Some("video") => (
+                "sendVideo",
+                "video",
+                &["caption", "parse_mode", "caption_entities"],
+            ),
+            Some("voice") => (
+                "sendVoice",
+                "voice",
+                &["duration", "caption", "parse_mode", "caption_entities"],
+            ),
             Some("video_note") => (
                 "sendVideoNote",
                 "video_note",
@@ -1471,6 +1485,7 @@ impl TeleTramConnect {
                     "thumbnail",
                     "caption",
                     "parse_mode",
+                    "caption_entities",
                     "show_caption_above_media",
                     "has_spoiler",
                 ],
@@ -1671,6 +1686,7 @@ impl TeleTramConnect {
                         "media",
                         "payload",
                         "caption",
+                        "caption_entities",
                         "show_caption_above_media",
                     ] {
                         if let Some(value) = data["body"].get(field) {
@@ -2054,14 +2070,30 @@ impl TeleTramConnect {
 
     fn forward_request(&self, params: &Value) -> AdapterResult<(&'static str, Value)> {
         let ids = native_api::message_handles(params)?;
-        let (groups, missing) = self.message_batches(&ids)?;
-        if !missing.is_empty() || groups.len() != 1 {
-            return Err("Telegram 转发需要同一聊天中已知的 RedReply 消息 ID".into());
-        }
-        let Some(((source, business_id), ids)) = groups.into_iter().next() else {
-            return Err("Telegram 没有可转发的消息".into());
+        let details = &params["forward_options"];
+        let (source, ids) = if let Some(source) = details.get("from_chat_id") {
+            let ids = ids
+                .iter()
+                .map(|id| {
+                    id.parse::<i64>()
+                        .ok()
+                        .filter(|id| *id > 0)
+                        .ok_or("指定来源会话时请填写平台消息ID")
+                })
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            (source.clone(), ids)
+        } else {
+            let (groups, missing) = self.message_batches(&ids)?;
+            if !missing.is_empty() || groups.len() != 1 {
+                return Err("Telegram 转发需要同一聊天中已知的 RedReply 消息 ID".into());
+            }
+            let ((source, business_id), ids) = groups.into_iter().next().ok_or("没有可转发消息")?;
+            if !business_id.is_empty() {
+                return Err("Telegram 转发需要普通聊天消息".into());
+            }
+            (source.into(), ids)
         };
-        if !business_id.is_empty() || ids.len() > 100 {
+        if ids.is_empty() || ids.len() > 100 {
             return Err("Telegram 转发支持同一普通聊天内的 1 至 100 条消息".into());
         }
         let target = read_json_str(params, "target_id");
@@ -2101,6 +2133,47 @@ impl TeleTramConnect {
             return Err("转发的消息效果只适用于单条私聊消息，建议帖只适用于单条频道私信".into());
         }
         send_options::apply(options, &mut body);
+        for key in [
+            "video_start_timestamp",
+            "caption",
+            "parse_mode",
+            "caption_entities",
+            "show_caption_above_media",
+            "remove_caption",
+            "reply_markup",
+        ] {
+            let Some(value) = details.get(key) else {
+                continue;
+            };
+            let allowed = match key {
+                "video_start_timestamp" => ids.len() == 1,
+                "remove_caption" => method == "copyMessages",
+                _ => method == "copyMessage",
+            };
+            if !allowed {
+                return Err(
+                    "单条转发或复制可指定视频起点，单条复制可改说明或附键盘，批量复制可移除说明"
+                        .into(),
+                );
+            }
+            body[key] = value.clone();
+        }
+        if let Some(reply) = options.get("reply_parameters") {
+            if method != "copyMessage"
+                || reply.get("ephemeral_message_id").is_some()
+                || reply.get("chat_id").is_some()
+                    && (body["direct_messages_topic_id"].is_number()
+                        || reply["allow_sending_without_reply"] == true)
+            {
+                return Err("高级引用只适用于单条复制和受支持的普通目标消息".into());
+            }
+            body["reply_parameters"] = reply.clone();
+        }
+        if (body.get("parse_mode").is_some() || body.get("show_caption_above_media").is_some())
+            && body.get("caption").is_none()
+        {
+            return Err("设置说明格式或位置时需填写新说明".into());
+        }
         Ok((method, body))
     }
 
@@ -2932,6 +3005,31 @@ mod native_tests {
         assert_eq!(payload["thumbnail"], "attach://preview");
         let invalid = json!({"kind":"video_note","body":{"video_note":"https://example.org/round.mp4"},"files":{}});
         assert!(TeleTramConnect::native_media(&invalid, &mut payload).is_err());
+    }
+
+    #[test]
+    fn forward_options_are_bound_to_the_copy_or_forward_method() {
+        let bot = TeleTramConnect::build("");
+        let mut request = json!({"message_ids":["8"],"target_id":"-1001","copy":true,
+            "forward_options":{"from_chat_id":-1002,"video_start_timestamp":10,"caption":""},
+            "send_options":{"reply_parameters":{"message_id":2},"disable_notification":true}});
+        let (method, body) = bot.forward_request(&request).unwrap();
+        assert_eq!(method, "copyMessage");
+        assert_eq!(
+            body,
+            json!({"chat_id":-1001,"from_chat_id":-1002,"message_id":8,
+            "caption":"","video_start_timestamp":10,"disable_notification":true,"reply_parameters":{"message_id":2}})
+        );
+        request["copy"] = false.into();
+        assert!(bot.forward_request(&request).is_err());
+        request["copy"] = true.into();
+        request["message_ids"] = json!(["9", "8", "9"]);
+        request["forward_options"] = json!({"from_chat_id":-1002,"remove_caption":true});
+        request["send_options"] = json!({});
+        let (method, body) = bot.forward_request(&request).unwrap();
+        assert_eq!(method, "copyMessages");
+        assert_eq!(body["message_ids"], json!([8, 9]));
+        assert_eq!(body["remove_caption"], true);
     }
 
     #[test]

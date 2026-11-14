@@ -227,65 +227,113 @@ fn reply_fields(row: &[Rc<RedValue>], rl: &RedLang) -> Result<Value> {
         if body.get("quote_parse_mode").is_some() {
             return Err("引用格式与引用样式请二选一".into());
         }
-        let boundaries: HashSet<_> = std::iter::once(0)
-            .chain(quote.chars().scan(0, |offset, ch| {
-                *offset += ch.len_utf16();
-                Some(*offset)
-            }))
-            .collect();
-        let entities = array(entities)?
-            .iter()
-            .map(|entity| {
-                let row = array(entity)?;
-                if !(3..=5).contains(&row.len()) {
-                    return Err("引用样式请填【数组@样式@位置@长度@附加值@日期格式】".into());
-                }
-                let offset = row_text(row, 1)?.parse::<usize>()?;
-                let length = row_text(row, 2)?.parse::<usize>()?;
-                if length == 0
-                    || !boundaries.contains(&offset)
-                    || offset
-                        .checked_add(length)
-                        .is_none_or(|end| !boundaries.contains(&end))
-                {
-                    return Err("引用样式范围超出引用片段的 UTF-16 长度".into());
-                }
-                let kind = match row_text(row, 0)?.as_str() {
-                    "粗体" => "bold",
-                    "斜体" => "italic",
-                    "下划线" => "underline",
-                    "删除线" => "strikethrough",
-                    "剧透" => "spoiler",
-                    "自定义表情" => "custom_emoji",
-                    "日期时间" => "date_time",
-                    _ => return Err("未知的普通引用样式".into()),
-                };
-                let mut item = json!({"type":kind,"offset":offset,"length":length});
-                if kind == "custom_emoji" {
-                    let id = row_text(row, 3)?;
-                    if id.is_empty() {
-                        return Err("请填写自定义表情ID".into());
-                    }
-                    item["custom_emoji_id"] = id.into();
-                } else if kind == "date_time" {
-                    item["unix_time"] = row_text(row, 3)?.parse::<i64>()?.into();
-                    let format = row_text(row, 4)?;
-                    if !format.is_empty() {
-                        item["date_time_format"] = format.into();
-                    }
-                }
-                Ok(item)
-            })
-            .collect::<Result<Vec<_>>>()?;
-        body["quote_entities"] = entities.into();
+        body["quote_entities"] = text_styles(quote, entities, true)?;
     }
     Ok(body)
 }
 
-pub(crate) fn edit_fields(value: &RedValue, kind: &str) -> Result<Value> {
+fn text_styles(text: &str, entities: &RedValue, quote_only: bool) -> Result<Value> {
+    let boundaries: HashSet<_> = std::iter::once(0)
+        .chain(text.chars().scan(0, |offset, ch| {
+            *offset += ch.len_utf16();
+            Some(*offset)
+        }))
+        .collect();
+    let entities = array(entities)?
+        .iter()
+        .map(|entity| {
+            let row = array(entity)?;
+            if !(3..=5).contains(&row.len()) {
+                return Err("文字样式请填【数组@样式@位置@长度@附加值@日期格式】".into());
+            }
+            let offset = row_text(row, 1)?.parse::<usize>()?;
+            let length = row_text(row, 2)?.parse::<usize>()?;
+            if length == 0
+                || !boundaries.contains(&offset)
+                || offset
+                    .checked_add(length)
+                    .is_none_or(|end| !boundaries.contains(&end))
+            {
+                return Err("文字样式范围超出原文字的 UTF-16 长度".into());
+            }
+            let kind = match row_text(row, 0)?.as_str() {
+                "粗体" => "bold",
+                "斜体" => "italic",
+                "下划线" => "underline",
+                "删除线" => "strikethrough",
+                "剧透" => "spoiler",
+                "自定义表情" => "custom_emoji",
+                "日期时间" => "date_time",
+                "代码" if !quote_only => "code",
+                "代码块" if !quote_only => "pre",
+                "链接" if !quote_only => "text_link",
+                "引用块" if !quote_only => "blockquote",
+                "折叠引用" if !quote_only => "expandable_blockquote",
+                "艾特" if !quote_only => "mention",
+                "标签" if !quote_only => "hashtag",
+                "货币标签" if !quote_only => "cashtag",
+                "命令" if !quote_only => "bot_command",
+                "网址" if !quote_only => "url",
+                "邮箱" if !quote_only => "email",
+                "电话" if !quote_only => "phone_number",
+                "银行卡" if !quote_only => "bank_card_number",
+                "TON地址" if !quote_only => "ton_address",
+                _ => return Err("未知的文字样式".into()),
+            };
+            let mut item = json!({"type":kind,"offset":offset,"length":length});
+            if kind == "custom_emoji" {
+                let id = row_text(row, 3)?;
+                if id.is_empty() {
+                    return Err("请填写自定义表情ID".into());
+                }
+                item["custom_emoji_id"] = id.into();
+            } else if kind == "date_time" {
+                item["unix_time"] = row_text(row, 3)?.parse::<i64>()?.into();
+                let format = row_text(row, 4)?;
+                if !format.is_empty() {
+                    item["date_time_format"] = format.into();
+                }
+            }
+            if kind == "text_link" {
+                let link = row_text(row, 3)?;
+                let parsed = url::Url::parse(&link)?;
+                if !matches!(parsed.scheme(), "http" | "https" | "tg") {
+                    return Err("文字链接请填 HTTP(S) 或 tg 链接".into());
+                }
+                item["url"] = link.into();
+            } else if kind == "pre" {
+                let language = row_text(row, 3)?;
+                if !language.is_empty() {
+                    item["language"] = language.into();
+                }
+            }
+            Ok(item)
+        })
+        .collect::<Result<Vec<_>>>()?;
+    Ok(entities.into())
+}
+
+pub(crate) fn apply_styles(
+    body: &mut Value,
+    text_field: &str,
+    output: &str,
+    input: &RedValue,
+) -> Result<()> {
+    if absent(input) {
+        return Ok(());
+    }
+    if body.get("parse_mode").is_some() {
+        return Err("文本格式与样式数组请二选一".into());
+    }
+    let text = body[text_field].as_str().ok_or("指定样式时请填写文字")?;
+    body[output] = text_styles(text, input, false)?;
+    Ok(())
+}
+
+pub(crate) fn edit_fields(value: &RedValue, kind: &str, content: &RedValue) -> Result<Value> {
     let fields = array(value)?;
-    if fields.len() > 3 {
-        return Err("编辑选项最多三项".into());
+    if fields.len() > 4 {
+        return Err("编辑选项最多四项".into());
     }
     let mut body = json!({});
     let format = row_text(fields, 0)?;
@@ -337,6 +385,63 @@ pub(crate) fn edit_fields(value: &RedValue, kind: &str) -> Result<Value> {
             return Err("说明置顶仅适用于说明或媒体".into());
         }
         body["show_caption_above_media"] = boolean(&above, false)?.into();
+    }
+    if let Some(styles) = fields.get(3).filter(|value| !absent(value)) {
+        if body.get("parse_mode").is_some() {
+            return Err("编辑格式与样式数组请二选一".into());
+        }
+        let (text, field) = match kind {
+            "" | "文本" => (content.expect_text_value()?, "entities"),
+            "说明" => (content.expect_text_value()?, "caption_entities"),
+            "媒体" => (row_text(array(content)?, 2)?, "caption_entities"),
+            _ => return Err("样式仅适用于文本和媒体说明".into()),
+        };
+        body[field] = text_styles(&text, styles, false)?;
+    }
+    Ok(body)
+}
+
+pub(crate) fn forward_fields(input: &RedValue) -> Result<Value> {
+    if absent(input) {
+        return Ok(json!({}));
+    }
+    let row = array(input)?;
+    if row.len() > 8 {
+        return Err("转发附加选项最多八项".into());
+    }
+    let mut body = json!({});
+    let start = row_text(row, 0)?;
+    if !start.is_empty() {
+        body["video_start_timestamp"] = start.parse::<u32>()?.into();
+    }
+    if let Some(value) = row.get(1).filter(|value| !absent(value)) {
+        let value = value.expect_text_value()?;
+        body["caption"] = (if value == "清空" { "" } else { &value }).into();
+    }
+    let format = row_text(row, 2)?;
+    if !format.is_empty() {
+        body["parse_mode"] = match format.as_str() {
+            "Markdown" => "MarkdownV2",
+            "HTML" => "HTML",
+            _ => return Err("说明格式请填 Markdown、HTML 或留空".into()),
+        }
+        .into();
+    }
+    for (index, field) in [(3, "show_caption_above_media"), (4, "remove_caption")] {
+        let value = row_text(row, index)?;
+        if !value.is_empty() {
+            body[field] = boolean(&value, false)?.into();
+        }
+    }
+    if let Some(markup) = row.get(5).filter(|value| !absent(value)) {
+        body["reply_markup"] = super::telegram_keyboard_value(markup)?;
+    }
+    let source = row_text(row, 6)?;
+    if !source.is_empty() {
+        body["from_chat_id"] = chat_id(&source)?;
+    }
+    if let Some(styles) = row.get(7) {
+        apply_styles(&mut body, "caption", "caption_entities", styles)?;
     }
     Ok(body)
 }

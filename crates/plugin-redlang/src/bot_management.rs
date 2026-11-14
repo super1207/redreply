@@ -1,4 +1,6 @@
 use super::*;
+#[path = "bot_inline_results.rs"]
+mod inline;
 
 #[path = "bot_kook_activity.rs"]
 mod activity;
@@ -150,16 +152,18 @@ fn inline_results(items: &RedValue) -> Result<Vec<Value>> {
             let row = array(item)?;
             let id = row_text(row, 0)?;
             let title = row_text(row, 1)?;
-            let content = row_text(row, 2)?;
             let description = row_text(row, 3)?;
             let link = row_text(row, 4)?;
             let kind = row_text(row, 5)?;
-            if row.len() > 6 || id.is_empty() || id.len() > 64 || !ids.insert(id.clone()) {
-                return Err("结果 ID 须为不重复的 1 至 64 字节文本，每行最多 6 项".into());
+            if row.len() > 10 || id.is_empty() || id.len() > 64 || !ids.insert(id.clone()) {
+                return Err("结果 ID 须为不重复的 1 至 64 字节文本，每行最多 10 项".into());
             }
-            required(&title, "结果标题")?;
+            let options = row.get(7).filter(|v| !matches!(v.as_ref(),RedValue::Text(text) if text.is_empty()))
+                .map(|v| array(v)).transpose()?.unwrap_or_default();
             let mut result = match kind.as_str() {
                 "" | "文章" => {
+                    required(&title, "结果标题")?;
+                    let content = row_text(row, 2)?;
                     required(&content, "发送文字")?;
                     let mut article =
                         json!({"type":"article","input_message_content":{"message_text":content}});
@@ -169,22 +173,34 @@ fn inline_results(items: &RedValue) -> Result<Vec<Value>> {
                     }
                     article
                 }
-                "图片" | "视频" | "文件" => {
-                    required(&link, "Telegram 文件ID")?;
-                    let (kind, field) = match kind.as_str() {
-                        "图片" => ("photo", "photo_file_id"),
-                        "视频" => ("video", "video_file_id"),
-                        _ => ("document", "document_file_id"),
-                    };
-                    let mut media = json!({"type":kind,field:link});
-                    insert_text(&mut media, "caption", &content);
-                    media
+                "富文本" => {
+                    required(&title, "结果标题")?;
+                    let content = row.get(2).ok_or("请填写【Telegram富文本】")?;
+                    let mut article = json!({"type":"article","input_message_content":super::rich::inline(content)?});
+                    if !link.is_empty() {
+                        https_url(&link)?;
+                        article["url"] = link.into();
+                    }
+                    article
                 }
-                _ => return Err("结果类型请填文章、图片、视频或文件".into()),
+                _ => inline::variant(&kind,&title,&link,&description,row.get(2),options)?,
             };
             result["id"] = id.into();
-            result["title"] = title.into();
-            insert_text(&mut result, "description", &description);
+            if result["type"] == "article" {
+                result["title"] = title.into();
+                insert_text(&mut result, "description", &description);
+                inline::article_options(&mut result,options)?;
+            }
+            if let Some(keyboard) = row.get(6).filter(|value| !matches!(value.as_ref(),RedValue::Text(text) if text.is_empty())) {
+                result["reply_markup"] = super::edit_keyboard(keyboard)?;
+            }
+            if let Some(alternate) = row.get(8) { inline::apply_alternate(&mut result,alternate)?; }
+            if result["mime_type"] == "text/html" && result.get("input_message_content").is_none() {
+                return Err("网页视频结果需要替代发送内容".into());
+            }
+            if let Some(styles) = row.get(9) {
+                super::send_options::apply_styles(&mut result,"caption","caption_entities",styles)?;
+            }
             Ok(result)
         })
         .collect()
@@ -236,7 +252,7 @@ fn telegram_chat(data: &Value) -> Value {
         "头像文件ID":data["photo"]["big_file_id"],"可用回应":reactions})
 }
 
-fn kook_channel(data: &Value) -> Value {
+pub(super) fn kook_channel(data: &Value) -> Value {
     let kind = if data["is_category"] == true || data["is_category"] == 1 {
         "分组"
     } else {
@@ -469,7 +485,7 @@ fn kook_mask(input: &RedValue) -> Result<u32> {
     })
 }
 
-fn kook_right_names(mask: &Value) -> Value {
+pub(super) fn kook_right_names(mask: &Value) -> Value {
     let mask = mask.as_u64().unwrap_or_default();
     json!(KOOK_RIGHTS
         .iter()
@@ -821,6 +837,8 @@ fn register_admin() {
             body["business_connection_id"] = id.into();
         }
         insert_text(&mut body, "caption", &caption);
+        let styles = rl.get_param(params, 8)?;
+        super::send_options::apply_styles(&mut body, "caption", "caption_entities", &styles)?;
         if let Some((field, id)) = crate::cqexfun::telegram_output_topic(&topic, &topic_kind)? {
             body[field] = id.into();
         } else if let Ok(event) = serde_json::from_str(&rl.get_exmap("原始事件")) {
@@ -852,15 +870,42 @@ fn register_admin() {
         scalar_text(&data["data"]["document"]["file_id"])
     });
     add_fun(vec!["Telegram小程序应答"], |rl, params| {
-        let [query, id, title, message] = text_params::<4>(rl, params, 0)?;
+        let [query, id, title] = text_params::<3>(rl, params, 0)?;
+        let message = rl.get_param(params, 3)?;
+        let kind = rl.get_param_text(params, 4)?;
+        let content = match kind.as_str() {
+            "" | "文章" => {
+                json!({"message_text":required(&message.expect_text_value()?,"发送文字")?})
+            }
+            "富文本" => super::rich::inline(&message)?,
+            _ => return Err("小程序应答类型请填文章或富文本".into()),
+        };
         let result = json!({"type":"article","id":required(&id,"结果ID")?,"title":required(&title,"标题")?,
-            "input_message_content":{"message_text":required(&message,"发送文字")?}});
+            "input_message_content":content});
         let data = telegram(
             rl,
             "answerWebAppQuery",
             json!({"web_app_query_id":required(&query,"小程序查询ID")?,"result":result}),
         )?;
         output(&data["data"]["inline_message_id"])
+    });
+    add_fun(vec!["Telegram准备行内消息"], |rl, params| {
+        let row = rl.get_param(params, 0)?;
+        let result = inline_results(&RedValue::Array(vec![row]))?
+            .into_iter()
+            .next()
+            .ok_or("请填写行内结果")?;
+        let user = rl.get_param_text(params, 1)?;
+        let user = positive_id(&context(rl, &user, "发送者ID")?)?;
+        let [users, bots, groups, channels] = text_params::<4>(rl, params, 2)?;
+        let data = telegram(
+            rl,
+            "savePreparedInlineMessage",
+            json!({"user_id":user,"result":result,
+            "allow_user_chats":boolean(&users,false)?,"allow_bot_chats":boolean(&bots,false)?,
+            "allow_group_chats":boolean(&groups,false)?,"allow_channel_chats":boolean(&channels,false)?}),
+        )?;
+        output(&json!({"准备ID":data["data"]["id"],"到期时间":data["data"]["expiration_date"]}))
     });
 }
 
@@ -986,7 +1031,7 @@ fn kook_threads(rl: &mut RedLang, params: &[Ast]) -> RedCommandResult {
     }
 }
 
-fn kook_permissions(data: &Value) -> Value {
+pub(super) fn kook_permissions(data: &Value) -> Value {
     fn entries(data: &Value, users: bool) -> Vec<Value> {
         data.as_array()
             .into_iter()
@@ -1312,6 +1357,7 @@ fn register_kook() {
                 Some(8) => "音频",
                 Some(9) => "富文本",
                 Some(10) => "卡片",
+                Some(12) => "道具",
                 _ => "",
             };
             let quote = &data["quote"];
@@ -1333,7 +1379,9 @@ fn register_kook() {
                 "提及用户ID列表":data["mention"],"提及身份组ID列表":data["mention_roles"],
                 "提及所有人":data["mention_all"],"提及在线成员":data["mention_here"],"回应":reactions,
                 "引用消息ID":quote["id"],"引用正文":quote["content"],"引用发送者ID":quote["author"]["id"],
-                "消息图标":data["msg_icon"],"链接预览":super::kook_fields::previews(&data["embeds"])})
+                "消息图标":data["msg_icon"],"链接预览":super::kook_fields::previews(&data["embeds"]),
+                "视频":super::kook_fields::media(data,Some("视频")),"音频":super::kook_fields::media(data,Some("音频")),
+                "媒体列表":super::kook_fields::media_list(data),"道具":super::kook_fields::items(&data["content"])})
         };
         if op == "详情" {
             let mut body = json!({"msg_id":required(&first,"平台消息ID")?});
@@ -1522,12 +1570,41 @@ pub(super) fn register() {
         } else {
             bounded(&cache, 0, i32::MAX.into(), "缓存秒数")?
         };
-        telegram(
-            rl,
-            "answerInlineQuery",
-            json!({"inline_query_id":id,"cache_time":cache,
-            "results":inline_results(&rows)?,"next_offset":offset,"is_personal":boolean(&personal,false)?}),
-        )?;
+        let mut body = json!({"inline_query_id":id,"cache_time":cache,
+            "results":inline_results(&rows)?,"next_offset":offset,"is_personal":boolean(&personal,false)?});
+        let button = rl.get_param(params, 5)?;
+        if !matches!(button.as_ref(),RedValue::Text(text) if text.is_empty()) {
+            let row = array(&button)?;
+            if row.len() != 3 {
+                return Err("结果上方按钮用【数组@文字@类型@值】".into());
+            }
+            let text = row_text(row, 0)?;
+            let kind = row_text(row, 1)?;
+            let value = row_text(row, 2)?;
+            let mut data = json!({"text":required(&text,"按钮文字")?});
+            match kind.as_str() {
+                "小程序" => {
+                    https_url(&value)?;
+                    data["web_app"] = json!({"url":value});
+                }
+                "开始"
+                    if (1..=64).contains(&value.len())
+                        && value
+                            .bytes()
+                            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'-')) =>
+                {
+                    data["start_parameter"] = value.into();
+                }
+                _ => {
+                    return Err(
+                        "结果按钮类型请填小程序或开始，开始值用 1 至 64 位字母数字、下划线或连字符"
+                            .into(),
+                    )
+                }
+            }
+            body["button"] = data;
+        }
+        telegram(rl, "answerInlineQuery", body)?;
         empty()
     });
     add_fun(vec!["群信息"], |rl, params| {
