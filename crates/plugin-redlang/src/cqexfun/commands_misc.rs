@@ -16,13 +16,20 @@ pub(super) fn register() {
     add_fun(vec!["同意"], |self_t, params| {
         let raw_data = self_t.get_exmap("原始事件");
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
-        if get_platform(self_t) == "telegram" && raw_json["notice_type"] == "telegram"
-            && matches!(raw_json["sub_type"].as_str(),Some("shipping_query" | "pre_checkout_query"))
+        if get_platform(self_t) == "telegram"
+            && raw_json["notice_type"] == "telegram"
+            && matches!(
+                raw_json["sub_type"].as_str(),
+                Some("shipping_query" | "pre_checkout_query")
+            )
         {
-            return crate::bot_commands::management::payments::answer(self_t,params,&raw_json,true);
+            return crate::bot_commands::management::payments::answer(
+                self_t, params, &raw_json, true,
+            );
         }
         if get_platform(self_t) == "telegram"
-            && raw_json["notice_type"] == "telegram" && raw_json["sub_type"] == "chat_join_request"
+            && raw_json["notice_type"] == "telegram"
+            && raw_json["sub_type"] == "chat_join_request"
         {
             return handle_telegram_join_request(self_t, &raw_json, true);
         }
@@ -77,13 +84,20 @@ pub(super) fn register() {
     add_fun(vec!["拒绝"], |self_t, params| {
         let raw_data = self_t.get_exmap("原始事件");
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
-        if get_platform(self_t) == "telegram" && raw_json["notice_type"] == "telegram"
-            && matches!(raw_json["sub_type"].as_str(),Some("shipping_query" | "pre_checkout_query"))
+        if get_platform(self_t) == "telegram"
+            && raw_json["notice_type"] == "telegram"
+            && matches!(
+                raw_json["sub_type"].as_str(),
+                Some("shipping_query" | "pre_checkout_query")
+            )
         {
-            return crate::bot_commands::management::payments::answer(self_t,params,&raw_json,false);
+            return crate::bot_commands::management::payments::answer(
+                self_t, params, &raw_json, false,
+            );
         }
         if get_platform(self_t) == "telegram"
-            && raw_json["notice_type"] == "telegram" && raw_json["sub_type"] == "chat_join_request"
+            && raw_json["notice_type"] == "telegram"
+            && raw_json["sub_type"] == "chat_join_request"
         {
             return handle_telegram_join_request(self_t, &raw_json, false);
         }
@@ -315,9 +329,7 @@ pub(super) fn register() {
                     rusqlite::types::Type::Real => rv_text(k.as_f64().unwrap_or(0.0).to_string()),
                     rusqlite::types::Type::Text => rv_text(match k.as_str() {
                         Ok(s) => s.to_owned(),
-                        Err(_) => {
-                            String::from_utf8_lossy(k.as_bytes().unwrap_or(&[])).to_string()
-                        }
+                        Err(_) => String::from_utf8_lossy(k.as_bytes().unwrap_or(&[])).to_string(),
                     }),
                     rusqlite::types::Type::Blob => rv_bin(k.as_blob().unwrap_or(&[]).to_vec()),
                 };

@@ -187,9 +187,7 @@ impl AdapterManager {
         let name = factory.name().to_string();
         let mut factories = self.factories.write().unwrap_or_else(|e| e.into_inner());
         if factories.iter().any(|existing| existing.name() == name) {
-            return Err(FrameworkError::Plugin(format!(
-                "适配器 `{name}` 已被注册"
-            )));
+            return Err(FrameworkError::Plugin(format!("适配器 `{name}` 已被注册")));
         }
         factories.push(factory);
         Ok(())
@@ -202,11 +200,7 @@ impl AdapterManager {
             .iter()
             .map(|factory| AdapterInfo {
                 name: factory.name().to_string(),
-                schemes: factory
-                    .schemes()
-                    .into_iter()
-                    .map(str::to_string)
-                    .collect(),
+                schemes: factory.schemes().into_iter().map(str::to_string).collect(),
             })
             .collect()
     }
@@ -229,7 +223,11 @@ impl AdapterManager {
 
     /// 设置目标连接 URL 列表（全部启用）。
     pub fn set_urls(&self, urls: Vec<String>) {
-        self.set_entries(urls.into_iter().map(|url| AdapterEntry::new(url, true)).collect());
+        self.set_entries(
+            urls.into_iter()
+                .map(|url| AdapterEntry::new(url, true))
+                .collect(),
+        );
     }
 
     /// 当前全部连接条目（含停用）。
@@ -442,7 +440,11 @@ impl AdapterManager {
         }
 
         for url in desired {
-            if self.bots.read().unwrap_or_else(|e| e.into_inner()).contains_key(&url)
+            if self
+                .bots
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains_key(&url)
                 || self
                     .connecting
                     .read()
@@ -497,9 +499,9 @@ impl AdapterManager {
     }
 
     async fn connect_url(&self, url: &str) -> Result<BotHandle> {
-        let factory = self.factory_for_url(url).ok_or_else(|| {
-            FrameworkError::Plugin(format!("没有匹配 `{url}` 的适配器工厂"))
-        })?;
+        let factory = self
+            .factory_for_url(url)
+            .ok_or_else(|| FrameworkError::Plugin(format!("没有匹配 `{url}` 的适配器工厂")))?;
         let bot = factory.build(url, self.deps.clone())?;
         {
             let mut guard = tokio::time::timeout(CONNECT_TIMEOUT, bot.write())
@@ -582,10 +584,13 @@ impl AdapterManager {
                         None
                     }
                 } else {
-                    guard.identities().into_iter().find(|(bot_platform, bot_self_id)| {
-                        (platform.is_empty() || bot_platform == platform)
-                            && (self_id.is_empty() || bot_self_id == self_id)
-                    })
+                    guard
+                        .identities()
+                        .into_iter()
+                        .find(|(bot_platform, bot_self_id)| {
+                            (platform.is_empty() || bot_platform == platform)
+                                && (self_id.is_empty() || bot_self_id == self_id)
+                        })
                 }
             };
             let Some((matched_platform, matched_self_id)) = matched else {
@@ -593,7 +598,12 @@ impl AdapterManager {
             };
             let guard = handle.read().await;
             match guard
-                .call_api(&matched_platform, &matched_self_id, passive_id, request.clone())
+                .call_api(
+                    &matched_platform,
+                    &matched_self_id,
+                    passive_id,
+                    request.clone(),
+                )
                 .await
             {
                 Ok(value) => return Ok(Some(value)),

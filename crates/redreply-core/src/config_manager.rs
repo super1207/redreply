@@ -90,9 +90,14 @@ fn read_config_from_disk() -> ConfigResult<Value> {
                 std::path::PathBuf::from(p)
             };
             let renamed = fs::rename(&path, &backup).is_ok();
-            let _ =
-                crate::cq_add_log_w(&format!("config.json 解析失败:{e}，已{}并回退默认配置",
-                    if renamed { format!("备份到 {:?}", backup) } else { "尝试回退".to_owned() }));
+            let _ = crate::cq_add_log_w(&format!(
+                "config.json 解析失败:{e}，已{}并回退默认配置",
+                if renamed {
+                    format!("备份到 {:?}", backup)
+                } else {
+                    "尝试回退".to_owned()
+                }
+            ));
             let default = default_config();
             atomic_write_file(&path, &default.to_string())?;
             Ok(default)

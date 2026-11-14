@@ -43,7 +43,10 @@ impl MqttState {
     }
 
     fn client(&self) -> Option<Client> {
-        self.client.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.client
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn set_client(&self, client: Option<Client>) {
@@ -51,7 +54,10 @@ impl MqttState {
     }
 
     fn client_id(&self) -> String {
-        self.client_id.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.client_id
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn set_client_id(&self, client_id: String) {
@@ -59,11 +65,17 @@ impl MqttState {
     }
 
     fn set_remote_clients(&self, clients: Vec<String>) {
-        *self.remote_clients.lock().unwrap_or_else(|e| e.into_inner()) = clients;
+        *self
+            .remote_clients
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = clients;
     }
 
     fn remote_clients(&self) -> Vec<String> {
-        self.remote_clients.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        self.remote_clients
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     fn add_echo(&self, echo: String, sender: std::sync::mpsc::Sender<serde_json::Value>) {
@@ -545,7 +557,8 @@ pub fn init_mqttclient() -> Result<(), Box<dyn std::error::Error + Send + Sync>>
                                 }
                             }
                             if let Some(err) = last_err {
-                                let _ = cq_add_log_w(&format!("MQTT Client subscribe error: {}", err));
+                                let _ =
+                                    cq_add_log_w(&format!("MQTT Client subscribe error: {}", err));
                             }
                         }
                     }

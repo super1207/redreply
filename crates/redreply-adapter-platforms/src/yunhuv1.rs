@@ -14,12 +14,12 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
-use redreply_adapter_core::BotConnectTrait;
+use async_trait::async_trait;
 use redreply_adapter_core::cqapi::{cq_add_log, cq_add_log_w};
 use redreply_adapter_core::mytool::cq_fix_image_file_in_arr;
 use redreply_adapter_core::mytool::read_json_str;
 use redreply_adapter_core::mytool::str_msg_to_arr;
-use async_trait::async_trait;
+use redreply_adapter_core::BotConnectTrait;
 
 #[derive(Debug, Clone)]
 pub struct Yunhuv1Connect {
@@ -214,7 +214,10 @@ impl Yunhuv1Connect {
         &self,
         event: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let ob_evt = self.to_ob_event(&self.self_id.read().unwrap_or_else(|e| e.into_inner()), event)?;
+        let ob_evt = self.to_ob_event(
+            &self.self_id.read().unwrap_or_else(|e| e.into_inner()),
+            event,
+        )?;
         tokio::task::spawn_blocking(move || {
             let json_str = ob_evt.to_string();
             let _ = cq_add_log(&format!("YUNTU_OB_EVENT:{json_str}"));
@@ -230,7 +233,11 @@ impl Yunhuv1Connect {
             if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
                 break;
             }
-            let url_proxy = self.url_proxy.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+            let url_proxy = self
+                .url_proxy
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .to_owned();
             // 容错处理：单次请求/解析失败只记录日志并稍后重试，不直接断开
             let ret = match self.proxyrequest(&url_proxy).await {
                 Ok(ret) => ret,
@@ -307,7 +314,11 @@ impl Yunhuv1Connect {
         chat_id: &str,
         chat_type: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let token = self.token.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+        let token = self
+            .token
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_owned();
         let client = self.get_req_client()?;
         let url_t = format!(
             "https://chat-go.jwzhd.com/open-apis/v1/bot/send?token={}",
@@ -448,7 +459,11 @@ impl Yunhuv1Connect {
             return Err("msg_id not found")?;
         }
 
-        let token = self.token.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+        let token = self
+            .token
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_owned();
         let client = self.get_req_client()?;
         let url_t = format!(
             "https://chat-go.jwzhd.com/open-apis/v1/bot/recall?token={}",
@@ -505,7 +520,11 @@ impl Yunhuv1Connect {
 
     fn get_json_bool(js: &serde_json::Value, key: &str) -> bool {
         if let Some(j) = js.get(key) {
-            if let Some(value) = j.as_bool() { value } else if let Some(value) = j.as_str() { value == "true" } else {
+            if let Some(value) = j.as_bool() {
+                value
+            } else if let Some(value) = j.as_str() {
+                value == "true"
+            } else {
                 false
             }
         } else {
@@ -517,7 +536,11 @@ impl Yunhuv1Connect {
         &self,
         file_bin: Vec<u8>,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let token = self.token.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+        let token = self
+            .token
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_owned();
         let uri = reqwest::Url::from_str(&format!(
             "https://chat-go.jwzhd.com/open-apis/v1/image/upload?token={token}"
         ))?;
@@ -625,7 +648,9 @@ impl Yunhuv1Connect {
                     .to_owned();
                 let s = t;
                 if last_type == "text" && !to_send_data.is_empty() {
-                    if let Some(last) = to_send_data.last_mut() { last.1.push_str(&s); }
+                    if let Some(last) = to_send_data.last_mut() {
+                        last.1.push_str(&s);
+                    }
                 } else {
                     to_send_data.push(("text", s));
                     last_type = "text";

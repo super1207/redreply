@@ -393,16 +393,14 @@ pub fn set_const_val(
     val_name: &str,
     val: RedValueData,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    scripts()
-        .set_const(pkg_name, val_name, val)
+    scripts().set_const(pkg_name, val_name, val)
 }
 
 pub fn get_const_val(
     pkg_name: &str,
     val_name: &str,
 ) -> Result<Option<RedValueData>, Box<dyn std::error::Error>> {
-    scripts()
-        .get_const(pkg_name, val_name)
+    scripts().get_const(pkg_name, val_name)
 }
 
 pub fn set_temp_const_val(
@@ -411,16 +409,14 @@ pub fn set_temp_const_val(
     val: RedValueData,
     expire_time: u128,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    scripts()
-        .set_temp_const(pkg_name, val_name, val, expire_time)
+    scripts().set_temp_const(pkg_name, val_name, val, expire_time)
 }
 
 pub fn get_temp_const_val(
     pkg_name: &str,
     val_name: &str,
 ) -> Result<Option<RedValueData>, Box<dyn std::error::Error>> {
-    scripts()
-        .get_temp_const(pkg_name, val_name)
+    scripts().get_temp_const(pkg_name, val_name)
 }
 
 pub struct RedLang {
@@ -483,13 +479,11 @@ pub fn get_random() -> Result<usize, getrandom::Error> {
 
 pub fn get_core_cmd(cmd: &str, pkg_name: &str) -> Option<RedCommandFunction> {
     let cmd_t = cmd.to_uppercase();
-    scripts()
-        .get_command_function(pkg_name, &cmd_t)
+    scripts().get_command_function(pkg_name, &cmd_t)
 }
 
 pub fn add_fun(k_vec: Vec<&str>, fun: RedCommandFunction) {
-    scripts()
-        .add_command_function(k_vec, fun);
+    scripts().add_command_function(k_vec, fun);
 }
 
 pub fn init_core_fun_map() {
@@ -803,11 +797,7 @@ pub fn init_core_fun_map() {
         } else {
             String::new()
         };
-        scripts().define_command(
-            &self_t.pkg_name,
-            func_name.to_string(),
-            fun,
-        )?;
+        scripts().define_command(&self_t.pkg_name, func_name.to_string(), fun)?;
         Ok(Some(rv_empty()))
     });
     add_fun(vec!["定义二类命令"], |self_t, params| {
@@ -818,11 +808,7 @@ pub fn init_core_fun_map() {
             String::new()
         };
         let fun = format!("1FC0F025-BFE7-63A4-CA66-FC3FD8A55B7B{}", fun_body);
-        scripts().define_command(
-            &self_t.pkg_name,
-            func_name.to_string(),
-            fun,
-        )?;
+        scripts().define_command(&self_t.pkg_name, func_name.to_string(), fun)?;
         Ok(Some(rv_empty()))
     });
     add_fun(vec!["函数调用", "调用函数"], |self_t, params| {
@@ -1062,11 +1048,7 @@ pub fn init_core_fun_map() {
             let mut out_vec2: Vec<String> = vec![];
             for it in out_vec {
                 if it.starts_with('N') {
-                    out_vec2.push(
-                        it.get(1..)
-                            .ok_or("表达式操作数缺失")?
-                            .to_string(),
-                    );
+                    out_vec2.push(it.get(1..).ok_or("表达式操作数缺失")?.to_string());
                 } else if it == "真" || it == "假" {
                     out_vec2.push(it.to_owned());
                 } else if it == "^" {
@@ -1592,11 +1574,9 @@ pub fn init_core_fun_map() {
             let pkg_name = self_t.pkg_name.clone();
             // 锁被其它脚本持有时挂起等待，每1s复查一次，防止意外丢失唤醒；
             // 等待期间响应退出请求，避免脚本间死锁永久占死线程。
-            let acquired = sync().acquire_lock(
-                &self_t.pkg_name,
-                &lock_name,
-                || hooks::pkg_can_run(&pkg_name, "等待信号"),
-            );
+            let acquired = sync().acquire_lock(&self_t.pkg_name, &lock_name, || {
+                hooks::pkg_can_run(&pkg_name, "等待信号")
+            });
             if !acquired {
                 return Err("加锁终止，因用户要求退出".into());
             }
@@ -1609,9 +1589,7 @@ pub fn init_core_fun_map() {
         if self_t.lock_vec.contains(&*lock_name) {
             return Ok(Some(rv_empty()));
         }
-        if sync()
-            .try_acquire_lock(&self_t.pkg_name, &lock_name)
-        {
+        if sync().try_acquire_lock(&self_t.pkg_name, &lock_name) {
             self_t.lock_vec.insert(lock_name.to_string());
             return Ok(Some(rv_empty()));
         }
@@ -1623,8 +1601,7 @@ pub fn init_core_fun_map() {
         if !self_t.lock_vec.contains(&*lock_name) {
             Ok(Some(rv_empty()))
         } else {
-            sync()
-                .release_lock(&self_t.pkg_name, &lock_name);
+            sync().release_lock(&self_t.pkg_name, &lock_name);
             self_t.lock_vec.remove(&lock_name.to_string());
             Ok(Some(rv_empty()))
         }
@@ -1633,8 +1610,7 @@ pub fn init_core_fun_map() {
         let sigal_name = self_t.get_param_text_rc(params, 0)?;
         let param = self_t.get_param(params, 1)?;
         let to_send = Arc::new(RedValueData::from_red_value(&param)?);
-        sync()
-            .send_signal(&self_t.pkg_name, &sigal_name, to_send);
+        sync().send_signal(&self_t.pkg_name, &sigal_name, to_send);
         Ok(Some(rv_empty()))
     });
     add_fun(vec!["等待信号"], |self_t, params| {
@@ -1651,11 +1627,9 @@ pub fn init_core_fun_map() {
             sync().unregister_signal(&uid);
         });
         let pkg_name = self_t.pkg_name.clone();
-        match sync().wait_for_signal(
-            &uid,
-            core::time::Duration::from_millis(tm),
-            || hooks::pkg_can_run(&pkg_name, "等待信号"),
-        ) {
+        match sync().wait_for_signal(&uid, core::time::Duration::from_millis(tm), || {
+            hooks::pkg_can_run(&pkg_name, "等待信号")
+        }) {
             crate::core::sync_primitives::SignalWaitResult::Received(data) => {
                 return Ok(Some((*data).clone().into_rc_value()?));
             }
@@ -1719,10 +1693,8 @@ pub fn init_core_fun_map() {
         let k_t: String = text::str_to_ft(&k);
 
         // 添加新命令
-        scripts()
-            .add_package_command_function(pkg_name, k, fun);
-        scripts()
-            .add_package_command_function(pkg_name, k_t, fun);
+        scripts().add_package_command_function(pkg_name, k, fun);
+        scripts().add_package_command_function(pkg_name, k_t, fun);
         Ok(Some(rv_empty()))
     });
 }
@@ -1943,8 +1915,7 @@ impl RedLang {
         // 执行自定义命令
         {
             // 获得命令内容
-            let fun = scripts()
-                .get_command(&self.pkg_name, cmd);
+            let fun = scripts().get_command(&self.pkg_name, cmd);
             if let Some(fun) = fun {
                 // 获得命令
                 let func = fun;
@@ -2011,8 +1982,7 @@ impl RedLang {
 impl Drop for RedLang {
     fn drop(&mut self) {
         // 脚本执行完毕自动释放锁，唤醒等待者。
-        sync()
-            .release_locks(&self.pkg_name, &self.lock_vec);
+        sync().release_locks(&self.pkg_name, &self.lock_vec);
     }
 }
 

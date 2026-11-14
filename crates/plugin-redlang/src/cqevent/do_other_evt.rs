@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
-use redlang::cqapi::{cq_add_log, cq_add_log_w};
 use crate::core::RedLang;
+use redlang::cqapi::{cq_add_log, cq_add_log_w};
 use redlang::runtime;
 
 use super::{get_script_info, set_normal_evt_info};
@@ -107,7 +107,8 @@ fn do_redlang(
                     rl.pkg_name = pkg_name_t;
                     rl.script_name = script_name_t;
                     if let Err(e) = super::do_script(&mut rl, &code_t, "normal", false) {
-                        let _ = cq_add_log_w(format!("err in do_other_evt:do_redlang:{}", e).as_str());
+                        let _ =
+                            cq_add_log_w(format!("err in do_other_evt:do_redlang:{}", e).as_str());
                     }
                 });
             }

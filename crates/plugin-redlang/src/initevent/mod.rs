@@ -1,5 +1,5 @@
-use redlang::cqapi::cq_add_log_w;
 use crate::script_manager::get_gobal_init_code;
+use redlang::cqapi::cq_add_log_w;
 
 fn get_script_info(
     script_json: &serde_json::Value,

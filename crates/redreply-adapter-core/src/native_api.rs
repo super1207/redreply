@@ -26,7 +26,11 @@ pub fn action_result(result: AdapterResult<Value>, echo: &Value) -> Value {
 pub fn message_handles(params: &Value) -> AdapterResult<Vec<&str>> {
     let ids = params["message_ids"].as_array().ok_or("消息 ID 需要数组")?;
     ids.iter()
-        .map(|id| id.as_str().filter(|id| !id.is_empty()).ok_or_else(|| "消息 ID 需要非空文本".into()))
+        .map(|id| {
+            id.as_str()
+                .filter(|id| !id.is_empty())
+                .ok_or_else(|| "消息 ID 需要非空文本".into())
+        })
         .collect()
 }
 
@@ -37,13 +41,27 @@ pub struct DeleteBatch {
 
 impl DeleteBatch {
     pub fn record(&mut self, target: Value, result: AdapterResult<Value>) {
-        self.results.push(json!({"target": target, "response": action_result(result, &Value::Null)}));
+        self.results
+            .push(json!({"target": target, "response": action_result(result, &Value::Null)}));
     }
 
     pub fn finish(self, echo: &Value) -> Value {
-        let failed = self.results.iter().filter(|item| item["response"]["retcode"] != 0).count();
-        let (code, message) = if failed == 0 { (0, "") } else { (-1, "部分或全部删除请求失败") };
-        reply(code, &json!({"results": self.results, "failed": failed}), message, echo)
+        let failed = self
+            .results
+            .iter()
+            .filter(|item| item["response"]["retcode"] != 0)
+            .count();
+        let (code, message) = if failed == 0 {
+            (0, "")
+        } else {
+            (-1, "部分或全部删除请求失败")
+        };
+        reply(
+            code,
+            &json!({"results": self.results, "failed": failed}),
+            message,
+            echo,
+        )
     }
 }
 
@@ -137,8 +155,8 @@ pub fn post(
             .filter(|name| !name.is_empty())
             .ok_or("multipart 文件缺少 filename")?;
         let data = file["base64"].as_str().ok_or("multipart 文件缺少 base64")?;
-        let mut part = reqwest::multipart::Part::bytes(STANDARD.decode(data)?)
-            .file_name(filename.to_owned());
+        let mut part =
+            reqwest::multipart::Part::bytes(STANDARD.decode(data)?).file_name(filename.to_owned());
         if let Some(mime) = file["mime_type"].as_str() {
             part = part.mime_str(mime)?;
         }

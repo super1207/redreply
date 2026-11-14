@@ -92,7 +92,9 @@ impl BotConnectTrait for OneBot115Connect {
     async fn disconnect(&mut self) {
         self.is_stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        if let Some(stop_tx) = &self.stop_tx { let _ = stop_tx.send(true).await; }
+        if let Some(stop_tx) = &self.stop_tx {
+            let _ = stop_tx.send(true).await;
+        }
     }
 
     fn get_alive(&self) -> bool {
@@ -103,7 +105,10 @@ impl BotConnectTrait for OneBot115Connect {
         // println!("正在连接ovo：{}",self.url);
 
         // 先清空再填充，避免二次 connect 时重复累积
-        self.platforms.write().unwrap_or_else(|e| e.into_inner()).clear();
+        self.platforms
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .clear();
         {
             let mut to_send = serde_json::json!({
                 "action":"get_bot_list"
@@ -127,7 +132,8 @@ impl BotConnectTrait for OneBot115Connect {
                     .as_str()
                     .ok_or("bot_id not str")?;
                 self.platforms
-                    .write().unwrap_or_else(|e| e.into_inner())
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner())
                     .push((platform.to_string(), bot_id.to_string()));
             }
         }
@@ -135,7 +141,9 @@ impl BotConnectTrait for OneBot115Connect {
         let url = url::Url::parse(&format!("{url_ws}/v1/events"))?;
         use tungstenite::client::IntoClientRequest;
         let mut request = url.as_str().into_client_request()?;
-        let mp = redreply_adapter_core::httpevent::get_params_from_uri(&hyper::Uri::from_str(&self.url)?);
+        let mp = redreply_adapter_core::httpevent::get_params_from_uri(&hyper::Uri::from_str(
+            &self.url,
+        )?);
         if let Some(access_token) = mp.get("access_token") {
             request.headers_mut().insert(
                 "Authorization",
@@ -276,14 +284,13 @@ impl BotConnectTrait for OneBot115Connect {
             {
                 if message.is_array() {
                     redreply_adapter_core::mytool::cq_fix_image_file_in_arr(message);
-                } else if message
-                    .as_str()
-                    .is_some_and(|s| s.contains("[CQ:image"))
-                {
+                } else if message.as_str().is_some_and(|s| s.contains("[CQ:image")) {
                     if let Ok(arr) = redreply_adapter_core::mytool::str_msg_to_arr(message) {
-                        if let Ok(s) = redreply_adapter_core::mytool::json_to_cq_str(&serde_json::json!({
-                            "message": arr
-                        })) {
+                        if let Ok(s) =
+                            redreply_adapter_core::mytool::json_to_cq_str(&serde_json::json!({
+                                "message": arr
+                            }))
+                        {
                             *message = serde_json::json!(s);
                         }
                     }

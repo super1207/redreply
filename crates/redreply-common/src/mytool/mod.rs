@@ -223,7 +223,10 @@ pub fn cq_fix_image_file_in_arr(arr: &mut serde_json::Value) {
         let Some(data) = node.get_mut("data").and_then(|value| value.as_object_mut()) else {
             continue;
         };
-        let Some(file) = data.get("file").and_then(|value| value.as_str()).map(str::to_owned)
+        let Some(file) = data
+            .get("file")
+            .and_then(|value| value.as_str())
+            .map(str::to_owned)
         else {
             continue;
         };

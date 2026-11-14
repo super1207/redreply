@@ -13,14 +13,19 @@ const PAGE: &str = include_str!("../page.html");
 /// 注册配置菜单、页面与读写接口。
 pub fn register(ctx: &PluginContext) -> Result<()> {
     ctx.register_menu(MenuItem::new("config", "配置", "/pgsql/"))?;
-    ctx.route(Method::GET, "/pgsql/", RouteAccess::Write, |_request, _context| async {
-        Ok(bytes_response(
-            StatusCode::OK,
-            "text/html; charset=utf-8",
-            PAGE,
-            None,
-        ))
-    });
+    ctx.route(
+        Method::GET,
+        "/pgsql/",
+        RouteAccess::Write,
+        |_request, _context| async {
+            Ok(bytes_response(
+                StatusCode::OK,
+                "text/html; charset=utf-8",
+                PAGE,
+                None,
+            ))
+        },
+    );
     ctx.route(
         Method::GET,
         "/pgsql/api/config",

@@ -21,8 +21,7 @@ mod service;
 pub mod http;
 
 pub use adapter::{
-    AdapterDeps, AdapterEntry, AdapterFactory, AdapterInfo, AdapterManager, Bot, BotHandle,
-    BotInfo,
+    AdapterDeps, AdapterEntry, AdapterFactory, AdapterInfo, AdapterManager, Bot, BotHandle, BotInfo,
 };
 pub use error::{FrameworkError, Result};
 pub use event::{Event, EventAction, EventBus, EventFilter, PublishReport, SubscriptionId};

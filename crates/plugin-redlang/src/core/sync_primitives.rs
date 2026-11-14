@@ -77,10 +77,7 @@ impl SyncPrimitives {
     }
 
     pub fn try_acquire_lock(&self, pkg_name: &str, lock_name: &str) -> bool {
-        let mut locks = self
-            .package_locks
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut locks = self.package_locks.lock().unwrap_or_else(|e| e.into_inner());
         let package_locks = locks.entry(pkg_name.to_owned()).or_default();
         if package_locks.contains_key(lock_name) {
             false
@@ -91,10 +88,7 @@ impl SyncPrimitives {
     }
 
     pub fn release_lock(&self, pkg_name: &str, lock_name: &str) {
-        let mut locks = self
-            .package_locks
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut locks = self.package_locks.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(package_locks) = locks.get_mut(pkg_name) {
             package_locks.remove(lock_name);
         }
@@ -102,10 +96,7 @@ impl SyncPrimitives {
     }
 
     pub fn release_locks(&self, pkg_name: &str, lock_names: &HashSet<String>) {
-        let mut locks = self
-            .package_locks
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
+        let mut locks = self.package_locks.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(package_locks) = locks.get_mut(pkg_name) {
             for lock_name in lock_names {
                 package_locks.remove(lock_name);
@@ -126,12 +117,7 @@ impl SyncPrimitives {
 
     /// 向同名信号的所有等待者投递值。采用队列语义：同一等待者收到多条信号时按序消费，
     /// 不再相互覆盖；没有等待者时信号丢弃并返回 false。
-    pub fn send_signal(
-        &self,
-        pkg_name: &str,
-        signal_name: &str,
-        value: Arc<RedValueData>,
-    ) -> bool {
+    pub fn send_signal(&self, pkg_name: &str, signal_name: &str, value: Arc<RedValueData>) -> bool {
         let mut signals = self.signals.lock().unwrap_or_else(|e| e.into_inner());
         let mut changed = false;
         for (_, entry_pkg, entry_signal, entry_queue) in &mut *signals {
@@ -173,9 +159,10 @@ impl SyncPrimitives {
         let mut signals = self.signals.lock().unwrap_or_else(|e| e.into_inner());
         loop {
             // 按发送顺序消费队列中的最早一条信号
-            if let Some(pos) = signals.iter().position(|(entry_uid, _, _, queue)| {
-                entry_uid == uid && !queue.is_empty()
-            }) {
+            if let Some(pos) = signals
+                .iter()
+                .position(|(entry_uid, _, _, queue)| entry_uid == uid && !queue.is_empty())
+            {
                 let value = signals[pos].3.remove(0);
                 return SignalWaitResult::Received(value);
             }
@@ -282,8 +269,8 @@ impl Default for SyncPrimitives {
 
 #[cfg(test)]
 mod tests {
-    use super::{SignalWaitResult, SyncPrimitives};
     use super::RedValueData;
+    use super::{SignalWaitResult, SyncPrimitives};
     use std::sync::Arc;
     use std::thread;
     use std::time::Duration;

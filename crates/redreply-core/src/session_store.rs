@@ -61,19 +61,24 @@ impl SessionStore {
         let flag = format!("{self_id}|{group_id}");
         Ok(self
             .message_ids
-            .read().unwrap_or_else(|e| e.into_inner())
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
             .get(&flag)
             .cloned()
             .unwrap_or_default())
     }
 
     pub fn add_input_stream(&self, input_stream: InputStream) {
-        self.input_streams.write().unwrap_or_else(|e| e.into_inner()).push(input_stream);
+        self.input_streams
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(input_stream);
     }
 
     pub fn remove_input_stream(&self, echo: &str) {
         self.input_streams
-            .write().unwrap_or_else(|e| e.into_inner())
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
             .retain(|input_stream| input_stream.echo != echo);
     }
 
@@ -94,7 +99,10 @@ impl SessionStore {
             {
                 if let Some(sender) = &input_stream.tx {
                     // 单个接收端关闭不应中断其余输入流的投递
-                    let _ = sender.lock().unwrap_or_else(|e| e.into_inner()).send(message.to_owned());
+                    let _ = sender
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .send(message.to_owned());
                 }
             } else if input_stream.stream_type != "输入流"
                 && self_id == input_stream.self_id
@@ -106,7 +114,10 @@ impl SessionStore {
                     "消息ID": message_id,
                 });
                 if let Some(sender) = &input_stream.tx {
-                    let _ = sender.lock().unwrap_or_else(|e| e.into_inner()).send(value.to_string());
+                    let _ = sender
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .send(value.to_string());
                 }
             }
         }
@@ -128,7 +139,10 @@ impl SessionStore {
             {
                 if let Some(sender) = &input_stream.tx {
                     // 单个接收端关闭不应中断其余输入流的投递
-                    let _ = sender.lock().unwrap_or_else(|e| e.into_inner()).send(message.to_owned());
+                    let _ = sender
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .send(message.to_owned());
                 }
             }
         }
@@ -143,7 +157,10 @@ impl SessionStore {
         message_id: &str,
         now: u64,
     ) {
-        let mut messages = self.script_related_messages.write().unwrap_or_else(|e| e.into_inner());
+        let mut messages = self
+            .script_related_messages
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         if !source_message_id.is_empty() {
             let key = format!("{pkg_name}|{self_id}|{source_message_id}");
             messages
@@ -160,20 +177,18 @@ impl SessionStore {
 
     pub fn related_message_ids(&self, key: &str) -> Vec<String> {
         self.script_related_messages
-            .read().unwrap_or_else(|e| e.into_inner())
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
             .get(key)
             .map(|value| value.msg_id_vec.clone())
             .unwrap_or_default()
     }
 
-    pub fn add_related_message(
-        &self,
-        key: String,
-        self_id: &str,
-        message_id: String,
-        now: u64,
-    ) {
-        let mut messages = self.script_related_messages.write().unwrap_or_else(|e| e.into_inner());
+    pub fn add_related_message(&self, key: String, self_id: &str, message_id: String, now: u64) {
+        let mut messages = self
+            .script_related_messages
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(value) = messages.get_mut(&key) {
             value.msg_id_vec.push(message_id);
         } else {
@@ -191,7 +206,8 @@ impl SessionStore {
     pub fn remove_package_related_messages(&self, pkg_name: &str) {
         let prefix = format!("{pkg_name}|");
         self.script_related_messages
-            .write().unwrap_or_else(|e| e.into_inner())
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
             .retain(|key, _| !key.starts_with(&prefix));
     }
 
@@ -204,14 +220,13 @@ impl SessionStore {
     }
 
     pub fn history_log(&self) -> VecDeque<String> {
-        self.history_log.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.history_log
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
-    pub async fn add_log_session(
-        &self,
-        uid: String,
-        sender: tokio::sync::mpsc::Sender<String>,
-    ) {
+    pub async fn add_log_session(&self, uid: String, sender: tokio::sync::mpsc::Sender<String>) {
         self.log_sessions.write().await.insert(uid, sender);
     }
 
@@ -268,9 +283,7 @@ impl SessionStore {
         self.python_handler.read().await.as_ref().map(|(g, _)| *g)
     }
 
-    pub async fn python_handler(
-        &self,
-    ) -> Option<tokio::sync::mpsc::Sender<String>> {
+    pub async fn python_handler(&self) -> Option<tokio::sync::mpsc::Sender<String>> {
         self.python_handler
             .read()
             .await
@@ -370,10 +383,7 @@ impl SessionStore {
     }
 
     /// 按发送端剔除对应的会话条目
-    async fn remove_slow_onebot_sessions(
-        &self,
-        stale_sender: &tokio::sync::mpsc::Sender<String>,
-    ) {
+    async fn remove_slow_onebot_sessions(&self, stale_sender: &tokio::sync::mpsc::Sender<String>) {
         let mut to_remove: Vec<String> = Vec::new();
         {
             let sessions = self.onebot_sessions.read().await;

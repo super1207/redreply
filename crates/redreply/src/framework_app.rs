@@ -27,8 +27,7 @@ pub fn start() -> Result<(), String> {
     let webui_dir = app_dir.join("webui");
     let auth = AuthConfig::new(
         redlang::config_manager::read_web_password().map_err(|error| error.to_string())?,
-        redlang::config_manager::read_readonly_web_password()
-            .map_err(|error| error.to_string())?,
+        redlang::config_manager::read_readonly_web_password().map_err(|error| error.to_string())?,
     );
 
     let mut builder = Framework::builder()
@@ -136,13 +135,16 @@ fn register_framework_routes(framework: &Framework, webui_dir: &std::path::Path)
         .http()
         .mount_static("/docs", RouteAccess::Public, docs_assets);
 
-    framework
-        .http()
-        .route(Method::GET, "/watch_log", RouteAccess::Public, |request, context| async move {
+    framework.http().route(
+        Method::GET,
+        "/watch_log",
+        RouteAccess::Public,
+        |request, context| async move {
             redlang::httpserver::legacy_handle(request, context.is_local)
                 .await
                 .map_err(|error| HttpError::internal(error.to_string()))
-        });
+        },
+    );
 }
 
 /// 读取 config.json 的全部连接条目（含停用）。

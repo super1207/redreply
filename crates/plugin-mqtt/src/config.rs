@@ -13,14 +13,19 @@ const PAGE: &str = include_str!("../page.html");
 /// 注册配置菜单、页面与读写接口。
 pub fn register(ctx: &PluginContext) -> Result<()> {
     ctx.register_menu(MenuItem::new("config", "配置", "/mqtt/"))?;
-    ctx.route(Method::GET, "/mqtt/", RouteAccess::Write, |_request, _context| async {
-        Ok(bytes_response(
-            StatusCode::OK,
-            "text/html; charset=utf-8",
-            PAGE,
-            None,
-        ))
-    });
+    ctx.route(
+        Method::GET,
+        "/mqtt/",
+        RouteAccess::Write,
+        |_request, _context| async {
+            Ok(bytes_response(
+                StatusCode::OK,
+                "text/html; charset=utf-8",
+                PAGE,
+                None,
+            ))
+        },
+    );
     ctx.route(
         Method::GET,
         "/mqtt/api/config",
@@ -95,8 +100,10 @@ fn build_config(input: &Value) -> std::result::Result<Value, String> {
     });
     if let Some(username) = optional_str(input, "broker_username") {
         config["broker_username"] = json!(username);
-        config["broker_password"] =
-            json!(input.get("broker_password").and_then(Value::as_str).unwrap_or(""));
+        config["broker_password"] = json!(input
+            .get("broker_password")
+            .and_then(Value::as_str)
+            .unwrap_or(""));
     }
     if let Some(clients) = input.get("remote_clients").and_then(Value::as_array) {
         let list: Vec<String> = clients

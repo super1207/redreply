@@ -1,7 +1,7 @@
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
-use redlang::cqapi::cq_add_log_w;
 use crate::core::RedLang;
+use redlang::cqapi::cq_add_log_w;
 use redlang::runtime;
 
 use super::{get_script_info, set_normal_evt_info};

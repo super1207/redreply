@@ -20,9 +20,8 @@ pub fn get_local_python_uid() -> Result<String, Box<dyn std::error::Error>> {
     #[cfg(windows)]
     use std::os::windows::process::CommandExt;
 
-    let mut command = std::process::Command::new(
-        get_python_cmd_name().map_err(|error| error.to_string())?,
-    );
+    let mut command =
+        std::process::Command::new(get_python_cmd_name().map_err(|error| error.to_string())?);
     #[cfg(windows)]
     let output = command
         .creation_flags(0x08000000)
@@ -197,10 +196,9 @@ red_install("websocket-client")
 import websocket
 conn_fun()
 "#;
-    let password: String = url::form_urlencoded::byte_serialize(
-        config_manager::read_web_password()?.as_bytes(),
-    )
-    .collect();
+    let password: String =
+        url::form_urlencoded::byte_serialize(config_manager::read_web_password()?.as_bytes())
+            .collect();
     let curr_env = std::env::var("PATH").unwrap_or_default();
 
     let new_env = if cfg!(target_os = "windows") {
@@ -245,13 +243,14 @@ conn_fun()
 
             match status {
                 Err(err) => {
-                    let _ =
-                        cq_add_log_w(&format!("python服务启动失败:{err:?}"));
+                    let _ = cq_add_log_w(&format!("python服务启动失败:{err:?}"));
                     backoff_secs = (backoff_secs.saturating_mul(2)).min(60);
                 }
                 Ok(status) => {
-                    let _ =
-                        cq_add_log_w(&format!("python服务退出:{status:?},{}s后重启", backoff_secs));
+                    let _ = cq_add_log_w(&format!(
+                        "python服务退出:{status:?},{}s后重启",
+                        backoff_secs
+                    ));
                 }
             }
             if is_quitting() {

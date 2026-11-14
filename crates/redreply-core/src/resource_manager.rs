@@ -32,9 +32,7 @@ pub fn show_debug_web() -> Result<(), Box<dyn std::error::Error + Send + Sync>> 
     Ok(())
 }
 
-pub use redreply_common::file_lock::{
-    add_file_lock, configure_conn_busy_timeout, del_file_lock,
-};
+pub use redreply_common::file_lock::{add_file_lock, configure_conn_busy_timeout, del_file_lock};
 
 pub fn add_egg_click() -> Result<i64, Box<dyn std::error::Error + Send + Sync>> {
     let sql_file = crate::mytool::path_to_os_str(&(cq_get_app_directory1()? + "reddat.db"));

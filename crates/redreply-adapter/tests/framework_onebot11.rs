@@ -2,7 +2,6 @@
 //! 假 OneBot 服务端 ← 适配器桥 ← framework AdapterManager，验证
 //! 事件进入框架 EventBus、call_api 能到达协议端。
 
-
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -130,7 +129,11 @@ async fn framework_manages_onebot11_adapter_end_to_end() {
         "适配器事件应进入框架 EventBus"
     );
     {
-        let event = last_event.lock().unwrap_or_else(|e| e.into_inner()).clone().unwrap();
+        let event = last_event
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .unwrap();
         assert_eq!(event.platform, "onebot11");
         assert_eq!(event.self_id, "10001");
         assert_eq!(event.post_type, "message");

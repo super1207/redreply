@@ -15,12 +15,12 @@ use crate::cqevent::do_script;
 use crate::httpevent::do_http_event;
 use crate::initevent;
 use crate::script_manager::{set_gobal_filter_code, set_gobal_init_code};
+use crate::status::get_status;
 use redlang::config_manager::{get_ban_pkgs, set_ban_pkg};
 use redlang::cqapi::{cq_add_log_w, cq_get_app_directory1_async};
 use redlang::lifecycle::wait_for_quit;
 use redlang::mytool::read_json_str;
 use redlang::resource_manager::get_version;
-use crate::status::get_status;
 use redlang::runtime;
 
 pub type GenericError = Box<dyn std::error::Error + Send + Sync>;
@@ -793,9 +793,8 @@ pub async fn deal_api(
                 body.extend_from_slice(data);
 
                 if body.len() > content_len {
-                    let _ = cq_add_log_w(
-                        "Client sent more data than content-length header specified.",
-                    );
+                    let _ =
+                        cq_add_log_w("Client sent more data than content-length header specified.");
                     let res =
                         hyper::Response::new(full("Bad request: body size exceeds content-length"));
                     return Ok(res);
@@ -905,38 +904,35 @@ pub async fn deal_api(
         // 避免在异步上下文持有非 Send 的 std MutexGuard
         let real_pkg_dir_for_install = real_pkg_dir.clone();
         let name_for_install = name.to_owned();
-        let installed = tokio::task::spawn_blocking(
-            move || -> Result<bool> {
-                let _save_guard = crate::script_manager::lock_save()?;
-                if real_pkg_dir_for_install.exists() {
-                    return Ok(false);
-                }
-                sevenz_rust2::decompress_file(&tmp_file_path, &real_pkg_dir_for_install)?;
-                let mut new_script = vec![];
-                let current_scripts = crate::core::scripts().read_scripts();
-                for it in current_scripts.as_array().ok_or("read script cache err")? {
-                    let it_name = read_json_str(it, "pkg_name");
-                    if it_name != name_for_install {
-                        new_script.push(it.to_owned());
-                    }
-                }
-                let scripts_str =
-                    std::fs::read_to_string(real_pkg_dir_for_install.join("script.json"))?;
-                let mut scripts: serde_json::Value = serde_json::from_str(&scripts_str)?;
-                for it in scripts.as_array_mut().ok_or("script.json not array")? {
-                    let obj_mut = it.as_object_mut().ok_or("script obj not object")?;
-                    obj_mut.insert(
-                        "pkg_name".to_owned(),
-                        serde_json::json!(name_for_install.as_str()),
-                    );
+        let installed = tokio::task::spawn_blocking(move || -> Result<bool> {
+            let _save_guard = crate::script_manager::lock_save()?;
+            if real_pkg_dir_for_install.exists() {
+                return Ok(false);
+            }
+            sevenz_rust2::decompress_file(&tmp_file_path, &real_pkg_dir_for_install)?;
+            let mut new_script = vec![];
+            let current_scripts = crate::core::scripts().read_scripts();
+            for it in current_scripts.as_array().ok_or("read script cache err")? {
+                let it_name = read_json_str(it, "pkg_name");
+                if it_name != name_for_install {
                     new_script.push(it.to_owned());
                 }
-                crate::core::scripts()
-                    .replace_scripts(serde_json::Value::Array(new_script));
-                crate::core::scripts().add_package_name(name_for_install);
-                Ok(true)
-            },
-        )
+            }
+            let scripts_str =
+                std::fs::read_to_string(real_pkg_dir_for_install.join("script.json"))?;
+            let mut scripts: serde_json::Value = serde_json::from_str(&scripts_str)?;
+            for it in scripts.as_array_mut().ok_or("script.json not array")? {
+                let obj_mut = it.as_object_mut().ok_or("script obj not object")?;
+                obj_mut.insert(
+                    "pkg_name".to_owned(),
+                    serde_json::json!(name_for_install.as_str()),
+                );
+                new_script.push(it.to_owned());
+            }
+            crate::core::scripts().replace_scripts(serde_json::Value::Array(new_script));
+            crate::core::scripts().add_package_name(name_for_install);
+            Ok(true)
+        })
         .await??;
         if !installed {
             let res = hyper::Response::new(full("插件已经存在，无法重复安装"));

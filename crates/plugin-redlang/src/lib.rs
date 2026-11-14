@@ -52,9 +52,7 @@ impl Plugin for RedLangPlugin {
     fn register(&self, ctx: &PluginContext) -> Result<()> {
         // 管理台菜单：进入脚本编辑器与日志
         ctx.register_menu(MenuItem::new("editor", "脚本管理", "/redlang/").order(10))?;
-        ctx.register_menu(
-            MenuItem::new("logs", "运行日志", "/redlang/watchlog.html").order(20),
-        )?;
+        ctx.register_menu(MenuItem::new("logs", "运行日志", "/redlang/watchlog.html").order(20))?;
 
         // 编辑台静态页面：/redlang/ → <数据目录>/webui/
         ctx.mount_static(
@@ -176,7 +174,8 @@ impl Plugin for RedLangPlugin {
             }
         });
 
-        ctx.logger().info("redlang", "RedLang 脚本引擎已接入事件总线");
+        ctx.logger()
+            .info("redlang", "RedLang 脚本引擎已接入事件总线");
         Ok(())
     }
 }

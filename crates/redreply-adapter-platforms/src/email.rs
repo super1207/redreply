@@ -6,13 +6,15 @@ use std::{
 };
 use uuid::Uuid;
 
-use redreply_adapter_core::BotConnectTrait;
-use redreply_adapter_core::mytool::{cq_fix_image_file_in_arr, str_msg_to_arr};
-use redreply_adapter_core::{async_trait, cqapi::cq_add_log, cqapi::cq_add_log_w, mytool::read_json_str};
 use lettre::Tokio1Executor;
 use lettre::{
     message::{MultiPart, SinglePart},
     AsyncSmtpTransport, AsyncTransport,
+};
+use redreply_adapter_core::mytool::{cq_fix_image_file_in_arr, str_msg_to_arr};
+use redreply_adapter_core::BotConnectTrait;
+use redreply_adapter_core::{
+    async_trait, cqapi::cq_add_log, cqapi::cq_add_log_w, mytool::read_json_str,
 };
 
 /// rustls 包装流，用于 imap 连接
@@ -91,7 +93,11 @@ impl EmailConnect {
         if self.is_stop.load(std::sync::atomic::Ordering::Relaxed) {
             return Ok(());
         }
-        let self_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+        let self_id = self
+            .self_id
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_owned();
         let message = fetch.iter().next().ok_or("no message")?;
         let body = message.body().ok_or("no body")?;
         let raw_message_b64 = base64::engine::general_purpose::STANDARD.encode(body);
@@ -217,7 +223,8 @@ impl EmailConnect {
                     // 设置已读标记，现在不标记已读了
                     // imap_session.uid_store(uid.to_string(), "+FLAGS (\\Seen)")?;
                     // 更新 last_uid
-                    let mut last_uid_lock = self.last_uid.write().unwrap_or_else(|e| e.into_inner());
+                    let mut last_uid_lock =
+                        self.last_uid.write().unwrap_or_else(|e| e.into_inner());
                     if uid > *last_uid_lock {
                         *last_uid_lock = uid;
                     }
@@ -318,7 +325,11 @@ impl EmailConnect {
     }
     fn get_json_bool(js: &serde_json::Value, key: &str) -> bool {
         if let Some(j) = js.get(key) {
-            if let Some(value) = j.as_bool() { value } else if let Some(value) = j.as_str() { value == "true" } else {
+            if let Some(value) = j.as_bool() {
+                value
+            } else if let Some(value) = j.as_str() {
+                value == "true"
+            } else {
                 false
             }
         } else {
@@ -404,11 +415,27 @@ impl EmailConnect {
         cq_fix_image_file_in_arr(&mut message_arr);
 
         let user_id = read_json_str(params, "user_id");
-        let bot_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+        let bot_id = self
+            .self_id
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_owned();
 
-        let server = self.smtp_server.read().unwrap_or_else(|e| e.into_inner()).to_owned();
-        let port = self.smtp_port.read().unwrap_or_else(|e| e.into_inner()).to_owned();
-        let password = self.password.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+        let server = self
+            .smtp_server
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_owned();
+        let port = self
+            .smtp_port
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_owned();
+        let password = self
+            .password
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_owned();
 
         let (plain, html) = self.make_email_msg(&message_arr).await?;
         if plain.is_empty() && html.is_empty() {
@@ -436,7 +463,11 @@ impl EmailConnect {
             .header(lettre::message::header::ContentType::TEXT_PLAIN)
             .multipart(multipart)?;
         let creds = lettre::transport::smtp::authentication::Credentials::new(bot_id, password);
-        let use_ssl = self.smtp_ssl.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+        let use_ssl = self
+            .smtp_ssl
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_owned();
         let mailer;
         if use_ssl {
             if port == 465 {

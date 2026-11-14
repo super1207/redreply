@@ -17,10 +17,7 @@ const MAX_DECODED_SAMPLES: usize = 64_000_000;
 
 pub(crate) fn ensure_sample_limit(actual: usize) -> Result<(), Box<dyn std::error::Error>> {
     if actual > MAX_DECODED_SAMPLES {
-        return Err(format!(
-            "解码后的音频样本数超出限制({actual} > {MAX_DECODED_SAMPLES})"
-        )
-        .into());
+        return Err(format!("解码后的音频样本数超出限制({actual} > {MAX_DECODED_SAMPLES})").into());
     }
     Ok(())
 }

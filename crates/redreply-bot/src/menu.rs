@@ -77,10 +77,7 @@ impl MenuRegistry {
 
     /// 全部菜单（按 order、label 排序）。
     pub fn list(&self) -> Vec<MenuItem> {
-        self.items
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.items.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub(crate) fn remove_owner(&self, owner: &str) -> usize {

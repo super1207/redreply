@@ -30,7 +30,9 @@ pub(super) fn register() {
     add_fun(vec!["置顶消息"], |rl, params| {
         let platform = get_platform(rl);
         if !matches!(platform.as_str(), "kook" | "telegram") {
-            return Err(RedLang::make_err("【置顶消息】需要 KOOK 或 Telegram 机器人来源"));
+            return Err(RedLang::make_err(
+                "【置顶消息】需要 KOOK 或 Telegram 机器人来源",
+            ));
         }
         let mut id = rl.get_param_text(params, 0)?;
         if id.is_empty() {
@@ -42,9 +44,14 @@ pub(super) fn register() {
             _ => return Err(RedLang::make_err("置顶参数需为真或假")),
         };
         let silent = rl.get_param_text(params, 2)? == "真";
-        let result = call_platform_api(rl, &platform, "set_msg_pin", serde_json::json!({
-            "message_id":id,"remove":remove,"silent":silent,
-        }))?;
+        let result = call_platform_api(
+            rl,
+            &platform,
+            "set_msg_pin",
+            serde_json::json!({
+                "message_id":id,"remove":remove,"silent":silent,
+            }),
+        )?;
         check_native_command(result, "置顶消息")
     });
     add_fun(vec!["表情回应"], |self_t, params| {
@@ -73,8 +80,16 @@ pub(super) fn register() {
             let result = call_platform_api(self_t, &platform, "set_msg_emoji_like", request)?;
             if let Some(result) = result {
                 if let RedValue::Object(fields) = result.as_ref() {
-                    if fields.get("retcode").and_then(|value| value.expect_text_value().ok()).as_deref() != Some("0") {
-                        let message = fields.get("message").and_then(|value| value.expect_text_value().ok()).unwrap_or_default();
+                    if fields
+                        .get("retcode")
+                        .and_then(|value| value.expect_text_value().ok())
+                        .as_deref()
+                        != Some("0")
+                    {
+                        let message = fields
+                            .get("message")
+                            .and_then(|value| value.expect_text_value().ok())
+                            .unwrap_or_default();
                         let _ = cq_add_log_w(&format!("表情回应失败：{message}"));
                     }
                 }
@@ -134,7 +149,10 @@ pub(super) fn register() {
             None
         };
         let (connection, peer) = if get_platform(self_t) == "telegram" {
-            (self_t.get_param_text(params, 4)?, self_t.get_param_text(params, 5)?)
+            (
+                self_t.get_param_text(params, 4)?,
+                self_t.get_param_text(params, 5)?,
+            )
         } else {
             (String::new(), String::new())
         };
@@ -248,27 +266,44 @@ pub(super) fn register() {
     });
     add_fun(vec!["Telegram下载文件"], |rl, params| {
         let file_id = rl.get_param_text(params, 0)?;
-        let response = call_platform_api(rl, "telegram", "telegram_download", serde_json::json!({"file_id": file_id}))?
-            .ok_or("Telegram 下载未返回响应")?;
+        let response = call_platform_api(
+            rl,
+            "telegram",
+            "telegram_download",
+            serde_json::json!({"file_id": file_id}),
+        )?
+        .ok_or("Telegram 下载未返回响应")?;
         let RedValue::Object(fields) = response.as_ref() else {
             return Err(RedLang::make_err("Telegram 下载返回格式错误"));
         };
-        if fields.get("retcode").and_then(|value| value.expect_text_value().ok()).as_deref() != Some("0") {
-            let message = fields.get("message").and_then(|value| value.expect_text_value().ok())
-                .filter(|message| !message.is_empty()).unwrap_or_else(|| "Telegram 下载失败".to_owned());
+        if fields
+            .get("retcode")
+            .and_then(|value| value.expect_text_value().ok())
+            .as_deref()
+            != Some("0")
+        {
+            let message = fields
+                .get("message")
+                .and_then(|value| value.expect_text_value().ok())
+                .filter(|message| !message.is_empty())
+                .unwrap_or_else(|| "Telegram 下载失败".to_owned());
             return Err(RedLang::make_err(&message));
         }
         let Some(RedValue::Object(data)) = fields.get("data").map(Rc::as_ref) else {
             return Err(RedLang::make_err("Telegram 下载未返回文件"));
         };
-        let base64 = data.get("base64").ok_or("Telegram 下载未返回文件")?.expect_text_value()?;
+        let base64 = data
+            .get("base64")
+            .ok_or("Telegram 下载未返回文件")?
+            .expect_text_value()?;
         Ok(Some(rv_bin(BASE64_CUSTOM_ENGINE.decode(base64)?)))
     });
     add_fun(vec!["KOOK调用"], |rl, params| {
         let method = rl.get_param_text(params, 0)?.to_ascii_uppercase();
         let endpoint = rl.get_param_text(params, 1)?;
         let body = native_args::body(rl, params, 2)?;
-        let mut request = serde_json::json!({"http_method": method, "endpoint": endpoint, "body": body});
+        let mut request =
+            serde_json::json!({"http_method": method, "endpoint": endpoint, "body": body});
         if let Some(files) = native_args::files(rl, params, 3)? {
             request["files"] = files;
         }
@@ -279,11 +314,18 @@ pub(super) fn register() {
         let source = rl.get_param(params, 1)?;
         let volume = rl.get_param_text(params, 2)?;
         let password = rl.get_param_text(params, 3)?;
-        let volume = if volume.is_empty() { 100 } else { volume.parse::<u64>()? };
+        let volume = if volume.is_empty() {
+            100
+        } else {
+            volume.parse::<u64>()?
+        };
         let mut request = serde_json::json!({"channel_id":channel,"volume":volume});
         match source.as_ref() {
             RedValue::Array(items) => {
-                let sources = items.iter().map(|item| item.expect_text_value()).collect::<Result<Vec<_>, _>>()?;
+                let sources = items
+                    .iter()
+                    .map(|item| item.expect_text_value())
+                    .collect::<Result<Vec<_>, _>>()?;
                 request["sources"] = serde_json::json!(sources);
             }
             _ => request["source"] = source.expect_text_value()?.into(),
@@ -301,9 +343,12 @@ pub(super) fn register() {
         if field.is_empty() {
             return call_platform_api(rl, "kook", "kook_voice_status", serde_json::json!({}));
         }
-        let response = call_platform_api_value(rl, "kook", "kook_voice_status", serde_json::json!({}))?;
+        let response =
+            call_platform_api_value(rl, "kook", "kook_voice_status", serde_json::json!({}))?;
         if response["retcode"] != 0 {
-            return Err(RedLang::make_err(response["message"].as_str().unwrap_or("无法查询播放状态")));
+            return Err(RedLang::make_err(
+                response["message"].as_str().unwrap_or("无法查询播放状态"),
+            ));
         }
         let data = &response["data"];
         let value = match field.as_str() {
@@ -312,7 +357,11 @@ pub(super) fn register() {
             "曲目总数" => data["total"].clone(),
             "频道ID" => data["channel_id"].clone(),
             "错误" => data["error"].clone(),
-            _ => return Err(RedLang::make_err("播放状态可查询状态、当前曲目、曲目总数、频道ID或错误")),
+            _ => {
+                return Err(RedLang::make_err(
+                    "播放状态可查询状态、当前曲目、曲目总数、频道ID或错误",
+                ))
+            }
         };
         Ok(Some(json_value_to_red(&value)?))
     });

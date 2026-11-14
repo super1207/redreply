@@ -903,7 +903,8 @@ pub(super) fn register() {
         |self_t, params| {
             let image_width = self_t.get_param_text(params, 0)?.parse::<u32>()?;
             let text = self_t.get_param_text(params, 1)?;
-            let text_size = self_t.get_param_text(params, 2)?.parse::<f32>()?;            let text_color = get_param_text_array(self_t, params, 3)?;
+            let text_size = self_t.get_param_text(params, 2)?.parse::<f32>()?;
+            let text_color = get_param_text_array(self_t, params, 3)?;
             let mut color = Rgba::<u8>([0, 0, 0, 255]);
             color.0[0] = text_color
                 .first()

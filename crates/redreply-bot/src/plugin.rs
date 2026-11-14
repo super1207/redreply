@@ -12,9 +12,7 @@ use crate::adapter::AdapterManager;
 use crate::error::{FrameworkError, Result};
 use crate::event::{Event, EventAction, EventBus, EventFilter, SubscriptionId};
 use crate::framework::FrameworkEnv;
-use crate::http::{
-    HttpError, HttpResponse, HttpService, RouteAccess, RouteContext, StaticAssets,
-};
+use crate::http::{HttpError, HttpResponse, HttpService, RouteAccess, RouteContext, StaticAssets};
 use crate::logger::Logger;
 use crate::menu::{MenuItem, MenuRegistry};
 use crate::service::ServiceRegistry;

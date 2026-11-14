@@ -174,7 +174,7 @@ mod tests {
                 {"role": "user", "content": "算一下"},
                 {"role": "assistant", "content": null, "tool_calls": [
                     {"id": "call_1", "type": "function", "function": {
-"name": "run_command",
+        "name": "run_command",
                         "arguments": "{\"code\":\"print(6*7)\"}"
                     }}
                 ]},

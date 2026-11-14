@@ -43,7 +43,10 @@ impl ScriptStore {
     }
 
     pub fn read_scripts(&self) -> Value {
-        self.scripts.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.scripts
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn replace_scripts(&self, scripts: Value) {
@@ -51,30 +54,45 @@ impl ScriptStore {
     }
 
     pub fn package_names(&self) -> Vec<String> {
-        self.package_names.read().unwrap_or_else(|e| e.into_inner()).iter().cloned().collect()
+        self.package_names
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .iter()
+            .cloned()
+            .collect()
     }
 
     pub fn replace_package_names<I>(&self, package_names: I)
     where
         I: IntoIterator<Item = String>,
     {
-        let mut names = self.package_names.write().unwrap_or_else(|e| e.into_inner());
+        let mut names = self
+            .package_names
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         names.clear();
         names.extend(package_names);
     }
 
     pub fn add_package_name(&self, package_name: impl Into<String>) {
         self.package_names
-            .write().unwrap_or_else(|e| e.into_inner())
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
             .insert(package_name.into());
     }
 
     pub fn remove_package_name(&self, package_name: &str) {
-        self.package_names.write().unwrap_or_else(|e| e.into_inner()).remove(package_name);
+        self.package_names
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(package_name);
     }
 
     pub fn contains_package_name(&self, package_name: &str) -> bool {
-        self.package_names.read().unwrap_or_else(|e| e.into_inner()).contains(package_name)
+        self.package_names
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .contains(package_name)
     }
 
     pub fn set_const(
@@ -98,7 +116,8 @@ impl ScriptStore {
     ) -> Result<Option<RedValueData>, Box<dyn Error>> {
         Ok(self
             .const_map
-            .read().unwrap_or_else(|e| e.into_inner())
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
             .get(pkg_name)
             .and_then(|values| values.get(val_name))
             .cloned())
@@ -108,7 +127,10 @@ impl ScriptStore {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)?
             .as_millis();
-        let mut temp_const_map = self.temp_const_map.write().unwrap_or_else(|e| e.into_inner());
+        let mut temp_const_map = self
+            .temp_const_map
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         let mut expired = Vec::new();
         for (pkg_name, values) in &*temp_const_map {
             for (name, (_, expire_time)) in values {
@@ -133,7 +155,10 @@ impl ScriptStore {
         expire_time: u128,
     ) -> Result<(), Box<dyn Error>> {
         self.clear_expired_temp_consts()?;
-        let mut temp_const_map = self.temp_const_map.write().unwrap_or_else(|e| e.into_inner());
+        let mut temp_const_map = self
+            .temp_const_map
+            .write()
+            .unwrap_or_else(|e| e.into_inner());
         temp_const_map
             .entry(pkg_name.to_owned())
             .or_default()
@@ -146,7 +171,10 @@ impl ScriptStore {
         pkg_name: &str,
         val_name: &str,
     ) -> Result<Option<RedValueData>, Box<dyn Error>> {
-        let temp_const_map = self.temp_const_map.read().unwrap_or_else(|e| e.into_inner());
+        let temp_const_map = self
+            .temp_const_map
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         let Some((value, expire_time)) = temp_const_map
             .get(pkg_name)
             .and_then(|values| values.get(val_name))
@@ -171,7 +199,8 @@ impl ScriptStore {
         command_body: String,
     ) -> Result<(), Box<dyn Error>> {
         self.command_map
-            .write().unwrap_or_else(|e| e.into_inner())
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
             .entry(pkg_name.to_owned())
             .or_default()
             .insert(command_name, command_body);
@@ -180,7 +209,8 @@ impl ScriptStore {
 
     pub fn get_command(&self, pkg_name: &str, command_name: &str) -> Option<String> {
         self.command_map
-            .read().unwrap_or_else(|e| e.into_inner())
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
             .get(pkg_name)
             .and_then(|commands| commands.get(command_name))
             .cloned()
@@ -219,7 +249,10 @@ impl ScriptStore {
         pkg_name: &str,
         command_name: &str,
     ) -> Option<CommandFunction> {
-        let functions = self.command_functions.read().unwrap_or_else(|e| e.into_inner());
+        let functions = self
+            .command_functions
+            .read()
+            .unwrap_or_else(|e| e.into_inner());
         let package_command = format!("{pkg_name}{PACKAGE_COMMAND_MARKER}{command_name}");
         functions
             .get(&package_command)
@@ -233,37 +266,62 @@ impl ScriptStore {
         command_name: String,
         function: CommandFunction,
     ) {
-        self.command_functions.write().unwrap_or_else(|e| e.into_inner()).insert(
-            format!("{pkg_name}{PACKAGE_COMMAND_MARKER}{command_name}"),
-            function,
-        );
+        self.command_functions
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(
+                format!("{pkg_name}{PACKAGE_COMMAND_MARKER}{command_name}"),
+                function,
+            );
     }
 
     pub fn remove_package_memory(&self, pkg_name: &str) {
-        self.const_map.write().unwrap_or_else(|e| e.into_inner()).remove(pkg_name);
-        self.temp_const_map.write().unwrap_or_else(|e| e.into_inner()).remove(pkg_name);
-        self.command_map.write().unwrap_or_else(|e| e.into_inner()).remove(pkg_name);
+        self.const_map
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(pkg_name);
+        self.temp_const_map
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(pkg_name);
+        self.command_map
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
+            .remove(pkg_name);
 
         let prefix = format!("{pkg_name}{PACKAGE_COMMAND_MARKER}");
         self.command_functions
-            .write().unwrap_or_else(|e| e.into_inner())
+            .write()
+            .unwrap_or_else(|e| e.into_inner())
             .retain(|name, _| !name.starts_with(&prefix));
     }
 
     pub fn global_filter_code(&self) -> Option<String> {
-        self.global_filter_code.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.global_filter_code
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn set_global_filter_code(&self, code: String) {
-        *self.global_filter_code.write().unwrap_or_else(|e| e.into_inner()) = Some(code);
+        *self
+            .global_filter_code
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = Some(code);
     }
 
     pub fn global_init_code(&self) -> Option<String> {
-        self.global_init_code.read().unwrap_or_else(|e| e.into_inner()).clone()
+        self.global_init_code
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
     }
 
     pub fn set_global_init_code(&self, code: String) {
-        *self.global_init_code.write().unwrap_or_else(|e| e.into_inner()) = Some(code);
+        *self
+            .global_init_code
+            .write()
+            .unwrap_or_else(|e| e.into_inner()) = Some(code);
     }
 }
 

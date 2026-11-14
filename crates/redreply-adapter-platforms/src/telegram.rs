@@ -1,18 +1,18 @@
-use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::collections::VecDeque;
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use std::time::SystemTime;
 
-use redreply_adapter_core::BotConnectTrait;
+use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD, Engine as _};
 use redreply_adapter_core::cqapi::{cq_add_log, cq_add_log_w};
 use redreply_adapter_core::mytool::{
     cq_fix_image_file_in_arr, cq_params_encode, cq_text_encode, read_json_str, str_msg_to_arr,
 };
+use redreply_adapter_core::BotConnectTrait;
 use redreply_adapter_core::{native_api, AdapterResult};
-use async_trait::async_trait;
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -43,7 +43,10 @@ impl RawMsgId {
         Some(Self {
             msg_id: id.to_string(),
             chat_id: chat_id.as_i64()?.to_string(),
-            business_id: message["business_connection_id"].as_str().unwrap_or(business_id).to_owned(),
+            business_id: message["business_connection_id"]
+                .as_str()
+                .unwrap_or(business_id)
+                .to_owned(),
         })
     }
 }
@@ -122,28 +125,46 @@ impl Topic {
             payload[field] = id.into();
         }
     }
-
 }
 
 const SEND_PERMISSIONS: &[&str] = &[
-    "can_send_messages", "can_send_audios", "can_send_documents", "can_send_photos",
-    "can_send_videos", "can_send_video_notes", "can_send_voice_notes", "can_send_polls",
-    "can_send_other_messages", "can_add_web_page_previews",
+    "can_send_messages",
+    "can_send_audios",
+    "can_send_documents",
+    "can_send_photos",
+    "can_send_videos",
+    "can_send_video_notes",
+    "can_send_voice_notes",
+    "can_send_polls",
+    "can_send_other_messages",
+    "can_add_web_page_previews",
 ];
 const OTHER_PERMISSIONS: &[&str] = &[
-    "can_react_to_messages", "can_edit_tag", "can_change_info", "can_invite_users",
-    "can_pin_messages", "can_manage_topics",
+    "can_react_to_messages",
+    "can_edit_tag",
+    "can_change_info",
+    "can_invite_users",
+    "can_pin_messages",
+    "can_manage_topics",
 ];
 
 fn mute_permissions(chat: &Value, member: &Value, muted: bool) -> Value {
     let defaults = &chat["permissions"];
-    let current = if member["status"] == "restricted" { member } else { defaults };
+    let current = if member["status"] == "restricted" {
+        member
+    } else {
+        defaults
+    };
     let mut permissions = serde_json::Map::new();
     for &field in SEND_PERMISSIONS {
-        permissions.insert(field.to_owned(), Value::Bool(!muted && defaults[field] == true));
+        permissions.insert(
+            field.to_owned(),
+            Value::Bool(!muted && defaults[field] == true),
+        );
     }
     for &field in OTHER_PERMISSIONS {
-        let value = current[field].as_bool()
+        let value = current[field]
+            .as_bool()
             .or_else(|| match field {
                 "can_react_to_messages" => current["can_send_messages"].as_bool(),
                 "can_edit_tag" | "can_manage_topics" => current["can_pin_messages"].as_bool(),
@@ -157,8 +178,12 @@ fn mute_permissions(chat: &Value, member: &Value, muted: bool) -> Value {
 
 fn topic_service_event(message: &Value) -> Option<&'static str> {
     [
-        "forum_topic_created", "forum_topic_edited", "forum_topic_closed",
-        "forum_topic_reopened", "general_forum_topic_hidden", "general_forum_topic_unhidden",
+        "forum_topic_created",
+        "forum_topic_edited",
+        "forum_topic_closed",
+        "forum_topic_reopened",
+        "general_forum_topic_hidden",
+        "general_forum_topic_unhidden",
     ]
     .into_iter()
     .find(|field| message[*field].is_object())
@@ -239,11 +264,21 @@ impl TeleTramConnect {
         let empty = json!({});
         let payload = params.get("body").unwrap_or(&empty);
         let mut reply = self
-            .native_request(method, payload, params.get("files"), Duration::from_secs(25), echo)
+            .native_request(
+                method,
+                payload,
+                params.get("files"),
+                Duration::from_secs(25),
+                echo,
+            )
             .await?;
         let ids = Self::response_message_ids(method, payload, &reply["data"]);
         if !ids.is_empty() {
-            let handles: Vec<_> = ids.iter().cloned().map(|raw| self.message_handle(raw)).collect();
+            let handles: Vec<_> = ids
+                .iter()
+                .cloned()
+                .map(|raw| self.message_handle(raw))
+                .collect();
             let handle = if handles.len() == 1 {
                 handles[0].clone()
             } else {
@@ -257,13 +292,27 @@ impl TeleTramConnect {
 
     fn response_message_ids(method: &str, payload: &Value, result: &Value) -> Vec<RawMsgId> {
         let ids_only = matches!(method, "copyMessage" | "copyMessages" | "forwardMessages");
-        let numeric_target = read_json_str(payload, "chat_id").parse::<i64>().ok().map(Value::from);
-        let business_id = payload["business_connection_id"].as_str().unwrap_or_default();
-        let messages: &[Value] = result.as_array().map_or(std::slice::from_ref(result), Vec::as_slice);
-        messages.iter().filter_map(|message| {
-            let chat_id = if ids_only { numeric_target.as_ref()? } else { &message["chat"]["id"] };
-            RawMsgId::from_message(message, chat_id, business_id)
-        }).collect()
+        let numeric_target = read_json_str(payload, "chat_id")
+            .parse::<i64>()
+            .ok()
+            .map(Value::from);
+        let business_id = payload["business_connection_id"]
+            .as_str()
+            .unwrap_or_default();
+        let messages: &[Value] = result
+            .as_array()
+            .map_or(std::slice::from_ref(result), Vec::as_slice);
+        messages
+            .iter()
+            .filter_map(|message| {
+                let chat_id = if ids_only {
+                    numeric_target.as_ref()?
+                } else {
+                    &message["chat"]["id"]
+                };
+                RawMsgId::from_message(message, chat_id, business_id)
+            })
+            .collect()
     }
 
     async fn download_file(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
@@ -349,10 +398,14 @@ impl TeleTramConnect {
             return Err("Telegram 业务消息不支持此表情操作".into());
         }
         let (method, body) = Self::reaction_request(message, params)?;
-        self.native_request(method, &body, None, Duration::from_secs(25), echo).await
+        self.native_request(method, &body, None, Duration::from_secs(25), echo)
+            .await
     }
 
-    fn reaction_request(message: &RawMsgId, params: &Value) -> AdapterResult<(&'static str, Value)> {
+    fn reaction_request(
+        message: &RawMsgId,
+        params: &Value,
+    ) -> AdapterResult<(&'static str, Value)> {
         let mut body = json!({
             "chat_id":message.chat_id.parse::<i64>()?,
             "message_id":message.msg_id.parse::<i64>()?,
@@ -380,7 +433,9 @@ impl TeleTramConnect {
         } else {
             let decoded = emoji.parse::<u32>().ok().and_then(char::from_u32);
             let mut text = [0; 4];
-            let emoji = decoded.map(|ch| ch.encode_utf8(&mut text) as &str).unwrap_or(emoji);
+            let emoji = decoded
+                .map(|ch| ch.encode_utf8(&mut text) as &str)
+                .unwrap_or(emoji);
             json!([{"type":"emoji","emoji":emoji}])
         };
         if !remove && params["is_big"] == true {
@@ -463,12 +518,20 @@ impl TeleTramConnect {
             }
             if kind == "deleted_business_messages" {
                 if let (Some(business_id), Some(ids)) = (
-                    data["business_connection_id"].as_str(), data["message_ids"].as_array(),
+                    data["business_connection_id"].as_str(),
+                    data["message_ids"].as_array(),
                 ) {
-                    let handles: Vec<_> = ids.iter().filter_map(|id| {
-                        let raw = RawMsgId::from_message(&json!({"message_id":id}), &chat["id"], business_id)?;
-                        Some(self.message_handle(raw))
-                    }).collect();
+                    let handles: Vec<_> = ids
+                        .iter()
+                        .filter_map(|id| {
+                            let raw = RawMsgId::from_message(
+                                &json!({"message_id":id}),
+                                &chat["id"],
+                                business_id,
+                            )?;
+                            Some(self.message_handle(raw))
+                        })
+                        .collect();
                     notice["message_ids"] = json!(handles);
                 }
             }
@@ -624,13 +687,19 @@ impl TeleTramConnect {
         }
         if let Some(file_id) = message_obj["sticker"]["file_id"].as_str() {
             let sticker = json!({"file_id":file_id});
-            ret_cq_msg.push_str(&format!("[CQ:sticker,content={}]", cq_params_encode(&sticker.to_string())));
+            ret_cq_msg.push_str(&format!(
+                "[CQ:sticker,content={}]",
+                cq_params_encode(&sticker.to_string())
+            ));
         }
         for kind in ["voice", "video_note", "animation"] {
             if let Some(file_id) = message_obj[kind]["file_id"].as_str() {
                 // Keep the caption as visible text in the ordinary message as before.
                 let media = json!({"kind":kind,"body":{kind:file_id},"files":{}});
-                ret_cq_msg.push_str(&format!("[CQ:telegram_media,content={}]", cq_params_encode(&media.to_string())));
+                ret_cq_msg.push_str(&format!(
+                    "[CQ:telegram_media,content={}]",
+                    cq_params_encode(&media.to_string())
+                ));
                 break;
             }
         }
@@ -773,16 +842,24 @@ impl TeleTramConnect {
 
     fn album_item(message: &Value) -> Option<Value> {
         let mut item = if let Some(photo) = message["live_photo"].as_object() {
-            let still = photo.get("photo").and_then(Value::as_array)
-                .or_else(|| message["photo"].as_array())?.last()?["file_id"].as_str()?;
+            let still = photo
+                .get("photo")
+                .and_then(Value::as_array)
+                .or_else(|| message["photo"].as_array())?
+                .last()?["file_id"]
+                .as_str()?;
             let video = photo.get("file_id")?.as_str()?;
             json!({"type":"live_photo","media":video,"photo":still})
         } else if let Some(photo) = message["photo"].as_array().and_then(|photos| photos.last()) {
             json!({"type":"photo","media":photo["file_id"].as_str()?})
         } else {
-            ["video", "audio", "document"].into_iter().find_map(|kind| {
-                message[kind]["file_id"].as_str().map(|file| json!({"type":kind,"media":file}))
-            })?
+            ["video", "audio", "document"]
+                .into_iter()
+                .find_map(|kind| {
+                    message[kind]["file_id"]
+                        .as_str()
+                        .map(|file| json!({"type":kind,"media":file}))
+                })?
         };
         for field in ["caption", "caption_entities"] {
             if let Some(value) = message.get(field) {
@@ -827,19 +904,40 @@ impl TeleTramConnect {
     }
 
     fn structured_message_notice(&self, kind: &str, event: &Value) -> Option<Value> {
-        if !matches!(kind, "message" | "channel_post" | "business_message"
-            | "edited_message" | "edited_channel_post" | "edited_business_message") {
+        if !matches!(
+            kind,
+            "message"
+                | "channel_post"
+                | "business_message"
+                | "edited_message"
+                | "edited_channel_post"
+                | "edited_business_message"
+        ) {
             return None;
         }
         let message = &event[kind];
         let service = if kind.starts_with("edited_") {
-            [("location", "edited_location"), ("voice", "edited_voice"),
-             ("video_note", "edited_video_note"), ("animation", "edited_animation")]
-                .into_iter().find_map(|(field, notice)| message[field].is_object().then_some(notice))?
+            [
+                ("location", "edited_location"),
+                ("voice", "edited_voice"),
+                ("video_note", "edited_video_note"),
+                ("animation", "edited_animation"),
+            ]
+            .into_iter()
+            .find_map(|(field, notice)| message[field].is_object().then_some(notice))?
         } else {
-            ["successful_payment", "refunded_payment", "venue", "location", "contact",
-             "voice", "video_note", "animation"].into_iter()
-                .find(|key| message[*key].is_object())?
+            [
+                "successful_payment",
+                "refunded_payment",
+                "venue",
+                "location",
+                "contact",
+                "voice",
+                "video_note",
+                "animation",
+            ]
+            .into_iter()
+            .find(|key| message[*key].is_object())?
         };
         let mut notice = self.notice_for_update(service, message, &event["update_id"]);
         notice["telegram_update_type"] = kind.into();
@@ -866,9 +964,8 @@ impl TeleTramConnect {
             .and_then(|fields| fields.keys().find(|key| key.as_str() != "update_id"));
         let notice = if ordinary_message {
             let message = &event["message"];
-            topic_service_event(message).map(|kind| {
-                self.notice_for_update(kind, message, &event["update_id"])
-            })
+            topic_service_event(message)
+                .map(|kind| self.notice_for_update(kind, message, &event["update_id"]))
         } else {
             update.map(|kind| self.native_update(kind, event))
         };
@@ -879,7 +976,7 @@ impl TeleTramConnect {
             Self::dispatch_notice(notice);
         }
         if let Some(kind) = update {
-            if let Some(notice) = self.structured_message_notice(kind,event) {
+            if let Some(notice) = self.structured_message_notice(kind, event) {
                 Self::dispatch_notice(notice);
             }
             for notice in self.media_notices(kind, event) {
@@ -1057,7 +1154,10 @@ impl TeleTramConnect {
         let lk = self.msg_ids.read().unwrap_or_else(|e| e.into_inner());
         for msg_id_pair in lk.iter().rev() {
             for raw_msg in &msg_id_pair.raw_msg_ids {
-                if raw_msg.business_id.is_empty() && raw_msg.chat_id == chat_id && raw_msg.msg_id == raw_msg_id {
+                if raw_msg.business_id.is_empty()
+                    && raw_msg.chat_id == chat_id
+                    && raw_msg.msg_id == raw_msg_id
+                {
                     return Some(msg_id_pair.msg_id.clone());
                 }
             }
@@ -1097,10 +1197,23 @@ impl TeleTramConnect {
                     to_send_data.push(("text", s, String::new()));
                     last_type = "text";
                 }
-            } else if matches!(tp.as_str(),Some("sticker" | "media_group" | "telegram_checklist" | "telegram_invoice"
-                | "telegram_paid_media" | "telegram_location" | "telegram_venue" | "telegram_contact"
-                | "telegram_media")) {
-                let content = it["data"]["content"].as_str().ok_or("Telegram 媒体消息缺少内容")?;
+            } else if matches!(
+                tp.as_str(),
+                Some(
+                    "sticker"
+                        | "media_group"
+                        | "telegram_checklist"
+                        | "telegram_invoice"
+                        | "telegram_paid_media"
+                        | "telegram_location"
+                        | "telegram_venue"
+                        | "telegram_contact"
+                        | "telegram_media"
+                )
+            ) {
+                let content = it["data"]["content"]
+                    .as_str()
+                    .ok_or("Telegram 媒体消息缺少内容")?;
                 let kind = match tp.as_str() {
                     Some("sticker") => "sticker",
                     Some("media_group") => "media_group",
@@ -1148,7 +1261,9 @@ impl TeleTramConnect {
                 );
                 let telegram_id = self.get_msg_id(&cq_id);
                 quote = match telegram_id.first() {
-                    Some(raw) if raw.chat_id == group_id && raw.business_id == business_id => raw.msg_id.to_owned(),
+                    Some(raw) if raw.chat_id == group_id && raw.business_id == business_id => {
+                        raw.msg_id.to_owned()
+                    }
                     Some(_) => return Err("Telegram 引用消息不属于目标聊天或商务连接".into()),
                     // 查不到内部映射：可能是超出缓存窗口的 telegram 原生 message_id
                     None => cq_id,
@@ -1243,7 +1358,11 @@ impl TeleTramConnect {
     }
     fn message_handle(&self, raw: RawMsgId) -> String {
         let mut ids = self.msg_ids.write().unwrap_or_else(|e| e.into_inner());
-        if let Some(pair) = ids.iter().rev().find(|pair| pair.raw_msg_ids.as_slice() == std::slice::from_ref(&raw)) {
+        if let Some(pair) = ids
+            .iter()
+            .rev()
+            .find(|pair| pair.raw_msg_ids.as_slice() == std::slice::from_ref(&raw))
+        {
             return pair.msg_id.clone();
         }
         Self::store_msg_id(&mut ids, vec![raw])
@@ -1256,7 +1375,10 @@ impl TeleTramConnect {
 
     fn store_msg_id(ids: &mut VecDeque<MsgIdPair>, raw_msg_ids: Vec<RawMsgId>) -> String {
         let msg_id = Uuid::new_v4().to_string();
-        ids.push_back(MsgIdPair { msg_id: msg_id.clone(), raw_msg_ids });
+        ids.push_back(MsgIdPair {
+            msg_id: msg_id.clone(),
+            raw_msg_ids,
+        });
         if ids.len() > 9999 {
             ids.pop_front();
         }
@@ -1305,29 +1427,48 @@ impl TeleTramConnect {
     fn native_media(data: &Value, payload: &mut Value) -> AdapterResult<(&'static str, Value)> {
         let (method, required, fields): (_, _, &[&str]) = match data["kind"].as_str() {
             Some("voice") => ("sendVoice", "voice", &["duration", "caption", "parse_mode"]),
-            Some("video_note") => ("sendVideoNote", "video_note", &["duration", "length", "thumbnail"]),
-            Some("animation") => ("sendAnimation", "animation", &[
-                "duration", "width", "height", "thumbnail", "caption", "parse_mode",
-                "show_caption_above_media", "has_spoiler",
-            ]),
+            Some("video_note") => (
+                "sendVideoNote",
+                "video_note",
+                &["duration", "length", "thumbnail"],
+            ),
+            Some("animation") => (
+                "sendAnimation",
+                "animation",
+                &[
+                    "duration",
+                    "width",
+                    "height",
+                    "thumbnail",
+                    "caption",
+                    "parse_mode",
+                    "show_caption_above_media",
+                    "has_spoiler",
+                ],
+            ),
             _ => return Err("Telegram 媒体消息类型无效".into()),
         };
         let body = &data["body"];
-        let source = body[required].as_str().filter(|source| !source.is_empty())
+        let source = body[required]
+            .as_str()
+            .filter(|source| !source.is_empty())
             .ok_or("Telegram 媒体消息缺少来源")?;
         let uploads = native_api::object(&data["files"])?;
         if let Some(part) = source.strip_prefix("attach://") {
             if part != "media" || !uploads.contains_key("media") {
                 return Err("Telegram 媒体消息缺少上传文件".into());
             }
-        } else if uploads.contains_key("media") || (required == "video_note" && source.contains("://")) {
+        } else if uploads.contains_key("media")
+            || (required == "video_note" && source.contains("://"))
+        {
             return Err("Telegram 媒体消息来源无效".into());
         }
         if uploads.keys().any(|key| key != "media" && key != "preview")
             || uploads.contains_key("preview") != body.get("thumbnail").is_some()
-            || (uploads.contains_key("preview") &&
-                (!uploads.contains_key("media") || !fields.contains(&"thumbnail") ||
-                 body["thumbnail"] != "attach://preview"))
+            || (uploads.contains_key("preview")
+                && (!uploads.contains_key("media")
+                    || !fields.contains(&"thumbnail")
+                    || body["thumbnail"] != "attach://preview"))
         {
             return Err("Telegram 媒体消息的附件无效".into());
         }
@@ -1357,16 +1498,30 @@ impl TeleTramConnect {
         }
         let mut msg_ids = Vec::with_capacity(to_send_data.len());
         let last = to_send_data.len().saturating_sub(1);
-        if reply_markup.is_some() && to_send_data.last().is_some_and(|part| part.0 == "media_group") {
+        if reply_markup.is_some()
+            && to_send_data
+                .last()
+                .is_some_and(|part| part.0 == "media_group")
+        {
             return Err("Telegram 媒体组不支持附加键盘".into());
         }
-        if business_id.is_empty() && to_send_data.iter().any(|part| part.0 == "telegram_checklist") {
+        if business_id.is_empty()
+            && to_send_data
+                .iter()
+                .any(|part| part.0 == "telegram_checklist")
+        {
             return Err("Telegram 清单需要商务连接".into());
         }
-        if !business_id.is_empty() && reply_markup.is_some_and(|markup| !markup["inline_keyboard"].is_array()) {
+        if !business_id.is_empty()
+            && reply_markup.is_some_and(|markup| !markup["inline_keyboard"].is_array())
+        {
             return Err("Telegram 商务消息的键盘需要使用行内模式".into());
         }
-        if *topic != Topic::default() && to_send_data.iter().any(|part| part.0 == "telegram_checklist") {
+        if *topic != Topic::default()
+            && to_send_data
+                .iter()
+                .any(|part| part.0 == "telegram_checklist")
+        {
             return Err("Telegram 商务清单没有话题参数".into());
         }
         if !business_id.is_empty() && to_send_data.iter().any(|part| part.0 == "telegram_invoice") {
@@ -1374,9 +1529,16 @@ impl TeleTramConnect {
         }
         if let Some(markup) = reply_markup {
             let first = &markup["inline_keyboard"][0][0]["pay"];
-            let pays = markup["inline_keyboard"].as_array().into_iter().flatten()
-                .flat_map(|row| row.as_array().into_iter().flatten()).filter(|button| button["pay"] == true).count();
-            let invoice = to_send_data.last().is_some_and(|part| part.0 == "telegram_invoice");
+            let pays = markup["inline_keyboard"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .flat_map(|row| row.as_array().into_iter().flatten())
+                .filter(|button| button["pay"] == true)
+                .count();
+            let invoice = to_send_data
+                .last()
+                .is_some_and(|part| part.0 == "telegram_invoice");
             if (invoice && (first != &Value::Bool(true) || pays != 1)) || (!invoice && pays != 0) {
                 return Err("自定义支付键盘只能用于发票，且首个按钮必须是唯一的支付按钮".into());
             }
@@ -1405,7 +1567,10 @@ impl TeleTramConnect {
                             payload["emoji"] = emoji.into();
                         }
                     } else {
-                        payload["sticker"] = sticker["file_id"].as_str().ok_or("Telegram 贴纸缺少 file_id 或上传文件")?.into();
+                        payload["sticker"] = sticker["file_id"]
+                            .as_str()
+                            .ok_or("Telegram 贴纸缺少 file_id 或上传文件")?
+                            .into();
                     }
                     "sendSticker"
                 }
@@ -1424,10 +1589,29 @@ impl TeleTramConnect {
                 }
                 "telegram_invoice" => {
                     let invoice: Value = serde_json::from_str(&message)?;
-                    for field in ["title","description","payload","provider_token","currency","prices","max_tip_amount",
-                        "suggested_tip_amounts","provider_data","photo_url","photo_size","photo_width","photo_height",
-                        "need_name","need_phone_number","need_email","need_shipping_address","send_phone_number_to_provider",
-                        "send_email_to_provider","is_flexible","start_parameter"] {
+                    for field in [
+                        "title",
+                        "description",
+                        "payload",
+                        "provider_token",
+                        "currency",
+                        "prices",
+                        "max_tip_amount",
+                        "suggested_tip_amounts",
+                        "provider_data",
+                        "photo_url",
+                        "photo_size",
+                        "photo_width",
+                        "photo_height",
+                        "need_name",
+                        "need_phone_number",
+                        "need_email",
+                        "need_shipping_address",
+                        "send_phone_number_to_provider",
+                        "send_email_to_provider",
+                        "is_flexible",
+                        "start_parameter",
+                    ] {
                         if let Some(value) = invoice.get(field) {
                             payload[field] = value.clone();
                         }
@@ -1436,7 +1620,13 @@ impl TeleTramConnect {
                 }
                 "telegram_paid_media" => {
                     let data: Value = serde_json::from_str(&message)?;
-                    for field in ["star_count","media","payload","caption","show_caption_above_media"] {
+                    for field in [
+                        "star_count",
+                        "media",
+                        "payload",
+                        "caption",
+                        "show_caption_above_media",
+                    ] {
                         if let Some(value) = data["body"].get(field) {
                             payload[field] = value.clone();
                         }
@@ -1452,10 +1642,35 @@ impl TeleTramConnect {
                 }
                 "telegram_location" | "telegram_venue" | "telegram_contact" => {
                     let details: Value = serde_json::from_str(&message)?;
-                    let (method,fields): (&str,&[&str]) = match kind {
-                        "telegram_location" => ("sendLocation",&["latitude","longitude","horizontal_accuracy","live_period","heading","proximity_alert_radius"]),
-                        "telegram_venue" => ("sendVenue",&["latitude","longitude","title","address","foursquare_id","foursquare_type","google_place_id","google_place_type"]),
-                        _ => ("sendContact",&["phone_number","first_name","last_name","vcard"]),
+                    let (method, fields): (&str, &[&str]) = match kind {
+                        "telegram_location" => (
+                            "sendLocation",
+                            &[
+                                "latitude",
+                                "longitude",
+                                "horizontal_accuracy",
+                                "live_period",
+                                "heading",
+                                "proximity_alert_radius",
+                            ],
+                        ),
+                        "telegram_venue" => (
+                            "sendVenue",
+                            &[
+                                "latitude",
+                                "longitude",
+                                "title",
+                                "address",
+                                "foursquare_id",
+                                "foursquare_type",
+                                "google_place_id",
+                                "google_place_type",
+                            ],
+                        ),
+                        _ => (
+                            "sendContact",
+                            &["phone_number", "first_name", "last_name", "vcard"],
+                        ),
                     };
                     for field in fields {
                         if let Some(value) = details.get(*field) {
@@ -1464,7 +1679,8 @@ impl TeleTramConnect {
                     }
                     method
                 }
-                "url_image" | "file_image" | "url_record" | "file_record" | "document" | "video" => {
+                "url_image" | "file_image" | "url_record" | "file_record" | "document"
+                | "video" => {
                     let (method, field, filename) = match kind {
                         "url_image" | "file_image" => ("sendPhoto", "photo", "redpic"),
                         "url_record" | "file_record" => ("sendAudio", "audio", "语音"),
@@ -1474,12 +1690,18 @@ impl TeleTramConnect {
                     if kind == "file_image" || kind == "file_record" {
                         files[field] = json!({"filename":filename,"base64":message});
                     } else if let Some(base64) = message.strip_prefix("base64://") {
-                        let name = if caption.is_empty() { filename } else { &caption };
+                        let name = if caption.is_empty() {
+                            filename
+                        } else {
+                            &caption
+                        };
                         files[field] = json!({"filename":name,"base64":base64});
                     } else {
                         payload[field] = message.into();
                     }
-                    if matches!(kind, "url_image" | "file_image" | "url_record") && !caption.is_empty() {
+                    if matches!(kind, "url_image" | "file_image" | "url_record")
+                        && !caption.is_empty()
+                    {
                         payload["caption"] = caption.into();
                     }
                     method
@@ -1493,7 +1715,8 @@ impl TeleTramConnect {
                     let encoder = base64::engine::general_purpose::STANDARD;
                     if !image.is_empty() {
                         let bytes = client.get(image).send().await?.bytes().await?;
-                        files["thumbnail"] = json!({"filename":"image.jpg","base64":encoder.encode(bytes)});
+                        files["thumbnail"] =
+                            json!({"filename":"image.jpg","base64":encoder.encode(bytes)});
                     }
                     let bytes = client.get(audio).send().await?.bytes().await?;
                     let filename = if title.is_empty() { "audio" } else { &title };
@@ -1512,7 +1735,13 @@ impl TeleTramConnect {
                 _ => return Err(format!("Telegram 不支持的消息类型：{kind}").into()),
             };
             let reply = self
-                .native_request(method, &payload, Some(&files), Duration::from_secs(60), &Value::Null)
+                .native_request(
+                    method,
+                    &payload,
+                    Some(&files),
+                    Duration::from_secs(60),
+                    &Value::Null,
+                )
                 .await?;
             if reply["retcode"] != 0 {
                 return Err(format!("Telegram {method}: {}", reply["message"]).into());
@@ -1591,7 +1820,9 @@ impl TeleTramConnect {
         echo: &serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let user_id = read_json_str(params, "user_id");
-        let business_id = params["business_connection_id"].as_str().unwrap_or_default();
+        let business_id = params["business_connection_id"]
+            .as_str()
+            .unwrap_or_default();
         let mut message_arr: serde_json::Value;
         let message_rst = params.get("message").ok_or("message not found")?;
 
@@ -1641,7 +1872,12 @@ impl TeleTramConnect {
         let id = read_json_str(params, "message_id");
         let messages = self.get_msg_id(&id);
         if messages.is_empty() {
-            return Ok(native_api::reply(1404, &Value::Null, "Telegram 找不到 RedReply 消息 ID", echo));
+            return Ok(native_api::reply(
+                1404,
+                &Value::Null,
+                "Telegram 找不到 RedReply 消息 ID",
+                echo,
+            ));
         }
         if let [message] = messages.as_slice() {
             if message.business_id.is_empty() {
@@ -1664,7 +1900,8 @@ impl TeleTramConnect {
                 missing.push(id.to_owned());
             }
             for raw in messages {
-                by_chat.entry((raw.chat_id.parse::<i64>()?, raw.business_id))
+                by_chat
+                    .entry((raw.chat_id.parse::<i64>()?, raw.business_id))
                     .or_default()
                     .insert(raw.msg_id.parse::<i64>()?);
             }
@@ -1676,7 +1913,10 @@ impl TeleTramConnect {
         let (groups, missing) = self.message_batches(ids)?;
         let mut batch = native_api::DeleteBatch::default();
         for id in missing {
-            batch.record(json!({"message_id":id}), Err("Telegram 找不到 RedReply 消息 ID".into()));
+            batch.record(
+                json!({"message_id":id}),
+                Err("Telegram 找不到 RedReply 消息 ID".into()),
+            );
         }
         for ((chat_id, business_id), ids) in groups {
             let ids: Vec<_> = ids.into_iter().collect();
@@ -1689,7 +1929,9 @@ impl TeleTramConnect {
                     body["business_connection_id"] = business_id.as_str().into();
                     "deleteBusinessMessages"
                 };
-                let result = self.native_request(method, &body, None, Duration::from_secs(25), echo).await;
+                let result = self
+                    .native_request(method, &body, None, Duration::from_secs(25), echo)
+                    .await;
                 batch.record(json!({"chat_id":chat_id,"message_ids":chunk}), result);
             }
         }
@@ -1719,16 +1961,27 @@ impl TeleTramConnect {
         body.insert("chat_id".to_owned(), raw.chat_id.parse::<i64>()?.into());
         body.insert("message_id".to_owned(), raw.msg_id.parse::<i64>()?.into());
         if !raw.business_id.is_empty() {
-            body.insert("business_connection_id".to_owned(), raw.business_id.as_str().into());
+            body.insert(
+                "business_connection_id".to_owned(),
+                raw.business_id.as_str().into(),
+            );
         } else {
             body.remove("business_connection_id");
         }
-        self.native_request(method, &Value::Object(body), params.get("files"), Duration::from_secs(25), echo).await
+        self.native_request(
+            method,
+            &Value::Object(body),
+            params.get("files"),
+            Duration::from_secs(25),
+            echo,
+        )
+        .await
     }
 
     async fn forward_messages(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
         let (method, body) = self.forward_request(params)?;
-        self.call_native_api(&json!({"method":method,"body":body}), echo).await
+        self.call_native_api(&json!({"method":method,"body":body}), echo)
+            .await
     }
 
     fn forward_request(&self, params: &Value) -> AdapterResult<(&'static str, Value)> {
@@ -1757,10 +2010,18 @@ impl TeleTramConnect {
         let copy = params["copy"] == true;
         let method = if let Some(id) = ids.first().filter(|_| ids.len() == 1) {
             body["message_id"] = (*id).into();
-            if copy { "copyMessage" } else { "forwardMessage" }
+            if copy {
+                "copyMessage"
+            } else {
+                "forwardMessage"
+            }
         } else {
             body["message_ids"] = json!(ids);
-            if copy { "copyMessages" } else { "forwardMessages" }
+            if copy {
+                "copyMessages"
+            } else {
+                "forwardMessages"
+            }
         };
         Ok((method, body))
     }
@@ -1780,12 +2041,17 @@ impl TeleTramConnect {
         let id = read_json_str(params, "message_id");
         let messages = self.get_msg_id(&id);
         let message = messages.last().ok_or("Telegram 找不到 RedReply 消息 ID")?;
-        let method = if params["remove"] == true { "unpinChatMessage" } else { "pinChatMessage" };
+        let method = if params["remove"] == true {
+            "unpinChatMessage"
+        } else {
+            "pinChatMessage"
+        };
         let mut body = Self::message_target(message)?;
         if params["remove"] != true && params["silent"] == true {
             body["disable_notification"] = true.into();
         }
-        self.native_request(method, &body, None, Duration::from_secs(25), echo).await
+        self.native_request(method, &body, None, Duration::from_secs(25), echo)
+            .await
     }
 
     async fn read_business_message(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
@@ -1796,13 +2062,22 @@ impl TeleTramConnect {
         if message.business_id.is_empty() {
             return Err("标记商务消息已读需要商务连接".into());
         }
-        self.native_request("readBusinessMessage", &Self::message_target(message)?, None, Duration::from_secs(25), echo).await
+        self.native_request(
+            "readBusinessMessage",
+            &Self::message_target(message)?,
+            None,
+            Duration::from_secs(25),
+            echo,
+        )
+        .await
     }
 
     async fn set_group_ban(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
         let chat_id = read_json_str(params, "group_id").parse::<i64>()?;
         let user_id = read_json_str(params, "user_id").parse::<i64>()?;
-        let duration = params["duration"].as_u64().ok_or("Telegram 禁言时间需要非负整数")?;
+        let duration = params["duration"]
+            .as_u64()
+            .ok_or("Telegram 禁言时间需要非负整数")?;
         if duration != 0 && !(30..=366 * 86400).contains(&duration) {
             return Err("Telegram 定时禁言支持 30 秒至 366 天，0 表示解除禁言".into());
         }
@@ -1842,7 +2117,8 @@ impl TeleTramConnect {
             // Measure from the write, after fetching the current permissions.
             body["until_date"] = (chrono::Utc::now().timestamp() + duration as i64).into();
         }
-        self.native_request("restrictChatMember", &body, None, timeout, echo).await
+        self.native_request("restrictChatMember", &body, None, timeout, echo)
+            .await
     }
 
     async fn chat_info(&self, action: &str, params: &Value, echo: &Value) -> AdapterResult<Value> {
@@ -2042,12 +2318,16 @@ impl BotConnectTrait for TeleTramConnect {
                     if !message.business_id.is_empty() {
                         body["business_connection_id"] = message.business_id.as_str().into();
                     }
-                    self.native_request("stopPoll", &body, None, Duration::from_secs(25), echo).await
-                }.await;
+                    self.native_request("stopPoll", &body, None, Duration::from_secs(25), echo)
+                        .await
+                }
+                .await;
                 native_api::action_result(result, echo)
             }
             "edit_msg" => native_api::action_result(self.edit_message(params, echo).await, echo),
-            "forward_msgs" => native_api::action_result(self.forward_messages(params, echo).await, echo),
+            "forward_msgs" => {
+                native_api::action_result(self.forward_messages(params, echo).await, echo)
+            }
             "delete_msg" => self.deal_ob_delete_msg(params, echo).await?,
             "get_login_info" => self.deal_ob_get_login_info(params, echo).await?,
             // "get_stranger_info" => {
@@ -2056,9 +2336,7 @@ impl BotConnectTrait for TeleTramConnect {
             "get_group_info" | "get_group_member_info" => {
                 native_api::action_result(self.chat_info(action, params, echo).await, echo)
             }
-            "set_msg_pin" => {
-                native_api::action_result(self.pin_message(params, echo).await, echo)
-            }
+            "set_msg_pin" => native_api::action_result(self.pin_message(params, echo).await, echo),
             "set_group_ban" => {
                 native_api::action_result(self.set_group_ban(params, echo).await, echo)
             }
@@ -2072,7 +2350,8 @@ impl BotConnectTrait for TeleTramConnect {
                     ("leaveChat", json!({"chat_id":chat_id}))
                 };
                 native_api::action_result(
-                    self.native_request(method, &body, None, Duration::from_secs(25), echo).await,
+                    self.native_request(method, &body, None, Duration::from_secs(25), echo)
+                        .await,
                     echo,
                 )
             }
@@ -2154,19 +2433,31 @@ mod native_tests {
     #[test]
     fn custom_reactions_keep_ids_and_moderation_uses_actor_chat() {
         let raw = RawMsgId::from_message(&json!({"message_id":9}), &json!(-100), "").unwrap();
-        let (method, body) = TeleTramConnect::reaction_request(&raw, &json!({
-            "custom":true,"emoji":"5421234567890123456","is_big":true
-        })).unwrap();
+        let (method, body) = TeleTramConnect::reaction_request(
+            &raw,
+            &json!({
+                "custom":true,"emoji":"5421234567890123456","is_big":true
+            }),
+        )
+        .unwrap();
         assert_eq!(method, "setMessageReaction");
-        assert_eq!(body["reaction"][0], json!({
-            "type":"custom_emoji","custom_emoji_id":"5421234567890123456"
-        }));
+        assert_eq!(
+            body["reaction"][0],
+            json!({
+                "type":"custom_emoji","custom_emoji_id":"5421234567890123456"
+            })
+        );
         assert_eq!(body["is_big"], true);
-        let (_, removed) = TeleTramConnect::reaction_request(&raw, &json!({"remove":true})).unwrap();
+        let (_, removed) =
+            TeleTramConnect::reaction_request(&raw, &json!({"remove":true})).unwrap();
         assert_eq!(removed["reaction"], json!([]));
-        let (method, body) = TeleTramConnect::reaction_request(&raw, &json!({
-            "remove":true,"actor_chat_id":"-1"
-        })).unwrap();
+        let (method, body) = TeleTramConnect::reaction_request(
+            &raw,
+            &json!({
+                "remove":true,"actor_chat_id":"-1"
+            }),
+        )
+        .unwrap();
         assert_eq!(method, "deleteMessageReaction");
         assert_eq!(body["actor_chat_id"], -1);
 
@@ -2178,7 +2469,10 @@ mod native_tests {
         let notice = bot.native_update("message_reaction", &event);
         assert!(notice.get("user_id").is_none());
         assert_eq!(notice["actor_chat_id"], "-1");
-        assert_eq!(bot.get_msg_id(notice["message_id"].as_str().unwrap())[0], raw);
+        assert_eq!(
+            bot.get_msg_id(notice["message_id"].as_str().unwrap())[0],
+            raw
+        );
     }
 
     #[tokio::test]
@@ -2208,17 +2502,25 @@ mod native_tests {
         assert_eq!(notice[0]["telegram"]["sticker"]["file_id"], "sticker-id");
         let cq = bot.to_cq_msg(&event).await.unwrap();
         let segments = str_msg_to_arr(&json!(cq)).unwrap();
-        let (parts, _) = bot.make_telegram_msg(&segments, "-100", true, "").await.unwrap();
+        let (parts, _) = bot
+            .make_telegram_msg(&segments, "-100", true, "")
+            .await
+            .unwrap();
         assert_eq!(parts[0].0, "sticker");
-        assert_eq!(serde_json::from_str::<Value>(&parts[0].1).unwrap()["file_id"], "sticker-id");
+        assert_eq!(
+            serde_json::from_str::<Value>(&parts[0].1).unwrap()["file_id"],
+            "sticker-id"
+        );
     }
 
     #[test]
     fn forwarding_sorts_unique_ids_and_respects_chat_boundaries() {
         let bot = TeleTramConnect::build("");
-        let handle = |chat, id| bot.message_handle(RawMsgId::from_message(
-            &json!({"message_id":id}), &json!(chat), "",
-        ).unwrap());
+        let handle = |chat, id| {
+            bot.message_handle(
+                RawMsgId::from_message(&json!({"message_id":id}), &json!(chat), "").unwrap(),
+            )
+        };
         let first = handle(-100, 9);
         let second = handle(-100, 3);
         let other = handle(-200, 3);
@@ -2228,19 +2530,28 @@ mod native_tests {
         });
         let (method, body) = bot.forward_request(&input).unwrap();
         assert_eq!(method, "copyMessages");
-        assert_eq!(body, json!({
-            "chat_id":-400,"from_chat_id":-100,"message_ids":[3,9],
-            "disable_notification":true,"message_thread_id":8
-        }));
-        assert!(bot.forward_request(&json!({
-            "message_ids":[first,other],"target_id":"-400"
-        })).is_err());
-        assert!(bot.forward_request(&json!({
-            "message_ids":[first,"missing"],"target_id":"-400"
-        })).is_err());
+        assert_eq!(
+            body,
+            json!({
+                "chat_id":-400,"from_chat_id":-100,"message_ids":[3,9],
+                "disable_notification":true,"message_thread_id":8
+            })
+        );
+        assert!(bot
+            .forward_request(&json!({
+                "message_ids":[first,other],"target_id":"-400"
+            }))
+            .is_err());
+        assert!(bot
+            .forward_request(&json!({
+                "message_ids":[first,"missing"],"target_id":"-400"
+            }))
+            .is_err());
 
         let returned = TeleTramConnect::response_message_ids(
-            method, &body, &json!([{"message_id":11},{"message_id":12}]),
+            method,
+            &body,
+            &json!([{"message_id":11},{"message_id":12}]),
         );
         assert_eq!(returned[0].chat_id, "-400");
         assert_eq!(returned[1].msg_id, "12");
@@ -2257,23 +2568,35 @@ mod native_tests {
         let event = json!({"update_id":1,"business_message":message});
         let original = bot.native_update("business_message", &event);
         let forwarded = bot.forwarded_notice("business_message", &event).unwrap();
-        let edited = bot.native_update("edited_business_message", &json!({
-            "edited_business_message":message
-        }));
-        let deleted = bot.native_update("deleted_business_messages", &json!({
-            "deleted_business_messages":{
-                "chat":{"id":12,"type":"private"},
-                "business_connection_id":"business-1","message_ids":[8]
-            }
-        }));
+        let edited = bot.native_update(
+            "edited_business_message",
+            &json!({
+                "edited_business_message":message
+            }),
+        );
+        let deleted = bot.native_update(
+            "deleted_business_messages",
+            &json!({
+                "deleted_business_messages":{
+                    "chat":{"id":12,"type":"private"},
+                    "business_connection_id":"business-1","message_ids":[8]
+                }
+            }),
+        );
         assert_eq!(original["message_id"], forwarded["message_id"]);
         assert_eq!(original["message_id"], edited["message_id"]);
         assert_eq!(original["message_id"], deleted["message_ids"][0]);
-        let regular = bot.message_handle(RawMsgId::from_message(&json!({"message_id":8}), &json!(12), "").unwrap());
+        let regular = bot.message_handle(
+            RawMsgId::from_message(&json!({"message_id":8}), &json!(12), "").unwrap(),
+        );
         assert_ne!(original["message_id"], regular);
-        let (groups, missing) = bot.message_batches(&[
-            original["message_id"].as_str().unwrap(), &regular, "missing",
-        ]).unwrap();
+        let (groups, missing) = bot
+            .message_batches(&[
+                original["message_id"].as_str().unwrap(),
+                &regular,
+                "missing",
+            ])
+            .unwrap();
         assert_eq!(groups.len(), 2);
         assert_eq!(missing, ["missing"]);
     }
@@ -2302,7 +2625,8 @@ mod native_tests {
             "can_send_messages":true,"can_send_photos":false,"can_invite_users":true,
             "can_pin_messages":false
         }});
-        let member = json!({"status":"restricted","can_react_to_messages":true,"can_invite_users":false});
+        let member =
+            json!({"status":"restricted","can_react_to_messages":true,"can_invite_users":false});
         let muted = mute_permissions(&chat, &member, true);
         assert!(SEND_PERMISSIONS.iter().all(|field| muted[*field] == false));
         assert_eq!(muted["can_react_to_messages"], true);
@@ -2349,11 +2673,15 @@ mod native_tests {
     fn keyboard_payload_keeps_native_topic_and_reply() {
         let keyboard = json!({"inline_keyboard":[[{"text":"点选","callback_data":"001"}]]});
         let topic = Topic::from_message(&json!({"message_thread_id":5,"is_topic_message":true}));
-        let payload = TeleTramConnect::message_payload("-100", &topic, Some("8"), Some(&keyboard)).unwrap();
-        assert_eq!(payload, json!({
-            "chat_id":-100, "message_thread_id":5,
-            "reply_parameters":{"message_id":8}, "reply_markup":keyboard
-        }));
+        let payload =
+            TeleTramConnect::message_payload("-100", &topic, Some("8"), Some(&keyboard)).unwrap();
+        assert_eq!(
+            payload,
+            json!({
+                "chat_id":-100, "message_thread_id":5,
+                "reply_parameters":{"message_id":8}, "reply_markup":keyboard
+            })
+        );
     }
 
     #[test]
@@ -2383,19 +2711,27 @@ mod native_tests {
             {"type":"file","data":{"file":"base64://YWJj","name":"sample.txt"}},
             {"type":"video","data":{"file":"https://example.org/test.mp4"}}
         ]);
-        let (parts, quote) = bot.make_telegram_msg(&message, "-200", true, "").await.unwrap();
+        let (parts, quote) = bot
+            .make_telegram_msg(&message, "-200", true, "")
+            .await
+            .unwrap();
         assert_eq!(quote, "9");
         assert_eq!(parts[0].0, "document");
         assert_eq!(parts[0].2, "sample.txt");
         assert_eq!(parts[1].0, "video");
-        assert!(bot.make_telegram_msg(&message, "-100", true, "").await.is_err());
+        assert!(bot
+            .make_telegram_msg(&message, "-100", true, "")
+            .await
+            .is_err());
     }
 
     #[tokio::test]
     async fn business_checklists_and_quotes_keep_their_connection() {
         let bot = TeleTramConnect::build("");
         let raw = RawMsgId {
-            msg_id: "5".into(), chat_id: "22".into(), business_id: "business-a".into(),
+            msg_id: "5".into(),
+            chat_id: "22".into(),
+            business_id: "business-a".into(),
         };
         let id = bot.message_handle(raw.clone());
         let list = json!({"title":"订单","tasks":[{"id":1,"text":"发货"}]});
@@ -2403,17 +2739,29 @@ mod native_tests {
             {"type":"reply","data":{"id":id}},
             {"type":"telegram_checklist","data":{"content":list.to_string()}}
         ]);
-        assert!(bot.make_telegram_msg(&message,"22",false,"business-b").await.is_err());
-        let (parts, quote) = bot.make_telegram_msg(&message,"22",false,"business-a").await.unwrap();
-        assert_eq!(quote,"5");
-        assert_eq!(parts[0].0,"telegram_checklist");
-        assert_eq!(serde_json::from_str::<Value>(&parts[0].1).unwrap(),list);
-        assert_eq!(TeleTramConnect::message_target(&raw).unwrap(),json!({
-            "chat_id":22,"message_id":5,"business_connection_id":"business-a"
-        }));
-        let returned = TeleTramConnect::response_message_ids("sendChecklist",
-            &json!({"business_connection_id":"business-a"}), &json!({"message_id":5,"chat":{"id":22}}));
-        assert_eq!(returned,vec![raw]);
+        assert!(bot
+            .make_telegram_msg(&message, "22", false, "business-b")
+            .await
+            .is_err());
+        let (parts, quote) = bot
+            .make_telegram_msg(&message, "22", false, "business-a")
+            .await
+            .unwrap();
+        assert_eq!(quote, "5");
+        assert_eq!(parts[0].0, "telegram_checklist");
+        assert_eq!(serde_json::from_str::<Value>(&parts[0].1).unwrap(), list);
+        assert_eq!(
+            TeleTramConnect::message_target(&raw).unwrap(),
+            json!({
+                "chat_id":22,"message_id":5,"business_connection_id":"business-a"
+            })
+        );
+        let returned = TeleTramConnect::response_message_ids(
+            "sendChecklist",
+            &json!({"business_connection_id":"business-a"}),
+            &json!({"message_id":5,"chat":{"id":22}}),
+        );
+        assert_eq!(returned, vec![raw]);
     }
 
     #[tokio::test]
@@ -2422,20 +2770,35 @@ mod native_tests {
         let invoice = json!({"title":"手册","description":"电子版","payload":"0001",
             "currency":"XTR","provider_token":"","prices":[{"label":"手册","amount":25}]});
         let message = json!([{"type":"telegram_invoice","data":{"content":invoice.to_string()}}]);
-        let (parts,_) = bot.make_telegram_msg(&message,"49",false,"").await.unwrap();
-        assert_eq!(parts[0].0,"telegram_invoice");
-        assert_eq!(serde_json::from_str::<Value>(&parts[0].1).unwrap(),invoice);
+        let (parts, _) = bot
+            .make_telegram_msg(&message, "49", false, "")
+            .await
+            .unwrap();
+        assert_eq!(parts[0].0, "telegram_invoice");
+        assert_eq!(serde_json::from_str::<Value>(&parts[0].1).unwrap(), invoice);
         let invalid_keyboard = json!({"inline_keyboard":[[{"text":"下一步","callback_data":"a"}]]});
-        let error = bot.send_message_inner(parts,String::new(),"49",&Topic::default(),Some(&invalid_keyboard),"").await.unwrap_err();
+        let error = bot
+            .send_message_inner(
+                parts,
+                String::new(),
+                "49",
+                &Topic::default(),
+                Some(&invalid_keyboard),
+                "",
+            )
+            .await
+            .unwrap_err();
         assert!(error.to_string().contains("支付按钮"));
-        for field in ["successful_payment","refunded_payment"] {
+        for field in ["successful_payment", "refunded_payment"] {
             let event = json!({"update_id":10,"message":{"message_id":5,"chat":{"id":49,"type":"private"},
                 "from":{"id":49},field:{"invoice_payload":"0001","total_amount":25,"telegram_payment_charge_id":"p1"}}});
-            let notice = bot.structured_message_notice("message",&event).unwrap();
-            assert_eq!(notice["sub_type"],field);
-            assert_eq!(notice["user_id"],"49");
-            assert_eq!(notice["telegram"][field]["invoice_payload"],"0001");
-            assert!(bot.structured_message_notice("edited_message",&event).is_none());
+            let notice = bot.structured_message_notice("message", &event).unwrap();
+            assert_eq!(notice["sub_type"], field);
+            assert_eq!(notice["user_id"], "49");
+            assert_eq!(notice["telegram"][field]["invoice_payload"], "0001");
+            assert!(bot
+                .structured_message_notice("edited_message", &event)
+                .is_none());
         }
     }
 
@@ -2452,7 +2815,10 @@ mod native_tests {
             let (actual, files) = TeleTramConnect::native_media(&data, &mut payload).unwrap();
             assert_eq!(actual, method);
             assert_eq!(files, json!({}));
-            assert_eq!(payload, json!({"chat_id":49,"business_connection_id":"business",field:"media-id"}));
+            assert_eq!(
+                payload,
+                json!({"chat_id":49,"business_connection_id":"business",field:"media-id"})
+            );
             let message = json!({"message_id":5,"chat":{"id":49,"type":"private"},
                 "from":{"id":49},"message_thread_id":3,"is_topic_message":true,
                 "business_connection_id":"business",
@@ -2460,8 +2826,14 @@ mod native_tests {
             let ordinary = json!({"update_id":10,"message":message});
             let cq = bot.to_cq_msg(&ordinary).await.unwrap();
             assert!(cq.starts_with("说明[CQ:telegram_media,"));
-            for (kind, expected) in [("message",field), ("channel_post",field), ("business_message",field),
-                ("edited_message",edited), ("edited_channel_post",edited), ("edited_business_message",edited)] {
+            for (kind, expected) in [
+                ("message", field),
+                ("channel_post", field),
+                ("business_message", field),
+                ("edited_message", edited),
+                ("edited_channel_post", edited),
+                ("edited_business_message", edited),
+            ] {
                 let event = json!({"update_id":10,kind:message});
                 let notice = bot.structured_message_notice(kind, &event).unwrap();
                 assert_eq!(notice["sub_type"], expected);

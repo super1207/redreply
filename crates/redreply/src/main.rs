@@ -284,10 +284,7 @@ fn create_windows() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                         &url,
                     ) {
                         use redlang::cq_add_log_w;
-                        let _ = cq_add_log_w(&format!(
-                            "Failed to create specific window: {:?}",
-                            e
-                        ));
+                        let _ = cq_add_log_w(&format!("Failed to create specific window: {:?}", e));
                     }
                 }
 

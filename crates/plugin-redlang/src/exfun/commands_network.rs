@@ -534,7 +534,9 @@ pub(super) fn register() {
             let ret_vec = sub_key_vec
                 .iter()
                 .map(|temp_vec| {
-                    if let Some(v1) = temp_vec.get(index1_str.parse::<usize>().unwrap_or(usize::MAX)) {
+                    if let Some(v1) =
+                        temp_vec.get(index1_str.parse::<usize>().unwrap_or(usize::MAX))
+                    {
                         v1.to_owned()
                     } else {
                         "".to_owned()

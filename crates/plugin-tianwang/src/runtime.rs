@@ -37,7 +37,11 @@ pub(crate) fn group_allowed(event: &Event, config: &ChatConfig) -> bool {
         .get("group_id")
         .map(value_to_string)
         .unwrap_or_default();
-    !group_id.is_empty() && config.group_whitelist.iter().any(|allowed| allowed == &group_id)
+    !group_id.is_empty()
+        && config
+            .group_whitelist
+            .iter()
+            .any(|allowed| allowed == &group_id)
 }
 
 pub(crate) async fn call_api_json(
@@ -344,7 +348,11 @@ pub(crate) fn is_at_self(event: &Event) -> bool {
         })
 }
 
-pub(crate) fn match_trigger(event: &Event, text: &str, config: &ChatConfig) -> Option<(String, String)> {
+pub(crate) fn match_trigger(
+    event: &Event,
+    text: &str,
+    config: &ChatConfig,
+) -> Option<(String, String)> {
     let prompt = match event.message_type.as_deref() {
         Some("group") => {
             if is_at_self(event) {
@@ -445,4 +453,3 @@ pub(crate) fn value_to_string(value: &Value) -> String {
         other => other.to_string(),
     }
 }
-

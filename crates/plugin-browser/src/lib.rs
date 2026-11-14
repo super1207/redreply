@@ -64,7 +64,10 @@ impl SidecarBrowser {
         }
     }
 
-    fn execute(&self, request: &serde_json::Value) -> std::result::Result<Vec<u8>, Box<dyn std::error::Error>> {
+    fn execute(
+        &self,
+        request: &serde_json::Value,
+    ) -> std::result::Result<Vec<u8>, Box<dyn std::error::Error>> {
         #[cfg(not(windows))]
         return execute_json(&request.to_string());
 
@@ -184,9 +187,7 @@ mod tests {
     #[test]
     fn loads_sidecar_and_returns_abi_error() {
         let browser = super::SidecarBrowser::new();
-        let error = browser
-            .execute(&serde_json::json!({}))
-            .unwrap_err();
+        let error = browser.execute(&serde_json::json!({})).unwrap_err();
         assert!(error.to_string().contains("invalid request"));
     }
 }

@@ -125,13 +125,13 @@ pub fn deal_wav(mut bufr: BufReader<&[u8]>) -> Result<PCMStruct, Box<dyn std::er
             }
             // 24 位样本需按最高字节的符号位扩展到 32 位，
             // 补 0x00 会让负样本变成巨大正值，波形完全失真
-            let sign_byte = if data[index + 2] & 0x80 != 0 { 0xFF } else { 0x00 };
-            let d = i32::from_le_bytes([
-                data[index],
-                data[index + 1],
-                data[index + 2],
-                sign_byte,
-            ]) as f64;
+            let sign_byte = if data[index + 2] & 0x80 != 0 {
+                0xFF
+            } else {
+                0x00
+            };
+            let d = i32::from_le_bytes([data[index], data[index + 1], data[index + 2], sign_byte])
+                as f64;
             pcm.data.push(d);
             index += 3;
         } else if per_sample_bytes == 4 {
@@ -168,7 +168,13 @@ mod tests {
     use std::io::BufReader;
 
     /// 构造最小 WAV：可选 fmt 扩展字段与 data 前的中间块
-    fn build_wav(fmt_code: u16, bits: u16, fmt_extra: &[u8], pre_data_chunks: &[u8], data: &[u8]) -> Vec<u8> {
+    fn build_wav(
+        fmt_code: u16,
+        bits: u16,
+        fmt_extra: &[u8],
+        pre_data_chunks: &[u8],
+        data: &[u8],
+    ) -> Vec<u8> {
         let fmt_body_len = 16 + fmt_extra.len();
         let mut wav = Vec::new();
         wav.extend_from_slice(b"RIFF");

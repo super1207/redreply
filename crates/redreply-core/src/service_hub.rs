@@ -32,7 +32,6 @@ impl ServiceHub {
     pub fn auto_close(&self) -> bool {
         *self.auto_close.lock().unwrap_or_else(|e| e.into_inner())
     }
-
 }
 
 impl Default for ServiceHub {

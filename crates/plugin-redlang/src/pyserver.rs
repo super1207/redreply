@@ -187,9 +187,7 @@ async fn deal_py_msg(
             Ok(js) => js,
             Err(e) => {
                 consecutive_errors += 1;
-                let _ = cq_add_log_w(&format!(
-                    "pyserver 消息解析失败({consecutive_errors}):{e}"
-                ));
+                let _ = cq_add_log_w(&format!("pyserver 消息解析失败({consecutive_errors}):{e}"));
                 if consecutive_errors >= 10 {
                     return Err("连续收到过多无法解析的消息".into());
                 }

@@ -42,11 +42,7 @@ fn app_plus_dir() -> Result<std::path::PathBuf, Box<dyn std::error::Error + Send
 pub fn cq_get_app_directory1() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let path = app_plus_dir()?;
     std::fs::create_dir_all(&path)?;
-    let path_str = format!(
-        "{}{}",
-        path.to_string_lossy(),
-        std::path::MAIN_SEPARATOR
-    );
+    let path_str = format!("{}{}", path.to_string_lossy(), std::path::MAIN_SEPARATOR);
     Ok(crate::mytool::deal_path_str(&path_str).to_string())
 }
 
@@ -59,11 +55,7 @@ pub async fn cq_get_app_directory1_async(
 pub fn cq_get_app_directory2() -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let path = app_plus_dir()?.join("default_pkg_dir");
     std::fs::create_dir_all(&path)?;
-    let path_str = format!(
-        "{}{}",
-        path.to_string_lossy(),
-        std::path::MAIN_SEPARATOR
-    );
+    let path_str = format!("{}{}", path.to_string_lossy(), std::path::MAIN_SEPARATOR);
     Ok(crate::mytool::deal_path_str(&path_str).to_string())
 }
 
@@ -90,9 +82,8 @@ pub fn cq_call_api(
 
     if !remote_id.is_empty() {
         // MQTT 由插件提供：未安装/未启用 mqtt 插件时按“没有MQTT Client”处理
-        let service = crate::framework_services().and_then(|registry| {
-            registry.get::<MqttServiceHandle>("mqtt")
-        });
+        let service = crate::framework_services()
+            .and_then(|registry| registry.get::<MqttServiceHandle>("mqtt"));
         let ret_rsp = match service {
             Some(service) => service.call_remote(platform, self_id, passive_id, js, remote_id),
             None => Err("没有MQTT Client".to_string()),

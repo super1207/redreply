@@ -351,7 +351,9 @@ impl Satoriv1Connect {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let op = read_json_str(&json_data, "op");
         if op != "2" {
-            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("SATORI收到数据:{}", json_data).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                format!("SATORI收到数据:{}", json_data).as_str(),
+            );
         }
         if op == "2" {
             // 心跳回复
@@ -396,7 +398,8 @@ impl Satoriv1Connect {
                 if type_t == "login-removed" {
                     if index != usize::MAX {
                         lk.remove(index);
-                        let _ = cq_add_log_w(&format!("remove account:`{}`:`{}`", platform, self_id));
+                        let _ =
+                            cq_add_log_w(&format!("remove account:`{}`:`{}`", platform, self_id));
                     }
                 } else {
                     if index == usize::MAX {
@@ -436,7 +439,8 @@ impl Satoriv1Connect {
                     group_groups_map
                         .upgrade()
                         .ok_or("upgrade group_groups_map失败")?
-                        .write().unwrap_or_else(|e| e.into_inner())
+                        .write()
+                        .unwrap_or_else(|e| e.into_inner())
                         .insert(key, guild_id.to_owned());
                     if content.starts_with("<chronocat:poke") {
                         // chronocat的戳一戳事件
@@ -467,10 +471,12 @@ impl Satoriv1Connect {
                                     "target_id":id,
                                 });
                                 tokio::task::spawn_blocking(move || {
-                                    if let Err(e) =
-                                        redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string())
-                                    {
-                                        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                                    if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(
+                                        &event_json.to_string(),
+                                    ) {
+                                        let _ = redreply_adapter_core::cqapi::cq_add_log(
+                                            format!("{:?}", e).as_str(),
+                                        );
                                     }
                                 });
                             }
@@ -504,8 +510,12 @@ impl Satoriv1Connect {
                             }
                         });
                         tokio::task::spawn_blocking(move || {
-                            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
-                                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(
+                                &event_json.to_string(),
+                            ) {
+                                let _ = redreply_adapter_core::cqapi::cq_add_log(
+                                    format!("{:?}", e).as_str(),
+                                );
                             }
                         });
                     }
@@ -543,8 +553,12 @@ impl Satoriv1Connect {
                         }
                     });
                     tokio::task::spawn_blocking(move || {
-                        if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
-                            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                        if let Err(e) =
+                            redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string())
+                        {
+                            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                                format!("{:?}", e).as_str(),
+                            );
                         }
                     });
                 }
@@ -574,8 +588,11 @@ impl Satoriv1Connect {
                 });
 
                 tokio::task::spawn_blocking(move || {
-                    if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
-                        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                    if let Err(e) =
+                        redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string())
+                    {
+                        let _ =
+                            redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                     }
                 });
             } else if type_t == "guild-member-removed" {
@@ -612,8 +629,11 @@ impl Satoriv1Connect {
                 });
 
                 tokio::task::spawn_blocking(move || {
-                    if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
-                        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                    if let Err(e) =
+                        redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string())
+                    {
+                        let _ =
+                            redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                     }
                 });
             } else if type_t == "message-deleted" {
@@ -655,8 +675,12 @@ impl Satoriv1Connect {
                         "message_id":message_id
                     });
                     tokio::task::spawn_blocking(move || {
-                        if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
-                            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                        if let Err(e) =
+                            redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string())
+                        {
+                            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                                format!("{:?}", e).as_str(),
+                            );
                         }
                     });
                 } else {
@@ -684,8 +708,12 @@ impl Satoriv1Connect {
                         "message_id":message_id
                     });
                     tokio::task::spawn_blocking(move || {
-                        if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
-                            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                        if let Err(e) =
+                            redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string())
+                        {
+                            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                                format!("{:?}", e).as_str(),
+                            );
                         }
                     });
                 }
@@ -789,7 +817,8 @@ impl Satoriv1Connect {
         let key = format!("{platform} {self_id} {user_id}");
         let channel_id = self_t
             .user_channel_map
-            .read().unwrap_or_else(|e| e.into_inner())
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
             .get(&key)
             .ok_or("user_id not match any channel")?
             .to_owned();
@@ -986,7 +1015,8 @@ impl Satoriv1Connect {
             let key = format!("{platform} {self_id} {id}");
             self_t
                 .group_groups_map
-                .write().unwrap_or_else(|e| e.into_inner())
+                .write()
+                .unwrap_or_else(|e| e.into_inner())
                 .insert(key, groups_id.to_owned());
             ret_group.push(serde_json::json!({
                 "group_id":id,
@@ -1015,7 +1045,8 @@ impl Satoriv1Connect {
             let key = format!("{platform} {self_id} {group_id}");
             groups_id = self_t
                 .group_groups_map
-                .read().unwrap_or_else(|e| e.into_inner())
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
                 .get(&key)
                 .ok_or("groups_id is not exist")?
                 .to_owned();
@@ -1253,7 +1284,9 @@ impl BotConnectTrait for Satoriv1Connect {
     async fn disconnect(&mut self) {
         self.is_stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        if let Some(stop_tx) = &self.stop_tx { let _ = stop_tx.send(true).await; }
+        if let Some(stop_tx) = &self.stop_tx {
+            let _ = stop_tx.send(true).await;
+        }
     }
 
     fn get_alive(&self) -> bool {
@@ -1298,9 +1331,10 @@ impl BotConnectTrait for Satoriv1Connect {
                 port
             );
             // 显式超时，避免半开连接长时间卡在 connecting
-            let socket = tokio::time::timeout(std::time::Duration::from_secs(15), TcpStream::connect(addr))
-                .await
-                .map_err(|_| "TCP连接超时(15s)")??;
+            let socket =
+                tokio::time::timeout(std::time::Duration::from_secs(15), TcpStream::connect(addr))
+                    .await
+                    .map_err(|_| "TCP连接超时(15s)")??;
             ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
         } else {
             ws_rst = connect_async(request).await?;

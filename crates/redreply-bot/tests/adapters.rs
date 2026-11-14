@@ -56,7 +56,8 @@ impl Bot for MockBot {
         request: Value,
     ) -> Result<Value> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        *self.last_route.lock().unwrap_or_else(|e| e.into_inner()) = (platform.to_string(), self_id.to_string());
+        *self.last_route.lock().unwrap_or_else(|e| e.into_inner()) =
+            (platform.to_string(), self_id.to_string());
         Ok(json!({"retcode": 0, "data": request}))
     }
 }
@@ -134,7 +135,9 @@ async fn adapter_connects_calls_api_and_disconnects() {
         .http_addr("127.0.0.1:0".parse().unwrap())
         .build()
         .unwrap();
-    framework.adapters().set_urls(vec!["mock://one".to_string()]);
+    framework
+        .adapters()
+        .set_urls(vec!["mock://one".to_string()]);
     framework.start().unwrap();
 
     assert!(
@@ -205,10 +208,9 @@ async fn failing_adapter_does_not_block_others() {
         .http_addr("127.0.0.1:0".parse().unwrap())
         .build()
         .unwrap();
-    framework.adapters().set_urls(vec![
-        "fail://broken".to_string(),
-        "mock://good".to_string(),
-    ]);
+    framework
+        .adapters()
+        .set_urls(vec!["fail://broken".to_string(), "mock://good".to_string()]);
     framework.start().unwrap();
 
     assert!(

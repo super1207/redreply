@@ -56,7 +56,11 @@ pub(crate) fn build_request_body(config: &ChatConfig, messages: &[Value]) -> Val
 /// 把模型的 tool_calls 回合还原成 assistant 消息。
 ///
 /// DeepSeek 在带 tools 的对话中要求回传该轮的 reasoning_content。
-pub(crate) fn assistant_tool_call_message(text: &str, calls: &[ToolCall], reasoning: &str) -> Value {
+pub(crate) fn assistant_tool_call_message(
+    text: &str,
+    calls: &[ToolCall],
+    reasoning: &str,
+) -> Value {
     let tool_calls = calls
         .iter()
         .map(|call| {

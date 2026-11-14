@@ -1,9 +1,9 @@
 use super::*;
 
-#[path = "bot_assets.rs"]
-mod assets;
 #[path = "bot_kook_activity.rs"]
 mod activity;
+#[path = "bot_assets.rs"]
+mod assets;
 #[path = "bot_business.rs"]
 pub(crate) mod business;
 #[path = "bot_location.rs"]

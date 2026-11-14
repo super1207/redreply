@@ -168,12 +168,7 @@ impl Plugin for ChatGptPlugin {
     fn register(&self, ctx: &PluginContext) -> Result<()> {
         let _ = PLUGIN_CTX.set(ctx.clone());
         config::register(ctx)?;
-        ctx.route(
-            Method::POST,
-            BOT_API_PATH,
-            RouteAccess::Write,
-            bot_api_call,
-        );
+        ctx.route(Method::POST, BOT_API_PATH, RouteAccess::Write, bot_api_call);
         // 远端 MQTT 事件只用于脚本/转发；AI 对话仍只响应本实例收到的消息，
         // 否则集群里每个实例都会对同一条远端消息各自产生一次回复。
         ctx.subscribe(
@@ -200,7 +195,6 @@ impl Plugin for ChatGptPlugin {
         Ok(())
     }
 }
-
 
 mod chat;
 mod runtime;
@@ -435,10 +429,7 @@ mod tests {
         assert!(message["content"].is_null());
         assert_eq!(message["reasoning_content"], "先想想");
         assert_eq!(message["tool_calls"][0]["id"], "call_1");
-        assert_eq!(
-            message["tool_calls"][0]["function"]["name"],
-            "run_command"
-        );
+        assert_eq!(message["tool_calls"][0]["function"]["name"], "run_command");
     }
 
     #[test]
@@ -608,8 +599,7 @@ mod tests {
         }));
         // DeepSeek 带 tools 时要求回传上一轮的 reasoning_content
         assert!(messages.iter().any(|message| {
-            message["role"] == "assistant"
-                && message["reasoning_content"] == "先计算 6*7"
+            message["role"] == "assistant" && message["reasoning_content"] == "先计算 6*7"
         }));
         assert_eq!(outcome.reasoning, "最终答案");
         assert!(!outcome.generated.is_empty());

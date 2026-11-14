@@ -1,11 +1,11 @@
 use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
+use crate::core::RedLang;
+use crate::status::add_recv_group_msg;
 use redlang::cqapi::*;
 use redlang::mytool::{json_to_cq_str, read_json_str};
-use crate::core::RedLang;
 use redlang::runtime;
 use redlang::runtime_context;
-use crate::status::add_recv_group_msg;
 
 use super::{get_script_info, is_key_match, set_normal_message_info};
 
@@ -106,10 +106,8 @@ fn do_redlang(
                     rl.pkg_name = pkg_name_t.to_owned();
                     rl.script_name = script_name_t.to_owned();
                     if let Err(e) = super::do_script(&mut rl, &code_t, "normal", false) {
-                        let _ = cq_add_log_w(format!(
-                            "err in do_group_msg:do_redlang:{}",
-                            e
-                        ).as_str());
+                        let _ =
+                            cq_add_log_w(format!("err in do_group_msg:do_redlang:{}", e).as_str());
                     }
                 });
             }

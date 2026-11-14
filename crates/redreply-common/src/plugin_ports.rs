@@ -245,10 +245,7 @@ impl MqttServiceHandle {
         self.0.connected()
     }
 
-    pub fn publish_event(
-        &self,
-        event: &serde_json::Value,
-    ) -> std::result::Result<(), String> {
+    pub fn publish_event(&self, event: &serde_json::Value) -> std::result::Result<(), String> {
         self.0.publish_event(event)
     }
 
@@ -260,7 +257,8 @@ impl MqttServiceHandle {
         payload: serde_json::Value,
         remote_id: &str,
     ) -> std::result::Result<String, String> {
-        self.0.call_remote(platform, self_id, passive_id, payload, remote_id)
+        self.0
+            .call_remote(platform, self_id, passive_id, payload, remote_id)
     }
 }
 
@@ -274,14 +272,10 @@ pub trait PgService: Send + Sync {
 pub struct PgServiceHandle(pub Arc<dyn PgService>);
 
 impl PgServiceHandle {
-    pub fn insert_message(
-        &self,
-        root: &serde_json::Value,
-    ) -> std::result::Result<(), String> {
+    pub fn insert_message(&self, root: &serde_json::Value) -> std::result::Result<(), String> {
         self.0.insert_message(root)
     }
 }
-
 
 #[cfg(test)]
 mod tts_tests {

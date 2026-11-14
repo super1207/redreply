@@ -1,5 +1,5 @@
-use std::collections::{HashMap, HashSet};
 use std::collections::VecDeque;
+use std::collections::{HashMap, HashSet};
 use std::io::Read;
 use std::path::Path;
 use std::str::FromStr;
@@ -117,11 +117,7 @@ impl KookConnect {
                     .extend_pairs(native_api::form_fields(object));
                 client.get(url)
             }
-            "POST" => native_api::post(
-                client.post(url),
-                payload,
-                files,
-            )?,
+            "POST" => native_api::post(client.post(url), payload, files)?,
             _ => return Err("KOOK 原生 API 仅支持 GET 或 POST，上传文件请使用 POST".into()),
         };
         let (status, body) = native_api::response(request, "KOOK").await?;
@@ -130,24 +126,37 @@ impl KookConnect {
 
     async fn guild_badge(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
         const MAX_BYTES: usize = 2 * 1024 * 1024;
-        let guild_id = params["guild_id"].as_str().filter(|id| !id.is_empty())
+        let guild_id = params["guild_id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
             .ok_or("KOOK 徽章需要服务器 ID")?;
         let style = match params.get("style") {
             None => 0,
-            Some(style) => style.as_i64().filter(|style| (0..=2).contains(style))
+            Some(style) => style
+                .as_i64()
+                .filter(|style| (0..=2).contains(style))
                 .ok_or("KOOK 徽章样式须为 0、1 或 2")?,
         };
         let mut url = native_api::kook_url("badge/guild")?;
-        url.query_pairs_mut().append_pair("guild_id", guild_id)
+        url.query_pairs_mut()
+            .append_pair("guild_id", guild_id)
             .append_pair("style", &style.to_string());
         let client = self.native_client(Duration::from_secs(20))?;
-        let mut response = client.get(url).send().await
+        let mut response = client
+            .get(url)
+            .send()
+            .await
             .map_err(|err| format!("KOOK 徽章请求失败：{}", err.without_url()))?;
         let status = response.status();
-        let image = response.headers().get(reqwest::header::CONTENT_TYPE)
-            .and_then(|mime| mime.to_str().ok()).is_some_and(|mime| mime.starts_with("image/"));
+        let image = response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|mime| mime.to_str().ok())
+            .is_some_and(|mime| mime.starts_with("image/"));
         let mut bytes = Vec::new();
-        while let Some(chunk) = response.chunk().await
+        while let Some(chunk) = response
+            .chunk()
+            .await
             .map_err(|err| format!("KOOK 徽章读取失败：{}", err.without_url()))?
         {
             if chunk.len() > MAX_BYTES - bytes.len() {
@@ -156,7 +165,12 @@ impl KookConnect {
             bytes.extend_from_slice(&chunk);
         }
         if status.is_success() && image && !bytes.is_empty() {
-            return Ok(native_api::reply(0, &serde_json::json!({"base64":STANDARD.encode(bytes)}), "", echo));
+            return Ok(native_api::reply(
+                0,
+                &serde_json::json!({"base64":STANDARD.encode(bytes)}),
+                "",
+                echo,
+            ));
         }
         if let Ok(body) = serde_json::from_slice::<Value>(&bytes) {
             if body["code"].as_i64().is_some_and(|code| code != 0) {
@@ -173,7 +187,9 @@ impl KookConnect {
         }
         let mut module_count = 0;
         for card in cards {
-            let modules = card["modules"].as_array().ok_or("KOOK 卡片需要 modules 数组")?;
+            let modules = card["modules"]
+                .as_array()
+                .ok_or("KOOK 卡片需要 modules 数组")?;
             if card["type"] != "card" {
                 return Err("KOOK 卡片对象的 type 必须为 card".into());
             }
@@ -189,8 +205,11 @@ impl KookConnect {
         let create = matches!(endpoint, "message/create" | "direct-message/create");
         if !matches!(
             endpoint,
-            "message/create" | "direct-message/create" | "message/update"
-                | "direct-message/update" | "thread/create"
+            "message/create"
+                | "direct-message/create"
+                | "message/update"
+                | "direct-message/update"
+                | "thread/create"
         ) || !payload["content"].is_array()
         {
             return Ok(None);
@@ -209,7 +228,9 @@ impl KookConnect {
     }
 
     fn pipe_url(params: &Value) -> AdapterResult<reqwest::Url> {
-        let token = params["token"].as_str().filter(|token| !token.is_empty())
+        let token = params["token"]
+            .as_str()
+            .filter(|token| !token.is_empty())
             .ok_or("KOOK 管道需要入管道令牌")?;
         let mut url = native_api::kook_url("message/send-pipemsg")?;
         let mut query = url.query_pairs_mut();
@@ -220,7 +241,10 @@ impl KookConnect {
             }
             query.append_pair("type", &kind.to_string());
         }
-        if let Some(target) = params["target_id"].as_str().filter(|target| !target.is_empty()) {
+        if let Some(target) = params["target_id"]
+            .as_str()
+            .filter(|target| !target.is_empty())
+        {
             query.append_pair("target_id", target);
         }
         drop(query);
@@ -244,13 +268,22 @@ impl KookConnect {
         Ok(result)
     }
 
-    async fn send_template_segment(&self, msg: &str, target: &str, quote: &str, private: bool) -> AdapterResult<String> {
+    async fn send_template_segment(
+        &self,
+        msg: &str,
+        target: &str,
+        quote: &str,
+        private: bool,
+    ) -> AdapterResult<String> {
         let spec: Value = serde_json::from_str(msg)?;
-        let id = spec["template_id"].as_str().filter(|id| !id.is_empty()).ok_or("KOOK 模板消息缺少模板ID")?;
+        let id = spec["template_id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or("KOOK 模板消息缺少模板ID")?;
         let content = spec["content"].as_str().ok_or("KOOK 模板消息缺少参数")?;
         let mut body = json!({"template_id":id,"content":content,"target_id":target});
         if let Some(kind) = spec["type"].as_i64() {
-            if !matches!(kind,9 | 10) {
+            if !matches!(kind, 9 | 10) {
                 return Err("KOOK 模板消息类型无效".into());
             }
             body["type"] = kind.into();
@@ -258,12 +291,32 @@ impl KookConnect {
         if !quote.is_empty() {
             body["quote"] = quote.into();
         }
-        let endpoint = if private { "direct-message/create" } else { "message/create" };
-        let result = self.native_request("POST", endpoint, &body, None, Duration::from_secs(25), &Value::Null).await?;
+        let endpoint = if private {
+            "direct-message/create"
+        } else {
+            "message/create"
+        };
+        let result = self
+            .native_request(
+                "POST",
+                endpoint,
+                &body,
+                None,
+                Duration::from_secs(25),
+                &Value::Null,
+            )
+            .await?;
         if result["retcode"] != 0 {
-            return Err(result["message"].as_str().unwrap_or("KOOK 模板消息发送失败").to_owned().into());
+            return Err(result["message"]
+                .as_str()
+                .unwrap_or("KOOK 模板消息发送失败")
+                .to_owned()
+                .into());
         }
-        Ok(result["data"]["msg_id"].as_str().ok_or("KOOK 模板消息未返回消息ID")?.to_owned())
+        Ok(result["data"]["msg_id"]
+            .as_str()
+            .ok_or("KOOK 模板消息未返回消息ID")?
+            .to_owned())
     }
 
     async fn call_native_api(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
@@ -309,7 +362,11 @@ impl KookConnect {
                         String::new()
                     },
                     chat_code: read_json_str(payload, "chat_code"),
-                    user_id: self.self_id.read().unwrap_or_else(|e| e.into_inner()).clone(),
+                    user_id: self
+                        .self_id
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .clone(),
                 };
                 result["redreply_message_id"] = self.event_message_handle(raw_id).into();
             }
@@ -344,7 +401,8 @@ impl KookConnect {
         });
         let is_group = data["channel_type"] == "GROUP";
         let mut user_id = read_json_str(body, "user_id");
-        let private_message_event = matches!(kind, "updated_private_message" | "deleted_private_message");
+        let private_message_event =
+            matches!(kind, "updated_private_message" | "deleted_private_message");
         let peer_id = if private_message_event {
             user_id = read_json_str(body, "author_id");
             let self_id = self.self_id.read().unwrap_or_else(|e| e.into_inner());
@@ -359,14 +417,23 @@ impl KookConnect {
         if user_id.is_empty() && matches!(kind, "pinned_message" | "unpinned_message") {
             user_id = read_json_str(body, "operator_id");
         }
-        let channel_event = matches!(kind, "added_channel" | "updated_channel" | "deleted_channel");
+        let channel_event = matches!(
+            kind,
+            "added_channel" | "updated_channel" | "deleted_channel"
+        );
         let role_event = matches!(kind, "added_role" | "updated_role" | "deleted_role");
         let blacklist_event = matches!(kind, "added_block_list" | "deleted_block_list");
         if blacklist_event {
             user_id = read_json_str(body, "operator_id");
         }
         let emoji_event = matches!(kind, "added_emoji" | "updated_emoji" | "removed_emoji");
-        let reaction_event = matches!(kind, "added_reaction" | "deleted_reaction" | "private_added_reaction" | "private_deleted_reaction");
+        let reaction_event = matches!(
+            kind,
+            "added_reaction"
+                | "deleted_reaction"
+                | "private_added_reaction"
+                | "private_deleted_reaction"
+        );
         let mut channel_id = read_json_str(body, "channel_id");
         if channel_event {
             channel_id = read_json_str(body, "id");
@@ -383,8 +450,14 @@ impl KookConnect {
             event["group_id"] = channel_id.clone().into();
         }
         let mut guild_id = read_json_str(body, "guild_id");
-        if guild_id.is_empty() && (channel_event || role_event || emoji_event || blacklist_event || (is_group && reaction_event)
-            || matches!(kind, "updated_message" | "deleted_message")) {
+        if guild_id.is_empty()
+            && (channel_event
+                || role_event
+                || emoji_event
+                || blacklist_event
+                || (is_group && reaction_event)
+                || matches!(kind, "updated_message" | "deleted_message"))
+        {
             guild_id = read_json_str(data, "target_id");
         }
         if !guild_id.is_empty() {
@@ -415,14 +488,16 @@ impl KookConnect {
         }
         if let Some(message_id) = raw_message_id {
             event["kook_message_id"] = message_id.into();
-            event["message_id"] = self.event_message_handle(RawMsgId {
-                msg_id: message_id.to_owned(),
-                channel_id,
-                peer_id,
-                chat_code: read_json_str(body, "chat_code"),
-                is_private: !is_group,
-                user_id,
-            }).into();
+            event["message_id"] = self
+                .event_message_handle(RawMsgId {
+                    msg_id: message_id.to_owned(),
+                    channel_id,
+                    peer_id,
+                    chat_code: read_json_str(body, "chat_code"),
+                    is_private: !is_group,
+                    user_id,
+                })
+                .into();
         }
         Some(event)
     }
@@ -434,7 +509,11 @@ impl KookConnect {
         if message.is_private || message.channel_id.is_empty() {
             return Err("KOOK 只支持置顶已知频道中的消息".into());
         }
-        let endpoint = if params["remove"] == true { "message/unpin" } else { "message/pin" };
+        let endpoint = if params["remove"] == true {
+            "message/unpin"
+        } else {
+            "message/pin"
+        };
         self.native_request(
             "POST",
             endpoint,
@@ -476,7 +555,11 @@ impl KookConnect {
         if !read_json_str(params, "actor_chat_id").is_empty() || (!remove && !user_id.is_empty()) {
             return Err("KOOK 仅在删除回应时接受目标用户 ID".into());
         }
-        let operation = if remove { "delete-reaction" } else { "add-reaction" };
+        let operation = if remove {
+            "delete-reaction"
+        } else {
+            "add-reaction"
+        };
         let mut body = json!({"msg_id":message.msg_id,"emoji":emoji});
         if !user_id.is_empty() {
             body["user_id"] = user_id.into();
@@ -633,7 +716,8 @@ impl KookConnect {
         let mut msg_ids = vec![];
         for (tp, msg) in &to_send_data.clone() {
             let msg_id = if *tp == TEMPLATE_SEGMENT {
-                self.send_template_segment(msg, &user_id, &quote, true).await?
+                self.send_template_segment(msg, &user_id, &quote, true)
+                    .await?
             } else {
                 self.send_private_msg(*tp, &user_id, msg, &quote).await?
             };
@@ -680,12 +764,18 @@ impl KookConnect {
             let Some(id) = role["role_id"].as_u64() else {
                 return false;
             };
-            let applies = id == 0 || assigned.is_some_and(|roles| {
-                roles.iter().any(|role| role.as_u64() == Some(id))
-            });
-            applies && role["permissions"].as_u64().is_some_and(|bits| bits & 1 != 0)
+            let applies = id == 0
+                || assigned.is_some_and(|roles| roles.iter().any(|role| role.as_u64() == Some(id)));
+            applies
+                && role["permissions"]
+                    .as_u64()
+                    .is_some_and(|bits| bits & 1 != 0)
         });
-        if admin { "admin" } else { "member" }
+        if admin {
+            "admin"
+        } else {
+            "member"
+        }
     }
 
     async fn get_guild_member_info(
@@ -845,7 +935,10 @@ impl KookConnect {
 
     fn store_msg_id(ids: &mut VecDeque<MsgIdPair>, raw_msg_ids: Vec<RawMsgId>) -> String {
         let msg_id = Uuid::new_v4().to_string();
-        ids.push_back(MsgIdPair { msg_id: msg_id.clone(), raw_msg_ids });
+        ids.push_back(MsgIdPair {
+            msg_id: msg_id.clone(),
+            raw_msg_ids,
+        });
         if ids.len() > 9999 {
             ids.pop_front();
         }
@@ -944,8 +1037,12 @@ impl KookConnect {
             is_private: true,
             channel_id: String::new(),
             peer_id: user_id.to_owned(),
-            chat_code: extra["chat_code"].as_str().filter(|code| !code.is_empty())
-                .or_else(|| extra["code"].as_str()).unwrap_or_default().to_owned(),
+            chat_code: extra["chat_code"]
+                .as_str()
+                .filter(|code| !code.is_empty())
+                .or_else(|| extra["code"].as_str())
+                .unwrap_or_default()
+                .to_owned(),
             msg_id: raw_msg_id.to_owned(),
             user_id: user_id.to_owned(),
         }]);
@@ -1073,7 +1170,9 @@ impl KookConnect {
                     let name = md["title"].as_str().unwrap_or("未命名");
                     let url_cq = cq_params_encode(url);
                     let name_cq = cq_params_encode(name);
-                    msg.push_str(&format!("[CQ:file,file={url_cq},url={url_cq},name={name_cq}]"));
+                    msg.push_str(&format!(
+                        "[CQ:file,file={url_cq},url={url_cq},name={name_cq}]"
+                    ));
                     if is_group {
                         let group_id = data
                             .get("target_id")
@@ -1606,11 +1705,7 @@ impl KookConnect {
         let retbin = ret.bytes().await?.to_vec();
         Ok(retbin)
     }
-    async fn upload_asset(
-        &self,
-        uri: &str,
-        filename: &str,
-    ) -> AdapterResult<String> {
+    async fn upload_asset(&self, uri: &str, filename: &str) -> AdapterResult<String> {
         let file_bin;
         if uri.starts_with("http") {
             file_bin = Self::http_post(uri, vec![], &HashMap::new(), false).await?;
@@ -1633,7 +1728,11 @@ impl KookConnect {
             file_bin = tokio::fs::read(path).await?;
         }
 
-        let filename = if filename.is_empty() { "test" } else { filename };
+        let filename = if filename.is_empty() {
+            "test"
+        } else {
+            filename
+        };
         let form = reqwest::multipart::Form::new().part(
             "file",
             reqwest::multipart::Part::bytes(file_bin).file_name(filename.to_owned()),
@@ -1646,7 +1745,10 @@ impl KookConnect {
             .build()?;
         let mut auth = HeaderValue::from_str(&format!("Bot {}", self.token))?;
         auth.set_sensitive(true);
-        let request = client.post(url).header("Authorization", auth).multipart(form);
+        let request = client
+            .post(url)
+            .header("Authorization", auth)
+            .multipart(form);
         let (status, body) = native_api::response(request, "KOOK").await?;
         let reply = native_api::kook_reply(status, &body, &Value::Null);
         if reply["retcode"] != 0 {
@@ -1680,7 +1782,8 @@ impl KookConnect {
                 _ => json!({"type":kind,"src":url,"title":title}),
             };
             if kind == "photo" && !title.is_empty() {
-                modules.push(json!({"type":"section","text":{"type":"plain-text","content":title}}));
+                modules
+                    .push(json!({"type":"section","text":{"type":"plain-text","content":title}}));
             }
             modules.push(module);
         }
@@ -1703,9 +1806,15 @@ impl KookConnect {
             let source = item["media"].as_str().ok_or("KOOK 媒体项缺少 media")?;
             if let Some(part) = source.strip_prefix("attach://") {
                 let upload = &group["files"][part];
-                let filename = upload["filename"].as_str().ok_or("KOOK 媒体缺少上传文件名")?;
+                let filename = upload["filename"]
+                    .as_str()
+                    .ok_or("KOOK 媒体缺少上传文件名")?;
                 let encoded = upload["base64"].as_str().ok_or("KOOK 媒体缺少上传附件")?;
-                let title = if title.is_empty() && kind == "document" { filename.to_owned() } else { title };
+                let title = if title.is_empty() && kind == "document" {
+                    filename.to_owned()
+                } else {
+                    title
+                };
                 sources.push((kind, format!("base64://{encoded}"), filename, title));
             } else {
                 let url = reqwest::Url::parse(source)?;
@@ -1717,7 +1826,11 @@ impl KookConnect {
         }
         let mut resolved = Vec::with_capacity(sources.len());
         for (kind, source, filename, title) in sources {
-            let url = if filename.is_empty() { source } else { self.upload_asset(&source, filename).await? };
+            let url = if filename.is_empty() {
+                source
+            } else {
+                self.upload_asset(&source, filename).await?
+            };
             resolved.push((kind.to_owned(), url, title));
         }
         let modules = Self::media_card_modules(&resolved);
@@ -1725,7 +1838,10 @@ impl KookConnect {
     }
 
     fn media_card_items(data: &Value) -> Vec<Value> {
-        let Some(cards) = data["content"].as_str().and_then(|text| serde_json::from_str::<Value>(text).ok()) else {
+        let Some(cards) = data["content"]
+            .as_str()
+            .and_then(|text| serde_json::from_str::<Value>(text).ok())
+        else {
             return Vec::new();
         };
         let Some(cards) = cards.as_array() else {
@@ -1733,7 +1849,9 @@ impl KookConnect {
         };
         let mut items = Vec::new();
         for card in cards {
-            let Some(modules) = card["modules"].as_array() else { continue };
+            let Some(modules) = card["modules"].as_array() else {
+                continue;
+            };
             for module in modules {
                 let kind = module["type"].as_str().unwrap_or_default();
                 match kind {
@@ -1741,14 +1859,17 @@ impl KookConnect {
                         if let Some(elements) = module["elements"].as_array() {
                             items.extend(elements.iter().filter_map(|element| {
                                 let source = element["src"].as_str()?;
-                                (element["type"] == "image").then(|| json!({"type":"photo","media":source}))
+                                (element["type"] == "image")
+                                    .then(|| json!({"type":"photo","media":source}))
                             }));
                         }
                     }
                     "video" | "audio" | "file" => {
                         if let Some(source) = module["src"].as_str() {
                             let kind = if kind == "file" { "document" } else { kind };
-                            items.push(json!({"type":kind,"media":source,"caption":module["title"]}));
+                            items.push(
+                                json!({"type":kind,"media":source,"caption":module["title"]}),
+                            );
                         }
                     }
                     _ => {}
@@ -1947,7 +2068,9 @@ impl KookConnect {
                     last_type = 10;
                 }
             } else if tp == "media_group" {
-                let content = it["data"]["content"].as_str().ok_or("KOOK 媒体组缺少内容")?;
+                let content = it["data"]["content"]
+                    .as_str()
+                    .ok_or("KOOK 媒体组缺少内容")?;
                 let group = serde_json::from_str(content)?;
                 to_send_data.push((10, self.media_card(&group).await?));
                 last_type = 10;
@@ -1957,7 +2080,9 @@ impl KookConnect {
                 to_send_data.push((10, Self::card_content(&cards)?));
                 last_type = 10;
             } else if tp == "kook_template" {
-                let content = it["data"]["content"].as_str().ok_or("KOOK 模板消息缺少内容")?;
+                let content = it["data"]["content"]
+                    .as_str()
+                    .ok_or("KOOK 模板消息缺少内容")?;
                 to_send_data.push((TEMPLATE_SEGMENT, content.to_owned()));
                 last_type = TEMPLATE_SEGMENT;
             } else if matches!(tp.as_str(), Some("record" | "file" | "video")) {
@@ -2096,7 +2221,8 @@ impl KookConnect {
         let mut msg_ids = vec![];
         for (tp, msg) in &to_send_data.clone() {
             let msg_id = if *tp == TEMPLATE_SEGMENT {
-                self.send_template_segment(msg, &group_id, &quote, false).await?
+                self.send_template_segment(msg, &group_id, &quote, false)
+                    .await?
             } else {
                 self.send_group_msg(*tp, &group_id, msg, &quote).await?
             };
@@ -2130,17 +2256,32 @@ impl KookConnect {
         Ok(send_json)
     }
     async fn delete_message(&self, message: &RawMsgId, echo: &Value) -> AdapterResult<Value> {
-        let endpoint = if message.is_private { "direct-message/delete" } else { "message/delete" };
+        let endpoint = if message.is_private {
+            "direct-message/delete"
+        } else {
+            "message/delete"
+        };
         self.native_request(
-            "POST", endpoint, &json!({"msg_id":message.msg_id}), None, Duration::from_secs(25), echo,
-        ).await
+            "POST",
+            endpoint,
+            &json!({"msg_id":message.msg_id}),
+            None,
+            Duration::from_secs(25),
+            echo,
+        )
+        .await
     }
 
     async fn deal_ob_delete_msg(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
         let id = read_json_str(params, "message_id");
         let messages = self.get_msg_id(&id);
         if messages.is_empty() {
-            return Ok(native_api::reply(1404, &Value::Null, "KOOK 找不到 RedReply 消息 ID", echo));
+            return Ok(native_api::reply(
+                1404,
+                &Value::Null,
+                "KOOK 找不到 RedReply 消息 ID",
+                echo,
+            ));
         }
         if let [message] = messages.as_slice() {
             return self.delete_message(message, echo).await;
@@ -2155,7 +2296,10 @@ impl KookConnect {
         for id in ids.iter().copied().filter(|id| seen_handles.insert(*id)) {
             let messages = self.get_msg_id(id);
             if messages.is_empty() {
-                batch.record(json!({"message_id":id}), Err("KOOK 找不到 RedReply 消息 ID".into()));
+                batch.record(
+                    json!({"message_id":id}),
+                    Err("KOOK 找不到 RedReply 消息 ID".into()),
+                );
             }
             for message in messages {
                 if seen_messages.insert((message.is_private, message.msg_id.clone())) {
@@ -2178,14 +2322,26 @@ impl KookConnect {
         let mut body = params["body"].clone();
         native_api::object(&body)?;
         if params["kind"] == "template" {
-            if body["template_id"].as_str().is_none_or(str::is_empty) || !body["content"].is_string() {
+            if body["template_id"].as_str().is_none_or(str::is_empty)
+                || !body["content"].is_string()
+            {
                 return Err("KOOK 模板编辑缺少模板ID或参数".into());
             }
-            body.as_object_mut().ok_or("模板参数格式错误")?.remove("type");
+            body.as_object_mut()
+                .ok_or("模板参数格式错误")?
+                .remove("type");
         }
         body["msg_id"] = raw.msg_id.as_str().into();
-        let endpoint = if raw.is_private { "direct-message/update" } else { "message/update" };
-        self.call_native_api(&json!({"http_method":"POST","endpoint":endpoint,"body":body}), echo).await
+        let endpoint = if raw.is_private {
+            "direct-message/update"
+        } else {
+            "message/update"
+        };
+        self.call_native_api(
+            &json!({"http_method":"POST","endpoint":endpoint,"body":body}),
+            echo,
+        )
+        .await
     }
 
     async fn forward_messages(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
@@ -2197,13 +2353,24 @@ impl KookConnect {
             if messages.is_empty() {
                 return Err("KOOK 找不到要转发的 RedReply 消息 ID".into());
             }
-            sources.extend(messages.into_iter().filter(|raw| seen.insert(raw.msg_id.clone())));
+            sources.extend(
+                messages
+                    .into_iter()
+                    .filter(|raw| seen.insert(raw.msg_id.clone())),
+            );
         }
         if sources.is_empty() || sources.len() > 100 {
             return Err("KOOK 转发支持 1 至 100 条消息".into());
         }
-        let target_id = params["target_id"].as_str().filter(|id| !id.is_empty()).ok_or("KOOK 缺少转发目标 ID")?;
-        let endpoint = if params["private"] == true { "direct-message/create" } else { "message/create" };
+        let target_id = params["target_id"]
+            .as_str()
+            .filter(|id| !id.is_empty())
+            .ok_or("KOOK 缺少转发目标 ID")?;
+        let endpoint = if params["private"] == true {
+            "direct-message/create"
+        } else {
+            "message/create"
+        };
 
         // Read all sources before sending, so an unreadable source cannot leave a half-copied list.
         let mut bodies = Vec::with_capacity(sources.len());
@@ -2213,14 +2380,23 @@ impl KookConnect {
                 let code = if !source.chat_code.is_empty() {
                     source.chat_code
                 } else if !source.peer_id.is_empty() {
-                    let chat = self.native_request(
-                        "POST", "user-chat/create", &json!({"target_id":source.peer_id}),
-                        None, Duration::from_secs(25), echo,
-                    ).await?;
+                    let chat = self
+                        .native_request(
+                            "POST",
+                            "user-chat/create",
+                            &json!({"target_id":source.peer_id}),
+                            None,
+                            Duration::from_secs(25),
+                            echo,
+                        )
+                        .await?;
                     if chat["retcode"] != 0 {
                         return Ok(chat);
                     }
-                    chat["data"]["code"].as_str().ok_or("KOOK 私聊缺少会话 Code")?.to_owned()
+                    chat["data"]["code"]
+                        .as_str()
+                        .ok_or("KOOK 私聊缺少会话 Code")?
+                        .to_owned()
                 } else {
                     return Err("KOOK 私聊消息缺少会话 Code 或对方用户 ID".into());
                 };
@@ -2229,7 +2405,9 @@ impl KookConnect {
             } else {
                 "message/view"
             };
-            let result = self.native_request("GET", view, &query, None, Duration::from_secs(25), echo).await?;
+            let result = self
+                .native_request("GET", view, &query, None, Duration::from_secs(25), echo)
+                .await?;
             if result["retcode"] != 0 {
                 return Ok(result);
             }
@@ -2239,7 +2417,8 @@ impl KookConnect {
         let mut sent = Vec::with_capacity(bodies.len());
         for body in bodies {
             let request = json!({"http_method":"POST","endpoint":endpoint,"body":body});
-            let result = native_api::action_result(self.call_native_api(&request, echo).await, echo);
+            let result =
+                native_api::action_result(self.call_native_api(&request, echo).await, echo);
             if result["retcode"] != 0 {
                 let mut result = result;
                 result["data"] = json!({"sent":sent});
@@ -2247,7 +2426,10 @@ impl KookConnect {
             }
             if !result["redreply_message_id"].is_string() {
                 return Ok(native_api::reply(
-                    -1, &json!({"sent":sent}), "KOOK 未返回新消息 ID", echo,
+                    -1,
+                    &json!({"sent":sent}),
+                    "KOOK 未返回新消息 ID",
+                    echo,
                 ));
             }
             sent.push(result["redreply_message_id"].clone());
@@ -2263,7 +2445,10 @@ impl KookConnect {
             9 => Ok(json!({"target_id":target,"type":9,"content":content})),
             2 | 3 | 4 | 8 => {
                 let attachment = &source["attachments"];
-                let url = attachment["url"].as_str().filter(|url| !url.is_empty()).unwrap_or(content);
+                let url = attachment["url"]
+                    .as_str()
+                    .filter(|url| !url.is_empty())
+                    .unwrap_or(content);
                 let url_parsed = reqwest::Url::parse(url)?;
                 if !matches!(url_parsed.scheme(), "http" | "https") {
                     return Err("KOOK 附件 URL 必须为 HTTP(S)".into());
@@ -2271,7 +2456,11 @@ impl KookConnect {
                 let module = match kind {
                     2 => json!({"type":"container","elements":[{"type":"image","src":url}]}),
                     _ => {
-                        let module_type = match kind { 3 => "video", 4 => "file", _ => "audio" };
+                        let module_type = match kind {
+                            3 => "video",
+                            4 => "file",
+                            _ => "audio",
+                        };
                         json!({"type":module_type,"src":url,"title":read_json_str(attachment,"name")})
                     }
                 };
@@ -2397,9 +2586,16 @@ impl KookConnect {
             if channel_id.is_empty() {
                 return Err("KOOK 群列表需要服务器 ID 或当前频道".into());
             }
-            let channel = self.native_request(
-                "GET", "channel/view", &json!({"target_id":channel_id}), None, timeout, echo,
-            ).await?;
+            let channel = self
+                .native_request(
+                    "GET",
+                    "channel/view",
+                    &json!({"target_id":channel_id}),
+                    None,
+                    timeout,
+                    echo,
+                )
+                .await?;
             if channel["retcode"] != 0 {
                 return Ok(channel);
             }
@@ -2412,9 +2608,16 @@ impl KookConnect {
         let mut channels = Vec::new();
         let mut page = 1;
         loop {
-            let response = self.native_request(
-                "GET", "channel/list", &json!({"guild_id":guild_id,"page":page}), None, timeout, echo,
-            ).await?;
+            let response = self
+                .native_request(
+                    "GET",
+                    "channel/list",
+                    &json!({"guild_id":guild_id,"page":page}),
+                    None,
+                    timeout,
+                    echo,
+                )
+                .await?;
             if response["retcode"] != 0 {
                 return Ok(response);
             }
@@ -2534,23 +2737,43 @@ impl KookConnect {
         });
         Ok(send_json)
     }
-    async fn manage_group(&self, action: &str, params: &Value, echo: &Value) -> AdapterResult<Value> {
+    async fn manage_group(
+        &self,
+        action: &str,
+        params: &Value,
+        echo: &Value,
+    ) -> AdapterResult<Value> {
         let channel_id = read_json_str(params, "group_id");
         let timeout = Duration::from_secs(8);
         if action == "set_group_name" {
             let name = read_json_str(params, "group_name");
-            return self.native_request(
-                "POST", "channel/update", &json!({"channel_id":channel_id,"name":name}),
-                None, timeout, echo,
-            ).await;
+            return self
+                .native_request(
+                    "POST",
+                    "channel/update",
+                    &json!({"channel_id":channel_id,"name":name}),
+                    None,
+                    timeout,
+                    echo,
+                )
+                .await;
         }
-        let channel = self.native_request(
-            "GET", "channel/view", &json!({"target_id":channel_id}), None, timeout, echo,
-        ).await?;
+        let channel = self
+            .native_request(
+                "GET",
+                "channel/view",
+                &json!({"target_id":channel_id}),
+                None,
+                timeout,
+                echo,
+            )
+            .await?;
         if channel["retcode"] != 0 {
             return Ok(channel);
         }
-        let guild_id = channel["data"]["guild_id"].as_str().ok_or("KOOK 缺少服务器 ID")?;
+        let guild_id = channel["data"]["guild_id"]
+            .as_str()
+            .ok_or("KOOK 缺少服务器 ID")?;
         let mut body = json!({"guild_id":guild_id});
         let endpoint = if action == "set_group_kick" {
             body["target_id"] = read_json_str(params, "user_id").into();
@@ -2558,7 +2781,8 @@ impl KookConnect {
         } else {
             "guild/leave"
         };
-        self.native_request("POST", endpoint, &body, None, timeout, echo).await
+        self.native_request("POST", endpoint, &body, None, timeout, echo)
+            .await
     }
     async fn set_group_card(
         &self,
@@ -3056,8 +3280,12 @@ impl BotConnectTrait for KookConnect {
             "set_msg_pin" => native_api::action_result(self.pin_message(params, echo).await, echo),
             "set_msg_emoji_like" => native_api::action_result(self.react(params, echo).await, echo),
             "kook_api" => native_api::action_result(self.call_native_api(params, echo).await, echo),
-            "kook_guild_badge" => native_api::action_result(self.guild_badge(params, echo).await, echo),
-            "kook_pipe_message" => native_api::action_result(Self::send_pipe_message(params, echo).await, echo),
+            "kook_guild_badge" => {
+                native_api::action_result(self.guild_badge(params, echo).await, echo)
+            }
+            "kook_pipe_message" => {
+                native_api::action_result(Self::send_pipe_message(params, echo).await, echo)
+            }
             "kook_voice_play" => {
                 native_api::action_result(voice::play(self, params, echo).await, echo)
             }
@@ -3085,7 +3313,9 @@ impl BotConnectTrait for KookConnect {
                 Err(error) => native_api::action_result(Err(error), echo),
             },
             "edit_msg" => native_api::action_result(self.edit_message(params, echo).await, echo),
-            "forward_msgs" => native_api::action_result(self.forward_messages(params, echo).await, echo),
+            "forward_msgs" => {
+                native_api::action_result(self.forward_messages(params, echo).await, echo)
+            }
             "delete_msg" => self.deal_ob_delete_msg(params, echo).await?,
             "get_login_info" => self.deal_ob_get_login_info(params, echo).await?,
             "get_stranger_info" => self.deal_ob_get_stranger_info(params, echo).await?,
@@ -3249,12 +3479,18 @@ mod advanced_native_tests {
     fn pipe_destination_and_token_remain_separate_from_the_body() {
         let url = KookConnect::pipe_url(&json!({
             "token":"a&b=/","type":10,"target_id":"002","body":{"参数1":"保留"}
-        })).unwrap();
-        assert_eq!(url.host_str(),Some("www.kookapp.cn"));
-        assert_eq!(url.path(),"/api/v3/message/send-pipemsg");
-        assert_eq!(url.query_pairs().collect::<HashMap<_,_>>(), HashMap::from([
-            ("access_token".into(),"a&b=/".into()),("type".into(),"10".into()),("target_id".into(),"002".into())
-        ]));
+        }))
+        .unwrap();
+        assert_eq!(url.host_str(), Some("www.kookapp.cn"));
+        assert_eq!(url.path(), "/api/v3/message/send-pipemsg");
+        assert_eq!(
+            url.query_pairs().collect::<HashMap<_, _>>(),
+            HashMap::from([
+                ("access_token".into(), "a&b=/".into()),
+                ("type".into(), "10".into()),
+                ("target_id".into(), "002".into())
+            ])
+        );
         assert!(KookConnect::pipe_url(&json!({"token":""})).is_err());
         assert!(KookConnect::pipe_url(&json!({"token":"t","type":12})).is_err());
     }
@@ -3262,13 +3498,29 @@ mod advanced_native_tests {
     #[tokio::test]
     async fn media_card_splits_images_at_platform_limit_and_preserves_order() {
         let bot = KookConnect::build("");
-        let items: Vec<_> = (0..10).map(|index| json!({
-            "type":"photo","media":format!("https://example.org/{index}.png")
-        })).collect();
+        let items: Vec<_> = (0..10)
+            .map(|index| {
+                json!({
+                    "type":"photo","media":format!("https://example.org/{index}.png")
+                })
+            })
+            .collect();
         let card = bot.media_card(&json!({"media":items})).await.unwrap();
         let parsed: Value = serde_json::from_str(&card).unwrap();
-        assert_eq!(parsed[0]["modules"][0]["elements"].as_array().unwrap().len(), 9);
-        assert_eq!(parsed[0]["modules"][1]["elements"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            parsed[0]["modules"][0]["elements"]
+                .as_array()
+                .unwrap()
+                .len(),
+            9
+        );
+        assert_eq!(
+            parsed[0]["modules"][1]["elements"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         let read = KookConnect::media_card_items(&json!({"content":card}));
         assert_eq!(read, items);
     }
@@ -3296,9 +3548,15 @@ mod advanced_native_tests {
     #[tokio::test]
     async fn editable_output_and_reposted_media_follow_kook_message_types() {
         let bot = KookConnect::build("");
-        let (parts, _) = bot.make_kook_msg(&json!([
-            {"type":"text","data":{"text":"hello *world*"}}
-        ]), true).await.unwrap();
+        let (parts, _) = bot
+            .make_kook_msg(
+                &json!([
+                    {"type":"text","data":{"text":"hello *world*"}}
+                ]),
+                true,
+            )
+            .await
+            .unwrap();
         assert_eq!(parts, [(9, r"hello \*world\*".to_owned())]);
         let source = json!({
             "type":4,"content":"https://example.org/file",
@@ -3309,20 +3567,26 @@ mod advanced_native_tests {
         let cards: Value = serde_json::from_str(copied["content"].as_str().unwrap()).unwrap();
         assert_eq!(cards[0]["modules"][0]["type"], "file");
         assert_eq!(cards[0]["modules"][0]["title"], "说明.txt");
-        assert!(KookConnect::copy_message_body("target", &json!({"type":4,"content":"file:///tmp/secret"})).is_err());
+        assert!(KookConnect::copy_message_body(
+            "target",
+            &json!({"type":4,"content":"file:///tmp/secret"})
+        )
+        .is_err());
     }
 
     #[test]
     fn kook_edit_and_delete_events_keep_message_id_and_private_peer() {
         let bot = KookConnect::build("");
         *bot.self_id.write().unwrap() = "bot".into();
-        let input = |kind| json!({
-            "type":255,"channel_type":"PERSON","author_id":"1",
-            "extra":{"type":kind,"body":{
-                "author_id":"bot","target_id":"peer","msg_id":"raw-id",
-                "chat_code":"chat-code","content":"edited"
-            }}
-        });
+        let input = |kind| {
+            json!({
+                "type":255,"channel_type":"PERSON","author_id":"1",
+                "extra":{"type":kind,"body":{
+                    "author_id":"bot","target_id":"peer","msg_id":"raw-id",
+                    "chat_code":"chat-code","content":"edited"
+                }}
+            })
+        };
         let edited = bot.native_event(&input("updated_private_message")).unwrap();
         let deleted = bot.native_event(&input("deleted_private_message")).unwrap();
         assert_eq!(edited["message_id"], deleted["message_id"]);
@@ -3340,24 +3604,47 @@ mod advanced_native_tests {
             {"role_id":5,"permissions":4096},
             {"role_id":6,"permissions":1}
         ]});
-        assert_eq!(KookConnect::member_role(&guild, &json!({"roles":[]}), "10"), "owner");
-        assert_eq!(KookConnect::member_role(&guild, &json!({"roles":[5]}), "11"), "member");
-        assert_eq!(KookConnect::member_role(&guild, &json!({"roles":[5,6]}), "11"), "admin");
-        assert!(KookConnect::text_channel_group(&json!({"id":"1","type":2,"name":"语音"})).is_none());
-        assert!(KookConnect::text_channel_group(&json!({"id":"1","type":1,"is_category":1,"name":"分组"})).is_none());
-        assert_eq!(KookConnect::text_channel_group(&json!({"id":"2","type":1,"name":"聊天"})).unwrap().group_id, "2");
+        assert_eq!(
+            KookConnect::member_role(&guild, &json!({"roles":[]}), "10"),
+            "owner"
+        );
+        assert_eq!(
+            KookConnect::member_role(&guild, &json!({"roles":[5]}), "11"),
+            "member"
+        );
+        assert_eq!(
+            KookConnect::member_role(&guild, &json!({"roles":[5,6]}), "11"),
+            "admin"
+        );
+        assert!(
+            KookConnect::text_channel_group(&json!({"id":"1","type":2,"name":"语音"})).is_none()
+        );
+        assert!(KookConnect::text_channel_group(
+            &json!({"id":"1","type":1,"is_category":1,"name":"分组"})
+        )
+        .is_none());
+        assert_eq!(
+            KookConnect::text_channel_group(&json!({"id":"2","type":1,"name":"聊天"}))
+                .unwrap()
+                .group_id,
+            "2"
+        );
 
         let bot = KookConnect::build("");
-        let channel = bot.native_event(&json!({
-            "channel_type":"GROUP","type":255,"target_id":"guild",
-            "extra":{"type":"deleted_channel","body":{"id":"channel"}}
-        })).unwrap();
+        let channel = bot
+            .native_event(&json!({
+                "channel_type":"GROUP","type":255,"target_id":"guild",
+                "extra":{"type":"deleted_channel","body":{"id":"channel"}}
+            }))
+            .unwrap();
         assert_eq!(channel["group_id"], "channel");
         assert_eq!(channel["groups_id"], "guild");
-        let role = bot.native_event(&json!({
-            "channel_type":"GROUP","type":255,"target_id":"guild",
-            "extra":{"type":"updated_role","body":{"role_id":6}}
-        })).unwrap();
+        let role = bot
+            .native_event(&json!({
+                "channel_type":"GROUP","type":255,"target_id":"guild",
+                "extra":{"type":"updated_role","body":{"role_id":6}}
+            }))
+            .unwrap();
         assert_eq!(role["groups_id"], "guild");
         assert!(role.get("group_id").is_none());
 
@@ -3377,13 +3664,23 @@ mod advanced_native_tests {
             "type":"section","text":"示例 & [文字], 123"
         }]}]);
         let input = json!({"target_id":"42","content":cards});
-        let created = KookConnect::native_card_payload("message/create", &input).unwrap().unwrap();
+        let created = KookConnect::native_card_payload("message/create", &input)
+            .unwrap()
+            .unwrap();
         assert_eq!(created["type"], 10);
         assert_eq!(created["content"], cards.to_string());
-        let updated = KookConnect::native_card_payload("direct-message/update", &input).unwrap().unwrap();
+        let updated = KookConnect::native_card_payload("direct-message/update", &input)
+            .unwrap()
+            .unwrap();
         assert!(updated.get("type").is_none());
-        assert!(KookConnect::native_card_payload("thread/reply", &input).unwrap().is_none());
-        assert!(KookConnect::native_card_payload("message/create", &json!({"type":9,"content":cards})).is_err());
+        assert!(KookConnect::native_card_payload("thread/reply", &input)
+            .unwrap()
+            .is_none());
+        assert!(KookConnect::native_card_payload(
+            "message/create",
+            &json!({"type":9,"content":cards})
+        )
+        .is_err());
 
         let bot = KookConnect::build("");
         let encoded = cq_params_encode(&cards.to_string());
@@ -3403,14 +3700,20 @@ mod advanced_native_tests {
             {"type":"file","title":"说明,附件.pdf","src":"https://example.org/file"}
         ]}]);
         let mut message = String::new();
-        bot.deal_card_msg(&json!({"content":content.to_string()}), &mut message, false, "").await.unwrap();
+        bot.deal_card_msg(
+            &json!({"content":content.to_string()}),
+            &mut message,
+            false,
+            "",
+        )
+        .await
+        .unwrap();
         let segments = str_msg_to_arr(&json!(message)).unwrap();
         assert_eq!(segments[0]["data"]["text"], "附件");
         assert_eq!(segments[1]["type"], "file");
         assert_eq!(segments[1]["data"]["name"], "说明,附件.pdf");
         assert_eq!(segments[1]["data"]["file"], "https://example.org/file");
     }
-
 
     #[test]
     fn voice_members_and_reactions_use_the_actual_channel() {

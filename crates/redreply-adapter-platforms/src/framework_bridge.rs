@@ -157,9 +157,27 @@ macro_rules! legacy_factory {
     };
 }
 
-legacy_factory!(OneBot11Connect, OneBot11Factory, onebot11_factory, "onebot11", ["ws", "wss"]);
-legacy_factory!(OneBot115Connect, OneBot115Factory, onebot115_factory, "onebot115", ["ovo"]);
-legacy_factory!(Satoriv1Connect, Satoriv1Factory, satoriv1_factory, "satori", ["satori"]);
+legacy_factory!(
+    OneBot11Connect,
+    OneBot11Factory,
+    onebot11_factory,
+    "onebot11",
+    ["ws", "wss"]
+);
+legacy_factory!(
+    OneBot115Connect,
+    OneBot115Factory,
+    onebot115_factory,
+    "onebot115",
+    ["ovo"]
+);
+legacy_factory!(
+    Satoriv1Connect,
+    Satoriv1Factory,
+    satoriv1_factory,
+    "satori",
+    ["satori"]
+);
 legacy_factory!(
     QQGuildPrivateConnect,
     QQGuildPrivateFactory,
@@ -175,6 +193,24 @@ legacy_factory!(
     ["qqguild_public"]
 );
 legacy_factory!(KookConnect, KookFactory, kook_factory, "kook", ["kook"]);
-legacy_factory!(EmailConnect, EmailFactory, email_factory, "email", ["email"]);
-legacy_factory!(TeleTramConnect, TelegramFactory, telegram_factory, "telegram", ["telegram"]);
-legacy_factory!(Yunhuv1Connect, YunhuFactory, yunhu_factory, "yunhu", ["yunhu"]);
+legacy_factory!(
+    EmailConnect,
+    EmailFactory,
+    email_factory,
+    "email",
+    ["email"]
+);
+legacy_factory!(
+    TeleTramConnect,
+    TelegramFactory,
+    telegram_factory,
+    "telegram",
+    ["telegram"]
+);
+legacy_factory!(
+    Yunhuv1Connect,
+    YunhuFactory,
+    yunhu_factory,
+    "yunhu",
+    ["yunhu"]
+);

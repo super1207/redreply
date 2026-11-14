@@ -214,23 +214,13 @@ impl Actor {
 
     fn start_reply(&mut self, request: ReplyRequest) {
         if self.chain.is_empty() {
-            crate::calls::finish_turn(
-                request.turn_id,
-                None,
-                Some("没有可回复的消息"),
-                false,
-            );
+            crate::calls::finish_turn(request.turn_id, None, Some("没有可回复的消息"), false);
             return;
         }
         let config = cached_config();
         let mut messages = build_memory_messages(&config, &self.chain, self.summary.as_deref());
         if messages.is_empty() {
-            crate::calls::finish_turn(
-                request.turn_id,
-                None,
-                Some("没有可发送给模型的消息"),
-                false,
-            );
+            crate::calls::finish_turn(request.turn_id, None, Some("没有可发送给模型的消息"), false);
             return;
         }
         if messages.last().and_then(|item| item["role"].as_str()) != Some("user") {

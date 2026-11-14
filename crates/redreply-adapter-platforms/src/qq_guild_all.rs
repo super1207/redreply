@@ -392,7 +392,8 @@ pub async fn cq_msg_to_qq(
                             .access_token
                             .upgrade()
                             .ok_or("access_token not upgrade")?
-                            .read().unwrap_or_else(|e| e.into_inner())
+                            .read()
+                            .unwrap_or_else(|e| e.into_inner())
                     ))?,
                 );
                 req.headers_mut().append(
@@ -402,7 +403,8 @@ pub async fn cq_msg_to_qq(
                             .appid
                             .upgrade()
                             .ok_or("appid not upgrade")?
-                            .read().unwrap_or_else(|e| e.into_inner()),
+                            .read()
+                            .unwrap_or_else(|e| e.into_inner()),
                     )?,
                 );
                 req.headers_mut().append(
@@ -419,7 +421,9 @@ pub async fn cq_msg_to_qq(
                 if msg_type == MsgSrcType::QQGroup {
                     json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
                 }
-                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
+                let _ = redreply_adapter_core::cqapi::cq_add_log(
+                    format!("接收qq group API数据:{}", json_val).as_str(),
+                );
                 if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                     let id = read_json_str(&json_val, "id");
                     if !id.is_empty() {
@@ -544,7 +548,8 @@ pub async fn cq_msg_to_qq(
                         .access_token
                         .upgrade()
                         .ok_or("access_token not upgrade")?
-                        .read().unwrap_or_else(|e| e.into_inner())
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
                 ))?,
             );
             req.headers_mut().append(
@@ -554,7 +559,8 @@ pub async fn cq_msg_to_qq(
                         .appid
                         .upgrade()
                         .ok_or("appid not upgrade")?
-                        .read().unwrap_or_else(|e| e.into_inner()),
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner()),
                 )?,
             );
             req.headers_mut().append(
@@ -571,7 +577,9 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                format!("接收qq group API数据:{}", json_val).as_str(),
+            );
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -646,7 +654,8 @@ pub async fn cq_msg_to_qq(
                         .access_token
                         .upgrade()
                         .ok_or("access_token not upgrade")?
-                        .read().unwrap_or_else(|e| e.into_inner())
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
                 ))?,
             );
             req.headers_mut().append(
@@ -656,7 +665,8 @@ pub async fn cq_msg_to_qq(
                         .appid
                         .upgrade()
                         .ok_or("appid not upgrade")?
-                        .read().unwrap_or_else(|e| e.into_inner()),
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner()),
                 )?,
             );
             req.headers_mut().append(
@@ -673,7 +683,9 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                format!("接收qq group API数据:{}", json_val).as_str(),
+            );
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -756,7 +768,8 @@ pub async fn cq_msg_to_qq(
                         .access_token
                         .upgrade()
                         .ok_or("access_token not upgrade")?
-                        .read().unwrap_or_else(|e| e.into_inner())
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
                 ))?,
             );
             req.headers_mut().append(
@@ -766,7 +779,8 @@ pub async fn cq_msg_to_qq(
                         .appid
                         .upgrade()
                         .ok_or("appid not upgrade")?
-                        .read().unwrap_or_else(|e| e.into_inner()),
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner()),
                 )?,
             );
             req.headers_mut().append(
@@ -783,7 +797,9 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                format!("接收qq group API数据:{}", json_val).as_str(),
+            );
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -844,7 +860,8 @@ pub fn get_reply_id(
         .id_event_map
         .upgrade()
         .ok_or("id_event_map not upgrade")?
-        .read().unwrap_or_else(|e| e.into_inner())
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
         .get(passive_id)
     {
         let tp = read_json_str(event, "t");
@@ -897,7 +914,9 @@ pub async fn token_refresh(
     // println!("token_refresh:{}",ret_str);
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
     // expires_in 缺失或非法时记为 0，由调用方保持现有刷新间隔
-    let expires_in = read_json_str(&json_val, "expires_in").parse::<u64>().unwrap_or(0);
+    let expires_in = read_json_str(&json_val, "expires_in")
+        .parse::<u64>()
+        .unwrap_or(0);
     Ok(AccessTokenStruct {
         access_token: json_val
             .get("access_token")
@@ -966,7 +985,8 @@ pub fn qq_content_to_cqstr(
                     let bot_id = bot_id
                         .upgrade()
                         .ok_or("get bot id error")?
-                        .read().unwrap_or_else(|e| e.into_inner())
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
                         .to_owned();
                     if bot_id == user_id {
                         out_str += &format!("[CQ:at,qq={}]", cq_params_encode(self_id));
@@ -980,7 +1000,8 @@ pub fn qq_content_to_cqstr(
                     let bot_id = bot_id
                         .upgrade()
                         .ok_or("get bot id error")?
-                        .read().unwrap_or_else(|e| e.into_inner())
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
                         .to_owned();
                     if bot_id == user_id {
                         out_str += &format!("[CQ:at,qq={}]", cq_params_encode(self_id));
@@ -992,7 +1013,8 @@ pub fn qq_content_to_cqstr(
                     let bot_id = bot_id
                         .upgrade()
                         .ok_or("get bot id error")?
-                        .read().unwrap_or_else(|e| e.into_inner())
+                        .read()
+                        .unwrap_or_else(|e| e.into_inner())
                         .to_owned();
                     if bot_id == user_id {
                         out_str += &format!("[CQ:at,qq={}]", cq_params_encode(self_id));
@@ -1198,7 +1220,8 @@ pub async fn do_qq_json_post(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner())
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -1208,7 +1231,8 @@ pub async fn do_qq_json_post(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner()),
+                .read()
+                .unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -1231,11 +1255,7 @@ pub async fn do_qq_json_post(
         if body.len() > 500 {
             body = &body[..body.floor_char_boundary(500)];
         }
-        return Err(format!(
-            "do_qq_json_post http error:{} {path} body:{body}",
-            status
-        )
-        .into());
+        return Err(format!("do_qq_json_post http error:{} {path} body:{body}", status).into());
     }
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
     Ok(json_val)
@@ -1294,7 +1314,10 @@ pub async fn wait_qqgroup_audit_result(
 
     let (tx_ay, mut rx_ay) = tokio::sync::mpsc::channel::<serde_json::Value>(1);
     let audit_map = Arc::clone(&_self_t.qqgroup_audit_map);
-    audit_map.write().await.insert(audit_id.clone(), tx_ay.clone());
+    audit_map
+        .write()
+        .await
+        .insert(audit_id.clone(), tx_ay.clone());
     let _guard = scopeguard::guard(audit_id.clone(), |audit_id| {
         let audit_map = Arc::clone(&audit_map);
         tokio::spawn(async move {
@@ -1465,7 +1488,9 @@ async fn send_guild_msg_node(
             .as_str(),
         );
         let api_ret = do_qq_json_post(self_t, context.path, json_data).await?;
-        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收{} API数据:{}", context.log_name, api_ret).as_str());
+        let _ = redreply_adapter_core::cqapi::cq_add_log(
+            format!("接收{} API数据:{}", context.log_name, api_ret).as_str(),
+        );
         append_api_msg_id(id, &api_ret)?;
     } else {
         for img in &qq_msg_node.imgs {
@@ -1784,7 +1809,8 @@ pub async fn do_qq_form_post(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner())
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -1794,7 +1820,8 @@ pub async fn do_qq_form_post(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner()),
+                .read()
+                .unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -1851,7 +1878,8 @@ pub async fn get_login_info(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner())
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -1861,7 +1889,8 @@ pub async fn get_login_info(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner()),
+                .read()
+                .unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -1903,7 +1932,8 @@ pub async fn get_group_list(
             .id_event_map
             .upgrade()
             .ok_or("id_event_map not upgrade")?
-            .read().unwrap_or_else(|e| e.into_inner())
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
             .get(passive_id)
         {
             let d = read_json_obj_or_null(event, "d");
@@ -1925,7 +1955,8 @@ pub async fn get_group_list(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner())
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -1935,7 +1966,8 @@ pub async fn get_group_list(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner()),
+                .read()
+                .unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -1990,7 +2022,8 @@ pub async fn get_stranger_info(
             .appid
             .upgrade()
             .ok_or("appid not upgrade")?
-            .read().unwrap_or_else(|e| e.into_inner())
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
     {
         return get_login_info(self_t).await;
     }
@@ -2000,7 +2033,8 @@ pub async fn get_stranger_info(
         .id_event_map
         .upgrade()
         .ok_or("id_event_map not upgrade")?
-        .read().unwrap_or_else(|e| e.into_inner())
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
         .get(passive_id)
     {
         let d = read_json_obj_or_null(event, "d");
@@ -2021,7 +2055,8 @@ pub async fn get_stranger_info(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner())
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -2031,7 +2066,8 @@ pub async fn get_stranger_info(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner()),
+                .read()
+                .unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -2069,13 +2105,15 @@ async fn do_qq_delete_request(
         .access_token
         .upgrade()
         .ok_or("access_token not upgrade")?
-        .read().unwrap_or_else(|e| e.into_inner())
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
         .to_owned();
     let appid = self_t
         .appid
         .upgrade()
         .ok_or("appid not upgrade")?
-        .read().unwrap_or_else(|e| e.into_inner())
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
         .to_owned();
     let client = reqwest::Client::builder().no_proxy().build()?;
     let mut req = client.delete(uri).build()?;
@@ -2117,7 +2155,8 @@ pub async fn delete_msg(
         .id_event_map
         .upgrade()
         .ok_or("id_event_map not upgrade")?
-        .read().unwrap_or_else(|e| e.into_inner())
+        .read()
+        .unwrap_or_else(|e| e.into_inner())
         .get(&adapter_message_id)
         .ok_or("event is not found")?
         .1
@@ -2226,13 +2265,15 @@ pub async fn get_group_member_info(
             .appid
             .upgrade()
             .ok_or("appid not upgrade")?
-            .read().unwrap_or_else(|e| e.into_inner())
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
     {
         user_id = self_t
             .bot_id
             .upgrade()
             .ok_or("bot_id not upgrade")?
-            .read().unwrap_or_else(|e| e.into_inner())
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
             .to_owned();
     }
 
@@ -2249,7 +2290,8 @@ pub async fn get_group_member_info(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner())
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -2259,7 +2301,8 @@ pub async fn get_group_member_info(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner()),
+                .read()
+                .unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -2289,7 +2332,8 @@ pub async fn get_group_member_info(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner())
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -2299,7 +2343,8 @@ pub async fn get_group_member_info(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner()),
+                .read()
+                .unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -2374,13 +2419,15 @@ pub async fn set_group_ban(
             .appid
             .upgrade()
             .ok_or("appid not upgrade")?
-            .read().unwrap_or_else(|e| e.into_inner())
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
     {
         user_id = self_t
             .bot_id
             .upgrade()
             .ok_or("bot_id not upgrade")?
-            .read().unwrap_or_else(|e| e.into_inner())
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
             .to_owned();
     }
 
@@ -2397,7 +2444,8 @@ pub async fn set_group_ban(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner())
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -2407,7 +2455,8 @@ pub async fn set_group_ban(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner()),
+                .read()
+                .unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(
@@ -2445,7 +2494,8 @@ pub async fn set_group_ban(
                 .access_token
                 .upgrade()
                 .ok_or("access_token not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner())
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
         ))?,
     );
     req.headers_mut().append(
@@ -2455,7 +2505,8 @@ pub async fn set_group_ban(
                 .appid
                 .upgrade()
                 .ok_or("appid not upgrade")?
-                .read().unwrap_or_else(|e| e.into_inner()),
+                .read()
+                .unwrap_or_else(|e| e.into_inner()),
         )?,
     );
     req.headers_mut().append(

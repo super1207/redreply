@@ -39,10 +39,7 @@ async fn http_get(port: u16, path: &str) -> (u16, String) {
         .await
         .expect("写入请求失败");
     let mut raw = Vec::new();
-    stream
-        .read_to_end(&mut raw)
-        .await
-        .expect("读取响应失败");
+    stream.read_to_end(&mut raw).await.expect("读取响应失败");
     let text = String::from_utf8_lossy(&raw).to_string();
     let status = text
         .split_whitespace()

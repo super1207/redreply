@@ -230,13 +230,8 @@ impl Framework {
     pub fn shutdown(&self) -> Result<()> {
         self.inner.adapters.stop();
         self.inner.plugins.stop_all();
-        let servers = std::mem::take(
-            &mut *self
-                .inner
-                .servers
-                .lock()
-                .unwrap_or_else(|e| e.into_inner()),
-        );
+        let servers =
+            std::mem::take(&mut *self.inner.servers.lock().unwrap_or_else(|e| e.into_inner()));
         for server in servers {
             server.shutdown();
         }

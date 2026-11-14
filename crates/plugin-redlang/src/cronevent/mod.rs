@@ -2,9 +2,9 @@ use std::{cell::RefCell, rc::Rc, thread, time::SystemTime};
 
 use chrono::TimeZone;
 
-use redlang::cqapi::cq_add_log_w;
-use crate::cqevent::is_key_match;
 use crate::core::RedLang;
+use crate::cqevent::is_key_match;
+use redlang::cqapi::cq_add_log_w;
 use redlang::runtime;
 
 pub(crate) use crate::core::scheduler_store::OneTimeRunStruct;
@@ -227,12 +227,12 @@ fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
             }
             // 单条脚本信息损坏只跳过该条，不再用 `?` 传播导致整批到期任务丢失
             let (keyword, cffs, code, ppfs, name, pkg_name) = match get_script_info2(script) {
-                    Ok(v) => v,
-                    Err(err) => {
-                        let _ = cq_add_log_w(&format!("读取延迟触发脚本信息失败: {}", err));
-                        continue;
-                    }
-                };
+                Ok(v) => v,
+                Err(err) => {
+                    let _ = cq_add_log_w(&format!("读取延迟触发脚本信息失败: {}", err));
+                    continue;
+                }
+            };
             if cffs == "延迟触发" && it.pkg_name == pkg_name {
                 let mut rl = RedLang::new();
                 let is_match = match is_key_match(&mut rl, ppfs, keyword, &it.flag) {

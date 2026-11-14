@@ -149,12 +149,12 @@ fn decode(s: &str, depth: usize) -> Result<RedValue, Box<dyn std::error::Error>>
                 // 也不会因 u8 下溢 panic(debug)/静默解错(release)
                 let ch1 = content_text[pos * 2] as char;
                 let ch2 = content_text[pos * 2 + 1] as char;
-                let h1 = ch1
-                    .to_digit(16)
-                    .ok_or_else(|| RedLang::make_err(&format!("不能获得字节集类型:非法十六进制字符`{ch1}`")))?;
-                let h2 = ch2
-                    .to_digit(16)
-                    .ok_or_else(|| RedLang::make_err(&format!("不能获得字节集类型:非法十六进制字符`{ch2}`")))?;
+                let h1 = ch1.to_digit(16).ok_or_else(|| {
+                    RedLang::make_err(&format!("不能获得字节集类型:非法十六进制字符`{ch1}`"))
+                })?;
+                let h2 = ch2.to_digit(16).ok_or_else(|| {
+                    RedLang::make_err(&format!("不能获得字节集类型:非法十六进制字符`{ch2}`"))
+                })?;
                 content2.push(((h1 as u8) << 4) + h2 as u8);
             }
             Ok(RedValue::Bin(Rc::new(content2)))

@@ -9,12 +9,12 @@ use std::{
     rc::Rc,
 };
 
-use redlang::cqapi::cq_add_log_w;
+use crate::core::{rv_array, rv_text, RedLang, RedValue, RedValueData};
 use crate::lifecycle::{add_running_script_num, dec_running_script_num};
+use crate::script_manager::get_gobal_filter_code;
+use redlang::cqapi::cq_add_log_w;
 use redlang::mytool::read_json_str;
 use redlang::plugin_ports::{MqttServiceHandle, PgServiceHandle};
-use crate::core::{rv_array, rv_text, RedLang, RedValue, RedValueData};
-use crate::script_manager::get_gobal_filter_code;
 use redlang::PAGING_UUID;
 
 type ScriptInfo<'a> = (&'a str, &'a str, &'a str, &'a str, &'a str, &'a str);
@@ -43,7 +43,8 @@ fn event_dedup_key(root: &serde_json::Value) -> Option<String> {
             _ => read_json_str(&root["kook_event"], "msg_id"),
         };
         // The message ID names the affected message, which can have any number of notices.
-        return (!event_id.is_empty()).then(|| format!("{platform}|{self_id}|notice|{notice}|{kind}|{event_id}"));
+        return (!event_id.is_empty())
+            .then(|| format!("{platform}|{self_id}|notice|{notice}|{kind}|{event_id}"));
     }
     (!message_id.is_empty()).then(|| format!("{platform}|{self_id}|{message_id}"))
 }
@@ -53,7 +54,10 @@ fn is_duplicate_event(root: &serde_json::Value) -> bool {
         return false;
     };
     let now = chrono::Local::now().timestamp();
-    let mut map = match EVENT_DEDUP.get_or_init(|| std::sync::Mutex::new(HashMap::new())).lock() {
+    let mut map = match EVENT_DEDUP
+        .get_or_init(|| std::sync::Mutex::new(HashMap::new()))
+        .lock()
+    {
         Ok(g) => g,
         Err(p) => p.into_inner(),
     };
@@ -90,7 +94,8 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
     // 不处理10分钟之前的消息，made by tongyi ai
     if let Some(time) = root.get("time") {
         if let Some(time) = time.as_i64() {
-            if time < (chrono::Local::now().timestamp() - redlang::config_manager::skip_msg_time()) {
+            if time < (chrono::Local::now().timestamp() - redlang::config_manager::skip_msg_time())
+            {
                 // 打印日志
                 let _ = cq_add_log_w(&format!(
                     "10分钟前的消息，放弃处理本条消息：`{}`",
@@ -201,9 +206,8 @@ pub fn do_1207_event(onebot_json_str: &str) -> Result<i32, Box<dyn std::error::E
                     }
                 }
                 Err(e) => {
-                    let _ = cq_add_log_w(&format!(
-                        "包`{pkg_name}`内容过滤脚本`{name}`执行失败: {e}"
-                    ));
+                    let _ =
+                        cq_add_log_w(&format!("包`{pkg_name}`内容过滤脚本`{name}`执行失败: {e}"));
                 }
             }
         }
@@ -489,7 +493,6 @@ fn get_script_info(
 
     Ok((keyword, cffs, code, ppfs, name, pkg_name))
 }
-
 
 #[cfg(test)]
 mod event_dedup_tests {

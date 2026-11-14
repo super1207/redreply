@@ -1,14 +1,9 @@
 use crate::core::astparser;
-use crate::core::{MAX_VALUE_DEPTH, ParsedImage, RedLang};
-use redlang::cq_add_log_w;
-use redlang::cqapi::{cq_add_log, get_tmp_dir};
+use crate::core::{add_fun, get_random, rv_array, rv_bin, rv_empty, rv_object, rv_text, RedValue};
+use crate::core::{ParsedImage, RedLang, MAX_VALUE_DEPTH};
 use crate::cronevent::OneTimeRunStruct;
 use crate::lifecycle::pkg_can_run;
 use crate::pyserver::call_py_block;
-use crate::core::{add_fun, get_random, rv_array, rv_bin, rv_empty, rv_object, rv_text, RedValue};
-use redlang::resource_manager::{add_file_lock, del_file_lock};
-use redlang::runtime;
-use redlang::RED_PY_DECODE;
 use base64::{
     alphabet,
     engine::{self, general_purpose},
@@ -25,6 +20,11 @@ use ini::Ini;
 use jsonpath_rust::JsonPath;
 use md5::{Digest, Md5};
 use mlua::MultiValue;
+use redlang::cq_add_log_w;
+use redlang::cqapi::{cq_add_log, get_tmp_dir};
+use redlang::resource_manager::{add_file_lock, del_file_lock};
+use redlang::runtime;
+use redlang::RED_PY_DECODE;
 use reqwest::header::HeaderName;
 use reqwest::header::HeaderValue;
 use rusttype::Scale;
@@ -85,9 +85,7 @@ fn check_image_dims(width: usize, height: usize) -> Result<(), Box<dyn std::erro
     const MAX_PIXELS: usize = 64 * 1024 * 1024;
     if width > MAX_SIDE
         || height > MAX_SIDE
-        || width
-            .checked_mul(height)
-            .is_none_or(|px| px > MAX_PIXELS)
+        || width.checked_mul(height).is_none_or(|px| px > MAX_PIXELS)
     {
         return Err(RedLang::make_err("图片尺寸过大"));
     }
@@ -160,9 +158,9 @@ fn browser_access(
     let handle = redlang::framework_services()
         .and_then(|services| services.get::<redlang::plugin_ports::BrowserServiceHandle>("browser"))
         .ok_or("浏览器插件未启用")?;
-    handle.execute_json(&request.to_string()).map_err(|error| {
-        Box::<dyn std::error::Error>::from(error)
-    })
+    handle
+        .execute_json(&request.to_string())
+        .map_err(|error| Box::<dyn std::error::Error>::from(error))
 }
 
 fn get_param_image(
@@ -530,8 +528,6 @@ fn do_json_obj(root: &serde_json::Value) -> Result<Rc<RedValue>, Box<dyn std::er
         ret_obj.insert(k.to_string(), json_value_to_red(v)?);
     }
     Ok(Rc::new(RedValue::Object(ret_obj)))
-
-
 }
 
 fn do_json_arr(root: &serde_json::Value) -> Result<Rc<RedValue>, Box<dyn std::error::Error>> {
@@ -571,8 +567,6 @@ fn get_mid<'a>(
         }
     }
     Ok(ret_vec)
-
-
 }
 
 #[cfg(test)]
@@ -612,8 +606,7 @@ mod tests {
             "特殊字符!@#$^*()[]{}",
         ];
         for case in cases {
-            let encoded: String =
-                url::form_urlencoded::byte_serialize(case.as_bytes()).collect();
+            let encoded: String = url::form_urlencoded::byte_serialize(case.as_bytes()).collect();
             assert_eq!(decode_url_percent(&encoded), case, "case: {case}");
         }
     }

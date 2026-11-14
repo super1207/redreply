@@ -158,7 +158,10 @@ impl Router {
                     Some(path.trim_start_matches('/').to_string())
                 } else if path == entry.prefix {
                     Some(String::new())
-                } else { path.strip_prefix(&format!("{}/", entry.prefix)).map(|rest| rest.to_string()) }?;
+                } else {
+                    path.strip_prefix(&format!("{}/", entry.prefix))
+                        .map(|rest| rest.to_string())
+                }?;
                 let mut relative = relative;
                 if relative.is_empty() || relative.ends_with('/') {
                     relative.push_str("index.html");
@@ -194,17 +197,11 @@ impl Router {
     }
 
     pub(crate) fn route_count(&self) -> usize {
-        self.routes
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .len()
+        self.routes.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     pub(crate) fn static_count(&self) -> usize {
-        self.statics
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .len()
+        self.statics.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 
@@ -219,7 +216,9 @@ mod tests {
         assert_eq!(params.get("name").map(String::as_str), Some("redlang"));
         assert_eq!(params.get("action").map(String::as_str), Some("enable"));
         assert!(pattern.captures("/api/plugins/redlang").is_none());
-        assert!(pattern.captures("/api/plugins/redlang/enable/extra").is_none());
+        assert!(pattern
+            .captures("/api/plugins/redlang/enable/extra")
+            .is_none());
 
         let wildcard = CompiledPattern::parse("/redlang/*");
         let params = wildcard.captures("/redlang/a/b/c").unwrap();

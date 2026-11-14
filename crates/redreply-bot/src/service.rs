@@ -97,10 +97,7 @@ impl ServiceRegistry {
     }
 
     pub fn len(&self) -> usize {
-        self.entries
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .len()
+        self.entries.read().unwrap_or_else(|e| e.into_inner()).len()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -139,7 +136,9 @@ mod tests {
     #[test]
     fn duplicate_is_rejected() {
         let registry = ServiceRegistry::new();
-        registry.register("greet", Arc::new(Greeting { text: "a".into() })).unwrap();
+        registry
+            .register("greet", Arc::new(Greeting { text: "a".into() }))
+            .unwrap();
         let error = registry
             .register("greet", Arc::new(Greeting { text: "b".into() }))
             .unwrap_err();

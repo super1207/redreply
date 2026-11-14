@@ -102,7 +102,8 @@ async fn request(
     body: Option<&str>,
 ) -> RawResponse {
     let mut stream = TcpStream::connect(addr).await.expect("连接失败");
-    let mut raw_request = format!("{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n");
+    let mut raw_request =
+        format!("{method} {path} HTTP/1.1\r\nHost: {addr}\r\nConnection: close\r\n");
     for (name, value) in headers {
         raw_request.push_str(&format!("{name}: {value}\r\n"));
     }
@@ -124,9 +125,7 @@ async fn request(
     let mut raw = Vec::new();
     stream.read_to_end(&mut raw).await.expect("读取失败");
     let text = String::from_utf8_lossy(&raw).to_string();
-    let (head, body) = text
-        .split_once("\r\n\r\n")
-        .unwrap_or((text.as_str(), ""));
+    let (head, body) = text.split_once("\r\n\r\n").unwrap_or((text.as_str(), ""));
     let mut lines = head.lines();
     let status_line = lines.next().unwrap_or_default();
     let status = status_line
@@ -147,7 +146,10 @@ async fn request(
     }
 }
 
-async fn start_framework(plugin: Option<TestPlugin>, auth: Option<(&str, &str)>) -> (Framework, SocketAddr) {
+async fn start_framework(
+    plugin: Option<TestPlugin>,
+    auth: Option<(&str, &str)>,
+) -> (Framework, SocketAddr) {
     let mut builder = Framework::builder().http_addr("127.0.0.1:0".parse().unwrap());
     if let Some(plugin) = plugin {
         builder = builder.plugin(plugin);
@@ -193,7 +195,10 @@ async fn login_sets_cookie_and_logout_clears_it() {
 
     let login = request(addr, "POST", "/login", &[], Some("password=secret")).await;
     assert_eq!(login.status, StatusCode::FOUND.as_u16());
-    let cookie = login.header("set-cookie").expect("缺少 Set-Cookie").to_string();
+    let cookie = login
+        .header("set-cookie")
+        .expect("缺少 Set-Cookie")
+        .to_string();
     assert!(cookie.contains("password=secret"));
     assert_eq!(login.header("location"), Some("/"));
 

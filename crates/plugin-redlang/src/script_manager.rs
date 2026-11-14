@@ -1,15 +1,15 @@
 use std::{collections::HashMap, error::Error, fs, path::PathBuf, str::FromStr};
 
-use redlang::cqapi::{cq_add_log_w, cq_get_app_directory1, cq_get_app_directory2};
 use crate::initevent;
+use redlang::cqapi::{cq_add_log_w, cq_get_app_directory1, cq_get_app_directory2};
 use redlang::mytool::{path_to_os_str, read_json_str};
 use redlang::runtime_context;
 
 /// 串行化所有“保存/删除/改名/上传”类写操作，避免并发保存交错写损坏 script.json
 static SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-pub(crate) fn lock_save(
-) -> Result<std::sync::MutexGuard<'static, ()>, Box<dyn Error + Send + Sync>> {
+pub(crate) fn lock_save() -> Result<std::sync::MutexGuard<'static, ()>, Box<dyn Error + Send + Sync>>
+{
     SAVE_LOCK.lock().map_err(|_| "保存锁已毒化".into())
 }
 
@@ -101,15 +101,11 @@ pub fn init_code() -> Result<(), Box<dyn Error + Send + Sync>> {
     let content = fs::read_to_string(&script_path)?;
     // 与附加包一致：剥离 BOM，避免 Windows 编辑器写入 BOM 后 JSON 解析失败
     let content = content.strip_prefix('\u{FEFF}').unwrap_or(&content);
-    let mut scripts: Vec<serde_json::Value> =
-        serde_json::from_str(content).map_err(|err| {
-            format!("解析脚本文件`{script_path}`失败(不是合法的json)：{err:?}")
-        })?;
+    let mut scripts: Vec<serde_json::Value> = serde_json::from_str(content)
+        .map_err(|err| format!("解析脚本文件`{script_path}`失败(不是合法的json)：{err:?}"))?;
     scripts.extend(get_all_pkg_code()?);
-    crate::core::scripts()
-        .replace_scripts(serde_json::Value::Array(scripts));
-    crate::core::scripts()
-        .replace_package_names(get_all_pkg_name()?);
+    crate::core::scripts().replace_scripts(serde_json::Value::Array(scripts));
+    crate::core::scripts().replace_package_names(get_all_pkg_name()?);
 
     if let Err(err) = initevent::do_init_event(None) {
         let _ = cq_add_log_w(&err.to_string());
@@ -206,8 +202,7 @@ pub fn get_gobal_filter_code() -> Result<String, Box<dyn Error>> {
         return Ok(code);
     }
     let code = get_global_code_from_sql("GOBAL_FILTER_TABLE", "GOBAL_FILTER_NAME")?;
-    crate::core::scripts()
-        .set_global_filter_code(code.clone());
+    crate::core::scripts().set_global_filter_code(code.clone());
     Ok(code)
 }
 
@@ -306,12 +301,14 @@ pub fn save_code(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         .cloned()
         .map(serde_json::Value::Array)
         .unwrap_or_else(|| serde_json::json!([]));
-    atomic_write(std::path::Path::new(&default_path), &default_content.to_string())?;
+    atomic_write(
+        std::path::Path::new(&default_path),
+        &default_content.to_string(),
+    )?;
 
     // 删除集合 = 磁盘上存在但不在本次提交列表中的包目录；
     // 本次重命名产生的新名必须保留（客户端列表可能仍用旧名描述改名过程）
-    let mut keep_names: std::collections::HashSet<String> =
-        package_names.iter().cloned().collect();
+    let mut keep_names: std::collections::HashSet<String> = package_names.iter().cloned().collect();
     for (_, new_name) in &succeeded_renames {
         keep_names.insert(new_name.clone());
     }
@@ -345,11 +342,9 @@ pub fn save_one_pkg(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> 
         .ok_or("script is not arr")?;
 
     // 先等该包脚本退出，再持锁写盘，避免持锁空等 15s
-    crate::control_plane::control()
-        .set_loading_script(&pkg_name, true);
+    crate::control_plane::control().set_loading_script(&pkg_name, true);
     let _guard = scopeguard::guard((), |_| {
-        crate::control_plane::control()
-            .set_loading_script(&pkg_name, false);
+        crate::control_plane::control().set_loading_script(&pkg_name, false);
     });
     if !crate::lifecycle::wait_one_pkg_quit(&pkg_name, 15000) {
         return Err("有脚本不愿意退出,所以无法保存".into());
@@ -358,7 +353,10 @@ pub fn save_one_pkg(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> 
 
     if pkg_name.is_empty() {
         let default_path = cq_get_app_directory2()? + "script.json";
-        atomic_write(std::path::Path::new(&default_path), &json["data"].to_string())?;
+        atomic_write(
+            std::path::Path::new(&default_path),
+            &json["data"].to_string(),
+        )?;
     } else {
         let path = PathBuf::from_str(&cq_get_app_directory1()?)?
             .join("pkg_dir")
@@ -380,8 +378,7 @@ pub fn save_one_pkg(contents: &str) -> Result<(), Box<dyn Error + Send + Sync>> 
         script["pkg_name"] = serde_json::Value::String(pkg_name.clone());
         merged.push(script);
     }
-    crate::core::scripts()
-        .replace_scripts(serde_json::Value::Array(merged));
+    crate::core::scripts().replace_scripts(serde_json::Value::Array(merged));
     if !pkg_name.is_empty() {
         crate::core::scripts().add_package_name(pkg_name.clone());
     }
@@ -395,15 +392,11 @@ pub fn rename_one_pkg(
     old_pkg_name: &str,
     new_pkg_name: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    crate::control_plane::control()
-        .set_package_quit(old_pkg_name, true);
-    crate::control_plane::control()
-        .set_package_quit(new_pkg_name, true);
+    crate::control_plane::control().set_package_quit(old_pkg_name, true);
+    crate::control_plane::control().set_package_quit(new_pkg_name, true);
     let _guard = scopeguard::guard((), |_| {
-        crate::control_plane::control()
-            .set_package_quit(old_pkg_name, false);
-        crate::control_plane::control()
-            .set_package_quit(new_pkg_name, false);
+        crate::control_plane::control().set_package_quit(old_pkg_name, false);
+        crate::control_plane::control().set_package_quit(new_pkg_name, false);
     });
     if !crate::lifecycle::wait_one_pkg_quit(old_pkg_name, 15000) {
         return Err("有脚本不愿意退出,所以无法保存".into());
@@ -419,8 +412,7 @@ pub fn rename_one_pkg(
     fs::rename(pkg_dir.join(old_pkg_name), pkg_dir.join(new_pkg_name))?;
     crate::core::scripts().remove_package_name(old_pkg_name);
     del_pkg_memory(old_pkg_name);
-    crate::core::scripts()
-        .add_package_name(new_pkg_name.to_owned());
+    crate::core::scripts().add_package_name(new_pkg_name.to_owned());
     if let Err(err) = redlang::config_manager::rename_ban_pkg(old_pkg_name, new_pkg_name) {
         let _ = cq_add_log_w(&format!("同步禁用列表失败:{err}"));
     }
@@ -438,8 +430,7 @@ pub fn rename_one_pkg(
             script
         })
         .collect();
-    crate::core::scripts()
-        .replace_scripts(serde_json::Value::Array(scripts));
+    crate::core::scripts().replace_scripts(serde_json::Value::Array(scripts));
     if let Err(err) = initevent::do_init_event(Some(new_pkg_name)) {
         let _ = cq_add_log_w(&err.to_string());
     }
@@ -475,8 +466,7 @@ pub fn del_one_pkg(pkg_name: &str) -> Result<(), Box<dyn Error + Send + Sync>> {
         .filter(|script| read_json_str(script, "pkg_name") != pkg_name)
         .cloned()
         .collect();
-    crate::core::scripts()
-        .replace_scripts(serde_json::Value::Array(scripts));
+    crate::core::scripts().replace_scripts(serde_json::Value::Array(scripts));
     Ok(())
 }
 

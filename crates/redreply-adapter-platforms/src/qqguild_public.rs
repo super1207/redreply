@@ -18,14 +18,12 @@ use redreply_adapter_core::{
 
 use crate::qq_guild_all::{get_gateway, get_json_dat, token_refresh, SelfData};
 
-use super::{
-    qq_guild_all::{
-        cq_msg_to_qq, deal_attachments, deal_message_reference, deal_qqgroup_audit_event,
-        delete_msg, do_qq_json_post, get_group_list, get_group_member_info, get_login_info,
-        get_msg_type, get_reply_id, get_stranger_info, qq_content_to_cqstr, send_private_msg,
-        send_qqguild_msg, set_event_id, set_group_ban, str_msg_to_arr_safe,
-        wait_qqgroup_audit_result, MsgSrcType, MsgTargetType, QQMsgNode,
-    },
+use super::qq_guild_all::{
+    cq_msg_to_qq, deal_attachments, deal_message_reference, deal_qqgroup_audit_event, delete_msg,
+    do_qq_json_post, get_group_list, get_group_member_info, get_login_info, get_msg_type,
+    get_reply_id, get_stranger_info, qq_content_to_cqstr, send_private_msg, send_qqguild_msg,
+    set_event_id, set_group_ban, str_msg_to_arr_safe, wait_qqgroup_audit_result, MsgSrcType,
+    MsgTargetType, QQMsgNode,
 };
 use redreply_adapter_core::BotConnectTrait;
 
@@ -45,8 +43,11 @@ pub struct QQGuildPublicConnect {
     pub bot_id: Arc<std::sync::RwLock<String>>,
     // 审核结果通道必须是连接级共享：call_api 注册等待者、WS 事件路径投递结果，
     // 两边要看到同一张 map，各自 new 会导致等待者永远收不到通知
-    pub qqgroup_audit_map:
-        Arc<tokio::sync::RwLock<std::collections::HashMap<String, tokio::sync::mpsc::Sender<serde_json::Value>>>>,
+    pub qqgroup_audit_map: Arc<
+        tokio::sync::RwLock<
+            std::collections::HashMap<String, tokio::sync::mpsc::Sender<serde_json::Value>>,
+        >,
+    >,
     // 审核事件先于 waiter 注册到达时的待领缓存
     pub qqgroup_audit_pending_cache:
         Arc<tokio::sync::RwLock<HashMap<String, (u64, serde_json::Value)>>>,
@@ -79,7 +80,13 @@ pub async fn conv_group_c2c_event(
     root: &serde_json::Value,
 ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
     let tp = read_json_str(root, "t");
-    let self_id = (*self_t.appid.upgrade().ok_or("No appid")?.read().unwrap_or_else(|e| e.into_inner())).to_owned();
+    let self_id = (*self_t
+        .appid
+        .upgrade()
+        .ok_or("No appid")?
+        .read()
+        .unwrap_or_else(|e| e.into_inner()))
+    .to_owned();
     if tp == "MESSAGE_AUDIT_PASS" || tp == "MESSAGE_AUDIT_REJECT" {
         deal_qqgroup_audit_event(self_t, root.clone()).await?;
         return Ok(true);
@@ -238,12 +245,23 @@ async fn conv_event(
     root: serde_json::Value,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let tp = read_json_str(&root, "t");
-    let self_id = (*self_t.appid.upgrade().ok_or("No appid")?.read().unwrap_or_else(|e| e.into_inner())).to_owned();
+    let self_id = (*self_t
+        .appid
+        .upgrade()
+        .ok_or("No appid")?
+        .read()
+        .unwrap_or_else(|e| e.into_inner()))
+    .to_owned();
     if tp == "READY" {
         let d = root.get("d").ok_or("No d")?;
         let user = read_json_obj_or_null(d, "user");
         let bot_id_t = read_json_str(&user, "id");
-        (*self_t.bot_id.upgrade().ok_or("No bot_id")?.write().unwrap_or_else(|e| e.into_inner())) = bot_id_t;
+        (*self_t
+            .bot_id
+            .upgrade()
+            .ok_or("No bot_id")?
+            .write()
+            .unwrap_or_else(|e| e.into_inner())) = bot_id_t;
     } else if conv_group_c2c_event(self_t, &root).await? {
     } else if tp == "DIRECT_MESSAGE_CREATE" {
         let event_id = set_event_id(self_t, &root, 60 * 5)?;
@@ -634,7 +652,9 @@ async fn send_qqgroup_msg(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                format!("接收qq group API数据:{}", api_ret).as_str(),
+            );
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -659,7 +679,9 @@ async fn send_qqgroup_msg(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                format!("接收qq group API数据:{}", api_ret).as_str(),
+            );
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -693,7 +715,9 @@ async fn send_qqgroup_msg(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                format!("接收qq group API数据:{}", api_ret).as_str(),
+            );
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -731,7 +755,9 @@ async fn send_qqgroup_msg(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                format!("接收qq group API数据:{}", api_ret).as_str(),
+            );
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -752,7 +778,9 @@ async fn send_qqgroup_msg(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                format!("接收qq group API数据:{}", api_ret).as_str(),
+            );
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -782,7 +810,9 @@ async fn send_qqgroup_msg(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
+                format!("接收qq group API数据:{}", api_ret).as_str(),
+            );
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -849,7 +879,9 @@ async fn send_qqpri_msg_chunk(
         );
         let api_ret =
             do_qq_json_post(self_t, &format!("/v2/users/{user_id}/messages"), json_data).await?;
-        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str());
+        let _ = redreply_adapter_core::cqapi::cq_add_log(
+            format!("接收qq private API数据:{}", api_ret).as_str(),
+        );
         // 构造消息id
         append_msg_id(
             id,
@@ -874,7 +906,9 @@ async fn send_qqpri_msg_chunk(
         );
         let api_ret =
             do_qq_json_post(self_t, &format!("/v2/users/{user_id}/messages"), json_data).await?;
-        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str());
+        let _ = redreply_adapter_core::cqapi::cq_add_log(
+            format!("接收qq private API数据:{}", api_ret).as_str(),
+        );
         // 构造消息id
         append_msg_id(
             id,
@@ -905,7 +939,9 @@ async fn send_qqpri_msg_chunk(
         );
         let api_ret =
             do_qq_json_post(self_t, &format!("/v2/users/{user_id}/messages"), json_data).await?;
-        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str());
+        let _ = redreply_adapter_core::cqapi::cq_add_log(
+            format!("接收qq private API数据:{}", api_ret).as_str(),
+        );
         // 构造消息id
         append_msg_id(
             id,
@@ -1201,7 +1237,9 @@ impl BotConnectTrait for QQGuildPublicConnect {
     async fn disconnect(&mut self) {
         self.is_stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
-        if let Some(stop_tx) = &self.stop_tx { let _ = stop_tx.send(true).await; }
+        if let Some(stop_tx) = &self.stop_tx {
+            let _ = stop_tx.send(true).await;
+        }
     }
 
     fn get_alive(&self) -> bool {
@@ -1232,7 +1270,8 @@ impl BotConnectTrait for QQGuildPublicConnect {
             .ok_or("qqguild_public Token格式错误:Token不是字符串")?
             .to_owned();
         let access_token_struct = token_refresh(&appid, &self.appsecret).await?;
-        (*self.access_token.write().unwrap_or_else(|e| e.into_inner())) = access_token_struct.access_token.to_owned();
+        (*self.access_token.write().unwrap_or_else(|e| e.into_inner())) =
+            access_token_struct.access_token.to_owned();
 
         let ws_url = get_gateway(&access_token_struct.access_token, &appid).await?;
         println!("get_gateway:{}", ws_url);
@@ -1243,9 +1282,10 @@ impl BotConnectTrait for QQGuildPublicConnect {
         let host = request.uri().host().ok_or("ws url 缺少 host")?;
         let addr = format!("{host}:{port}");
         // 显式超时，避免半开连接长时间卡在 connecting
-        let socket = tokio::time::timeout(std::time::Duration::from_secs(15), TcpStream::connect(addr))
-            .await
-            .map_err(|_| "TCP连接超时(15s)")??;
+        let socket =
+            tokio::time::timeout(std::time::Duration::from_secs(15), TcpStream::connect(addr))
+                .await
+                .map_err(|_| "TCP连接超时(15s)")??;
         ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
 
         let (mut write_half, mut read_halt) = ws_rst.0.split();
@@ -1280,20 +1320,21 @@ impl BotConnectTrait for QQGuildPublicConnect {
                             // 按 min(expires_in-300, 3600) 调整刷新间隔，下限 30s 防止热循环
                             let secs = access_token_struct
                                 .expires_in
-                                .saturating_sub(300).clamp(30, 3600);
+                                .saturating_sub(300)
+                                .clamp(30, 3600);
                             refresh_interval = std::time::Duration::from_secs(secs);
                         }
                         if let Some(access_token) = access_token.upgrade() {
-                            (*access_token.write().unwrap_or_else(|e| e.into_inner())) = access_token_struct.access_token;
+                            (*access_token.write().unwrap_or_else(|e| e.into_inner())) =
+                                access_token_struct.access_token;
                         } else {
                             break;
                         }
                     }
                     Err(err) => {
                         fail_count += 1;
-                        let _ = cq_add_log_w(&format!(
-                            "刷新access_token失败({fail_count}/3):{err}"
-                        ));
+                        let _ =
+                            cq_add_log_w(&format!("刷新access_token失败({fail_count}/3):{err}"));
                         if fail_count >= 3 {
                             break;
                         }

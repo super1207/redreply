@@ -66,17 +66,15 @@ fn register_login_routes(http: &Arc<crate::http::HttpService>, weak: &Weak<Frame
         Method::GET,
         "/login.html",
         RouteAccess::Public,
-        move |_request, _context| {
-            async move {
-                match ConsoleAssets::get("login.html") {
-                    Some(file) => Ok(bytes_response(
-                        StatusCode::OK,
-                        "text/html; charset=utf-8",
-                        file.data,
-                        None,
-                    )),
-                    None => Err(HttpError::not_found()),
-                }
+        move |_request, _context| async move {
+            match ConsoleAssets::get("login.html") {
+                Some(file) => Ok(bytes_response(
+                    StatusCode::OK,
+                    "text/html; charset=utf-8",
+                    file.data,
+                    None,
+                )),
+                None => Err(HttpError::not_found()),
             }
         },
     );
@@ -125,13 +123,11 @@ fn register_login_routes(http: &Arc<crate::http::HttpService>, weak: &Weak<Frame
         Method::POST,
         "/logout",
         RouteAccess::Public,
-        move |_request, _context| {
-            async move {
-                Ok(redirect_with_cookie(
-                    "/login.html",
-                    "password=; Max-Age=0; Path=/",
-                ))
-            }
+        move |_request, _context| async move {
+            Ok(redirect_with_cookie(
+                "/login.html",
+                "password=; Max-Age=0; Path=/",
+            ))
         },
     );
 }

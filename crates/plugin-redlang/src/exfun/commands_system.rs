@@ -695,5 +695,4 @@ pub(super) fn register() {
             }
         }
     });
-
 }

@@ -177,8 +177,10 @@ impl<'a> AstParserInner<'a> {
                         }
                     } else if curr_char == '】' {
                         if g_num == 0 {
-                            let mut arg_parser =
-                                AstParserInner::new(&self.chars[temp_start..self.pos], self.depth + 1);
+                            let mut arg_parser = AstParserInner::new(
+                                &self.chars[temp_start..self.pos],
+                                self.depth + 1,
+                            );
                             args.push(arg_parser.parse()?);
                             self.consume_char(1)?;
                             is_normal_break = true;
@@ -188,8 +190,10 @@ impl<'a> AstParserInner<'a> {
                         self.consume_char(1)?;
                     } else if curr_char == '@' {
                         if g_num == 0 {
-                            let mut arg_parser =
-                                AstParserInner::new(&self.chars[temp_start..self.pos], self.depth + 1);
+                            let mut arg_parser = AstParserInner::new(
+                                &self.chars[temp_start..self.pos],
+                                self.depth + 1,
+                            );
                             args.push(arg_parser.parse()?);
                             self.consume_char(1)?;
                             temp_start = self.pos;

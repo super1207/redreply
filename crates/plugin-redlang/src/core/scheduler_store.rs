@@ -48,13 +48,17 @@ impl SchedulerStore {
     }
 
     pub fn add_one_time_run(&self, run: OneTimeRunStruct) {
-        self.one_time_runs.lock().unwrap_or_else(|e| e.into_inner()).push(run);
+        self.one_time_runs
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .push(run);
     }
 
     /// 移除某包的所有延迟触发任务，避免包删除/重载后旧任务残留
     pub fn remove_pkg_runs(&self, pkg_name: &str) {
         self.one_time_runs
-            .lock().unwrap_or_else(|e| e.into_inner())
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
             .retain(|run| run.pkg_name != pkg_name);
     }
 

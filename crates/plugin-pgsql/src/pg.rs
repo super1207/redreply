@@ -66,8 +66,7 @@ async fn manage_connection(config: tokio_postgres::Config, display: &str) {
         match config.connect(NoTls).await {
             Ok((client, connection)) => {
                 {
-                    state().set_client(Some(Arc::new(client)))
-                        .await;
+                    state().set_client(Some(Arc::new(client))).await;
                 }
                 let _ = cq_add_log(&format!("数据库连接成功:{display}"));
                 // 等待 connection 结束，结束后清理 client 并重试

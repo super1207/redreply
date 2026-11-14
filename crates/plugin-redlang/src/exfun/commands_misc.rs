@@ -119,14 +119,13 @@ pub(super) fn register() {
         tm = tm
             .checked_add(now_time)
             .ok_or_else(|| RedLang::make_err("设置延迟触发：延迟时间溢出"))?;
-        crate::core::scheduler()
-            .add_one_time_run(OneTimeRunStruct {
-                run_time: tm,
-                pkg_name: self_t.pkg_name.to_owned(),
-                flag: keyword,
-                sub_data: subdata,
-                data: (*self_t.exmap).borrow().clone(),
-            });
+        crate::core::scheduler().add_one_time_run(OneTimeRunStruct {
+            run_time: tm,
+            pkg_name: self_t.pkg_name.to_owned(),
+            flag: keyword,
+            sub_data: subdata,
+            data: (*self_t.exmap).borrow().clone(),
+        });
         Ok(Some(rv_empty()))
     });
     fn zhuhe(s_len: usize, n: usize) -> Vec<Vec<usize>> {

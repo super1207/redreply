@@ -9,7 +9,10 @@ fn store() -> &'static RwLock<Option<Vec<u8>>> {
 }
 
 pub fn default_font() -> Option<Vec<u8>> {
-    store().read().unwrap_or_else(|error| error.into_inner()).clone()
+    store()
+        .read()
+        .unwrap_or_else(|error| error.into_inner())
+        .clone()
 }
 
 pub fn set_default_font(font: Vec<u8>) {

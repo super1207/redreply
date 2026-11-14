@@ -5,7 +5,11 @@ pub(super) fn register() {
         let groups_id = self_t.get_exmap("群组ID");
         let send_json = if get_platform(self_t) == "kook" {
             let explicit = self_t.get_param_text(params, 0)?;
-            let guild_id = if explicit.is_empty() { groups_id.as_str() } else { &explicit };
+            let guild_id = if explicit.is_empty() {
+                groups_id.as_str()
+            } else {
+                &explicit
+            };
             serde_json::json!({
                 "action":"get_group_list",
                 "params":{"groups_id":guild_id,"group_id":self_t.get_exmap("群ID").as_str()},
@@ -97,7 +101,9 @@ pub(super) fn register() {
         if platform == "telegram" && self_t.get_param_text(params, 1)? == "文件ID列表" {
             let offset = self_t.get_param_text(params, 2)?;
             let limit = self_t.get_param_text(params, 3)?;
-            return crate::bot_commands::management::telegram_avatars(self_t, &user_id, &offset, &limit);
+            return crate::bot_commands::management::telegram_avatars(
+                self_t, &user_id, &offset, &limit,
+            );
         }
         // 官方QQ平台：头像 CDN 支持用 AppID + OpenID 直接拼 URL
         if platform == "qqgroup_public"
@@ -321,7 +327,8 @@ pub(super) fn register() {
     add_fun(vec!["语音"], |self_t, params| {
         let pic_rv = self_t.get_param(params, 0)?;
         let option = (get_platform(self_t) == "telegram" && params.len() > 1)
-            .then(|| self_t.get_param_text(params, 1)).transpose()?;
+            .then(|| self_t.get_param_text(params, 1))
+            .transpose()?;
         if option.as_deref() == Some("便笺") {
             return telegram_media::segment(self_t, params, &pic_rv, "voice");
         }
@@ -372,9 +379,12 @@ pub(super) fn register() {
             } else if lower.ends_with(".webm") {
                 "video/webm"
             } else {
-                return Err(RedLang::make_err("Telegram 贴纸上传文件名需以 .webp、.tgs 或 .webm 结尾"));
+                return Err(RedLang::make_err(
+                    "Telegram 贴纸上传文件名需以 .webp、.tgs 或 .webm 结尾",
+                ));
             };
-            let mut data = serde_json::json!({"upload":native_args::file_part(&filename, bytes, Some(mime))});
+            let mut data =
+                serde_json::json!({"upload":native_args::file_part(&filename, bytes, Some(mime))});
             if !emoji.is_empty() {
                 data["emoji"] = emoji.into();
             }
@@ -382,11 +392,16 @@ pub(super) fn register() {
         } else {
             let file = source.expect_text_value()?;
             if file.is_empty() || !filename.is_empty() || !emoji.is_empty() {
-                return Err(RedLang::make_err("文件 ID 或链接只填第一项，文件名和表情用于上传字节集"));
+                return Err(RedLang::make_err(
+                    "文件 ID 或链接只填第一项，文件名和表情用于上传字节集",
+                ));
             }
             serde_json::json!({"file_id":file})
         };
-        Ok(Some(rv_text(format!("[CQ:sticker,content={}]", cq_params_encode(&data.to_string())))))
+        Ok(Some(rv_text(format!(
+            "[CQ:sticker,content={}]",
+            cq_params_encode(&data.to_string())
+        ))))
     });
     add_fun(vec!["文件"], |self_t, params| {
         let file_rv = self_t.get_param(params, 0)?;
@@ -412,7 +427,8 @@ pub(super) fn register() {
     add_fun(vec!["视频"], |self_t, params| {
         let pic_rv = self_t.get_param(params, 0)?;
         let option = (get_platform(self_t) == "telegram" && params.len() > 1)
-            .then(|| self_t.get_param_text(params, 1)).transpose()?;
+            .then(|| self_t.get_param_text(params, 1))
+            .transpose()?;
         if option.as_deref() == Some("便笺") {
             return telegram_media::segment(self_t, params, &pic_rv, "video_note");
         }
@@ -448,26 +464,43 @@ pub(super) fn register() {
         let msg_id_rv = self_t.get_param(params, 0)?;
         let platform = get_platform(self_t);
         if platform == "telegram" && params.len() > 1 {
-            let business_id = self_t.get_param_text(params,1)?;
+            let business_id = self_t.get_param_text(params, 1)?;
             if !business_id.is_empty() {
                 let ids = message_handle_list(&msg_id_rv)?;
                 if !(1..=100).contains(&ids.len()) {
-                    return Err(RedLang::make_err("按平台ID撤回商务消息需要 1 至 100 条同一会话消息"));
+                    return Err(RedLang::make_err(
+                        "按平台ID撤回商务消息需要 1 至 100 条同一会话消息",
+                    ));
                 }
-                let ids = ids.into_iter().map(|id| {
-                    id.parse::<i64>().ok().filter(|id| *id > 0)
-                        .ok_or_else(|| RedLang::make_err("平台消息ID需要正整数"))
-                }).collect::<Result<Vec<_>,_>>()?;
-                let result = call_platform_api(self_t,"telegram","telegram_api",serde_json::json!({
-                    "method":"deleteBusinessMessages","body":{"business_connection_id":business_id,"message_ids":ids}
-                }))?;
-                return check_native_command(result,"撤回商务消息");
+                let ids = ids
+                    .into_iter()
+                    .map(|id| {
+                        id.parse::<i64>()
+                            .ok()
+                            .filter(|id| *id > 0)
+                            .ok_or_else(|| RedLang::make_err("平台消息ID需要正整数"))
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                let result = call_platform_api(
+                    self_t,
+                    "telegram",
+                    "telegram_api",
+                    serde_json::json!({
+                        "method":"deleteBusinessMessages","body":{"business_connection_id":business_id,"message_ids":ids}
+                    }),
+                )?;
+                return check_native_command(result, "撤回商务消息");
             }
         }
-        if matches!(platform.as_str(), "kook" | "telegram") && matches!(msg_id_rv.as_ref(), RedValue::Array(_)) {
+        if matches!(platform.as_str(), "kook" | "telegram")
+            && matches!(msg_id_rv.as_ref(), RedValue::Array(_))
+        {
             let ids = message_handle_list(&msg_id_rv)?;
             return call_platform_api(
-                self_t, &platform, "delete_msgs", serde_json::json!({"message_ids":ids}),
+                self_t,
+                &platform,
+                "delete_msgs",
+                serde_json::json!({"message_ids":ids}),
             );
         }
         let current_msg_id = self_t.get_exmap("消息ID");
@@ -512,7 +545,12 @@ pub(super) fn register() {
         let kind = rl.get_param_text(params, 2)?;
         if platform == "kook" && kind == "模板" {
             let body = crate::bot_commands::management::templates::template_message(&content)?;
-            return call_platform_api(rl,&platform,"edit_msg",serde_json::json!({"message_id":id,"kind":"template","body":body}));
+            return call_platform_api(
+                rl,
+                &platform,
+                "edit_msg",
+                serde_json::json!({"message_id":id,"kind":"template","body":body}),
+            );
         }
         let mut body = if params.len() > 3 {
             let options = rl.get_param(params, 3)?;
@@ -535,12 +573,17 @@ pub(super) fn register() {
         let (kind, field, value) = match (platform.as_str(), kind.as_str()) {
             ("telegram", "" | "文本") => ("text", "text", content.expect_text_value()?.into()),
             ("telegram", "说明") => ("caption", "caption", content.expect_text_value()?.into()),
-            ("telegram", "键盘") => {
-                ("keyboard", "reply_markup", crate::bot_commands::edit_keyboard(&content)?)
-            }
+            ("telegram", "键盘") => (
+                "keyboard",
+                "reply_markup",
+                crate::bot_commands::edit_keyboard(&content)?,
+            ),
             ("telegram", "媒体") if content.as_array().is_some() => {
                 let (mut media, files) = native_args::media_item(&content, 0, true)?;
-                if let Some(mode) = body.as_object_mut().and_then(|obj| obj.remove("parse_mode")) {
+                if let Some(mode) = body
+                    .as_object_mut()
+                    .and_then(|obj| obj.remove("parse_mode"))
+                {
                     media["parse_mode"] = mode;
                 }
                 if !files.is_empty() {
@@ -551,7 +594,9 @@ pub(super) fn register() {
             ("telegram", "媒体") => ("media", "media", native_args::object(&content)?),
             ("telegram", "清单") => ("checklist", "checklist", business::checklist(&content)?),
             ("telegram", "实时位置") => {
-                let values = content.as_array().ok_or("新位置请用【数组@经度@纬度@精度米数@有效秒数@方向角@接近提醒米数】")?;
+                let values = content
+                    .as_array()
+                    .ok_or("新位置请用【数组@经度@纬度@精度米数@有效秒数@方向角@接近提醒米数】")?;
                 body = crate::bot_commands::management::location::live_edit_fields(values)?;
                 ("live_location", "", serde_json::Value::Null)
             }
@@ -562,9 +607,11 @@ pub(super) fn register() {
                 ("stop_location", "", serde_json::Value::Null)
             }
             ("kook", "" | "文本") => ("text", "content", content.expect_text_value()?.into()),
-            ("kook", "卡片") => {
-                ("card", "content", crate::bot_commands::card_for_edit(&content)?)
-            }
+            ("kook", "卡片") => (
+                "card",
+                "content",
+                crate::bot_commands::card_for_edit(&content)?,
+            ),
             _ => return Err(RedLang::make_err("当前平台不支持这种编辑类型")),
         };
         if !field.is_empty() {
@@ -576,7 +623,8 @@ pub(super) fn register() {
             match attachments.as_ref() {
                 RedValue::Text(text) if text.is_empty() => (),
                 RedValue::Object(fields) if fields.contains_key("inline_keyboard") => {
-                    request["body"]["reply_markup"] = crate::bot_commands::edit_keyboard(&attachments)?;
+                    request["body"]["reply_markup"] =
+                        crate::bot_commands::edit_keyboard(&attachments)?;
                 }
                 _ if upload.is_some() => return Err(RedLang::make_err("媒体数组已经包含上传内容")),
                 _ => upload = native_args::files_value(&attachments)?,
@@ -592,7 +640,9 @@ pub(super) fn register() {
                     return Err(RedLang::make_err("编辑行内消息需填写平台行内消息ID"));
                 }
                 if request.get("files").is_some() {
-                    return Err(RedLang::make_err("Telegram 行内媒体编辑请使用已有文件ID或直链"));
+                    return Err(RedLang::make_err(
+                        "Telegram 行内媒体编辑请使用已有文件ID或直链",
+                    ));
                 }
                 if kind == "checklist" {
                     return Err(RedLang::make_err("清单编辑需要商务消息的 RedReply 消息ID"));
@@ -607,9 +657,18 @@ pub(super) fn register() {
                 };
                 let mut body = request["body"].take();
                 body["inline_message_id"] = id.into();
-                return call_platform_api(rl,&platform,"telegram_api",serde_json::json!({"method":method,"body":body}));
+                return call_platform_api(
+                    rl,
+                    &platform,
+                    "telegram_api",
+                    serde_json::json!({"method":method,"body":body}),
+                );
             }
-            _ => return Err(RedLang::make_err("编辑目标类型请留空或在 Telegram 中填行内")),
+            _ => {
+                return Err(RedLang::make_err(
+                    "编辑目标类型请留空或在 Telegram 中填行内",
+                ))
+            }
         }
         call_platform_api(rl, &platform, "edit_msg", request)
     });
@@ -629,7 +688,9 @@ pub(super) fn register() {
             _ => return Err(RedLang::make_err("转发目标类型需为群聊、频道或私聊")),
         };
         if target.is_empty() {
-            target = rl.get_exmap(if is_private { "发送者ID" } else { "群ID" }).to_string();
+            target = rl
+                .get_exmap(if is_private { "发送者ID" } else { "群ID" })
+                .to_string();
         }
         let options = rl.get_param(params, 3)?;
         let options = match options.as_ref() {
@@ -653,8 +714,15 @@ pub(super) fn register() {
             "copy":options["复制"] == "真","silent":options["静默"] == "真",
         });
         if platform == "telegram" {
-            let read_option = |key| options.get(key).and_then(serde_json::Value::as_str).unwrap_or_default();
-            if let Some((field, id)) = telegram_output_topic(read_option("话题ID"), read_option("话题类型"))? {
+            let read_option = |key| {
+                options
+                    .get(key)
+                    .and_then(serde_json::Value::as_str)
+                    .unwrap_or_default()
+            };
+            if let Some((field, id)) =
+                telegram_output_topic(read_option("话题ID"), read_option("话题类型"))?
+            {
                 request[field] = id.into();
             } else if let Ok(event) = serde_json::from_str(&rl.get_exmap("原始事件")) {
                 apply_telegram_topic(&event, &rl.get_exmap("机器人ID"), &target, &mut request);

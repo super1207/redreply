@@ -4,10 +4,10 @@ use std::{
     sync::{atomic::AtomicBool, Arc, RwLock},
 };
 
-use redreply_adapter_core::mytool::all_to_silk::all_to_silk;
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use hyper::header::HeaderValue;
+use redreply_adapter_core::mytool::all_to_silk::all_to_silk;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite};
 
@@ -124,7 +124,6 @@ impl OneBot11Connect {
         &self,
         json: &mut serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        
         let platform = self.get_platform().await?;
         let _ = cq_add_log(&format!("111使用`{platform}`进行音乐卡片签名"));
         if !(platform == "lagrange"
@@ -152,8 +151,7 @@ impl OneBot11Connect {
                 {
                     continue;
                 }
-                
-                
+
                 if music_card_sign.is_empty() {
                     let plus_dir = cq_get_app_directory1()?;
                     let config = plus_dir + "adapter_onebot11_config.json";
@@ -369,14 +367,22 @@ impl OneBot11Connect {
     }
 
     pub async fn get_platform(&self) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let read_platform = self.real_platform.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+        let read_platform = self
+            .real_platform
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_owned();
         if read_platform.is_none() {
             let mut send_json;
             send_json = serde_json::json!({
                 "action":"get_version_info",
                 "params":{}
             });
-            let self_id = self.self_id.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+            let self_id = self
+                .self_id
+                .read()
+                .unwrap_or_else(|e| e.into_inner())
+                .to_owned();
             let ret = self
                 .call_api("onebot11", &self_id, "", &mut send_json)
                 .await?;
@@ -401,10 +407,17 @@ impl OneBot11Connect {
                 None
             };
             if let Some(p) = recognized {
-                *self.real_platform.write().unwrap_or_else(|e| e.into_inner()) = Some(p);
+                *self
+                    .real_platform
+                    .write()
+                    .unwrap_or_else(|e| e.into_inner()) = Some(p);
             }
         }
-        let read_platform = self.real_platform.read().unwrap_or_else(|e| e.into_inner()).to_owned();
+        let read_platform = self
+            .real_platform
+            .read()
+            .unwrap_or_else(|e| e.into_inner())
+            .to_owned();
         if let Some(platform) = read_platform {
             return Ok(platform);
         }
@@ -484,7 +497,9 @@ impl BotConnectTrait for OneBot11Connect {
         self.is_stop
             .store(true, std::sync::atomic::Ordering::Relaxed);
         if self.stop_tx.is_some() {
-            if let Some(stop_tx) = &self.stop_tx { let _ = stop_tx.send(true).await; }
+            if let Some(stop_tx) = &self.stop_tx {
+                let _ = stop_tx.send(true).await;
+            }
         }
     }
 
@@ -497,7 +512,9 @@ impl BotConnectTrait for OneBot11Connect {
         let url = url::Url::parse(&self.url)?;
         use tungstenite::client::IntoClientRequest;
         let mut request = url.as_str().into_client_request()?;
-        let mp = redreply_adapter_core::httpevent::get_params_from_uri(&hyper::Uri::from_str(&self.url)?);
+        let mp = redreply_adapter_core::httpevent::get_params_from_uri(&hyper::Uri::from_str(
+            &self.url,
+        )?);
         if let Some(access_token) = mp.get("access_token") {
             request.headers_mut().insert(
                 "Authorization",
@@ -508,15 +525,12 @@ impl BotConnectTrait for OneBot11Connect {
         let ws_rst;
         if self.url.starts_with("wss://") {
             let port = request.uri().port().map(Into::into).unwrap_or(443);
-            let addr = format!(
-                "{}:{}",
-                request.uri().host().ok_or("ws地址缺少host")?,
-                port
-            );
+            let addr = format!("{}:{}", request.uri().host().ok_or("ws地址缺少host")?, port);
             // 显式超时，避免半开连接长时间卡在 connecting
-            let socket = tokio::time::timeout(std::time::Duration::from_secs(15), TcpStream::connect(addr))
-                .await
-                .map_err(|_| "TCP连接超时(15s)")??;
+            let socket =
+                tokio::time::timeout(std::time::Duration::from_secs(15), TcpStream::connect(addr))
+                    .await
+                    .map_err(|_| "TCP连接超时(15s)")??;
             ws_rst = tokio_tungstenite::client_async_tls(request, socket).await?;
         } else {
             ws_rst = connect_async(request).await?;
@@ -765,7 +779,9 @@ impl BotConnectTrait for OneBot11Connect {
                     .get_mut("message")
                     .ok_or("not found message segment")?;
                 if message.is_array() {
-                    let Some(arr) = message.as_array() else { return Ok(ret_json); };
+                    let Some(arr) = message.as_array() else {
+                        return Ok(ret_json);
+                    };
                     if arr.is_empty() {
                         return Ok(ret_json);
                     }

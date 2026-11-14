@@ -195,36 +195,26 @@ pub fn flush_cache_to_db() -> Result<(), Box<dyn std::error::Error>> {
     store().flush_cache_to_db()
 }
 
-pub fn add_recv_group_msg(
-    platform: &str,
-    bot_id: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    store()
-        .add_something(platform, bot_id, "RECV_GROUP_MSG")
+pub fn add_recv_group_msg(platform: &str, bot_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    store().add_something(platform, bot_id, "RECV_GROUP_MSG")
 }
 
 pub fn add_recv_private_msg(
     platform: &str,
     bot_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    store()
-        .add_something(platform, bot_id, "RECV_PRIVATE_MSG")
+    store().add_something(platform, bot_id, "RECV_PRIVATE_MSG")
 }
 
 pub fn add_send_private_msg(
     platform: &str,
     bot_id: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    store()
-        .add_something(platform, bot_id, "SEND_PRIVATE_MSG")
+    store().add_something(platform, bot_id, "SEND_PRIVATE_MSG")
 }
 
-pub fn add_send_group_msg(
-    platform: &str,
-    bot_id: &str,
-) -> Result<(), Box<dyn std::error::Error>> {
-    store()
-        .add_something(platform, bot_id, "SEND_GROUP_MSG")
+pub fn add_send_group_msg(platform: &str, bot_id: &str) -> Result<(), Box<dyn std::error::Error>> {
+    store().add_something(platform, bot_id, "SEND_GROUP_MSG")
 }
 
 pub fn get_status() -> Result<serde_json::Value, Box<dyn std::error::Error>> {

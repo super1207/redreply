@@ -11,27 +11,28 @@ use std::{
     vec,
 };
 
-use crate::core::{
-    add_fun, get_const_val, get_temp_const_val, rv_array, rv_bin, rv_empty, rv_object, rv_text,
-    set_const_val, set_temp_const_val, RedCommandResult, RedLang, RedValue, RedValueData, CLEAR_UUID,
-};
-use crate::exfun::json_value_to_red;
 use crate::bot_commands::management::business;
 use crate::bot_commands::telegram_media;
-use crate::native_args;
-use redlang::cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2};
+use crate::core::{
+    add_fun, get_const_val, get_temp_const_val, rv_array, rv_bin, rv_empty, rv_object, rv_text,
+    set_const_val, set_temp_const_val, RedCommandResult, RedLang, RedValue, RedValueData,
+    CLEAR_UUID,
+};
+use crate::exfun::json_value_to_red;
 use crate::lifecycle::pkg_can_run;
-use redlang::mytool::{cq_params_encode, cq_text_encode, json_to_cq_str, read_json_str};
-use redlang::resource_manager::{add_file_lock, del_file_lock};
-use redlang::runtime;
-use redlang::runtime_context;
+use crate::native_args;
 use crate::status::{add_send_group_msg, add_send_private_msg};
-use redlang::PAGING_UUID;
 use base64::{
     alphabet,
     engine::{self, general_purpose},
     Engine as _,
 };
+use redlang::cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2};
+use redlang::mytool::{cq_params_encode, cq_text_encode, json_to_cq_str, read_json_str};
+use redlang::resource_manager::{add_file_lock, del_file_lock};
+use redlang::runtime;
+use redlang::runtime_context;
+use redlang::PAGING_UUID;
 use url::Url;
 const BASE64_CUSTOM_ENGINE: engine::GeneralPurpose =
     engine::GeneralPurpose::new(&alphabet::STANDARD, general_purpose::PAD);
@@ -82,11 +83,15 @@ pub(super) fn call_platform_api_value(
     params: serde_json::Value,
 ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
     if get_platform(rl) != platform {
-        return Err(RedLang::make_err(&format!("此命令需要 {platform} 机器人来源")));
+        return Err(RedLang::make_err(&format!(
+            "此命令需要 {platform} 机器人来源"
+        )));
     }
     #[cfg(test)]
     if let Some(response) = TEST_PLATFORM_CALL.with_borrow(|handler| {
-        handler.as_ref().map(|handler| handler(platform, action, params.clone()))
+        handler
+            .as_ref()
+            .map(|handler| handler(platform, action, params.clone()))
     }) {
         return Ok(response);
     }
@@ -104,7 +109,9 @@ pub(super) fn call_platform_api_value(
     );
     let response: serde_json::Value = serde_json::from_str(&result)?;
     if !response.is_object() {
-        return Err(RedLang::make_err("原生 API 未收到响应，请检查机器人是否已连接"));
+        return Err(RedLang::make_err(
+            "原生 API 未收到响应，请检查机器人是否已连接",
+        ));
     }
     Ok(response)
 }
@@ -133,7 +140,10 @@ pub(crate) fn telegram_join_request(
     } else {
         "declineChatJoinRequest"
     };
-    Some((method, serde_json::json!({"chat_id": chat_id, "user_id": user_id})))
+    Some((
+        method,
+        serde_json::json!({"chat_id": chat_id, "user_id": user_id}),
+    ))
 }
 
 fn handle_telegram_join_request(
@@ -158,10 +168,18 @@ fn check_native_command(result: Option<Rc<RedValue>>, action: &str) -> RedComman
     let RedValue::Object(fields) = response.as_ref() else {
         return Err(RedLang::make_err(&format!("{action}返回格式错误")));
     };
-    let code = fields.get("retcode").ok_or("缺少 retcode")?.expect_text_value()?;
+    let code = fields
+        .get("retcode")
+        .ok_or("缺少 retcode")?
+        .expect_text_value()?;
     if code != "0" {
-        let message = fields.get("message").ok_or("缺少 message")?.expect_text_value()?;
-        return Err(RedLang::make_err(&format!("{action}失败（{code}）{message}")));
+        let message = fields
+            .get("message")
+            .ok_or("缺少 message")?
+            .expect_text_value()?;
+        return Err(RedLang::make_err(&format!(
+            "{action}失败（{code}）{message}"
+        )));
     }
     Ok(Some(rv_empty()))
 }
@@ -294,9 +312,11 @@ pub(crate) fn apply_telegram_topic(
     params: &mut serde_json::Value,
 ) {
     let native = &event["telegram"];
-    let original_chat = native["chat"]["id"].as_i64()
+    let original_chat = native["chat"]["id"]
+        .as_i64()
         .or_else(|| native["message"]["chat"]["id"].as_i64());
-    if original_chat.is_none() || chat_id.parse::<i64>().ok() != original_chat
+    if original_chat.is_none()
+        || chat_id.parse::<i64>().ok() != original_chat
         || event["self_id"].as_str() != Some(bot_id)
     {
         return;
@@ -320,7 +340,10 @@ pub(crate) fn telegram_output_topic(
         "频道私信" => "direct_messages_topic_id",
         _ => return Err(RedLang::make_err("Telegram 话题类型需为话题或频道私信")),
     };
-    let id = id.parse::<i64>().ok().filter(|id| *id > 0)
+    let id = id
+        .parse::<i64>()
+        .ok()
+        .filter(|id| *id > 0)
         .ok_or_else(|| RedLang::make_err("Telegram 话题 ID 需要正整数"))?;
     Ok(Some((field, id)))
 }
@@ -350,8 +373,12 @@ fn send_one_msg_with_options(
             if business_id.is_empty() || business_id == "机器人" {
                 return Err("指定商务对方ID时请同时填写商务连接ID".into());
             }
-            peer = business_peer.parse::<i64>().ok().filter(|id| *id > 0)
-                .ok_or("商务对方ID需要正整数")?.to_string();
+            peer = business_peer
+                .parse::<i64>()
+                .ok()
+                .filter(|id| *id > 0)
+                .ok_or("商务对方ID需要正整数")?
+                .to_string();
             msg_type = "private";
         } else if matches!(msg_type, "" | "private") {
             if let Some(chat_id) = business::default_peer(rl) {
@@ -406,7 +433,11 @@ fn send_one_msg_with_options(
             send_json["params"]["reply_markup"] = reply_markup;
         }
         let source = rl.get_exmap("原始事件");
-        let target = if msg_type == "group" { sub_id.clone() } else { peer };
+        let target = if msg_type == "group" {
+            sub_id.clone()
+        } else {
+            peer
+        };
         if msg_type == "private" {
             let chat_id = target.parse::<i64>()?;
             if let Some(id) = business::send_context(rl, &serde_json::json!(chat_id), business_id) {
@@ -428,13 +459,17 @@ fn send_one_msg_with_options(
     #[cfg(test)]
     if let Some(response) = TEST_PLATFORM_CALL.with_borrow(|handler| {
         handler.as_ref().map(|handler| {
-            handler(&platform, send_json["action"].as_str().unwrap_or_default(), send_json["params"].clone())
+            handler(
+                &platform,
+                send_json["action"].as_str().unwrap_or_default(),
+                send_json["params"].clone(),
+            )
         })
     }) {
         if response["retcode"] != 0 {
             return Err("模拟输出流调用失败".into());
         }
-        return Ok(read_json_str(&response["data"],"message_id"));
+        return Ok(read_json_str(&response["data"], "message_id"));
     }
 
     // 数据统计
@@ -481,16 +516,25 @@ fn send_one_msg_with_options(
 
 fn group_member_role(rl: &RedLang, user_id: &str) -> RedCommandResult {
     let platform = get_platform(rl);
-    let result = call_platform_api(rl, &platform, "get_group_member_info", serde_json::json!({
-        "group_id":rl.get_exmap("群ID").as_str(),"user_id":user_id,
-    }))?.ok_or("获取群成员权限未返回响应")?;
+    let result = call_platform_api(
+        rl,
+        &platform,
+        "get_group_member_info",
+        serde_json::json!({
+            "group_id":rl.get_exmap("群ID").as_str(),"user_id":user_id,
+        }),
+    )?
+    .ok_or("获取群成员权限未返回响应")?;
     let RedValue::Object(result) = result.as_ref() else {
         return Err(RedLang::make_err("获取群成员权限返回格式错误"));
     };
     let Some(RedValue::Object(data)) = result.get("data").map(Rc::as_ref) else {
         return Err(RedLang::make_err("获取群成员权限失败"));
     };
-    let role = data.get("role").ok_or("群成员权限响应缺少 role")?.expect_text_value()?;
+    let role = data
+        .get("role")
+        .ok_or("群成员权限响应缺少 role")?
+        .expect_text_value()?;
     let role = match role.as_str() {
         "admin" => "管理",
         "owner" => "群主",
@@ -511,7 +555,10 @@ fn management_platform(rl: &RedLang) -> Result<String, Box<dyn std::error::Error
 
 fn message_handle_list(value: &RedValue) -> Result<Vec<String>, Box<dyn std::error::Error>> {
     let ids = match value {
-        RedValue::Array(items) => items.iter().map(|item| item.expect_text_value()).collect::<Result<Vec<_>, _>>()?,
+        RedValue::Array(items) => items
+            .iter()
+            .map(|item| item.expect_text_value())
+            .collect::<Result<Vec<_>, _>>()?,
         _ => vec![value.expect_text_value()?],
     };
     if ids.iter().any(|id| id.is_empty()) {

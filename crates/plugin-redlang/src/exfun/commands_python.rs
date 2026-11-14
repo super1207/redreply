@@ -590,7 +590,9 @@ def red_out(sw):
                 let red_cmd = if cmd.is_string() {
                     // Lua 字符串允许含非法 UTF-8 字节，to_str 会失败，
                     // 必须用 to_string_lossy 避免 panic（release 下直接 abort 进程）
-                    cmd.as_string().map(|s| s.to_string_lossy()).unwrap_or_default()
+                    cmd.as_string()
+                        .map(|s| s.to_string_lossy())
+                        .unwrap_or_default()
                 } else {
                     return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                 };
@@ -598,7 +600,9 @@ def red_out(sw):
                 let mut red_code = "【".to_string() + &red_cmd;
                 for it in muti_params.iter().skip(1) {
                     let it_t = if it.is_string() {
-                        it.as_string().map(|s| s.to_string_lossy()).unwrap_or_default()
+                        it.as_string()
+                            .map(|s| s.to_string_lossy())
+                            .unwrap_or_default()
                     } else {
                         return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                     };
@@ -640,7 +644,9 @@ def red_out(sw):
                 };
                 let red_cmd = if cmd.is_string() {
                     // 同【运行lua】：Lua 字符串可含非法 UTF-8，用 to_string_lossy 避免 panic
-                    cmd.as_string().map(|s| s.to_string_lossy()).unwrap_or_default()
+                    cmd.as_string()
+                        .map(|s| s.to_string_lossy())
+                        .unwrap_or_default()
                 } else {
                     return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                 };
@@ -648,7 +654,9 @@ def red_out(sw):
                 let mut red_code = "【".to_string() + &red_cmd;
                 for it in muti_params.iter().skip(1) {
                     let it_t = if it.is_string() {
-                        it.as_string().map(|s| s.to_string_lossy()).unwrap_or_default()
+                        it.as_string()
+                            .map(|s| s.to_string_lossy())
+                            .unwrap_or_default()
                     } else {
                         return Err(mlua::Error::RuntimeError("参数错误".to_string()));
                     };

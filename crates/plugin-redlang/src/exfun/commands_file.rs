@@ -408,7 +408,11 @@ pub(super) fn register() {
         if pos >= text_chs.len() {
             return Ok(Some(rv_text("-1".to_string())));
         }
-        let text_str = text_chs.get(pos..).ok_or("位置超出范围")?.iter().collect::<String>();
+        let text_str = text_chs
+            .get(pos..)
+            .ok_or("位置超出范围")?
+            .iter()
+            .collect::<String>();
         if let Some(pos1) = text_str.find(&sub) {
             let t = text_str.get(0..pos1).ok_or("位置超出范围")?;
             let pos2 = t.chars().collect::<Vec<char>>().len();
@@ -550,13 +554,12 @@ pub(super) fn register() {
                         // as_str 会返回 Err，unwarp 将导致进程崩溃
                         match k.as_str() {
                             Ok(s) => s.to_owned(),
-                            Err(_) => String::from_utf8_lossy(k.as_bytes().unwrap_or(&[]))
-                                .to_string(),
+                            Err(_) => {
+                                String::from_utf8_lossy(k.as_bytes().unwrap_or(&[])).to_string()
+                            }
                         },
                     ),
-                    rusqlite::types::Type::Blob => {
-                        rv_bin(k.as_blob().unwrap_or(&[]).to_vec())
-                    }
+                    rusqlite::types::Type::Blob => rv_bin(k.as_blob().unwrap_or(&[]).to_vec()),
                 };
                 v.push(dat);
             }
@@ -688,5 +691,4 @@ pub(super) fn register() {
         });
         Ok(Some(rv_empty()))
     });
-
 }

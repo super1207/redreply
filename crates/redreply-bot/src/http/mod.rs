@@ -74,10 +74,7 @@ impl HttpService {
     }
 
     pub fn auth_snapshot(&self) -> AuthConfig {
-        self.auth
-            .read()
-            .unwrap_or_else(|e| e.into_inner())
-            .clone()
+        self.auth.read().unwrap_or_else(|e| e.into_inner()).clone()
     }
 
     pub fn logger(&self) -> &Arc<Logger> {

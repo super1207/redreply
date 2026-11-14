@@ -80,7 +80,6 @@ async fn http_auth(request: &hyper::Request<Incoming>) -> Result<i32> {
     Err("password invaild".into())
 }
 
-
 /// 框架接管 HTTP 服务后，平台侧未迁移路径的统一入口。
 pub async fn legacy_handle(
     request: hyper::Request<hyper::body::Incoming>,
