@@ -268,55 +268,136 @@ impl KookConnect {
         Ok(result)
     }
 
-    async fn send_template_segment(
-        &self,
-        msg: &str,
+    fn outgoing_message(
+        kind: i32,
+        message: &str,
         target: &str,
         quote: &str,
         private: bool,
-    ) -> AdapterResult<String> {
-        let spec: Value = serde_json::from_str(msg)?;
-        let id = spec["template_id"]
-            .as_str()
-            .filter(|id| !id.is_empty())
-            .ok_or("KOOK 模板消息缺少模板ID")?;
-        let content = spec["content"].as_str().ok_or("KOOK 模板消息缺少参数")?;
-        let mut body = json!({"template_id":id,"content":content,"target_id":target});
-        if let Some(kind) = spec["type"].as_i64() {
-            if !matches!(kind, 9 | 10) {
-                return Err("KOOK 模板消息类型无效".into());
+        options: &Value,
+    ) -> AdapterResult<Value> {
+        let mut body = if kind == TEMPLATE_SEGMENT {
+            let spec: Value = serde_json::from_str(message)?;
+            let id = spec["template_id"]
+                .as_str()
+                .filter(|id| !id.is_empty())
+                .ok_or("KOOK 模板消息缺少模板ID")?;
+            let content = spec["content"].as_str().ok_or("KOOK 模板消息缺少参数")?;
+            let mut body = json!({"template_id":id,"content":content});
+            if let Some(kind) = spec["type"].as_i64() {
+                if !matches!(kind, 9 | 10) {
+                    return Err("KOOK 模板消息类型无效".into());
+                }
+                body["type"] = kind.into();
             }
-            body["type"] = kind.into();
+            body
+        } else {
+            json!({"type":kind,"content":message})
+        };
+        if let Some(code) = options.get("chat_code") {
+            if !private || code.as_str().is_none_or(str::is_empty) {
+                return Err("会话码只适用于 KOOK 私聊".into());
+            }
+            body["chat_code"] = code.clone();
+        } else {
+            body["target_id"] = target.into();
+        }
+        if private && options.get("temp_target_id").is_some() {
+            return Err("KOOK 临时消息只适用于频道".into());
+        }
+        for key in ["temp_target_id", "nonce", "reply_msg_id"] {
+            if let Some(value) = options.get(key) {
+                if value.as_str().is_none_or(str::is_empty) {
+                    return Err("KOOK 发送选项需要非空文本".into());
+                }
+                body[key] = value.clone();
+            }
         }
         if !quote.is_empty() {
             body["quote"] = quote.into();
         }
+        Ok(body)
+    }
+
+    async fn send_message_parts(
+        &self,
+        parts: &[(i32, String)],
+        target: &str,
+        quote: &str,
+        private: bool,
+        options: &Value,
+    ) -> AdapterResult<Vec<RawMsgId>> {
+        let mut messages = Vec::with_capacity(parts.len());
+        let bodies = parts
+            .iter()
+            .enumerate()
+            .map(|(index, (kind, msg))| {
+                let mut body = Self::outgoing_message(
+                    *kind,
+                    msg,
+                    target,
+                    if index == 0 { quote } else { "" },
+                    private,
+                    options,
+                )?;
+                if index != 0 {
+                    body.as_object_mut()
+                        .expect("KOOK message payload is an object")
+                        .remove("reply_msg_id");
+                }
+                Ok(body)
+            })
+            .collect::<AdapterResult<Vec<_>>>()?;
         let endpoint = if private {
             "direct-message/create"
         } else {
             "message/create"
         };
-        let result = self
-            .native_request(
-                "POST",
-                endpoint,
-                &body,
-                None,
-                Duration::from_secs(25),
-                &Value::Null,
-            )
-            .await?;
-        if result["retcode"] != 0 {
-            return Err(result["message"]
+        for body in bodies {
+            let result = self
+                .native_request(
+                    "POST",
+                    endpoint,
+                    &body,
+                    None,
+                    Duration::from_secs(25),
+                    &Value::Null,
+                )
+                .await?;
+            if result["retcode"] != 0 {
+                return Err(result["message"]
+                    .as_str()
+                    .unwrap_or("KOOK 消息发送失败")
+                    .to_owned()
+                    .into());
+            }
+            let msg_id = result["data"]["msg_id"]
                 .as_str()
-                .unwrap_or("KOOK 模板消息发送失败")
-                .to_owned()
-                .into());
+                .ok_or("KOOK 未返回消息ID")?
+                .to_owned();
+            let chat_code = read_json_str(&body, "chat_code");
+            messages.push(RawMsgId {
+                is_private: private,
+                channel_id: if private {
+                    String::new()
+                } else {
+                    target.to_owned()
+                },
+                peer_id: if private && chat_code.is_empty() {
+                    target.to_owned()
+                } else {
+                    String::new()
+                },
+                chat_code,
+                msg_id,
+                user_id: self
+                    .self_id
+                    .read()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .clone(),
+            });
         }
-        Ok(result["data"]["msg_id"]
-            .as_str()
-            .ok_or("KOOK 模板消息未返回消息ID")?
-            .to_owned())
+        Ok(messages)
     }
 
     async fn call_native_api(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
@@ -450,13 +531,23 @@ impl KookConnect {
             event["group_id"] = channel_id.clone().into();
         }
         let mut guild_id = read_json_str(body, "guild_id");
+        if matches!(kind, "updated_guild" | "deleted_guild") && guild_id.is_empty() {
+            guild_id = read_json_str(body, "id");
+        }
         if guild_id.is_empty()
             && (channel_event
                 || role_event
                 || emoji_event
                 || blacklist_event
                 || (is_group && reaction_event)
-                || matches!(kind, "updated_message" | "deleted_message"))
+                || matches!(
+                    kind,
+                    "updated_message"
+                        | "deleted_message"
+                        | "joined_guild"
+                        | "exited_guild"
+                        | "updated_guild_member"
+                ))
         {
             guild_id = read_json_str(data, "target_id");
         }
@@ -664,28 +755,6 @@ impl KookConnect {
             .ok_or("url not str")?
             .to_owned())
     }
-    async fn send_private_msg(
-        &self,
-        tp: i32,
-        user_id: &str,
-        message: &str,
-        quote: &str,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let mut json: serde_json::Value = serde_json::from_str("{}")?;
-        json["content"] = message.into();
-        json["target_id"] = user_id.into();
-        json["type"] = tp.into();
-        if !quote.is_empty() {
-            json["quote"] = quote.into();
-        }
-        let ret_json = self.http_post_json("/direct-message/create", &json).await?;
-        let msg_id = ret_json
-            .get("msg_id")
-            .ok_or("msg_id not found")?
-            .as_str()
-            .ok_or("msg_id not str")?;
-        Ok(msg_id.to_owned())
-    }
     async fn deal_ob_send_private_msg(
         &self,
         params: &serde_json::Value,
@@ -711,31 +780,16 @@ impl KookConnect {
         }
         cq_fix_image_file_in_arr(&mut message_arr);
 
-        let (to_send_data, mut quote) = self.make_kook_msg(&message_arr, true).await?;
-
-        let mut msg_ids = vec![];
-        for (tp, msg) in &to_send_data.clone() {
-            let msg_id = if *tp == TEMPLATE_SEGMENT {
-                self.send_template_segment(msg, &user_id, &quote, true)
-                    .await?
-            } else {
-                self.send_private_msg(*tp, &user_id, msg, &quote).await?
-            };
-
-            msg_ids.push(RawMsgId {
-                is_private: true,
-                channel_id: String::new(),
-                peer_id: user_id.clone(),
-                chat_code: String::new(),
-                msg_id,
-                user_id: self
-                    .self_id
-                    .read()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .to_owned(),
-            });
-            quote = "".to_owned();
-        }
+        let (to_send_data, quote) = self.make_kook_msg(&message_arr, true).await?;
+        let msg_ids = self
+            .send_message_parts(
+                &to_send_data,
+                &user_id,
+                &quote,
+                true,
+                &params["send_options"],
+            )
+            .await?;
         let msg_id = if let [message] = msg_ids.as_slice() {
             self.event_message_handle(message.clone())
         } else {
@@ -1033,7 +1087,7 @@ impl KookConnect {
             .ok_or("msg_id not found")?
             .as_str()
             .ok_or("msg_id not str")?;
-        let msg_id = self.add_msg_id(&[RawMsgId {
+        let msg_id = self.add_msg_id(&vec![RawMsgId {
             is_private: true,
             channel_id: String::new(),
             peer_id: user_id.to_owned(),
@@ -1288,7 +1342,7 @@ impl KookConnect {
             .ok_or("msg_id not found")?
             .as_str()
             .ok_or("msg_id not str")?;
-        let msg_id = self.add_msg_id(&[RawMsgId {
+        let msg_id = self.add_msg_id(&vec![RawMsgId {
             is_private: false,
             channel_id: group_id.to_owned(),
             peer_id: String::new(),
@@ -2169,28 +2223,6 @@ impl KookConnect {
         let ret = js.get("data").ok_or("get data err")?;
         Ok(ret.to_owned())
     }
-    async fn send_group_msg(
-        &self,
-        tp: i32,
-        group_id: &str,
-        message: &str,
-        quote: &str,
-    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let mut json: serde_json::Value = serde_json::from_str("{}")?;
-        json["content"] = message.into();
-        json["target_id"] = group_id.into();
-        json["type"] = tp.into();
-        if !quote.is_empty() {
-            json["quote"] = quote.into();
-        }
-        let ret_json = self.http_post_json("/message/create", &json).await?;
-        let msg_id = ret_json
-            .get("msg_id")
-            .ok_or("msg_id not found")?
-            .as_str()
-            .ok_or("msg_id not str")?;
-        Ok(msg_id.to_owned())
-    }
     async fn deal_ob_send_group_msg(
         &self,
         params: &serde_json::Value,
@@ -2216,30 +2248,16 @@ impl KookConnect {
         }
         cq_fix_image_file_in_arr(&mut message_arr);
 
-        let (to_send_data, mut quote) = self.make_kook_msg(&message_arr, true).await?;
-
-        let mut msg_ids = vec![];
-        for (tp, msg) in &to_send_data.clone() {
-            let msg_id = if *tp == TEMPLATE_SEGMENT {
-                self.send_template_segment(msg, &group_id, &quote, false)
-                    .await?
-            } else {
-                self.send_group_msg(*tp, &group_id, msg, &quote).await?
-            };
-            msg_ids.push(RawMsgId {
-                is_private: false,
-                channel_id: group_id.to_owned(),
-                peer_id: String::new(),
-                chat_code: String::new(),
-                msg_id,
-                user_id: self
-                    .self_id
-                    .read()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .to_owned(),
-            });
-            quote = "".to_owned();
-        }
+        let (to_send_data, quote) = self.make_kook_msg(&message_arr, true).await?;
+        let msg_ids = self
+            .send_message_parts(
+                &to_send_data,
+                &group_id,
+                &quote,
+                false,
+                &params["send_options"],
+            )
+            .await?;
         let msg_id = if let [message] = msg_ids.as_slice() {
             self.event_message_handle(message.clone())
         } else {
@@ -2321,6 +2339,9 @@ impl KookConnect {
         }
         let mut body = params["body"].clone();
         native_api::object(&body)?;
+        if raw.is_private && body.get("temp_target_id").is_some() {
+            return Err("KOOK 临时更新只适用于频道消息".into());
+        }
         if params["kind"] == "template" {
             if body["template_id"].as_str().is_none_or(str::is_empty)
                 || !body["content"].is_string()
@@ -3474,6 +3495,33 @@ mod native_tests {
 #[cfg(test)]
 mod advanced_native_tests {
     use super::*;
+
+    #[test]
+    fn outgoing_messages_set_temporary_targets_and_reuse_templates() {
+        let options = json!({"temp_target_id":"123","reply_msg_id":"incoming","nonce":"tracking"});
+        let channel =
+            KookConnect::outgoing_message(9, "正文", "channel", "quoted", false, &options).unwrap();
+        assert_eq!(
+            channel,
+            json!({"type":9,"content":"正文","target_id":"channel","quote":"quoted",
+            "temp_target_id":"123","reply_msg_id":"incoming","nonce":"tracking"})
+        );
+        assert!(KookConnect::outgoing_message(9, "正文", "123", "", true, &options).is_err());
+        let template = json!({"type":10,"content":"{}","template_id":"45"}).to_string();
+        let dm = KookConnect::outgoing_message(
+            TEMPLATE_SEGMENT,
+            &template,
+            "123",
+            "",
+            true,
+            &json!({"chat_code":"a","nonce":"tracking"}),
+        )
+        .unwrap();
+        assert_eq!(
+            dm,
+            json!({"type":10,"content":"{}","template_id":"45","chat_code":"a","nonce":"tracking"})
+        );
+    }
 
     #[test]
     fn pipe_destination_and_token_remain_separate_from_the_body() {

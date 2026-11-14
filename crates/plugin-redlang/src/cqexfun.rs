@@ -349,7 +349,7 @@ pub(crate) fn telegram_output_topic(
 }
 
 pub fn send_one_msg(rl: &RedLang, msg: &str) -> Result<String, Box<dyn std::error::Error>> {
-    send_one_msg_with_options(rl, msg, None, None, "", "")
+    send_one_msg_with_options(rl, msg, None, None, "", "", serde_json::Value::Null)
 }
 
 fn send_one_msg_with_options(
@@ -359,6 +359,7 @@ fn send_one_msg_with_options(
     topic: Option<(&'static str, i64)>,
     business_id: &str,
     business_peer: &str,
+    send_options: serde_json::Value,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if msg.is_empty() {
         return Ok("".to_string());
@@ -389,6 +390,12 @@ fn send_one_msg_with_options(
         if !business_id.is_empty() && business_id != "机器人" && msg_type != "private" {
             return Err("以商务账户发送时需要目标私聊或商务对方ID".into());
         }
+    }
+    if msg_type.is_empty()
+        && platform == "telegram"
+        && send_options["ephemeral_message_parameters"]["callback_query_id"].is_string()
+    {
+        msg_type = "private";
     }
     let sub_id = get_sub_id(rl, msg_type);
 
@@ -438,7 +445,19 @@ fn send_one_msg_with_options(
         } else {
             peer
         };
-        if msg_type == "private" {
+        let event: serde_json::Value = serde_json::from_str(&source).unwrap_or_default();
+        if msg_type == "group"
+            && event["self_id"].as_str() == Some(self_id.as_str())
+            && event["chat_id"].as_str() == Some(target.as_str())
+            && matches!(
+                event["sub_type"].as_str(),
+                Some("ephemeral_message" | "edited_ephemeral_message")
+            )
+            && send_options["ephemeral_message_parameters"].is_null()
+        {
+            return Err("回复 Telegram 临时消息时，请填写临时消息选项以限定接收者".into());
+        }
+        if msg_type == "private" && !target.is_empty() {
             let chat_id = target.parse::<i64>()?;
             if let Some(id) = business::send_context(rl, &serde_json::json!(chat_id), business_id) {
                 if topic.is_some() {
@@ -449,9 +468,15 @@ fn send_one_msg_with_options(
         }
         if let Some((field, id)) = topic {
             send_json["params"][field] = id.into();
-        } else if let Ok(event) = serde_json::from_str(&source) {
+        } else {
             apply_telegram_topic(&event, &self_id, &target, &mut send_json["params"]);
         }
+    }
+    if send_options
+        .as_object()
+        .is_some_and(|fields| !fields.is_empty())
+    {
+        send_json["params"]["send_options"] = send_options;
     }
     let passive_id = rl.get_exmap("消息ID");
     let remote_id = rl.get_exmap("远程MQTT客户端ID");

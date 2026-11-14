@@ -8,8 +8,14 @@ use crate::core::{
 use crate::cqexfun::{apply_telegram_topic, call_platform_api_value, get_platform};
 use crate::exfun::json_value_to_red;
 
+#[path = "bot_kook_fields.rs"]
+mod kook_fields;
 #[path = "bot_management.rs"]
 pub(super) mod management;
+#[path = "bot_rich.rs"]
+pub(super) mod rich;
+#[path = "bot_send_options.rs"]
+pub(super) mod send_options;
 #[path = "bot_telegram_media.rs"]
 pub(super) mod telegram_media;
 
@@ -143,8 +149,8 @@ fn menu_items(items: &RedValue) -> Result<Vec<Value>> {
         .iter()
         .map(|item| {
             let row = array(item)?;
-            if row.len() != 2 {
-                return Err("每项用【数组@命令名@说明】填写".into());
+            if !(2..=3).contains(&row.len()) {
+                return Err("每项用【数组@命令名@说明@临时】填写".into());
             }
             let name = row_text(row, 0)?;
             let command = name.strip_prefix('/').unwrap_or(&name);
@@ -158,7 +164,12 @@ fn menu_items(items: &RedValue) -> Result<Vec<Value>> {
             {
                 return Err("菜单命令名或说明无效，或命令名重复".into());
             }
-            Ok(json!({"command":command,"description":desc}))
+            let mut item = json!({"command":command,"description":desc});
+            let ephemeral = row_text(row, 2)?;
+            if !ephemeral.is_empty() {
+                item["is_ephemeral"] = boolean(&ephemeral, false)?.into();
+            }
+            Ok(item)
         })
         .collect()
 }
@@ -562,6 +573,19 @@ pub(super) fn event_field(event: &Value, field: &str) -> RedCommandResult {
                 .collect::<Vec<_>>())
         }
         "投票人数" if event["sub_type"] == "poll" => telegram["total_voter_count"].clone(),
+        "投票选项ID" if event["sub_type"] == "poll_answer" => {
+            telegram["option_persistent_ids"].clone()
+        }
+        "投票选项详情" => {
+            let poll = if event["sub_type"] == "poll" {
+                telegram
+            } else {
+                &business["poll"]
+            };
+            poll["options"].as_array().map(|items| items.iter().map(|item| {
+                json!({"选项ID":item["persistent_id"],"文字":item["text"],"票数":item["voter_count"]})
+            }).collect::<Vec<_>>()).into()
+        }
         "查询内容" if event["sub_type"] == "inline_query" => telegram["query"].clone(),
         "查询偏移" if event["sub_type"] == "inline_query" => telegram["offset"].clone(),
         "话题ID" => event["message_thread_id"]
@@ -596,7 +620,43 @@ pub(super) fn event_field(event: &Value, field: &str) -> RedCommandResult {
         "语音便笺" => telegram_media::event_fields(business, "voice"),
         "视频便笺" => telegram_media::event_fields(business, "video_note"),
         "动画" => telegram_media::event_fields(business, "animation"),
+        "建议帖" => {
+            send_options::suggestion_event(business, event["sub_type"].as_str().unwrap_or_default())
+        }
+        "临时消息ID" => business["ephemeral_message_id"].clone(),
+        "临时接收者ID" => business["receiver_user"]["id"].clone(),
+        "富文本" => rich::event_fields(business),
+        "引用"
+            if business["quote"].is_object()
+                || business["external_reply"].is_object()
+                || business["reply_to_message"].is_object() =>
+        {
+            let quote = &business["quote"];
+            let direct = &business["reply_to_message"];
+            let external = &business["external_reply"];
+            json!({"片段":quote["text"],"位置":quote["position"],
+                "手动选择":quote["is_manual"].as_bool().unwrap_or(false),
+                "原会话ID":external["chat"]["id"].as_i64().or_else(|| direct["chat"]["id"].as_i64()),
+                "平台消息ID":external["message_id"].as_i64().or_else(|| direct["message_id"].as_i64()),
+                "临时消息ID":direct["ephemeral_message_id"]})
+        }
+        "引用" => Value::Null,
+        "草稿ID" if event["sub_type"] == "stopped_message_generation" => {
+            telegram["draft_id"].clone()
+        }
+        "草稿会话ID" if event["sub_type"] == "stopped_message_generation" => {
+            telegram["chat"]["id"].clone()
+        }
+        "草稿话题ID" if event["sub_type"] == "stopped_message_generation" => {
+            telegram["message_thread_id"].clone()
+        }
         "私聊会话码" => management::kook_chat_code(event).into(),
+        "服务器事件" => kook_fields::guild(event),
+        "链接预览" if event["platform"] == "kook" => {
+            let body = &event["kook"];
+            let embeds = body.get("embeds").or_else(|| body["extra"].get("embeds"));
+            kook_fields::previews(embeds.unwrap_or(&Value::Null))
+        }
         "黑名单变动"
             if matches!(
                 event["sub_type"].as_str(),
@@ -687,13 +747,14 @@ pub(super) fn playback_state(state: &Value) -> Value {
 
 pub(super) fn register() {
     management::register();
+    rich::register();
     add_fun(vec!["Telegram命令菜单"], |rl, params| {
         let operation = rl.get_param_text(params, 0)?;
         let (scope_start, method) = match operation.as_str() {
             "设置" => (2, "setMyCommands"),
-            "查询" => (1, "getMyCommands"),
+            "查询" | "查询详情" => (1, "getMyCommands"),
             "删除" => (1, "deleteMyCommands"),
-            _ => return Err("命令菜单操作请填设置、查询或删除".into()),
+            _ => return Err("命令菜单操作请填设置、查询、查询详情或删除".into()),
         };
         let [scope, language, chat, user] = text_params::<4>(rl, params, scope_start)?;
         let mut body = scope_body(&scope, &language, &chat, &user)?;
@@ -702,11 +763,19 @@ pub(super) fn register() {
             body["commands"] = json!(menu_items(&items)?);
         }
         let response = telegram(rl, method, body)?;
-        if operation == "查询" {
+        if matches!(operation.as_str(), "查询" | "查询详情") {
             let commands = response["data"].as_array().ok_or("平台未返回命令列表")?;
             return output(&json!(commands
                 .iter()
-                .map(|row| json!([row["command"], row["description"]]))
+                .map(|row| if operation == "查询详情" {
+                    json!([
+                        row["command"],
+                        row["description"],
+                        row["is_ephemeral"].as_bool().unwrap_or(false)
+                    ])
+                } else {
+                    json!([row["command"], row["description"]])
+                })
                 .collect::<Vec<_>>()));
         }
         Ok(Some(rv_empty()))
@@ -802,6 +871,8 @@ pub(super) fn register() {
                 return Err("Telegram 投票不适用于频道私信".into());
             }
         }
+        let options = send_options::parse(rl, params, 7)?;
+        send_options::simple_options(&options, &mut body, rl.get_exmap("群ID").is_empty(), false)?;
         let response = telegram(rl, "sendPoll", body)?;
         Ok(Some(rv_text(
             response["redreply_message_id"]

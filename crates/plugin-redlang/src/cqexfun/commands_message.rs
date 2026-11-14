@@ -1,4 +1,5 @@
 use super::*;
+use crate::bot_commands::send_options;
 
 pub(super) fn register() {
     add_fun(vec!["禁言"], |self_t, params| {
@@ -132,6 +133,14 @@ pub(super) fn register() {
     });
     add_fun(vec!["输出流"], |self_t, params| {
         let msg = self_t.get_param_text(params, 0)?;
+        let options = match get_platform(self_t).as_str() {
+            "telegram" => send_options::parse(self_t, params, 6)?,
+            "kook" => {
+                let input = self_t.get_param(params, 1)?;
+                crate::bot_commands::management::kook_message_options(self_t, &input, false)?
+            }
+            _ => serde_json::Value::Null,
+        };
         let markup = if get_platform(self_t) == "telegram" && params.len() > 1 {
             let value = self_t.get_param(params, 1)?;
             match value.as_ref() {
@@ -156,7 +165,7 @@ pub(super) fn register() {
         } else {
             (String::new(), String::new())
         };
-        match send_one_msg_with_options(self_t, &msg, markup, topic, &connection, &peer) {
+        match send_one_msg_with_options(self_t, &msg, markup, topic, &connection, &peer, options) {
             Ok(msg_id) => Ok(Some(rv_text(msg_id))),
             Err(e) => {
                 let _ = cq_add_log_w(&format!("输出流失败，{}", e));

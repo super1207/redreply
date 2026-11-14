@@ -1,4 +1,5 @@
 use super::*;
+use crate::bot_commands::send_options;
 
 pub(super) fn register() {
     add_fun(vec!["取群列表", "群列表"], |self_t, params| {
@@ -465,6 +466,21 @@ pub(super) fn register() {
         let platform = get_platform(self_t);
         if platform == "telegram" && params.len() > 1 {
             let business_id = self_t.get_param_text(params, 1)?;
+            if business_id == "临时" {
+                let id = msg_id_rv.expect_text_value()?;
+                let receiver = self_t.get_param_text(params, 2)?;
+                let chat = self_t.get_param_text(params, 3)?;
+                let body = send_options::ephemeral_target(self_t, &id, &receiver, &chat)?;
+                let result = call_platform_api(
+                    self_t,
+                    "telegram",
+                    "telegram_api",
+                    serde_json::json!({
+                        "method":"deleteEphemeralMessage","body":body
+                    }),
+                )?;
+                return check_native_command(result, "撤回临时消息");
+            }
             if !business_id.is_empty() {
                 let ids = message_handle_list(&msg_id_rv)?;
                 if !(1..=100).contains(&ids.len()) {
@@ -543,19 +559,43 @@ pub(super) fn register() {
         }
         let content = rl.get_param(params, 1)?;
         let kind = rl.get_param_text(params, 2)?;
-        if platform == "kook" && kind == "模板" {
-            let body = crate::bot_commands::management::templates::template_message(&content)?;
+        if platform == "kook" {
+            let (mode, mut body) = match kind.as_str() {
+                "" | "文本" => (
+                    "text",
+                    serde_json::json!({"content": content.expect_text_value()?}),
+                ),
+                "卡片" => (
+                    "card",
+                    serde_json::json!({"content": crate::bot_commands::card_for_edit(&content)?}),
+                ),
+                "模板" => (
+                    "template",
+                    crate::bot_commands::management::templates::template_message(&content)?,
+                ),
+                _ => return Err(RedLang::make_err("KOOK 支持编辑文本、卡片或模板")),
+            };
+            let input = rl.get_param(params, 3)?;
+            let options = match input.as_ref() {
+                RedValue::Object(_) => native_args::object(&input)?,
+                RedValue::Text(value) if !value.is_empty() => native_args::object(&input)?,
+                _ => crate::bot_commands::management::kook_message_options(rl, &input, true)?,
+            };
+            for (key, value) in options.as_object().ok_or("消息选项需要数组")? {
+                body[key] = value.clone();
+            }
             return call_platform_api(
                 rl,
                 &platform,
                 "edit_msg",
-                serde_json::json!({"message_id":id,"kind":"template","body":body}),
+                serde_json::json!({"message_id":id,"kind":mode,"body":body}),
             );
         }
         let mut body = if params.len() > 3 {
             let options = rl.get_param(params, 3)?;
             match options.as_ref() {
                 RedValue::Text(text) if text.is_empty() => serde_json::json!({}),
+                RedValue::Array(_) => send_options::edit_fields(&options, &kind)?,
                 RedValue::Text(text) if platform == "telegram" => {
                     let mode = match text.as_str() {
                         "Markdown" => "MarkdownV2",
@@ -571,6 +611,17 @@ pub(super) fn register() {
         };
         let mut upload = None;
         let (kind, field, value) = match (platform.as_str(), kind.as_str()) {
+            ("telegram", "富文本") => {
+                let data = crate::bot_commands::rich::decode(&content)?;
+                body = serde_json::json!({});
+                if data["files"]
+                    .as_object()
+                    .is_some_and(|files| !files.is_empty())
+                {
+                    upload = Some(data["files"].clone());
+                }
+                ("text", "rich_message", data["body"].clone())
+            }
             ("telegram", "" | "文本") => ("text", "text", content.expect_text_value()?.into()),
             ("telegram", "说明") => ("caption", "caption", content.expect_text_value()?.into()),
             ("telegram", "键盘") => (
@@ -585,6 +636,18 @@ pub(super) fn register() {
                     .and_then(|obj| obj.remove("parse_mode"))
                 {
                     media["parse_mode"] = mode;
+                }
+                if let Some(above) = body
+                    .as_object_mut()
+                    .and_then(|obj| obj.remove("show_caption_above_media"))
+                {
+                    if !matches!(
+                        media["type"].as_str(),
+                        Some("photo" | "animation" | "video")
+                    ) {
+                        return Err("说明位置适用于图片、动画和视频".into());
+                    }
+                    media["show_caption_above_media"] = above;
                 }
                 if !files.is_empty() {
                     upload = Some(serde_json::Value::Object(files));
@@ -606,12 +669,6 @@ pub(super) fn register() {
                 }
                 ("stop_location", "", serde_json::Value::Null)
             }
-            ("kook", "" | "文本") => ("text", "content", content.expect_text_value()?.into()),
-            ("kook", "卡片") => (
-                "card",
-                "content",
-                crate::bot_commands::card_for_edit(&content)?,
-            ),
             _ => return Err(RedLang::make_err("当前平台不支持这种编辑类型")),
         };
         if !field.is_empty() {
@@ -635,11 +692,31 @@ pub(super) fn register() {
         }
         match rl.get_param_text(params, 5)?.as_str() {
             "" => (),
+            "临时" if platform == "telegram" => {
+                let receiver = rl.get_param_text(params, 6)?;
+                let target = rl.get_param_text(params, 7)?;
+                let id = if explicit_id { id.as_str() } else { "" };
+                let addresses = send_options::ephemeral_target(rl, id, &receiver, &target)?;
+                for (key, value) in addresses.as_object().ok_or("临时消息目标格式错误")? {
+                    request["body"][key] = value.clone();
+                }
+                let method = match kind {
+                    "text" => "editEphemeralMessageText",
+                    "caption" => "editEphemeralMessageCaption",
+                    "keyboard" => "editEphemeralMessageReplyMarkup",
+                    "media" => "editEphemeralMessageMedia",
+                    _ => return Err("临时消息可编辑文本、说明、键盘或媒体".into()),
+                };
+                request["method"] = method.into();
+                return call_platform_api(rl, &platform, "telegram_api", request);
+            }
             "行内" if platform == "telegram" => {
                 if !explicit_id {
                     return Err(RedLang::make_err("编辑行内消息需填写平台行内消息ID"));
                 }
-                if request.get("files").is_some() {
+                if request.get("files").is_some()
+                    || crate::bot_commands::rich::requires_upload(&request["body"]["rich_message"])
+                {
                     return Err(RedLang::make_err(
                         "Telegram 行内媒体编辑请使用已有文件ID或直链",
                     ));
@@ -666,7 +743,7 @@ pub(super) fn register() {
             }
             _ => {
                 return Err(RedLang::make_err(
-                    "编辑目标类型请留空或在 Telegram 中填行内",
+                    "Telegram 编辑目标类型请留空或填行内、临时",
                 ))
             }
         }
@@ -727,6 +804,13 @@ pub(super) fn register() {
             } else if let Ok(event) = serde_json::from_str(&rl.get_exmap("原始事件")) {
                 apply_telegram_topic(&event, &rl.get_exmap("机器人ID"), &target, &mut request);
             }
+            let extra = send_options::parse(rl, params, 7)?;
+            if extra.get("ephemeral_message_parameters").is_some()
+                || extra.get("reply_parameters").is_some()
+            {
+                return Err("转发和复制的发送选项不支持临时消息或高级引用".into());
+            }
+            request["send_options"] = extra;
         }
         call_platform_api(rl, &platform, "forward_msgs", request)
     });

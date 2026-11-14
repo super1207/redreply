@@ -1,4 +1,5 @@
 use super::*;
+use crate::bot_commands::send_options;
 
 pub(super) fn register() {
     add_fun(vec!["BOT权限"], |rl, _params| {
@@ -15,6 +16,18 @@ pub(super) fn register() {
     });
     add_fun(vec!["同意"], |self_t, params| {
         let raw_data = self_t.get_exmap("原始事件");
+        if get_platform(self_t) == "telegram"
+            && (params.len() >= 4 && self_t.get_param_text(params, 3)? == "建议帖"
+                || serde_json::from_str::<serde_json::Value>(&raw_data)
+                    .is_ok_and(|event| event["sub_type"] == "suggested_post_info"))
+        {
+            return send_options::approve(
+                self_t,
+                params,
+                &serde_json::from_str(&raw_data).unwrap_or_default(),
+                true,
+            );
+        }
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
         if get_platform(self_t) == "telegram"
             && raw_json["notice_type"] == "telegram"
@@ -83,6 +96,18 @@ pub(super) fn register() {
     });
     add_fun(vec!["拒绝"], |self_t, params| {
         let raw_data = self_t.get_exmap("原始事件");
+        if get_platform(self_t) == "telegram"
+            && (params.len() >= 4 && self_t.get_param_text(params, 3)? == "建议帖"
+                || serde_json::from_str::<serde_json::Value>(&raw_data)
+                    .is_ok_and(|event| event["sub_type"] == "suggested_post_info"))
+        {
+            return send_options::approve(
+                self_t,
+                params,
+                &serde_json::from_str(&raw_data).unwrap_or_default(),
+                false,
+            );
+        }
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
         if get_platform(self_t) == "telegram"
             && raw_json["notice_type"] == "telegram"

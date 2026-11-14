@@ -1,4 +1,5 @@
 use super::*;
+use crate::bot_commands::send_options;
 
 pub(super) fn register() {
     add_fun(vec!["分页"], |_self_t, _params| {
@@ -18,13 +19,21 @@ pub(super) fn register() {
         }
         let msg = self_t.get_param_text(params, 0)?;
         let user_id = self_t.get_param_text(params, 1)?;
+        let options = match get_platform(self_t).as_str() {
+            "telegram" => send_options::parse(self_t, params, 2)?,
+            "kook" => {
+                let input = self_t.get_param(params, 2)?;
+                crate::bot_commands::management::kook_message_options(self_t, &input, false)?
+            }
+            _ => serde_json::Value::Null,
+        };
         let old_group_id = self_t.get_exmap("群ID"); // 备份群ID
         let old_user_id = self_t.get_exmap("发送者ID"); // 备份用户ID
         self_t.set_exmap("群ID", "");
         if !user_id.is_empty() {
             self_t.set_exmap("发送者ID", &user_id);
         }
-        match send_one_msg(self_t, &msg) {
+        match send_one_msg_with_options(self_t, &msg, None, None, "", "", options) {
             Ok(msg_id) => {
                 self_t.set_exmap("群ID", &old_group_id); // 还原群ID
                 self_t.set_exmap("发送者ID", &old_user_id); // 还原用户ID
