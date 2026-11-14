@@ -12,6 +12,7 @@ use crate::mytool::{
 };
 use crate::{native_api, AdapterResult};
 use async_trait::async_trait;
+mod send_options;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
 use uuid::Uuid;
@@ -456,8 +457,10 @@ impl TeleTramConnect {
                     notice["group_id"] = chat_id.clone().into();
                 }
             }
-            if let Some(raw) = RawMsgId::from_message(message, &chat["id"], "") {
-                notice["message_id"] = self.message_handle(raw).into();
+            if message["ephemeral_message_id"].is_null() {
+                if let Some(raw) = RawMsgId::from_message(message, &chat["id"], "") {
+                    notice["message_id"] = self.message_handle(raw).into();
+                }
             }
             if kind == "deleted_business_messages" {
                 if let (Some(business_id), Some(ids)) = (
@@ -831,12 +834,14 @@ impl TeleTramConnect {
         }
         let message = &event[kind];
         let service = if kind.starts_with("edited_") {
-            [("location", "edited_location"), ("voice", "edited_voice"),
+            [("rich_message", "edited_rich_message"), ("location", "edited_location"), ("voice", "edited_voice"),
              ("video_note", "edited_video_note"), ("animation", "edited_animation")]
                 .into_iter().find_map(|(field, notice)| message[field].is_object().then_some(notice))?
         } else {
-            ["successful_payment", "refunded_payment", "venue", "location", "contact",
-             "voice", "video_note", "animation"].into_iter()
+            ["suggested_post_approved", "suggested_post_approval_failed", "suggested_post_declined",
+             "suggested_post_paid", "suggested_post_refunded", "suggested_post_info",
+             "successful_payment", "refunded_payment", "venue", "location", "contact",
+             "voice", "video_note", "animation", "rich_message"].into_iter()
                 .find(|key| message[*key].is_object())?
         };
         let mut notice = self.notice_for_update(service, message, &event["update_id"]);
@@ -857,6 +862,12 @@ impl TeleTramConnect {
         event: &serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let message_chat_type = event["message"]["chat"]["type"].as_str();
+        for (field, notice) in [("message", "ephemeral_message"), ("edited_message", "edited_ephemeral_message")] {
+            if event[field]["ephemeral_message_id"].is_number() {
+                Self::dispatch_notice(self.notice_for_update(notice, &event[field], &event["update_id"]));
+                return Ok(());
+            }
+        }
         let ordinary_message =
             matches!(message_chat_type, Some("private" | "group" | "supergroup"));
         let update = event
@@ -1097,7 +1108,7 @@ impl TeleTramConnect {
                 }
             } else if matches!(tp.as_str(),Some("sticker" | "media_group" | "telegram_checklist" | "telegram_invoice"
                 | "telegram_paid_media" | "telegram_location" | "telegram_venue" | "telegram_contact"
-                | "telegram_media")) {
+                | "telegram_media" | "telegram_rich")) {
                 let content = it["data"]["content"].as_str().ok_or("Telegram 媒体消息缺少内容")?;
                 let kind = match tp.as_str() {
                     Some("sticker") => "sticker",
@@ -1108,6 +1119,7 @@ impl TeleTramConnect {
                     Some("telegram_venue") => "telegram_venue",
                     Some("telegram_contact") => "telegram_contact",
                     Some("telegram_media") => "telegram_media",
+                    Some("telegram_rich") => "telegram_rich",
                     _ => "telegram_checklist",
                 };
                 to_send_data.push((kind, content.to_owned(), String::new()));
@@ -1267,7 +1279,10 @@ impl TeleTramConnect {
         quote: Option<&str>,
         reply_markup: Option<&Value>,
     ) -> AdapterResult<Value> {
-        let mut payload = json!({"chat_id": chat_id.parse::<i64>()?});
+        let mut payload = json!({});
+        if !chat_id.is_empty() {
+            payload["chat_id"] = chat_id.parse::<i64>()?.into();
+        }
         topic.apply(&mut payload);
         if let Some(id) = quote.filter(|id| !id.is_empty()) {
             payload["reply_parameters"] = json!({"message_id": id.parse::<i64>()?});
@@ -1346,7 +1361,15 @@ impl TeleTramConnect {
         topic: &Topic,
         reply_markup: Option<&Value>,
         business_id: &str,
+        options: &Value,
     ) -> AdapterResult<String> {
+        let private = chat_id.parse::<i64>().is_ok_and(|id| id > 0);
+        send_options::validate(options, &to_send_data, topic, private, business_id, reply_markup)?;
+        if chat_id.is_empty() && !(options["ephemeral_message_parameters"]["callback_query_id"].is_string()
+            && options["ephemeral_message_parameters"]["receiver_user_id"].is_null())
+        {
+            return Err("Telegram 缺少目标会话".into());
+        }
         if let Some(markup) = reply_markup {
             native_api::object(markup)?;
             if to_send_data.is_empty() {
@@ -1448,6 +1471,13 @@ impl TeleTramConnect {
                     files = uploads;
                     method
                 }
+                "telegram_rich" => {
+                    let data: Value = serde_json::from_str(&message)?;
+                    native_api::object(&data["body"])?;
+                    payload["rich_message"] = data["body"].clone();
+                    files = data["files"].clone();
+                    "sendRichMessage"
+                }
                 "telegram_location" | "telegram_venue" | "telegram_contact" => {
                     let details: Value = serde_json::from_str(&message)?;
                     let (method,fields): (&str,&[&str]) = match kind {
@@ -1509,11 +1539,21 @@ impl TeleTramConnect {
                 }
                 _ => return Err(format!("Telegram 不支持的消息类型：{kind}").into()),
             };
+            send_options::apply(options, &mut payload);
+            if index == 0 {
+                if let Some(reply) = options.get("reply_parameters") {
+                    payload["reply_parameters"] = reply.clone();
+                }
+            }
             let reply = self
                 .native_request(method, &payload, Some(&files), Duration::from_secs(60), &Value::Null)
                 .await?;
             if reply["retcode"] != 0 {
                 return Err(format!("Telegram {method}: {}", reply["message"]).into());
+            }
+            if options.get("ephemeral_message_parameters").is_some() {
+                return Ok(reply["data"]["ephemeral_message_id"].as_i64().filter(|id| *id > 0)
+                    .ok_or("Telegram 未返回临时消息ID")?.to_string());
             }
             let returned = Self::response_message_ids(method, &payload, &reply["data"]);
             if returned.is_empty() {
@@ -1569,6 +1609,7 @@ impl TeleTramConnect {
                 &Topic::from_params(params)?,
                 params.get("reply_markup"),
                 "",
+                &params["send_options"],
             )
             .await?;
 
@@ -1621,6 +1662,7 @@ impl TeleTramConnect {
                 &Topic::from_params(params)?,
                 params.get("reply_markup"),
                 business_id,
+                &params["send_options"],
             )
             .await?;
 
@@ -1763,6 +1805,14 @@ impl TeleTramConnect {
             body["message_ids"] = json!(ids);
             if copy { "copyMessages" } else { "forwardMessages" }
         };
+        let options = &params["send_options"];
+        if options.get("ephemeral_message_parameters").is_some()
+            || options.get("message_effect_id").is_some() && (ids.len() != 1 || !body["chat_id"].as_i64().is_some_and(|id| id > 0))
+            || options.get("suggested_post_parameters").is_some() && (ids.len() != 1 || !body["direct_messages_topic_id"].is_number())
+        {
+            return Err("转发的消息效果只适用于单条私聊消息，建议帖只适用于单条频道私信".into());
+        }
+        send_options::apply(options, &mut body);
         Ok((method, body))
     }
 
@@ -2427,7 +2477,7 @@ mod native_tests {
         assert_eq!(parts[0].0,"telegram_invoice");
         assert_eq!(serde_json::from_str::<Value>(&parts[0].1).unwrap(),invoice);
         let invalid_keyboard = json!({"inline_keyboard":[[{"text":"下一步","callback_data":"a"}]]});
-        let error = bot.send_message_inner(parts,String::new(),"49",&Topic::default(),Some(&invalid_keyboard),"").await.unwrap_err();
+        let error = bot.send_message_inner(parts,String::new(),"49",&Topic::default(),Some(&invalid_keyboard),"",&Value::Null).await.unwrap_err();
         assert!(error.to_string().contains("支付按钮"));
         for field in ["successful_payment","refunded_payment"] {
             let event = json!({"update_id":10,"message":{"message_id":5,"chat":{"id":49,"type":"private"},

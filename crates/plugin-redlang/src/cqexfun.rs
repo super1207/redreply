@@ -18,6 +18,7 @@ use crate::core::{
 use crate::exfun::json_value_to_red;
 use crate::bot_commands::management::business;
 use crate::bot_commands::telegram_media;
+use crate::bot_commands::send_options;
 use crate::native_args;
 use redlang::cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2};
 use crate::lifecycle::pkg_can_run;
@@ -326,7 +327,7 @@ pub(crate) fn telegram_output_topic(
 }
 
 pub fn send_one_msg(rl: &RedLang, msg: &str) -> Result<String, Box<dyn std::error::Error>> {
-    send_one_msg_with_options(rl, msg, None, None, "", "")
+    send_one_msg_with_options(rl, msg, None, None, "", "", serde_json::Value::Null)
 }
 
 fn send_one_msg_with_options(
@@ -336,6 +337,7 @@ fn send_one_msg_with_options(
     topic: Option<(&'static str, i64)>,
     business_id: &str,
     business_peer: &str,
+    send_options: serde_json::Value,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if msg.is_empty() {
         return Ok("".to_string());
@@ -362,6 +364,11 @@ fn send_one_msg_with_options(
         if !business_id.is_empty() && business_id != "机器人" && msg_type != "private" {
             return Err("以商务账户发送时需要目标私聊或商务对方ID".into());
         }
+    }
+    if msg_type.is_empty() && platform == "telegram"
+        && send_options["ephemeral_message_parameters"]["callback_query_id"].is_string()
+    {
+        msg_type = "private";
     }
     let sub_id = get_sub_id(rl, msg_type);
 
@@ -407,7 +414,15 @@ fn send_one_msg_with_options(
         }
         let source = rl.get_exmap("原始事件");
         let target = if msg_type == "group" { sub_id.clone() } else { peer };
-        if msg_type == "private" {
+        let event: serde_json::Value = serde_json::from_str(&source).unwrap_or_default();
+        if msg_type == "group" && event["self_id"].as_str() == Some(self_id.as_str())
+            && event["chat_id"].as_str() == Some(target.as_str())
+            && matches!(event["sub_type"].as_str(), Some("ephemeral_message" | "edited_ephemeral_message"))
+            && send_options["ephemeral_message_parameters"].is_null()
+        {
+            return Err("回复 Telegram 临时消息时，请填写临时消息选项以限定接收者".into());
+        }
+        if msg_type == "private" && !target.is_empty() {
             let chat_id = target.parse::<i64>()?;
             if let Some(id) = business::send_context(rl, &serde_json::json!(chat_id), business_id) {
                 if topic.is_some() {
@@ -418,9 +433,12 @@ fn send_one_msg_with_options(
         }
         if let Some((field, id)) = topic {
             send_json["params"][field] = id.into();
-        } else if let Ok(event) = serde_json::from_str(&source) {
+        } else {
             apply_telegram_topic(&event, &self_id, &target, &mut send_json["params"]);
         }
+    }
+    if send_options.as_object().is_some_and(|fields| !fields.is_empty()) {
+        send_json["params"]["send_options"] = send_options;
     }
     let passive_id = rl.get_exmap("消息ID");
     let remote_id = rl.get_exmap("远程MQTT客户端ID");
@@ -970,6 +988,16 @@ pub fn init_cq_ex_fun_map() {
         let platform = get_platform(self_t);
         if platform == "telegram" && params.len() > 1 {
             let business_id = self_t.get_param_text(params,1)?;
+            if business_id == "临时" {
+                let id = msg_id_rv.expect_text_value()?;
+                let receiver = self_t.get_param_text(params, 2)?;
+                let chat = self_t.get_param_text(params, 3)?;
+                let body = send_options::ephemeral_target(self_t, &id, &receiver, &chat)?;
+                let result = call_platform_api(self_t,"telegram","telegram_api",serde_json::json!({
+                    "method":"deleteEphemeralMessage","body":body
+                }))?;
+                return check_native_command(result,"撤回临时消息");
+            }
             if !business_id.is_empty() {
                 let ids = message_handle_list(&msg_id_rv)?;
                 if !(1..=100).contains(&ids.len()) {
@@ -1031,14 +1059,29 @@ pub fn init_cq_ex_fun_map() {
         }
         let content = rl.get_param(params, 1)?;
         let kind = rl.get_param_text(params, 2)?;
-        if platform == "kook" && kind == "模板" {
-            let body = crate::bot_commands::management::templates::template_message(&content)?;
-            return call_platform_api(rl,&platform,"edit_msg",serde_json::json!({"message_id":id,"kind":"template","body":body}));
+        if platform == "kook" {
+            let (mode, mut body) = match kind.as_str() {
+                "" | "文本" => ("text", serde_json::json!({"content":content.expect_text_value()?})),
+                "卡片" => ("card", serde_json::json!({"content":crate::bot_commands::card_for_edit(&content)?})),
+                "模板" => ("template", crate::bot_commands::management::templates::template_message(&content)?),
+                _ => return Err(RedLang::make_err("KOOK 支持编辑文本、卡片或模板")),
+            };
+            let input = rl.get_param(params, 3)?;
+            let options = match input.as_ref() {
+                RedValue::Object(_) => native_args::object(&input)?,
+                RedValue::Text(value) if !value.is_empty() => native_args::object(&input)?,
+                _ => crate::bot_commands::management::kook_message_options(rl,&input,true)?,
+            };
+            for (key, value) in options.as_object().ok_or("消息选项需要数组")? {
+                body[key] = value.clone();
+            }
+            return call_platform_api(rl,&platform,"edit_msg",serde_json::json!({"message_id":id,"kind":mode,"body":body}));
         }
         let mut body = if params.len() > 3 {
             let options = rl.get_param(params, 3)?;
             match options.as_ref() {
                 RedValue::Text(text) if text.is_empty() => serde_json::json!({}),
+                RedValue::Array(_) => send_options::edit_fields(&options, &kind)?,
                 RedValue::Text(text) if platform == "telegram" => {
                     let mode = match text.as_str() {
                         "Markdown" => "MarkdownV2",
@@ -1054,6 +1097,14 @@ pub fn init_cq_ex_fun_map() {
         };
         let mut upload = None;
         let (kind, field, value) = match (platform.as_str(), kind.as_str()) {
+            ("telegram", "富文本") => {
+                let data = crate::bot_commands::rich::decode(&content)?;
+                body = serde_json::json!({});
+                if data["files"].as_object().is_some_and(|files| !files.is_empty()) {
+                    upload = Some(data["files"].clone());
+                }
+                ("text", "rich_message", data["body"].clone())
+            }
             ("telegram", "" | "文本") => ("text", "text", content.expect_text_value()?.into()),
             ("telegram", "说明") => ("caption", "caption", content.expect_text_value()?.into()),
             ("telegram", "键盘") => {
@@ -1063,6 +1114,12 @@ pub fn init_cq_ex_fun_map() {
                 let (mut media, files) = native_args::media_item(&content, 0, true)?;
                 if let Some(mode) = body.as_object_mut().and_then(|obj| obj.remove("parse_mode")) {
                     media["parse_mode"] = mode;
+                }
+                if let Some(above) = body.as_object_mut().and_then(|obj| obj.remove("show_caption_above_media")) {
+                    if !matches!(media["type"].as_str(), Some("photo" | "animation" | "video")) {
+                        return Err("说明位置适用于图片、动画和视频".into());
+                    }
+                    media["show_caption_above_media"] = above;
                 }
                 if !files.is_empty() {
                     upload = Some(serde_json::Value::Object(files));
@@ -1081,10 +1138,6 @@ pub fn init_cq_ex_fun_map() {
                     return Err(RedLang::make_err("停止实时位置时第二项留空"));
                 }
                 ("stop_location", "", serde_json::Value::Null)
-            }
-            ("kook", "" | "文本") => ("text", "content", content.expect_text_value()?.into()),
-            ("kook", "卡片") => {
-                ("card", "content", crate::bot_commands::card_for_edit(&content)?)
             }
             _ => return Err(RedLang::make_err("当前平台不支持这种编辑类型")),
         };
@@ -1108,11 +1161,31 @@ pub fn init_cq_ex_fun_map() {
         }
         match rl.get_param_text(params, 5)?.as_str() {
             "" => (),
+            "临时" if platform == "telegram" => {
+                let receiver = rl.get_param_text(params, 6)?;
+                let target = rl.get_param_text(params, 7)?;
+                let id = if explicit_id { id.as_str() } else { "" };
+                let addresses = send_options::ephemeral_target(rl, id, &receiver, &target)?;
+                for (key, value) in addresses.as_object().ok_or("临时消息目标格式错误")? {
+                    request["body"][key] = value.clone();
+                }
+                let method = match kind {
+                    "text" => "editEphemeralMessageText",
+                    "caption" => "editEphemeralMessageCaption",
+                    "keyboard" => "editEphemeralMessageReplyMarkup",
+                    "media" => "editEphemeralMessageMedia",
+                    _ => return Err("临时消息可编辑文本、说明、键盘或媒体".into()),
+                };
+                request["method"] = method.into();
+                return call_platform_api(rl,&platform,"telegram_api",request);
+            }
             "行内" if platform == "telegram" => {
                 if !explicit_id {
                     return Err(RedLang::make_err("编辑行内消息需填写平台行内消息ID"));
                 }
-                if request.get("files").is_some() {
+                if request.get("files").is_some() ||
+                    crate::bot_commands::rich::requires_upload(&request["body"]["rich_message"])
+                {
                     return Err(RedLang::make_err("Telegram 行内媒体编辑请使用已有文件ID或直链"));
                 }
                 if kind == "checklist" {
@@ -1130,7 +1203,7 @@ pub fn init_cq_ex_fun_map() {
                 body["inline_message_id"] = id.into();
                 return call_platform_api(rl,&platform,"telegram_api",serde_json::json!({"method":method,"body":body}));
             }
-            _ => return Err(RedLang::make_err("编辑目标类型请留空或在 Telegram 中填行内")),
+            _ => return Err(RedLang::make_err("Telegram 编辑目标类型请留空或填行内、临时")),
         }
         call_platform_api(rl, &platform, "edit_msg", request)
     });
@@ -1180,6 +1253,11 @@ pub fn init_cq_ex_fun_map() {
             } else if let Ok(event) = serde_json::from_str(&rl.get_exmap("原始事件")) {
                 apply_telegram_topic(&event, &rl.get_exmap("机器人ID"), &target, &mut request);
             }
+            let extra = send_options::parse(rl, params, 7)?;
+            if extra.get("ephemeral_message_parameters").is_some() || extra.get("reply_parameters").is_some() {
+                return Err("转发和复制的发送选项不支持临时消息或高级引用".into());
+            }
+            request["send_options"] = extra;
         }
         call_platform_api(rl, &platform, "forward_msgs", request)
     });
@@ -1299,6 +1377,14 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["输出流"], |self_t, params| {
         let msg = self_t.get_param_text(params, 0)?;
+        let options = match get_platform(self_t).as_str() {
+            "telegram" => send_options::parse(self_t, params, 6)?,
+            "kook" => {
+                let input = self_t.get_param(params, 1)?;
+                crate::bot_commands::management::kook_message_options(self_t,&input,false)?
+            }
+            _ => serde_json::Value::Null,
+        };
         let markup = if get_platform(self_t) == "telegram" && params.len() > 1 {
             let value = self_t.get_param(params, 1)?;
             match value.as_ref() {
@@ -1320,7 +1406,7 @@ pub fn init_cq_ex_fun_map() {
         } else {
             (String::new(), String::new())
         };
-        match send_one_msg_with_options(self_t, &msg, markup, topic, &connection, &peer) {
+        match send_one_msg_with_options(self_t, &msg, markup, topic, &connection, &peer, options) {
             Ok(msg_id) => Ok(Some(rv_text(msg_id))),
             Err(e) => {
                 let _ = cq_add_log_w(&format!("输出流失败，{}", e));
@@ -1779,13 +1865,21 @@ pub fn init_cq_ex_fun_map() {
         }
         let msg = self_t.get_param_text(params, 0)?;
         let user_id = self_t.get_param_text(params, 1)?;
+        let options = match get_platform(self_t).as_str() {
+            "telegram" => send_options::parse(self_t, params, 2)?,
+            "kook" => {
+                let input = self_t.get_param(params, 2)?;
+                crate::bot_commands::management::kook_message_options(self_t,&input,false)?
+            }
+            _ => serde_json::Value::Null,
+        };
         let old_group_id = self_t.get_exmap("群ID"); // 备份群ID
         let old_user_id = self_t.get_exmap("发送者ID"); // 备份用户ID
         self_t.set_exmap("群ID", "");
         if !user_id.is_empty() {
             self_t.set_exmap("发送者ID", &user_id);
         }
-        match send_one_msg(self_t, &msg) {
+        match send_one_msg_with_options(self_t, &msg, None, None, "", "", options) {
             Ok(msg_id) => {
                 self_t.set_exmap("群ID", &old_group_id); // 还原群ID
                 self_t.set_exmap("发送者ID", &old_user_id); // 还原用户ID
@@ -2092,6 +2186,11 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["同意"], |self_t, params| {
         let raw_data = self_t.get_exmap("原始事件");
+        if get_platform(self_t) == "telegram" && (params.len() >= 4 && self_t.get_param_text(params, 3)? == "建议帖"
+            || serde_json::from_str::<serde_json::Value>(&raw_data).is_ok_and(|event| event["sub_type"] == "suggested_post_info"))
+        {
+            return send_options::approve(self_t, params, &serde_json::from_str(&raw_data).unwrap_or_default(), true);
+        }
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
         if get_platform(self_t) == "telegram" && raw_json["notice_type"] == "telegram"
             && matches!(raw_json["sub_type"].as_str(),Some("shipping_query" | "pre_checkout_query"))
@@ -2153,6 +2252,11 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["拒绝"], |self_t, params| {
         let raw_data = self_t.get_exmap("原始事件");
+        if get_platform(self_t) == "telegram" && (params.len() >= 4 && self_t.get_param_text(params, 3)? == "建议帖"
+            || serde_json::from_str::<serde_json::Value>(&raw_data).is_ok_and(|event| event["sub_type"] == "suggested_post_info"))
+        {
+            return send_options::approve(self_t, params, &serde_json::from_str(&raw_data).unwrap_or_default(), false);
+        }
         let raw_json: serde_json::Value = serde_json::from_str(&raw_data)?;
         if get_platform(self_t) == "telegram" && raw_json["notice_type"] == "telegram"
             && matches!(raw_json["sub_type"].as_str(),Some("shipping_query" | "pre_checkout_query"))
