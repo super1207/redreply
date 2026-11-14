@@ -215,9 +215,9 @@ fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
             let _ = cq_add_log_w("script.json文件不是数组格式,放弃本批延迟触发");
             break;
         };
-        for i in 0..script_arr.len() {
+        for script in script_arr {
             // 只有延迟触发脚本才解析字段，其它脚本缺字段时静默跳过
-            let is_delay = script_arr[i]
+            let is_delay = script
                 .get("content")
                 .and_then(|node| node.get("触发方式"))
                 .and_then(serde_json::Value::as_str)
@@ -225,9 +225,8 @@ fn do_timer_event_t2() -> Result<i32, Box<dyn std::error::Error>> {
             if !is_delay {
                 continue;
             }
-            // 单条脚本信息损坏只跳过该条，不再因 `?` 传播导致整批到期任务丢失
-            let (keyword, cffs, code, ppfs, name, pkg_name) =
-                match get_script_info2(&script_arr[i]) {
+            // 单条脚本信息损坏只跳过该条，不再用 `?` 传播导致整批到期任务丢失
+            let (keyword, cffs, code, ppfs, name, pkg_name) = match get_script_info2(script) {
                     Ok(v) => v,
                     Err(err) => {
                         let _ = cq_add_log_w(&format!("读取延迟触发脚本信息失败: {}", err));

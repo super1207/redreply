@@ -664,8 +664,16 @@ impl Yunhuv1Connect {
         Ok((to_send_data, quote))
     }
     fn to_json_str(val: &serde_json::Value) -> String {
-        if let Some(value) = val.as_i64() { return value.to_string(); } if let Some(value) = val.as_u64() { return value.to_string(); } if let Some(value) = val.as_str() { return value.to_string(); }
-        "".to_owned()
+        if let Some(value) = val.as_i64() {
+            return value.to_string();
+        }
+        if let Some(value) = val.as_u64() {
+            return value.to_string();
+        }
+        if let Some(value) = val.as_str() {
+            return value.to_string();
+        }
+        String::new()
     }
     fn get_msg_id(&self, msg_id: &str) -> Vec<RawMsgId> {
         let lk = self.msg_ids.read().unwrap_or_else(|e| e.into_inner());

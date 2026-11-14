@@ -806,7 +806,7 @@ fn kook_threads(rl: &mut RedLang, params: &[Ast]) -> RedCommandResult {
         let content = rl.get_param(params, 2)?;
         let [channel, server, section, cover] = text_params::<4>(rl, params, 3)?;
         let channel = context(rl, &channel, "群ID")?;
-        let server = if !server.is_empty() || channel.as_str() == &*rl.get_exmap("群ID") {
+        let server = if !server.is_empty() || channel.as_str() == *rl.get_exmap("群ID") {
             guild(rl, &server)?
         } else {
             let data = kook(rl, "GET", "channel/view", json!({"target_id":channel}))?;

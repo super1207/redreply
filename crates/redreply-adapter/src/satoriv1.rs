@@ -1201,7 +1201,7 @@ impl Satoriv1Connect {
         }
         let guild = &satori_msg["guild"];
         let mut message_type = "group".to_owned();
-        if guild.as_object().map_or(true, |object| object.is_empty()) {
+        if guild.as_object().is_none_or(|object| object.is_empty()) {
             message_type = "private".to_owned();
         }
 

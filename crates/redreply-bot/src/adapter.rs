@@ -150,6 +150,8 @@ const RETRY_STEPS_SECS: [u64; 5] = [5, 10, 20, 40, 60];
 /// - 维护「目标 URL 列表」（由 app 从配置同步）与实际连接的对账循环；
 /// - 断线/被移除的连接自动清理，失败连接按退避重试；
 /// - 按 `(platform, self_id)` 路由 [`AdapterManager::call_api`]。
+type EntriesPersistHook = Arc<dyn Fn(&[AdapterEntry]) + Send + Sync>;
+
 pub struct AdapterManager {
     deps: AdapterDeps,
     runtime: Handle,
@@ -158,7 +160,7 @@ pub struct AdapterManager {
     connecting: RwLock<HashSet<String>>,
     retry: RwLock<HashMap<String, RetryState>>,
     entries: RwLock<Vec<AdapterEntry>>,
-    persist_hook: Mutex<Option<Arc<dyn Fn(&[AdapterEntry]) + Send + Sync>>>,
+    persist_hook: Mutex<Option<EntriesPersistHook>>,
     notify: Notify,
     started: AtomicBool,
     shutdown: Mutex<Option<watch::Sender<bool>>>,
@@ -215,7 +217,7 @@ impl AdapterManager {
         let factories = self.factories.read().unwrap_or_else(|e| e.into_inner());
         factories
             .iter()
-            .find(|factory| factory.schemes().iter().any(|item| *item == scheme))
+            .find(|factory| factory.schemes().contains(&scheme))
             .cloned()
     }
 
@@ -305,7 +307,7 @@ impl AdapterManager {
     }
 
     /// 设置条目持久化回调（管理台修改连接时调用，app 用于写回 config.json）。
-    pub fn set_entries_persist_hook(&self, hook: Arc<dyn Fn(&[AdapterEntry]) + Send + Sync>) {
+    pub fn set_entries_persist_hook(&self, hook: EntriesPersistHook) {
         *self.persist_hook.lock().unwrap_or_else(|e| e.into_inner()) = Some(hook);
     }
 

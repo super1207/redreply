@@ -40,15 +40,11 @@ pub fn init_web_ex_fun_map() {
         }
         let ret_vec: Option<Vec<u8>> = runtime().block_on(async {
             // 客户端断开后后台任务已退出，send 会失败；recv 会返回 None
-            let Some(req_tx) = self_t.req_tx.clone() else {
-                return None;
-            };
+            let req_tx = self_t.req_tx.clone()?;
             if req_tx.send(true).await.is_err() {
                 return None;
             }
-            let Some(req_rx) = self_t.req_rx.as_mut() else {
-                return None;
-            };
+            let req_rx = self_t.req_rx.as_mut()?;
             req_rx.recv().await
         });
         // 无论成败都清空通道，避免重复访问一个已断开的请求体

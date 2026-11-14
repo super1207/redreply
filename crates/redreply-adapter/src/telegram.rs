@@ -16,6 +16,8 @@ use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
 use uuid::Uuid;
 
+type MessageBatches = (BTreeMap<(i64, String), BTreeSet<i64>>, Vec<String>);
+
 #[derive(Debug, Clone)]
 pub struct TeleTramConnect {
     pub self_id: Arc<RwLock<String>>,
@@ -1653,10 +1655,7 @@ impl TeleTramConnect {
         self.delete_messages(&[id.as_str()], echo).await
     }
 
-    fn message_batches(
-        &self,
-        ids: &[&str],
-    ) -> AdapterResult<(BTreeMap<(i64, String), BTreeSet<i64>>, Vec<String>)> {
+    fn message_batches(&self, ids: &[&str]) -> AdapterResult<MessageBatches> {
         let mut by_chat = BTreeMap::<_, BTreeSet<_>>::new();
         let mut missing = Vec::new();
         for id in ids.iter().copied().collect::<BTreeSet<_>>() {
@@ -2368,12 +2367,12 @@ mod native_tests {
     #[tokio::test]
     async fn legacy_media_commands_and_chat_scoped_replies_use_native_ids() {
         let bot = TeleTramConnect::build("");
-        let a = bot.add_msg_id(&vec![RawMsgId {
+        let a = bot.add_msg_id(&[RawMsgId {
             msg_id: "9".into(),
             chat_id: "-100".into(),
             business_id: String::new(),
         }]);
-        let b = bot.add_msg_id(&vec![RawMsgId {
+        let b = bot.add_msg_id(&[RawMsgId {
             msg_id: "9".into(),
             chat_id: "-200".into(),
             business_id: String::new(),

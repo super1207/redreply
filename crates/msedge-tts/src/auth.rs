@@ -161,7 +161,7 @@ fn cs64(data: &[u8], digest: &[u8; 32]) -> [u32; 2] {
     }
     let mut padded = vec![0];
     padded.extend_from_slice(data);
-    while padded.len() % 8 != 0 {
+    while !padded.len().is_multiple_of(8) {
         padded.push(0);
     }
     for (index, bytes) in padded.chunks_exact(4).enumerate() {

@@ -79,8 +79,10 @@ pub struct EventFilter {
     platforms: Option<Vec<String>>,
     post_types: Option<Vec<String>>,
     message_types: Option<Vec<String>>,
-    custom: Option<Arc<dyn Fn(&Event) -> bool + Send + Sync>>,
+    custom: Option<EventPredicate>,
 }
+
+type EventPredicate = Arc<dyn Fn(&Event) -> bool + Send + Sync>;
 
 impl EventFilter {
     pub fn new() -> Self {

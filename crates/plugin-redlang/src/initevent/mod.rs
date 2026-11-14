@@ -75,7 +75,7 @@ pub fn do_init_event(pkg_name_opt: Option<&str>) -> Result<i32, Box<dyn std::err
         let mut rl = crate::core::RedLang::new();
         if cffs == "框架初始化" {
             rl.pkg_name = pkg_name.to_owned();
-            if pkg_name_opt.map_or(true, |value| value == rl.pkg_name) {
+            if pkg_name_opt.is_none_or(|value| value == rl.pkg_name) {
                 rl.script_name = name.to_owned();
                 let ret = crate::cqevent::do_script(&mut rl, code, "init", false);
                 if let Err(err) = ret {

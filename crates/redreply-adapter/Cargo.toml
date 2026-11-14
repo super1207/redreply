@@ -35,4 +35,5 @@ tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
+redreply-common = { path = "../redreply-common" }
 redreply-bot = { path = "../redreply-bot", optional = true }

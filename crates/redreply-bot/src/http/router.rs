@@ -158,11 +158,7 @@ impl Router {
                     Some(path.trim_start_matches('/').to_string())
                 } else if path == entry.prefix {
                     Some(String::new())
-                } else if let Some(rest) = path.strip_prefix(&format!("{}/", entry.prefix)) {
-                    Some(rest.to_string())
-                } else {
-                    None
-                }?;
+                } else { path.strip_prefix(&format!("{}/", entry.prefix)).map(|rest| rest.to_string()) }?;
                 let mut relative = relative;
                 if relative.is_empty() || relative.ends_with('/') {
                     relative.push_str("index.html");

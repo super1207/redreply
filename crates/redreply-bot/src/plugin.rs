@@ -234,8 +234,10 @@ struct PluginEntry {
 pub struct PluginManager {
     env: Arc<FrameworkEnv>,
     entries: std::sync::RwLock<Vec<PluginEntry>>,
-    persist_hook: std::sync::Mutex<Option<Arc<dyn Fn(&str, bool) + Send + Sync>>>,
+    persist_hook: std::sync::Mutex<Option<PluginPersistHook>>,
 }
+
+type PluginPersistHook = Arc<dyn Fn(&str, bool) + Send + Sync>;
 
 impl PluginManager {
     pub(crate) fn new(env: Arc<FrameworkEnv>) -> Self {
@@ -247,7 +249,7 @@ impl PluginManager {
     }
 
     /// 设置启用状态持久化回调（管理台切换时调用，app 用于写回 config.json）。
-    pub fn set_enabled_persist_hook(&self, hook: Arc<dyn Fn(&str, bool) + Send + Sync>) {
+    pub fn set_enabled_persist_hook(&self, hook: PluginPersistHook) {
         *self.persist_hook.lock().unwrap_or_else(|e| e.into_inner()) = Some(hook);
     }
 
@@ -379,7 +381,7 @@ impl PluginManager {
         Ok(())
     }
 
-    fn start_locked(&self, entries: &mut Vec<PluginEntry>, index: usize) -> Result<()> {
+    fn start_locked(&self, entries: &mut [PluginEntry], index: usize) -> Result<()> {
         let name = entries[index].meta.name.clone();
         if !entries[index].enabled {
             return Err(FrameworkError::Plugin(format!("插件 `{name}` 已禁用")));
@@ -416,7 +418,7 @@ impl PluginManager {
         Ok(())
     }
 
-    fn stop_locked(&self, entries: &mut Vec<PluginEntry>, index: usize) {
+    fn stop_locked(&self, entries: &mut [PluginEntry], index: usize) {
         let name = entries[index].meta.name.clone();
         let context = self.env.plugin_context(&name);
         if matches!(entries[index].state, PluginState::Started) {

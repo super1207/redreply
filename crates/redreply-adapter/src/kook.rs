@@ -940,7 +940,7 @@ impl KookConnect {
             .ok_or("msg_id not found")?
             .as_str()
             .ok_or("msg_id not str")?;
-        let msg_id = self.add_msg_id(&vec![RawMsgId {
+        let msg_id = self.add_msg_id(&[RawMsgId {
             is_private: true,
             channel_id: String::new(),
             peer_id: user_id.to_owned(),
@@ -1189,7 +1189,7 @@ impl KookConnect {
             .ok_or("msg_id not found")?
             .as_str()
             .ok_or("msg_id not str")?;
-        let msg_id = self.add_msg_id(&vec![RawMsgId {
+        let msg_id = self.add_msg_id(&[RawMsgId {
             is_private: false,
             channel_id: group_id.to_owned(),
             peer_id: String::new(),

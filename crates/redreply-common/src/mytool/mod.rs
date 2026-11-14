@@ -50,6 +50,7 @@ pub fn str_msg_to_arr(
     let mut cqcode: HashMap<String, serde_json::Value> = HashMap::new();
     let mut stat = 0;
     let mut i = 0usize;
+    let mut code_start = 0usize;
     while i < cqstr.len() {
         let cur_ch = cqstr[i];
         if stat == 0 {
@@ -65,6 +66,7 @@ pub fn str_msg_to_arr(
                             text.clear();
                         }
                         stat = 1;
+                        code_start = i;
                         i += 3;
                     } else {
                         text.push(cqstr[i]);
@@ -192,13 +194,58 @@ pub fn str_msg_to_arr(
         }
         i += 1;
     }
+    if stat != 0 {
+        // 未闭合的 CQ 码：把已消费的原文回退为普通文本，避免尾部内容静默丢失
+        let tail: String = cqstr[code_start..].iter().collect();
+        text.push_str(&tail);
+    }
     if !text.is_empty() {
         let mut node: HashMap<String, serde_json::Value> = HashMap::new();
         node.insert("type".to_string(), serde_json::json!("text"));
         node.insert("data".to_string(), serde_json::json!({"text": text}));
         jsonarr.push(serde_json::json!(node));
     }
-    Ok(serde_json::Value::Array(jsonarr))
+    let mut result = serde_json::Value::Array(jsonarr);
+    cq_fix_image_file_in_arr(&mut result);
+    Ok(result)
+}
+
+/// 遍历消息数组中的 image 节点：
+/// 如果 file 指向本地文件且文件不存在，则把 url 字段（如果有）当作 file。
+pub fn cq_fix_image_file_in_arr(arr: &mut serde_json::Value) {
+    let Some(nodes) = arr.as_array_mut() else {
+        return;
+    };
+    for node in nodes.iter_mut() {
+        if node.get("type").and_then(|value| value.as_str()) != Some("image") {
+            continue;
+        }
+        let Some(data) = node.get_mut("data").and_then(|value| value.as_object_mut()) else {
+            continue;
+        };
+        let Some(file) = data.get("file").and_then(|value| value.as_str()).map(str::to_owned)
+        else {
+            continue;
+        };
+        if file.is_empty() {
+            continue;
+        }
+        if file.starts_with("http")
+            || file.starts_with("base64://")
+            || file.starts_with("file://")
+            || file.contains("://")
+        {
+            continue;
+        }
+        if std::path::Path::new(&file).is_file() {
+            continue;
+        }
+        if let Some(url) = data.get("url").and_then(|value| value.as_str()) {
+            if !url.is_empty() {
+                data.insert("file".to_owned(), serde_json::json!(url));
+            }
+        }
+    }
 }
 
 pub fn read_json_str(root: &serde_json::Value, key: &str) -> String {
@@ -214,6 +261,25 @@ pub fn read_json_str(root: &serde_json::Value, key: &str) -> String {
         }
     }
     String::new()
+}
+
+pub fn read_json_obj<'a>(root: &'a serde_json::Value, key: &str) -> Option<&'a serde_json::Value> {
+    root.get(key)
+        .filter(|value| value.as_object().is_some_and(|object| !object.is_empty()))
+}
+
+pub fn read_json_obj_or_null(root: &serde_json::Value, key: &str) -> serde_json::Value {
+    read_json_obj(root, key)
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({}))
+}
+
+pub fn read_json_or_default<'a>(
+    root: &'a serde_json::Value,
+    key: &'a str,
+    def_val: &'a serde_json::Value,
+) -> &'a serde_json::Value {
+    root.get(key).unwrap_or(def_val)
 }
 
 // 将字符串转化为简体

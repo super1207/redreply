@@ -1549,7 +1549,7 @@ pub fn init_core_fun_map() {
                     match item.into_rc_value() {
                         Ok(v) => rl.params_vec[0].push(v),
                         Err(err) => {
-                            let _ = hooks::log_warning(&format!("{}", err));
+                            hooks::log_warning(&format!("{}", err));
                             rl.params_vec[0].push(rv_empty());
                         }
                     }
@@ -1931,7 +1931,7 @@ impl RedLang {
         self.params_vec.pop();
         self.fun_ret_vec.pop();
 
-        Ok(ret_str?)
+        ret_str
     }
     pub fn do_cmd_fun(
         &mut self,

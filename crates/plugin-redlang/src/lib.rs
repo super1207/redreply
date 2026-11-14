@@ -153,7 +153,7 @@ impl Plugin for RedLangPlugin {
         // MQTT 远端事件由 mqtt 插件直接发布到框架事件总线，本插件通过
         // register() 中的订阅统一接收，不再需要宿主转发钩子。
         // 宿主退出前收尾：置退出标志、等待脚本、状态落盘
-        redlang::set_shutdown_hook(|| crate::lifecycle::shutdown_engine());
+        redlang::set_shutdown_hook(crate::lifecycle::shutdown_engine);
 
         // 命令表与脚本加载
         exfun::init_ex_fun_map();

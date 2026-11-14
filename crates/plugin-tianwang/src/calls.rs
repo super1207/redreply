@@ -371,7 +371,7 @@ mod tests {
         assert_eq!(turn.calls[0].request, request);
         assert_eq!(turn.calls[0].response, "hello");
         assert_eq!(turn.calls[0].reasoning, "thinking");
-        assert_eq!(turn.calls[1].success, false);
+        assert!(!turn.calls[1].success);
         assert_eq!(turn.calls[1].error.as_deref(), Some("boom"));
         assert_eq!(turn.reply.as_deref(), Some("hello"));
     }

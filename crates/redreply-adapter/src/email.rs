@@ -180,7 +180,7 @@ impl EmailConnect {
             // 使用增量拉取：只搜索 UID 大于 last_uid 的未读邮件
             let last_uid = *self.last_uid.read().unwrap_or_else(|e| e.into_inner());
             // checked_add 防止 u32 溢出 panic
-            let query = format!("UID {}:* UNSEEN", last_uid.checked_add(1).unwrap_or(u32::MAX));
+            let query = format!("UID {}:* UNSEEN", last_uid.saturating_add(1));
             let uids = imap_session.uid_search(&query)?;
             // 防御性过滤：某些 IMAP 服务器在指定 UID 不存在时可能返回意外结果
             let uids: Vec<u32> = uids.into_iter().filter(|&uid| uid > last_uid).collect();

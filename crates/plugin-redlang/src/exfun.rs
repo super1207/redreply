@@ -87,7 +87,7 @@ fn check_image_dims(width: usize, height: usize) -> Result<(), Box<dyn std::erro
         || height > MAX_SIDE
         || width
             .checked_mul(height)
-            .map_or(true, |px| px > MAX_PIXELS)
+            .is_none_or(|px| px > MAX_PIXELS)
     {
         return Err(RedLang::make_err("图片尺寸过大"));
     }

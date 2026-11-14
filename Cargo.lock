@@ -5588,6 +5588,7 @@ dependencies = [
  "lettre",
  "mail-parser",
  "redreply-bot",
+ "redreply-common",
  "regex",
  "reqwest",
  "rustls",

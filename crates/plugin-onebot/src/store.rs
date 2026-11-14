@@ -126,6 +126,12 @@ impl Default for OneBotStore {
     }
 }
 
+/// OneBot 插件的全局映射表（进程内单例）。
+pub fn store() -> &'static OneBotStore {
+    static STORE: std::sync::OnceLock<OneBotStore> = std::sync::OnceLock::new();
+    STORE.get_or_init(OneBotStore::new)
+}
+
 #[cfg(test)]
 mod tests {
     use super::OneBotStore;
@@ -153,10 +159,4 @@ mod tests {
         store.remember_passive_id(9, "msg-id".to_owned());
         assert_eq!(store.passive_id(9).as_deref(), Some("msg-id"));
     }
-}
-
-/// OneBot 插件的全局映射表（进程内单例）。
-pub fn store() -> &'static OneBotStore {
-    static STORE: std::sync::OnceLock<OneBotStore> = std::sync::OnceLock::new();
-    STORE.get_or_init(OneBotStore::new)
 }

@@ -113,7 +113,7 @@ fn scope_body(scope: &str, language: &str, chat: &str, user: &str) -> Result<Val
         _ => return Err("未知的菜单范围".into()),
     };
     let needs_chat = matches!(kind, "chat" | "chat_administrators" | "chat_member");
-    if needs_chat != !chat.is_empty() || (kind == "chat_member") != !user.is_empty() {
+    if needs_chat == chat.is_empty() || (kind == "chat_member") == user.is_empty() {
         return Err("按菜单范围填写聊天 ID 和成员 ID".into());
     }
     let mut scope = json!({"type":kind});
@@ -520,7 +520,7 @@ fn invite_code(input: &str) -> Result<String> {
         let url = url::Url::parse(input)?;
         return url
             .path_segments()
-            .and_then(|segments| segments.filter(|part| !part.is_empty()).next_back())
+            .and_then(|mut segments| segments.rfind(|part| !part.is_empty()))
             .map(str::to_owned)
             .ok_or_else(|| "邀请链接缺少邀请码".into());
     }

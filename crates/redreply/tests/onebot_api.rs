@@ -43,11 +43,10 @@ async fn wait_web_ready(port: u16) {
             );
             if stream.write_all(request.as_bytes()).await.is_ok() {
                 let mut raw = Vec::new();
-                if stream.read_to_end(&mut raw).await.is_ok() {
-                    if String::from_utf8_lossy(&raw).starts_with("HTTP/1.1 200") {
+                if stream.read_to_end(&mut raw).await.is_ok()
+                    && String::from_utf8_lossy(&raw).starts_with("HTTP/1.1 200") {
                         return;
                     }
-                }
             }
         }
         tokio::time::sleep(Duration::from_millis(200)).await;
