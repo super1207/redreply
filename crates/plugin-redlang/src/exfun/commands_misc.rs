@@ -575,17 +575,15 @@ pub(super) fn register() {
             }
             // 从最低位开始遍历字符串，用 checked 运算避免 u32 溢出(debug panic/release 静默算错)
             let mut result: u64 = 0;
-            let mut power: u32 = 0;
-            for c in num.chars().rev() {
+            for (power, c) in num.chars().rev().enumerate() {
                 // 如果字符不在哈希表中，报错
                 let d = *map.get(&c).ok_or_else(|| format!("非法数字字符:{c}"))?;
                 let place = (base as u64)
-                    .checked_pow(power)
+                    .checked_pow(power as u32)
                     .ok_or_else(|| "数字太大,转换溢出".to_string())?;
                 result = result
                     .checked_add(d * place)
                     .ok_or_else(|| "数字太大,转换溢出".to_string())?;
-                power += 1;
             }
             Ok(result)
         }

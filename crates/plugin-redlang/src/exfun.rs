@@ -160,7 +160,7 @@ fn browser_access(
         .ok_or("浏览器插件未启用")?;
     handle
         .execute_json(&request.to_string())
-        .map_err(|error| Box::<dyn std::error::Error>::from(error))
+        .map_err(Box::<dyn std::error::Error>::from)
 }
 
 fn get_param_image(
