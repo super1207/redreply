@@ -237,7 +237,8 @@ pub(super) fn media_item(
             ))
         }
     };
-    if fields.len() > if kind == "live_photo" { 6 } else { 4 } {
+    let base = if kind == "live_photo" { 6 } else { 4 };
+    if fields.len() > base + 1 {
         return Err(RedLang::make_err("媒体项参数过多"));
     }
     let source = media_source(source, &text(3)?, &format!("media_{index}"), &mut files)?;
@@ -250,5 +251,198 @@ pub(super) fn media_item(
         let photo = fields.get(4).ok_or("实况照片需要静态图来源")?;
         row["photo"] = media_source(photo, &text(5)?, &format!("photo_{index}"), &mut files)?;
     }
+    if !allow_animation {
+        if let Some(styles) = fields.get(base) {
+            crate::bot_commands::send_options::apply_styles(
+                &mut row,
+                "caption",
+                "caption_entities",
+                styles,
+            )?;
+        }
+    }
     Ok((row, files))
+}
+
+pub(super) fn edit_media(item: &RedValue) -> Result<(Value, Map<String, Value>), Box<dyn Error>> {
+    let fields = item.as_array().ok_or("编辑媒体需要【数组】")?;
+    let live = fields
+        .first()
+        .map(|v| v.expect_text_value())
+        .transpose()?
+        .as_deref()
+        == Some("实况照片");
+    let base = if live { 6 } else { 4 };
+    if fields.len() <= base {
+        return media_item(item, 0, true);
+    }
+    if fields.len() != base + 1 {
+        return Err("媒体选项请放在媒体数组最后一项".into());
+    }
+    let (mut media, mut files) = media_item(&RedValue::Array(fields[..base].to_vec()), 0, true)?;
+    let options = fields[base].as_array().ok_or("媒体选项需要【数组】")?;
+    let kind = media["type"].as_str().unwrap_or_default().to_owned();
+    let value = |index: usize| -> Result<String, Box<dyn Error>> {
+        Ok(options
+            .get(index)
+            .map(|v| v.expect_text_value())
+            .transpose()?
+            .unwrap_or_default())
+    };
+    let layout: &[(&str, char)] = match kind.as_str() {
+        "photo" => &[("has_spoiler", 'b')],
+        "animation" => &[
+            ("duration", 'n'),
+            ("width", 'p'),
+            ("height", 'p'),
+            ("has_spoiler", 'b'),
+            ("thumbnail", 'j'),
+        ],
+        "video" => &[
+            ("duration", 'n'),
+            ("width", 'p'),
+            ("height", 'p'),
+            ("has_spoiler", 'b'),
+            ("thumbnail", 'j'),
+            ("supports_streaming", 'b'),
+            ("start_timestamp", 'n'),
+            ("cover", 'm'),
+        ],
+        "audio" => &[
+            ("duration", 'n'),
+            ("performer", 't'),
+            ("title", 't'),
+            ("thumbnail", 'j'),
+        ],
+        "document" => &[("disable_content_type_detection", 'b'), ("thumbnail", 'j')],
+        "live_photo" => &[("has_spoiler", 'b')],
+        _ => return Err("未知媒体类型".into()),
+    };
+    if options.len() > layout.len() {
+        return Err("媒体选项过多".into());
+    }
+    for (index, &(field, format)) in layout.iter().enumerate().take(options.len()) {
+        let option = &options[index];
+        if matches!(option.as_ref(),RedValue::Text(value) if value.is_empty()) {
+            continue;
+        }
+        media[field] = match format {
+            'b' => match value(index)?.as_str() {
+                "真" => true.into(),
+                "假" => false.into(),
+                _ => return Err("媒体开关请填真或假".into()),
+            },
+            'n' | 'p' => {
+                let n: u32 = value(index)?.parse()?;
+                if format == 'p' && n == 0 {
+                    return Err("媒体宽高请填正整数".into());
+                }
+                n.into()
+            }
+            'j' => {
+                if !files.contains_key("media_0") {
+                    return Err("上传缩略图时也需上传媒体文件".into());
+                }
+                let RedValue::Bin(bytes) = option.as_ref() else {
+                    return Err("缩略图请用 JPEG 字节集".into());
+                };
+                if bytes.len() >= 200_000 || !bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+                    return Err("缩略图须为小于 200 kB 的 JPEG".into());
+                }
+                files.insert(
+                    "preview".into(),
+                    file_part("thumbnail.jpg", bytes, Some("image/jpeg")),
+                );
+                "attach://preview".into()
+            }
+            'm' => {
+                if let Some(row) = option.as_array() {
+                    let [source, name] = row.as_slice() else {
+                        return Err("上传封面请填【数组@字节集@文件名】".into());
+                    };
+                    media_source(source, &name.expect_text_value()?, "cover", &mut files)?
+                } else {
+                    value(index)?.into()
+                }
+            }
+            _ => value(index)?.into(),
+        };
+    }
+    Ok((media, files))
+}
+
+pub(super) fn rich_block_media(
+    source: &RedValue,
+    name: &str,
+    label: &str,
+    options: &Rc<RedValue>,
+    files: &mut Map<String, Value>,
+) -> Result<Value, Box<dyn Error>> {
+    let key = files.len();
+    if label == "语音便笺" {
+        let items = options.as_array().ok_or("语音便笺选项需要【数组】")?;
+        if items.len() > 1 {
+            return Err("语音便笺选项只填写时长".into());
+        }
+        let mut body = serde_json::json!({"type":"voice_note","media":media_source(source,name,&format!("rich_{key}"),files)?});
+        if let Some(duration) = items.first() {
+            let value = duration.expect_text_value()?;
+            if !value.is_empty() {
+                body["duration"] = value.parse::<u32>()?.into();
+            }
+        }
+        return Ok(body);
+    }
+    let input = RedValue::Array(vec![
+        crate::core::rv_text(label.to_owned()),
+        Rc::new(source.clone()),
+        crate::core::rv_text(String::new()),
+        crate::core::rv_text(name.to_owned()),
+        options.clone(),
+    ]);
+    let (mut body, new_files) = edit_media(&input)?;
+    let names: Map<String, Value> = new_files
+        .keys()
+        .map(|name| (name.clone(), format!("rich_{key}_{name}").into()))
+        .collect();
+    for field in ["media", "thumbnail", "cover"] {
+        if let Some(alias) = body[field]
+            .as_str()
+            .and_then(|s| s.strip_prefix("attach://"))
+        {
+            if let Some(name) = names.get(alias).and_then(Value::as_str) {
+                body[field] = format!("attach://{name}").into();
+            }
+        }
+    }
+    files.extend(
+        new_files
+            .into_iter()
+            .map(|(name, value)| (names[&name].as_str().unwrap().to_owned(), value)),
+    );
+    Ok(body)
+}
+
+pub(super) fn edit_attachments(input: &RedValue, files: &mut Value) -> Result<(), Box<dyn Error>> {
+    let rows = input.as_array().ok_or("附件列表需要【数组】")?;
+    let files = files.as_object_mut().ok_or("附件结构无效")?;
+    for row in rows {
+        let Some([name, bytes, filename]) = row.as_array().map(Vec::as_slice) else {
+            return Err("附件用【数组@标识@字节集@文件名】填写".into());
+        };
+        let name = name.expect_text_value()?;
+        let filename = filename.expect_text_value()?;
+        let RedValue::Bin(bytes) = bytes.as_ref() else {
+            return Err("附件内容请用字节集".into());
+        };
+        if name.is_empty()
+            || !name.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            || filename.is_empty()
+            || files.contains_key(&name)
+        {
+            return Err("附件标识或文件名无效，或标识已重复".into());
+        }
+        files.insert(name, file_part(&filename, bytes, None));
+    }
+    Ok(())
 }

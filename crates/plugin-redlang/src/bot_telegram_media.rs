@@ -63,7 +63,11 @@ pub(crate) fn segment(
     if get_platform(rl) != "telegram" {
         return Err("便笺和动画需要 Telegram 机器人来源".into());
     }
-    let position = if kind == "animation" { 1 } else { 2 };
+    let position = match kind {
+        "animation" => 1,
+        "photo" | "video" => 5,
+        _ => 2,
+    };
     let filename = rl.get_param_text(params, position)?;
     let mut files = Map::new();
     let resource = native_args::media_source(source, &filename, "media", &mut files)?;
@@ -81,9 +85,25 @@ pub(crate) fn segment(
     }
     let mut body = json!({kind: resource});
     match kind {
+        "photo" | "video" => {
+            let [description, format] = text_params::<2>(rl, params, 2)?;
+            caption(&mut body, &description, &format)?;
+            super::send_options::apply_styles(
+                &mut body,
+                "caption",
+                "caption_entities",
+                rl.get_param(params, 4)?.as_ref(),
+            )?;
+        }
         "voice" => {
             let [description, duration, format] = text_params::<3>(rl, params, 3)?;
             caption(&mut body, &description, &format)?;
+            super::send_options::apply_styles(
+                &mut body,
+                "caption",
+                "caption_entities",
+                rl.get_param(params, 6)?.as_ref(),
+            )?;
             number(&mut body, "duration", &duration, 0, i64::MAX, "时长")?;
         }
         "video_note" => {
@@ -106,6 +126,12 @@ pub(crate) fn segment(
                 body["has_spoiler"] = boolean(&spoiler, false)?.into();
             }
             thumbnail(&mut body, &mut files, rl.get_param(params, 9)?.as_ref())?;
+            super::send_options::apply_styles(
+                &mut body,
+                "caption",
+                "caption_entities",
+                rl.get_param(params, 10)?.as_ref(),
+            )?;
         }
         _ => return Err("未知 Telegram 媒体类型".into()),
     }
