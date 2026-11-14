@@ -624,6 +624,14 @@ impl TeleTramConnect {
             let sticker = json!({"file_id":file_id});
             ret_cq_msg.push_str(&format!("[CQ:sticker,content={}]", cq_params_encode(&sticker.to_string())));
         }
+        for kind in ["voice", "video_note", "animation"] {
+            if let Some(file_id) = message_obj[kind]["file_id"].as_str() {
+                // Keep the caption as visible text in the ordinary message as before.
+                let media = json!({"kind":kind,"body":{kind:file_id},"files":{}});
+                ret_cq_msg.push_str(&format!("[CQ:telegram_media,content={}]", cq_params_encode(&media.to_string())));
+                break;
+            }
+        }
         if !reply_id.is_empty() {
             ret_cq_msg = format!("[CQ:reply,id={}]{}", reply_id, ret_cq_msg);
         }
@@ -823,12 +831,17 @@ impl TeleTramConnect {
         }
         let message = &event[kind];
         let service = if kind.starts_with("edited_") {
-            message["location"].is_object().then_some("edited_location")?
+            [("location", "edited_location"), ("voice", "edited_voice"),
+             ("video_note", "edited_video_note"), ("animation", "edited_animation")]
+                .into_iter().find_map(|(field, notice)| message[field].is_object().then_some(notice))?
         } else {
-            ["successful_payment", "refunded_payment", "venue", "location", "contact"].into_iter()
+            ["successful_payment", "refunded_payment", "venue", "location", "contact",
+             "voice", "video_note", "animation"].into_iter()
                 .find(|key| message[*key].is_object())?
         };
-        Some(self.notice_for_update(service, message, &event["update_id"]))
+        let mut notice = self.notice_for_update(service, message, &event["update_id"]);
+        notice["telegram_update_type"] = kind.into();
+        Some(notice)
     }
 
     fn dispatch_notice(notice: Value) {
@@ -1083,7 +1096,8 @@ impl TeleTramConnect {
                     last_type = "text";
                 }
             } else if matches!(tp.as_str(),Some("sticker" | "media_group" | "telegram_checklist" | "telegram_invoice"
-                | "telegram_paid_media" | "telegram_location" | "telegram_venue" | "telegram_contact")) {
+                | "telegram_paid_media" | "telegram_location" | "telegram_venue" | "telegram_contact"
+                | "telegram_media")) {
                 let content = it["data"]["content"].as_str().ok_or("Telegram 媒体消息缺少内容")?;
                 let kind = match tp.as_str() {
                     Some("sticker") => "sticker",
@@ -1093,6 +1107,7 @@ impl TeleTramConnect {
                     Some("telegram_location") => "telegram_location",
                     Some("telegram_venue") => "telegram_venue",
                     Some("telegram_contact") => "telegram_contact",
+                    Some("telegram_media") => "telegram_media",
                     _ => "telegram_checklist",
                 };
                 to_send_data.push((kind, content.to_owned(), String::new()));
@@ -1285,6 +1300,44 @@ impl TeleTramConnect {
         Ok(items)
     }
 
+    fn native_media(data: &Value, payload: &mut Value) -> AdapterResult<(&'static str, Value)> {
+        let (method, required, fields): (_, _, &[&str]) = match data["kind"].as_str() {
+            Some("voice") => ("sendVoice", "voice", &["duration", "caption", "parse_mode"]),
+            Some("video_note") => ("sendVideoNote", "video_note", &["duration", "length", "thumbnail"]),
+            Some("animation") => ("sendAnimation", "animation", &[
+                "duration", "width", "height", "thumbnail", "caption", "parse_mode",
+                "show_caption_above_media", "has_spoiler",
+            ]),
+            _ => return Err("Telegram 媒体消息类型无效".into()),
+        };
+        let body = &data["body"];
+        let source = body[required].as_str().filter(|source| !source.is_empty())
+            .ok_or("Telegram 媒体消息缺少来源")?;
+        let uploads = native_api::object(&data["files"])?;
+        if let Some(part) = source.strip_prefix("attach://") {
+            if part != "media" || !uploads.contains_key("media") {
+                return Err("Telegram 媒体消息缺少上传文件".into());
+            }
+        } else if uploads.contains_key("media") || (required == "video_note" && source.contains("://")) {
+            return Err("Telegram 媒体消息来源无效".into());
+        }
+        if uploads.keys().any(|key| key != "media" && key != "preview")
+            || uploads.contains_key("preview") != body.get("thumbnail").is_some()
+            || (uploads.contains_key("preview") &&
+                (!uploads.contains_key("media") || !fields.contains(&"thumbnail") ||
+                 body["thumbnail"] != "attach://preview"))
+        {
+            return Err("Telegram 媒体消息的附件无效".into());
+        }
+        payload[required] = source.into();
+        for field in fields {
+            if let Some(value) = body.get(*field) {
+                payload[*field] = value.clone();
+            }
+        }
+        Ok((method, data["files"].clone()))
+    }
+
     async fn send_message_inner(
         &self,
         to_send_data: Vec<(&str, String, String)>,
@@ -1388,6 +1441,12 @@ impl TeleTramConnect {
                     }
                     files = data["files"].clone();
                     "sendPaidMedia"
+                }
+                "telegram_media" => {
+                    let data = serde_json::from_str(&message)?;
+                    let (method, uploads) = Self::native_media(&data, &mut payload)?;
+                    files = uploads;
+                    method
                 }
                 "telegram_location" | "telegram_venue" | "telegram_contact" => {
                     let details: Value = serde_json::from_str(&message)?;
@@ -2379,6 +2438,50 @@ mod native_tests {
             assert_eq!(notice["telegram"][field]["invoice_payload"],"0001");
             assert!(bot.structured_message_notice("edited_message",&event).is_none());
         }
+    }
+
+    #[tokio::test]
+    async fn native_notes_and_animation_keep_their_method_and_message_scope() {
+        let bot = TeleTramConnect::build("");
+        for (field, method, edited) in [
+            ("voice", "sendVoice", "edited_voice"),
+            ("video_note", "sendVideoNote", "edited_video_note"),
+            ("animation", "sendAnimation", "edited_animation"),
+        ] {
+            let data = json!({"kind":field,"body":{field:"media-id","chat_id":99},"files":{}});
+            let mut payload = json!({"chat_id":49,"business_connection_id":"business"});
+            let (actual, files) = TeleTramConnect::native_media(&data, &mut payload).unwrap();
+            assert_eq!(actual, method);
+            assert_eq!(files, json!({}));
+            assert_eq!(payload, json!({"chat_id":49,"business_connection_id":"business",field:"media-id"}));
+            let message = json!({"message_id":5,"chat":{"id":49,"type":"private"},
+                "from":{"id":49},"message_thread_id":3,"is_topic_message":true,
+                "business_connection_id":"business",
+                "caption":"说明",field:{"file_id":"media-id","duration":12}});
+            let ordinary = json!({"update_id":10,"message":message});
+            let cq = bot.to_cq_msg(&ordinary).await.unwrap();
+            assert!(cq.starts_with("说明[CQ:telegram_media,"));
+            for (kind, expected) in [("message",field), ("channel_post",field), ("business_message",field),
+                ("edited_message",edited), ("edited_channel_post",edited), ("edited_business_message",edited)] {
+                let event = json!({"update_id":10,kind:message});
+                let notice = bot.structured_message_notice(kind, &event).unwrap();
+                assert_eq!(notice["sub_type"], expected);
+                assert_eq!(notice["telegram_update_type"], kind);
+                assert_eq!(notice["message_thread_id"], 3);
+                assert_eq!(notice["telegram"][field]["file_id"], "media-id");
+                assert_eq!(notice["telegram"]["business_connection_id"], "business");
+            }
+        }
+
+        let upload = json!({"kind":"animation","body":{"animation":"attach://media","thumbnail":"attach://preview"},
+            "files":{"media":{"filename":"movie.gif","base64":"YWJj"},"preview":{"filename":"thumb.jpg","base64":"YWJj"}}});
+        let mut payload = json!({"chat_id":49});
+        let (method, files) = TeleTramConnect::native_media(&upload, &mut payload).unwrap();
+        assert_eq!(method, "sendAnimation");
+        assert_eq!(files, upload["files"]);
+        assert_eq!(payload["thumbnail"], "attach://preview");
+        let invalid = json!({"kind":"video_note","body":{"video_note":"https://example.org/round.mp4"},"files":{}});
+        assert!(TeleTramConnect::native_media(&invalid, &mut payload).is_err());
     }
 
     #[test]

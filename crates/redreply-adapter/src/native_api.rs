@@ -64,6 +64,9 @@ pub(crate) fn telegram_url(token: &str, method: &str) -> AdapterResult<reqwest::
 
 pub(crate) fn kook_url(endpoint: &str) -> AdapterResult<reqwest::Url> {
     let endpoint = endpoint.strip_prefix("/api/v3/").unwrap_or(endpoint);
+    if endpoint == "game" {
+        return Ok(reqwest::Url::parse("https://www.kookapp.cn/api/v3/game")?);
+    }
     let (resource, action) = endpoint
         .split_once('/')
         .ok_or("KOOK API 路径应为 resource/action")?;
@@ -213,6 +216,8 @@ mod tests {
             kook_url("/api/v3/voice/join").unwrap().path(),
             "/api/v3/voice/join"
         );
+        assert_eq!(kook_url("game").unwrap().path(), "/api/v3/game");
+        assert!(kook_url("guild").is_err());
         for path in ["https://example.org", "x/../voice", "x/y?x=z", "x/%2e%2e"] {
             assert!(kook_url(path).is_err());
             assert!(telegram_url("123:bot-token", path).is_err());
