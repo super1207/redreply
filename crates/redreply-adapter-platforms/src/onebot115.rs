@@ -7,9 +7,9 @@ use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use tokio_tungstenite::{connect_async, tungstenite};
 
-use crate::{cqapi::cq_add_log_w, mytool::read_json_str};
+use redreply_adapter_core::{cqapi::cq_add_log_w, mytool::read_json_str};
 
-use super::BotConnectTrait;
+use redreply_adapter_core::BotConnectTrait;
 
 #[derive(Debug)]
 pub struct OneBot115Connect {
@@ -35,7 +35,7 @@ async fn http_post(
         .build()?;
     let ret = client.execute(req).await?;
     let ret_str = ret.text().await?;
-    let _ = crate::cqapi::cq_add_log(&format!("接收数据:{ret_str}"));
+    let _ = redreply_adapter_core::cqapi::cq_add_log(&format!("接收数据:{ret_str}"));
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
     Ok(json_val)
 }
@@ -135,7 +135,7 @@ impl BotConnectTrait for OneBot115Connect {
         let url = url::Url::parse(&format!("{url_ws}/v1/events"))?;
         use tungstenite::client::IntoClientRequest;
         let mut request = url.as_str().into_client_request()?;
-        let mp = crate::httpevent::get_params_from_uri(&hyper::Uri::from_str(&self.url)?);
+        let mp = redreply_adapter_core::httpevent::get_params_from_uri(&hyper::Uri::from_str(&self.url)?);
         if let Some(access_token) = mp.get("access_token") {
             request.headers_mut().insert(
                 "Authorization",
@@ -179,15 +179,15 @@ impl BotConnectTrait for OneBot115Connect {
                         let post_type = read_json_str(&json_dat, "post_type").to_owned();
                         let meta_event_type = read_json_str(&json_dat, "meta_event_type");
                         if meta_event_type != "heartbeat"{
-                            let _ = crate::cqapi::cq_add_log(format!("OVO收到数据:{}", json_dat).as_str());
+                            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("OVO收到数据:{}", json_dat).as_str());
                         }
                         tokio::spawn(async move {
                             if post_type.is_empty() { // 是api回复
                                 // 只可能是心跳，do nothing
                             }else { // 是事件
                                 tokio::task::spawn_blocking(move ||{
-                                    if let Err(e) = crate::cqevent::do_1207_event(&json_dat.to_string()) {
-                                        let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                                    if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&json_dat.to_string()) {
+                                        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                                     }
                                 });
                             }
@@ -275,13 +275,13 @@ impl BotConnectTrait for OneBot115Connect {
                 .and_then(|params| params.get_mut("message"))
             {
                 if message.is_array() {
-                    crate::mytool::cq_fix_image_file_in_arr(message);
+                    redreply_adapter_core::mytool::cq_fix_image_file_in_arr(message);
                 } else if message
                     .as_str()
                     .is_some_and(|s| s.contains("[CQ:image"))
                 {
-                    if let Ok(arr) = crate::mytool::str_msg_to_arr(message) {
-                        if let Ok(s) = crate::mytool::json_to_cq_str(&serde_json::json!({
+                    if let Ok(arr) = redreply_adapter_core::mytool::str_msg_to_arr(message) {
+                        if let Ok(s) = redreply_adapter_core::mytool::json_to_cq_str(&serde_json::json!({
                             "message": arr
                         })) {
                             *message = serde_json::json!(s);
@@ -296,7 +296,7 @@ impl BotConnectTrait for OneBot115Connect {
         json_obj.insert("platform".to_string(), serde_json::to_value(platform)?);
 
         // 处理日志
-        let _ = crate::cqapi::cq_add_log(format!("发送数据:{}", json).as_str());
+        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("发送数据:{}", json).as_str());
 
         let mut http_url = self.url.to_owned();
         http_url = http_url.replacen("ovo://", "http://", 1);

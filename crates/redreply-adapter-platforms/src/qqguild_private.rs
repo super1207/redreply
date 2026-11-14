@@ -9,11 +9,12 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
 
-use crate::{
+use redreply_adapter_core::{
     cqapi::cq_add_log_w,
     mytool::{cq_fix_image_file_in_arr, read_json_obj_or_null, read_json_or_default, read_json_str},
-    qq_guild_all::{get_gateway, get_json_dat, token_refresh, SelfData},
 };
+
+use crate::qq_guild_all::{get_gateway, get_json_dat, token_refresh, SelfData};
 
 use super::{
     qq_guild_all::{
@@ -23,8 +24,8 @@ use super::{
         str_msg_to_arr_safe, MsgTargetType,
     },
     qqguild_public::{conv_group_c2c_event, send_group_msg as send_qq_group_msg},
-    BotConnectTrait,
 };
+use redreply_adapter_core::BotConnectTrait;
 
 #[derive(Debug)]
 pub struct QQGuildPrivateConnect {
@@ -116,8 +117,8 @@ async fn conv_event(
             }
         });
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
     } else if tp == "GUILD_MEMBER_ADD" {
@@ -145,8 +146,8 @@ async fn conv_event(
             "user_id":user_id,
         });
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
     } else if tp == "GUILD_MEMBER_REMOVE" {
@@ -174,8 +175,8 @@ async fn conv_event(
             "user_id":user_id,
         });
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
     }
@@ -372,7 +373,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                         let json_dat;
                         if let Some(val) =  get_json_dat(msg) {
                             json_dat = val;
-                            let _ = crate::cqapi::cq_add_log(format!("qqguild_private 收到数据:{}", json_dat).as_str());
+                            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("qqguild_private 收到数据:{}", json_dat).as_str());
                         }else{
                             continue;
                         }
@@ -409,7 +410,7 @@ impl BotConnectTrait for QQGuildPrivateConnect {
                             let self_data = self_data.clone();
                             tokio::spawn(async move {
                                 if let Err(e) = conv_event(&self_data,json_dat).await {
-                                    let _ = crate::cqapi::cq_add_log_w(format!("err:{:?}", e).as_str());
+                                    let _ = redreply_adapter_core::cqapi::cq_add_log_w(format!("err:{:?}", e).as_str());
                                 }
                             });
                         }else if op == "11" { // 心跳

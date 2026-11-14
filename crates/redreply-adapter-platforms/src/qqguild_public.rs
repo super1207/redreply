@@ -9,13 +9,14 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::tungstenite;
 
-use crate::{
+use redreply_adapter_core::{
     cqapi::cq_add_log_w,
     mytool::{
         cq_fix_image_file_in_arr, read_json_obj_or_null, read_json_or_default, read_json_str,
     },
-    qq_guild_all::{get_gateway, get_json_dat, token_refresh, SelfData},
 };
+
+use crate::qq_guild_all::{get_gateway, get_json_dat, token_refresh, SelfData};
 
 use super::{
     qq_guild_all::{
@@ -25,8 +26,8 @@ use super::{
         send_qqguild_msg, set_event_id, set_group_ban, str_msg_to_arr_safe,
         wait_qqgroup_audit_result, MsgSrcType, MsgTargetType, QQMsgNode,
     },
-    BotConnectTrait,
 };
+use redreply_adapter_core::BotConnectTrait;
 
 #[derive(Debug)]
 pub struct QQGuildPublicConnect {
@@ -134,8 +135,8 @@ pub async fn conv_group_c2c_event(
             }
         });
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
         return Ok(true);
@@ -183,8 +184,8 @@ pub async fn conv_group_c2c_event(
             }
         });
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
         return Ok(true);
@@ -223,8 +224,8 @@ pub async fn conv_group_c2c_event(
             }
         });
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
         return Ok(true);
@@ -277,8 +278,8 @@ async fn conv_event(
             }
         });
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
     } else if tp == "GUILD_MEMBER_ADD" {
@@ -306,8 +307,8 @@ async fn conv_event(
             "user_id":user_id,
         });
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
     } else if tp == "GUILD_MEMBER_REMOVE" {
@@ -335,8 +336,8 @@ async fn conv_event(
             "user_id":user_id,
         });
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
     }
@@ -629,11 +630,11 @@ async fn send_qqgroup_msg(
                 "msg_id":to_reply_id
             });
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
-            let _ = crate::cqapi::cq_add_log(
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -654,11 +655,11 @@ async fn send_qqgroup_msg(
             obj.insert("msg_seq".to_owned(), serde_json::json!(msg_seq));
             obj.insert("msg_id".to_owned(), serde_json::json!(to_reply_id));
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
-            let _ = crate::cqapi::cq_add_log(
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -688,11 +689,11 @@ async fn send_qqgroup_msg(
                 }
             });
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
-            let _ = crate::cqapi::cq_add_log(
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -726,11 +727,11 @@ async fn send_qqgroup_msg(
                 "msg_type":0,
             });
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
-            let _ = crate::cqapi::cq_add_log(
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -747,11 +748,11 @@ async fn send_qqgroup_msg(
             let obj = json_data.as_object_mut().ok_or("markdown err")?;
             obj.insert("msg_type".to_owned(), serde_json::json!(2));
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
-            let _ = crate::cqapi::cq_add_log(
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -777,11 +778,11 @@ async fn send_qqgroup_msg(
                 }
             });
             set_qqgroup_message_reference(&mut json_data, &qq_msg_node)?;
-            let _ = crate::cqapi::cq_add_log(
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
                 format!("发送qq group API数据(`{}`):{}", group_id, json_data).as_str(),
             );
             let api_ret = do_qqgroup_json_post_wait_audit(self_t, group_id, json_data).await?;
-            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", api_ret).as_str());
             // 构造消息id
             if !id.is_empty() {
                 id += "|";
@@ -843,12 +844,12 @@ async fn send_qqpri_msg_chunk(
             "msg_seq":msg_seq,
             "msg_id":to_reply_id
         });
-        let _ = crate::cqapi::cq_add_log(
+        let _ = redreply_adapter_core::cqapi::cq_add_log(
             format!("发送qq private API数据(`{}`):{}", user_id, json_data).as_str(),
         );
         let api_ret =
             do_qq_json_post(self_t, &format!("/v2/users/{user_id}/messages"), json_data).await?;
-        let _ = crate::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str());
+        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str());
         // 构造消息id
         append_msg_id(
             id,
@@ -868,12 +869,12 @@ async fn send_qqpri_msg_chunk(
         obj.insert("msg_type".to_owned(), serde_json::json!(2));
         obj.insert("msg_seq".to_owned(), serde_json::json!(msg_seq));
         obj.insert("msg_id".to_owned(), serde_json::json!(to_reply_id));
-        let _ = crate::cqapi::cq_add_log(
+        let _ = redreply_adapter_core::cqapi::cq_add_log(
             format!("发送qq private API数据(`{}`):{}", user_id, json_data).as_str(),
         );
         let api_ret =
             do_qq_json_post(self_t, &format!("/v2/users/{user_id}/messages"), json_data).await?;
-        let _ = crate::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str());
+        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str());
         // 构造消息id
         append_msg_id(
             id,
@@ -899,12 +900,12 @@ async fn send_qqpri_msg_chunk(
                 "file_info":img_info
             }
         });
-        let _ = crate::cqapi::cq_add_log(
+        let _ = redreply_adapter_core::cqapi::cq_add_log(
             format!("发送qq private API数据(`{}`):{}", user_id, json_data).as_str(),
         );
         let api_ret =
             do_qq_json_post(self_t, &format!("/v2/users/{user_id}/messages"), json_data).await?;
-        let _ = crate::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str());
+        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq private API数据:{}", api_ret).as_str());
         // 构造消息id
         append_msg_id(
             id,
@@ -1336,7 +1337,7 @@ impl BotConnectTrait for QQGuildPublicConnect {
                         let json_dat;
                         if let Some(val) =  get_json_dat(msg) {
                             json_dat = val;
-                            let _ = crate::cqapi::cq_add_log(format!("qqguild_public 收到数据:{}", json_dat).as_str());
+                            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("qqguild_public 收到数据:{}", json_dat).as_str());
                         }else{
                             continue;
                         }
@@ -1373,7 +1374,7 @@ impl BotConnectTrait for QQGuildPublicConnect {
                             let self_data = self_data.clone();
                             tokio::spawn(async move {
                                 if let Err(e) = conv_event(&self_data,json_dat).await {
-                                    let _ = crate::cqapi::cq_add_log_w(format!("err:{:?}", e).as_str());
+                                    let _ = redreply_adapter_core::cqapi::cq_add_log_w(format!("err:{:?}", e).as_str());
                                 }
                             });
                         }else if op == "11" { // 心跳

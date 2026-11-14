@@ -5505,6 +5505,35 @@ dependencies = [
 name = "redreply-adapter"
 version = "0.1.0"
 dependencies = [
+ "futures-util",
+ "redreply-adapter-core",
+ "redreply-adapter-platforms",
+ "redreply-bot",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite",
+]
+
+[[package]]
+name = "redreply-adapter-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "hyper",
+ "redreply-common",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "url",
+ "uuid",
+]
+
+[[package]]
+name = "redreply-adapter-platforms"
+version = "0.1.0"
+dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
@@ -5518,8 +5547,8 @@ dependencies = [
  "imap",
  "lettre",
  "mail-parser",
+ "redreply-adapter-core",
  "redreply-bot",
- "redreply-common",
  "regex",
  "reqwest",
  "rustls",

@@ -3,13 +3,13 @@ use serde_json::{json, Map, Value};
 
 use crate::AdapterResult;
 
-pub(crate) fn object(value: &Value) -> AdapterResult<&Map<String, Value>> {
+pub fn object(value: &Value) -> AdapterResult<&Map<String, Value>> {
     value
         .as_object()
         .ok_or_else(|| "原生 API 参数必须是 JSON 对象".into())
 }
 
-pub(crate) fn reply(code: i64, data: &Value, message: &str, echo: &Value) -> Value {
+pub fn reply(code: i64, data: &Value, message: &str, echo: &Value) -> Value {
     json!({
         "status": if code == 0 { "ok" } else { "failed" },
         "retcode": code,
@@ -19,11 +19,11 @@ pub(crate) fn reply(code: i64, data: &Value, message: &str, echo: &Value) -> Val
     })
 }
 
-pub(crate) fn action_result(result: AdapterResult<Value>, echo: &Value) -> Value {
+pub fn action_result(result: AdapterResult<Value>, echo: &Value) -> Value {
     result.unwrap_or_else(|error| reply(-1, &Value::Null, &error.to_string(), echo))
 }
 
-pub(crate) fn message_handles(params: &Value) -> AdapterResult<Vec<&str>> {
+pub fn message_handles(params: &Value) -> AdapterResult<Vec<&str>> {
     let ids = params["message_ids"].as_array().ok_or("消息 ID 需要数组")?;
     ids.iter()
         .map(|id| id.as_str().filter(|id| !id.is_empty()).ok_or_else(|| "消息 ID 需要非空文本".into()))
@@ -31,23 +31,23 @@ pub(crate) fn message_handles(params: &Value) -> AdapterResult<Vec<&str>> {
 }
 
 #[derive(Default)]
-pub(crate) struct DeleteBatch {
+pub struct DeleteBatch {
     results: Vec<Value>,
 }
 
 impl DeleteBatch {
-    pub(crate) fn record(&mut self, target: Value, result: AdapterResult<Value>) {
+    pub fn record(&mut self, target: Value, result: AdapterResult<Value>) {
         self.results.push(json!({"target": target, "response": action_result(result, &Value::Null)}));
     }
 
-    pub(crate) fn finish(self, echo: &Value) -> Value {
+    pub fn finish(self, echo: &Value) -> Value {
         let failed = self.results.iter().filter(|item| item["response"]["retcode"] != 0).count();
         let (code, message) = if failed == 0 { (0, "") } else { (-1, "部分或全部删除请求失败") };
         reply(code, &json!({"results": self.results, "failed": failed}), message, echo)
     }
 }
 
-pub(crate) fn telegram_url(token: &str, method: &str) -> AdapterResult<reqwest::Url> {
+pub fn telegram_url(token: &str, method: &str) -> AdapterResult<reqwest::Url> {
     if method.is_empty()
         || !method.as_bytes()[0].is_ascii_alphabetic()
         || !method.bytes().all(|byte| byte.is_ascii_alphanumeric())
@@ -62,7 +62,7 @@ pub(crate) fn telegram_url(token: &str, method: &str) -> AdapterResult<reqwest::
     Ok(url)
 }
 
-pub(crate) fn kook_url(endpoint: &str) -> AdapterResult<reqwest::Url> {
+pub fn kook_url(endpoint: &str) -> AdapterResult<reqwest::Url> {
     let endpoint = endpoint.strip_prefix("/api/v3/").unwrap_or(endpoint);
     if endpoint == "game" {
         return Ok(reqwest::Url::parse("https://www.kookapp.cn/api/v3/game")?);
@@ -87,7 +87,7 @@ pub(crate) fn kook_url(endpoint: &str) -> AdapterResult<reqwest::Url> {
     Ok(url)
 }
 
-pub(crate) fn form_fields(params: &Map<String, Value>) -> impl Iterator<Item = (&str, String)> {
+pub fn form_fields(params: &Map<String, Value>) -> impl Iterator<Item = (&str, String)> {
     params
         .iter()
         .filter(|(_, value)| !value.is_null())
@@ -102,7 +102,7 @@ pub(crate) fn form_fields(params: &Map<String, Value>) -> impl Iterator<Item = (
         })
 }
 
-pub(crate) fn post(
+pub fn post(
     request: reqwest::RequestBuilder,
     params: &Value,
     files: Option<&Value>,
@@ -147,7 +147,7 @@ pub(crate) fn post(
     Ok(request.multipart(form))
 }
 
-pub(crate) async fn response(
+pub async fn response(
     request: reqwest::RequestBuilder,
     platform: &str,
 ) -> AdapterResult<(u16, Value)> {
@@ -166,7 +166,7 @@ pub(crate) async fn response(
     Ok((status, body))
 }
 
-pub(crate) fn telegram_reply(status: u16, body: &Value, echo: &Value) -> Value {
+pub fn telegram_reply(status: u16, body: &Value, echo: &Value) -> Value {
     if (200..300).contains(&status) && body["ok"] == true {
         return reply(0, &body["result"], "", echo);
     }
@@ -185,7 +185,7 @@ pub(crate) fn telegram_reply(status: u16, body: &Value, echo: &Value) -> Value {
     result
 }
 
-pub(crate) fn kook_reply(status: u16, body: &Value, echo: &Value) -> Value {
+pub fn kook_reply(status: u16, body: &Value, echo: &Value) -> Value {
     let code = body["code"].as_i64().unwrap_or(-1);
     let code = if (200..300).contains(&status) || code > 0 {
         code

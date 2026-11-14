@@ -14,11 +14,11 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, RwLock};
 use uuid::Uuid;
 
-use super::BotConnectTrait;
-use crate::cqapi::{cq_add_log, cq_add_log_w};
-use crate::mytool::cq_fix_image_file_in_arr;
-use crate::mytool::read_json_str;
-use crate::mytool::str_msg_to_arr;
+use redreply_adapter_core::BotConnectTrait;
+use redreply_adapter_core::cqapi::{cq_add_log, cq_add_log_w};
+use redreply_adapter_core::mytool::cq_fix_image_file_in_arr;
+use redreply_adapter_core::mytool::read_json_str;
+use redreply_adapter_core::mytool::str_msg_to_arr;
 use async_trait::async_trait;
 
 #[derive(Debug, Clone)]
@@ -218,8 +218,8 @@ impl Yunhuv1Connect {
         tokio::task::spawn_blocking(move || {
             let json_str = ob_evt.to_string();
             let _ = cq_add_log(&format!("YUNTU_OB_EVENT:{json_str}"));
-            if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&json_str) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
         Ok(())

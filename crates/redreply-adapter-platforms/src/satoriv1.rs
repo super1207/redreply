@@ -9,7 +9,7 @@ use futures_util::{SinkExt, StreamExt};
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite};
 
-use crate::{
+use redreply_adapter_core::{
     cqapi::cq_add_log_w,
     mytool::{
         cq_fix_image_file_in_arr, cq_params_encode, cq_text_encode, read_json_obj,
@@ -17,7 +17,7 @@ use crate::{
     },
 };
 
-use super::BotConnectTrait;
+use redreply_adapter_core::BotConnectTrait;
 
 #[derive(Debug)]
 pub struct Satoriv1Connect {
@@ -68,7 +68,7 @@ async fn http_post(
     }
     let ret = client.execute(req).await?;
     let ret_str = ret.text().await?;
-    let _ = crate::cqapi::cq_add_log(&format!("接收数据:{ret_str}"));
+    let _ = redreply_adapter_core::cqapi::cq_add_log(&format!("接收数据:{ret_str}"));
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
     Ok(json_val)
 }
@@ -351,7 +351,7 @@ impl Satoriv1Connect {
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         let op = read_json_str(&json_data, "op");
         if op != "2" {
-            let _ = crate::cqapi::cq_add_log(format!("SATORI收到数据:{}", json_data).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("SATORI收到数据:{}", json_data).as_str());
         }
         if op == "2" {
             // 心跳回复
@@ -468,9 +468,9 @@ impl Satoriv1Connect {
                                 });
                                 tokio::task::spawn_blocking(move || {
                                     if let Err(e) =
-                                        crate::cqevent::do_1207_event(&event_json.to_string())
+                                        redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string())
                                     {
-                                        let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                                        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                                     }
                                 });
                             }
@@ -504,8 +504,8 @@ impl Satoriv1Connect {
                             }
                         });
                         tokio::task::spawn_blocking(move || {
-                            if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                             }
                         });
                     }
@@ -543,8 +543,8 @@ impl Satoriv1Connect {
                         }
                     });
                     tokio::task::spawn_blocking(move || {
-                        if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                            let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                        if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                         }
                     });
                 }
@@ -574,8 +574,8 @@ impl Satoriv1Connect {
                 });
 
                 tokio::task::spawn_blocking(move || {
-                    if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                        let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                    if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                     }
                 });
             } else if type_t == "guild-member-removed" {
@@ -612,8 +612,8 @@ impl Satoriv1Connect {
                 });
 
                 tokio::task::spawn_blocking(move || {
-                    if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                        let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                    if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                     }
                 });
             } else if type_t == "message-deleted" {
@@ -655,8 +655,8 @@ impl Satoriv1Connect {
                         "message_id":message_id
                     });
                     tokio::task::spawn_blocking(move || {
-                        if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                            let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                        if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                         }
                     });
                 } else {
@@ -684,8 +684,8 @@ impl Satoriv1Connect {
                         "message_id":message_id
                     });
                     tokio::task::spawn_blocking(move || {
-                        if let Err(e) = crate::cqevent::do_1207_event(&event_json.to_string()) {
-                            let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                        if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&event_json.to_string()) {
+                            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                         }
                     });
                 }
@@ -746,7 +746,7 @@ impl Satoriv1Connect {
             let js_str = to_send.to_string();
             let out_str = js_str.get(0..2000);
             if let Some(out_str) = out_str {
-                let _ = crate::cqapi::cq_add_log(
+                let _ = redreply_adapter_core::cqapi::cq_add_log(
                     format!(
                         "发送数据(platform:{platform},self_id:{self_id}):{}...",
                         out_str
@@ -754,7 +754,7 @@ impl Satoriv1Connect {
                     .as_str(),
                 );
             } else {
-                let _ = crate::cqapi::cq_add_log(
+                let _ = redreply_adapter_core::cqapi::cq_add_log(
                     format!("发送数据(platform:{platform},self_id:{self_id}):{}", js_str).as_str(),
                 );
             }
@@ -835,7 +835,7 @@ impl Satoriv1Connect {
             let js_str = to_send.to_string();
             let out_str = js_str.get(0..2000);
             if let Some(out_str) = out_str {
-                let _ = crate::cqapi::cq_add_log(
+                let _ = redreply_adapter_core::cqapi::cq_add_log(
                     format!(
                         "发送数据(platform:{platform},self_id:{self_id}):{}...",
                         out_str
@@ -843,7 +843,7 @@ impl Satoriv1Connect {
                     .as_str(),
                 );
             } else {
-                let _ = crate::cqapi::cq_add_log(
+                let _ = redreply_adapter_core::cqapi::cq_add_log(
                     format!("发送数据(platform:{platform},self_id:{self_id}):{}", js_str).as_str(),
                 );
             }
@@ -879,7 +879,7 @@ impl Satoriv1Connect {
             let js_str = to_send.to_string();
             let out_str = js_str.get(0..2000);
             if let Some(out_str) = out_str {
-                let _ = crate::cqapi::cq_add_log(
+                let _ = redreply_adapter_core::cqapi::cq_add_log(
                     format!(
                         "发送数据(platform:{platform},self_id:{self_id}):{}...",
                         out_str
@@ -887,7 +887,7 @@ impl Satoriv1Connect {
                     .as_str(),
                 );
             } else {
-                let _ = crate::cqapi::cq_add_log(
+                let _ = redreply_adapter_core::cqapi::cq_add_log(
                     format!("发送数据(platform:{platform},self_id:{self_id}):{}", js_str).as_str(),
                 );
             }
@@ -1081,7 +1081,7 @@ impl Satoriv1Connect {
             "user_id":user_id
         });
 
-        let _ = crate::cqapi::cq_add_log(
+        let _ = redreply_adapter_core::cqapi::cq_add_log(
             format!(
                 "发送数据(platform:{platform},self_id:{self_id}):{}",
                 to_send
@@ -1135,7 +1135,7 @@ impl Satoriv1Connect {
             "message_id":message_id,
         });
 
-        let _ = crate::cqapi::cq_add_log(
+        let _ = redreply_adapter_core::cqapi::cq_add_log(
             format!(
                 "发送数据(platform:{platform},self_id:{self_id}):{}",
                 to_send
@@ -1355,7 +1355,7 @@ impl BotConnectTrait for Satoriv1Connect {
                         let group_groups_map_t = group_groups_map.clone();
                         tokio::spawn(async move {
                             if let Err(e) = Satoriv1Connect::conv_event(json_dat,platforms_t,user_channel_map_t,group_groups_map_t).await {
-                                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                             }
                         });
                     },

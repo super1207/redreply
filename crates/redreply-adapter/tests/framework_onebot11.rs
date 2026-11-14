@@ -2,7 +2,6 @@
 //! 假 OneBot 服务端 ← 适配器桥 ← framework AdapterManager，验证
 //! 事件进入框架 EventBus、call_api 能到达协议端。
 
-#![cfg(feature = "framework")]
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};

@@ -6,9 +6,9 @@ use std::{
 };
 use uuid::Uuid;
 
-use super::BotConnectTrait;
-use crate::mytool::{cq_fix_image_file_in_arr, str_msg_to_arr};
-use crate::{async_trait, cqapi::cq_add_log, cqapi::cq_add_log_w, mytool::read_json_str};
+use redreply_adapter_core::BotConnectTrait;
+use redreply_adapter_core::mytool::{cq_fix_image_file_in_arr, str_msg_to_arr};
+use redreply_adapter_core::{async_trait, cqapi::cq_add_log, cqapi::cq_add_log_w, mytool::read_json_str};
 use lettre::Tokio1Executor;
 use lettre::{
     message::{MultiPart, SinglePart},
@@ -147,8 +147,8 @@ impl EmailConnect {
         });
         let json_str = event_json.to_string();
         let _ = cq_add_log(&format!("EMAIL_OB_EVENT:{json_str}"));
-        if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
-            let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+        if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&json_str) {
+            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
         }
         Ok(())
     }
@@ -503,7 +503,7 @@ impl BotConnectTrait for EmailConnect {
         let self_t = self.clone();
         thread::spawn(move || {
             if let Err(e) = self_t.do_connect() {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
             self_t
                 .is_stop

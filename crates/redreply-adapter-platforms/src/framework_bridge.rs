@@ -14,13 +14,15 @@ use redreply_bot::{
     AdapterDeps, AdapterFactory, Bot, BotHandle, FrameworkError, Result as FrameworkResult,
 };
 
-use crate::host::{self, AdapterHost};
+use redreply_adapter_core::host::{self, AdapterHost};
+use redreply_adapter_core::{AdapterError, AdapterResult, BotConnectTrait};
+
 use crate::onebot11::OneBot11Connect;
 use crate::onebot115::OneBot115Connect;
 use crate::{
     email::EmailConnect, kook::KookConnect, qqguild_private::QQGuildPrivateConnect,
     qqguild_public::QQGuildPublicConnect, satoriv1::Satoriv1Connect, telegram::TeleTramConnect,
-    yunhuv1::Yunhuv1Connect, AdapterError, AdapterResult, BotConnectTrait,
+    yunhuv1::Yunhuv1Connect,
 };
 
 /// 基于框架 AdapterDeps 的宿主实现。

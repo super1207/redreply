@@ -22,17 +22,17 @@ use tokio_tungstenite::connect_async;
 use tokio_tungstenite::tungstenite;
 use uuid::Uuid;
 
-use crate::cqapi::cq_add_log;
-use crate::cqapi::cq_add_log_w;
-use crate::mytool::cq_fix_image_file_in_arr;
-use crate::mytool::cq_params_encode;
-use crate::mytool::cq_text_encode;
-use crate::mytool::json_to_cq_str;
-use crate::mytool::read_json_str;
-use crate::mytool::str_msg_to_arr;
+use redreply_adapter_core::cqapi::cq_add_log;
+use redreply_adapter_core::cqapi::cq_add_log_w;
+use redreply_adapter_core::mytool::cq_fix_image_file_in_arr;
+use redreply_adapter_core::mytool::cq_params_encode;
+use redreply_adapter_core::mytool::cq_text_encode;
+use redreply_adapter_core::mytool::json_to_cq_str;
+use redreply_adapter_core::mytool::read_json_str;
+use redreply_adapter_core::mytool::str_msg_to_arr;
 
-use super::BotConnectTrait;
-use crate::{native_api, AdapterResult};
+use redreply_adapter_core::BotConnectTrait;
+use redreply_adapter_core::{native_api, AdapterResult};
 use serde_json::{json, Value};
 
 mod voice;
@@ -522,8 +522,8 @@ impl KookConnect {
         let json_str = js.to_string();
         // cq_add_log(&format!("KOOK_OB_EVENT:{json_str}")).unwrap();
         tokio::task::spawn_blocking(move || {
-            if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&json_str) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
     }
@@ -3002,7 +3002,7 @@ impl BotConnectTrait for KookConnect {
                                     let kobj = kobj.clone();
                                     let rst = KookConnect::conv_event(&kobj,s).await;
                                     if let Err(err) = rst {
-                                        let _ = crate::cqapi::cq_add_log(
+                                        let _ = redreply_adapter_core::cqapi::cq_add_log(
                                             format!("KOOK抛出错误:{err:?}").as_str(),
                                         );
                                     } else if let Ok(code) = rst {

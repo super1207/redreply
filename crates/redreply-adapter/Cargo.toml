@@ -2,38 +2,16 @@
 name = "redreply-adapter"
 version = "0.1.0"
 edition = "2021"
-description = "Adapter core abstractions for RedReply chat platform connectors"
+description = "Facade for RedReply adapter core traits and platform implementations"
 license = "MIT"
 
-[features]
-default = ["framework"]
-# 把协议适配器桥接进 redreply-bot 框架（迁移期间可关闭）
-framework = ["dep:redreply-bot"]
-
 [dependencies]
-async-trait = { workspace = true }
-base64 = { workspace = true }
-fancy-regex = { workspace = true }
-flate2 = { workspace = true }
+redreply-adapter-core = { path = "../redreply-adapter-core" }
+redreply-adapter-platforms = { path = "../redreply-adapter-platforms" }
+
+[dev-dependencies]
 futures-util = { workspace = true }
-chrono = { workspace = true }
-html5gum = { workspace = true }
-html-escape = { workspace = true }
-hyper = { workspace = true }
-hyper-tungstenite = { workspace = true }
-imap = { workspace = true }
-lettre = { workspace = true }
-mail-parser = { workspace = true }
-regex = { workspace = true }
-reqwest = { workspace = true }
-rustls = { workspace = true }
-webpki-roots = { workspace = true }
-serde = { workspace = true }
+redreply-bot = { path = "../redreply-bot" }
 serde_json = { workspace = true }
-scopeguard = { workspace = true }
 tokio = { workspace = true }
 tokio-tungstenite = { workspace = true }
-url = { workspace = true }
-uuid = { workspace = true }
-redreply-common = { path = "../redreply-common" }
-redreply-bot = { path = "../redreply-bot", optional = true }

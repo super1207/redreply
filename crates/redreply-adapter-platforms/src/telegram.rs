@@ -5,12 +5,12 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 use std::time::SystemTime;
 
-use super::BotConnectTrait;
-use crate::cqapi::{cq_add_log, cq_add_log_w};
-use crate::mytool::{
+use redreply_adapter_core::BotConnectTrait;
+use redreply_adapter_core::cqapi::{cq_add_log, cq_add_log_w};
+use redreply_adapter_core::mytool::{
     cq_fix_image_file_in_arr, cq_params_encode, cq_text_encode, read_json_str, str_msg_to_arr,
 };
-use crate::{native_api, AdapterResult};
+use redreply_adapter_core::{native_api, AdapterResult};
 use async_trait::async_trait;
 use base64::{engine::general_purpose::STANDARD, Engine as _};
 use serde_json::{json, Value};
@@ -696,8 +696,8 @@ impl TeleTramConnect {
         tokio::task::spawn_blocking(move || {
             let json_str = event_json.to_string();
             let _ = cq_add_log(&format!("TELEGRAM_OB_EVENT:{json_str}"));
-            if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&json_str) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
         Ok(())
@@ -764,8 +764,8 @@ impl TeleTramConnect {
         tokio::task::spawn_blocking(move || {
             let json_str = event_json.to_string();
             let _ = cq_add_log(&format!("TELEGRAM_OB_EVENT:{json_str}"));
-            if let Err(e) = crate::cqevent::do_1207_event(&json_str) {
-                let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+            if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&json_str) {
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
             }
         });
         Ok(())
@@ -848,7 +848,7 @@ impl TeleTramConnect {
 
     fn dispatch_notice(notice: Value) {
         tokio::task::spawn_blocking(move || {
-            if let Err(error) = crate::cqevent::do_1207_event(&notice.to_string()) {
+            if let Err(error) = redreply_adapter_core::cqevent::do_1207_event(&notice.to_string()) {
                 let _ = cq_add_log_w(&format!("Telegram 原生事件处理失败：{error}"));
             }
         });

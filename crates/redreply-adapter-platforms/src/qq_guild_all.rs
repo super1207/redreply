@@ -54,7 +54,7 @@ use base64::{
     Engine,
 };
 
-use crate::{
+use redreply_adapter_core::{
     cqapi::cq_add_log_w,
     mytool::{
         cq_fix_image_file_in_arr, cq_params_encode, cq_text_encode, read_json_obj_or_null,
@@ -419,7 +419,7 @@ pub async fn cq_msg_to_qq(
                 if msg_type == MsgSrcType::QQGroup {
                     json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
                 }
-                let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
+                let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
                 if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                     let id = read_json_str(&json_val, "id");
                     if !id.is_empty() {
@@ -505,7 +505,7 @@ pub async fn cq_msg_to_qq(
                 let req = client.get(file).build()?;
                 let ret = client.execute(req).await?;
                 let retbin = ret.bytes().await?.to_vec();
-                let ret_silk = crate::mytool::all_to_silk::all_to_silk(&retbin)
+                let ret_silk = redreply_adapter_core::mytool::all_to_silk::all_to_silk(&retbin)
                     .map_err(|x| format!("can't convert to silk:{:?}", x))?;
                 let b64_str = BASE64_CUSTOM_ENGINE.encode(ret_silk);
                 json_data = serde_json::json!({
@@ -522,7 +522,7 @@ pub async fn cq_msg_to_qq(
                     ),
                     file.get(9..).ok_or("record not base64")?,
                 )?;
-                let ret_silk = crate::mytool::all_to_silk::all_to_silk(&retbin)
+                let ret_silk = redreply_adapter_core::mytool::all_to_silk::all_to_silk(&retbin)
                     .map_err(|x| format!("can't convert to silk:{:?}", x))?;
                 let b64_str = BASE64_CUSTOM_ENGINE.encode(ret_silk);
                 json_data = serde_json::json!({
@@ -571,7 +571,7 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -673,7 +673,7 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -783,7 +783,7 @@ pub async fn cq_msg_to_qq(
             if msg_type == MsgSrcType::QQGroup {
                 json_val = wait_qqgroup_audit_result(self_t, json_val).await?;
             }
-            let _ = crate::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
+            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收qq group API数据:{}", json_val).as_str());
             if qq_media_srv_send_msg(&msg_type, srv_send_msg) {
                 let id = read_json_str(&json_val, "id");
                 if !id.is_empty() {
@@ -1457,7 +1457,7 @@ async fn send_guild_msg_node(
                 );
             }
         }
-        let _ = crate::cqapi::cq_add_log(
+        let _ = redreply_adapter_core::cqapi::cq_add_log(
             format!(
                 "发送{} API数据(`{}`):{}",
                 context.log_name, context.target_id, json_data
@@ -1465,7 +1465,7 @@ async fn send_guild_msg_node(
             .as_str(),
         );
         let api_ret = do_qq_json_post(self_t, context.path, json_data).await?;
-        let _ = crate::cqapi::cq_add_log(format!("接收{} API数据:{}", context.log_name, api_ret).as_str());
+        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("接收{} API数据:{}", context.log_name, api_ret).as_str());
         append_api_msg_id(id, &api_ret)?;
     } else {
         for img in &qq_msg_node.imgs {
@@ -1490,7 +1490,7 @@ async fn send_guild_msg_node(
                 qq_msg_node.content = "".to_owned();
             }
 
-            let _ = crate::cqapi::cq_add_log(
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
                 format!(
                     "发送{} API数据(`{}`):{:?}",
                     context.log_name, context.target_id, form
@@ -1498,7 +1498,7 @@ async fn send_guild_msg_node(
                 .as_str(),
             );
             let api_ret = do_qq_form_post(self_t, context.path, form).await?;
-            let _ = crate::cqapi::cq_add_log(
+            let _ = redreply_adapter_core::cqapi::cq_add_log(
                 format!("接收{} API数据:{}", context.log_name, api_ret).as_str(),
             );
             append_api_msg_id(id, &api_ret)?;
@@ -1872,7 +1872,7 @@ pub async fn get_login_info(
         reqwest::header::HeaderName::from_str("Accept")?,
         reqwest::header::HeaderValue::from_str("application/json")?,
     );
-    //crate::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
+    //redreply_adapter_core::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
     let ret = client.execute(req).await?;
     let ret_str = ret.text().await?;
     let user: serde_json::Value = serde_json::from_str(&ret_str)?;
@@ -1946,7 +1946,7 @@ pub async fn get_group_list(
         reqwest::header::HeaderName::from_str("Accept")?,
         reqwest::header::HeaderValue::from_str("application/json")?,
     );
-    //crate::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
+    //redreply_adapter_core::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
     let ret = client.execute(req).await?;
     let ret_str = ret.text().await?;
     let group_list: serde_json::Value = serde_json::from_str(&ret_str)?;
@@ -2042,11 +2042,11 @@ pub async fn get_stranger_info(
         reqwest::header::HeaderName::from_str("Accept")?,
         reqwest::header::HeaderValue::from_str("application/json")?,
     );
-    //crate::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
+    //redreply_adapter_core::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
     let ret = client.execute(req).await?;
     let ret_str = ret.text().await?;
     let json_val: serde_json::Value = serde_json::from_str(&ret_str)?;
-    //crate::cqapi::cq_add_log(format!("json_val:{:?}", json_val).as_str()).unwrap();
+    //redreply_adapter_core::cqapi::cq_add_log(format!("json_val:{:?}", json_val).as_str()).unwrap();
     let user = read_json_obj_or_null(&json_val, "user");
     let nickname = read_json_str(&user, "username");
     let avatar = read_json_str(&user, "avatar");
@@ -2310,11 +2310,11 @@ pub async fn get_group_member_info(
         reqwest::header::HeaderName::from_str("Accept")?,
         reqwest::header::HeaderValue::from_str("application/json")?,
     );
-    //crate::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
+    //redreply_adapter_core::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
     let ret = client.execute(req).await?;
     let ret_str = ret.text().await?;
     let member: serde_json::Value = serde_json::from_str(&ret_str)?;
-    let _ = crate::cqapi::cq_add_log(format!("member:{:?}", member).as_str());
+    let _ = redreply_adapter_core::cqapi::cq_add_log(format!("member:{:?}", member).as_str());
     let card = read_json_str(&member, "nick");
     let user = read_json_obj_or_null(&member, "user");
     let nickname = read_json_str(&user, "username");
@@ -2466,7 +2466,7 @@ pub async fn set_group_ban(
         reqwest::header::HeaderName::from_str("Accept")?,
         reqwest::header::HeaderValue::from_str("application/json")?,
     );
-    //crate::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
+    //redreply_adapter_core::cqapi::cq_add_log(format!("headers_mut:{:?}", req.headers_mut()).as_str()).unwrap();
     let ret = client.execute(req).await?;
     if ret.status() != 204 {
         let code = ret.status().as_u16();

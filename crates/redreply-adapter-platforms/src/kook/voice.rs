@@ -10,7 +10,7 @@ use tokio::sync::{oneshot, watch, Mutex};
 use tokio::time::{self, MissedTickBehavior};
 
 use super::KookConnect;
-use crate::{native_api, AdapterResult};
+use redreply_adapter_core::{native_api, AdapterResult};
 
 const VOICE_API_TIMEOUT: Duration = Duration::from_secs(8);
 

@@ -4,19 +4,19 @@ use std::{
     sync::{atomic::AtomicBool, Arc, RwLock},
 };
 
-use crate::mytool::all_to_silk::all_to_silk;
+use redreply_adapter_core::mytool::all_to_silk::all_to_silk;
 use async_trait::async_trait;
 use futures_util::{SinkExt, StreamExt};
 use hyper::header::HeaderValue;
 use tokio::net::TcpStream;
 use tokio_tungstenite::{connect_async, tungstenite};
 
-use crate::{
+use redreply_adapter_core::{
     cqapi::{cq_add_log, cq_add_log_w, cq_get_app_directory1},
     mytool::{cq_fix_image_file_in_arr, read_json_str, str_msg_to_arr},
 };
 
-use super::BotConnectTrait;
+use redreply_adapter_core::BotConnectTrait;
 
 use base64::{
     alphabet,
@@ -452,7 +452,7 @@ fn change_id_to_str(root: &mut serde_json::Value) {
 fn deal_cq_arr(root: &mut serde_json::Value) {
     let message: &serde_json::Value = &root["message"];
     if message.is_string() {
-        if let Ok(msg) = crate::mytool::str_msg_to_arr(message) {
+        if let Ok(msg) = redreply_adapter_core::mytool::str_msg_to_arr(message) {
             root["message"] = msg;
         }
     }
@@ -497,7 +497,7 @@ impl BotConnectTrait for OneBot11Connect {
         let url = url::Url::parse(&self.url)?;
         use tungstenite::client::IntoClientRequest;
         let mut request = url.as_str().into_client_request()?;
-        let mp = crate::httpevent::get_params_from_uri(&hyper::Uri::from_str(&self.url)?);
+        let mp = redreply_adapter_core::httpevent::get_params_from_uri(&hyper::Uri::from_str(&self.url)?);
         if let Some(access_token) = mp.get("access_token") {
             request.headers_mut().insert(
                 "Authorization",
@@ -569,7 +569,7 @@ impl BotConnectTrait for OneBot11Connect {
                         let post_type = read_json_str(&json_dat, "post_type");
                         let meta_event_type = read_json_str(&json_dat, "meta_event_type");
                         if meta_event_type != "heartbeat" && echo != "CBC949B6-8C9F-8060-A149-A045ED9AD405" {
-                            let _ = crate::cqapi::cq_add_log(format!("OB11收到数据:{}", json_dat).as_str());
+                            let _ = redreply_adapter_core::cqapi::cq_add_log(format!("OB11收到数据:{}", json_dat).as_str());
                         }else{
                             continue;
                         }
@@ -596,8 +596,8 @@ impl BotConnectTrait for OneBot11Connect {
                                 let _foo = tx.send(json_dat).await;
                             }else if !post_type.is_empty() { // 是事件
                                 tokio::task::spawn_blocking(move ||{
-                                    if let Err(e) = crate::cqevent::do_1207_event(&json_dat.to_string()) {
-                                        let _ = crate::cqapi::cq_add_log(format!("{:?}", e).as_str());
+                                    if let Err(e) = redreply_adapter_core::cqevent::do_1207_event(&json_dat.to_string()) {
+                                        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("{:?}", e).as_str());
                                     }
                                 });
                             }else {
@@ -756,7 +756,7 @@ impl BotConnectTrait for OneBot11Connect {
                     "status":"ok",
                     "retcode":0,
                     "data": {
-                        "message_id":crate::redlang::get_random()?.to_string()
+                        "message_id":redreply_adapter_core::redlang::get_random()?.to_string()
                     },
                     "echo":echo
                 });
@@ -785,7 +785,7 @@ impl BotConnectTrait for OneBot11Connect {
             });
         });
 
-        let _ = crate::cqapi::cq_add_log(format!("发送数据:{}", json).as_str());
+        let _ = redreply_adapter_core::cqapi::cq_add_log(format!("发送数据:{}", json).as_str());
 
         self.tx
             .clone()

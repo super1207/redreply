@@ -10,6 +10,8 @@ members = [
     ".",
     "crates/redreply",
     "crates/redreply-adapter",
+    "crates/redreply-adapter-core",
+    "crates/redreply-adapter-platforms",
     "crates/redreply-bot",
     "crates/redreply-core",
     "crates/redreply-browser",
