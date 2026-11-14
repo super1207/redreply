@@ -9,6 +9,7 @@
 pub mod core;
 
 mod api;
+mod bot_commands;
 mod control_plane;
 mod cqevent;
 mod cqexfun;
@@ -18,6 +19,7 @@ mod font;
 mod httpevent;
 mod initevent;
 pub mod lifecycle;
+mod native_args;
 mod pyserver;
 mod python_env;
 mod script_manager;

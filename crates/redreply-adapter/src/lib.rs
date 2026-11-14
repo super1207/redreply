@@ -25,6 +25,7 @@ pub mod host;
 pub mod httpevent;
 pub mod kook;
 pub mod mytool;
+mod native_api;
 pub mod onebot11;
 pub mod onebot115;
 pub mod qq_guild_all;

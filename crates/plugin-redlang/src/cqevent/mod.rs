@@ -31,13 +31,27 @@ static EVENT_DEDUP: std::sync::OnceLock<std::sync::Mutex<HashMap<String, i64>>> 
 
 const EVENT_DEDUP_TTL_SECS: i64 = 300;
 
-fn is_duplicate_event(root: &serde_json::Value) -> bool {
+fn event_dedup_key(root: &serde_json::Value) -> Option<String> {
     let message_id = read_json_str(root, "message_id");
-    if message_id.is_empty() {
-        return false;
-    }
+    let platform = read_json_str(root, "platform");
     let self_id = read_json_str(root, "self_id");
-    let key = format!("{self_id}|{message_id}");
+    if root["post_type"] == "notice" && matches!(platform.as_str(), "telegram" | "kook") {
+        let notice = read_json_str(root, "notice_type");
+        let kind = read_json_str(root, "sub_type");
+        let event_id = match platform.as_str() {
+            "telegram" => read_json_str(root, "update_id"),
+            _ => read_json_str(&root["kook_event"], "msg_id"),
+        };
+        // The message ID names the affected message, which can have any number of notices.
+        return (!event_id.is_empty()).then(|| format!("{platform}|{self_id}|notice|{notice}|{kind}|{event_id}"));
+    }
+    (!message_id.is_empty()).then(|| format!("{platform}|{self_id}|{message_id}"))
+}
+
+fn is_duplicate_event(root: &serde_json::Value) -> bool {
+    let Some(key) = event_dedup_key(root) else {
+        return false;
+    };
     let now = chrono::Local::now().timestamp();
     let mut map = match EVENT_DEDUP.get_or_init(|| std::sync::Mutex::new(HashMap::new())).lock() {
         Ok(g) => g,
@@ -474,4 +488,38 @@ fn get_script_info(
         .ok_or("脚本中匹配方式不是str")?;
 
     Ok((keyword, cffs, code, ppfs, name, pkg_name))
+}
+
+
+#[cfg(test)]
+mod event_dedup_tests {
+    use super::event_dedup_key;
+    use serde_json::json;
+
+    #[test]
+    fn native_notices_and_parent_messages_have_independent_event_keys() {
+        let message = json!({"platform":"telegram","self_id":"bot","post_type":"message","message_id":"same"});
+        let mut notice = json!({
+            "platform":"telegram","self_id":"bot","post_type":"notice","notice_type":"telegram",
+            "sub_type":"media_group","message_id":"same","update_id":100
+        });
+        assert_ne!(event_dedup_key(&message), event_dedup_key(&notice));
+        let received = event_dedup_key(&notice);
+        assert_eq!(received, event_dedup_key(&notice));
+        notice["sub_type"] = "forwarded_message".into();
+        assert_ne!(received, event_dedup_key(&notice));
+
+        notice["sub_type"] = "message_reaction".into();
+        let first = event_dedup_key(&notice);
+        notice["update_id"] = 101.into();
+        assert_ne!(first, event_dedup_key(&notice));
+
+        let mut kook = json!({"platform":"kook","self_id":"bot","post_type":"notice",
+            "notice_type":"kook","sub_type":"added_reaction","message_id":"same",
+            "kook_event":{"msg_id":"first"}
+        });
+        let first = event_dedup_key(&kook);
+        kook["kook_event"]["msg_id"] = "second".into();
+        assert_ne!(first, event_dedup_key(&kook));
+    }
 }

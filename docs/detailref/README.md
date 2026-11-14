@@ -2346,6 +2346,8 @@ return ""
 [{"群ID":"123","群名": "群名称1"}, {"群ID":"456","群名": "群名称2"}]
 ```
 
+KOOK 支持【取群列表@服务器ID】。省略服务器 ID 时使用当前服务器或从当前频道查询所属服务器，并返回各页的文字频道。
+
 注意，不要轻易在QQ平台使用此命令，当群过多时，可能会导致机器人卡顿。
 
 ### 取发送者信息
@@ -2370,6 +2372,8 @@ return ""
 返回<font color="red">用户ID</font>的头像url，<font color="red">用户ID</font>可以省略，默认是【发送者ID】。
 
 如果无法获取头像，则返回空文本。注意，这个命令可能返回非公网的url。
+
+Telegram 使用【取头像@用户ID@文件ID列表@跳过数量@返回数量】返回可供【Telegram下载文件】使用的头像文件 ID 数组。用户 ID 默认发送者，跳过数量默认 0，返回数量可填 1 至 100，默认 100。
 
 
 ### BOT权限
@@ -2416,18 +2420,46 @@ return ""
 
 若省略参数，则表示撤回当前消息，此命令需要onebot协议端支持。
 
+KOOK 与 Telegram 支持用【数组】批量撤回 RedReply 消息 ID。结果对象包含 `retcode`、`data.failed` 和 `data.results`。也可用【撤回@平台消息ID或数组@商务连接ID】撤回同一商务会话中 1 至 100 条消息。
+
+### 编辑消息
+
+【编辑消息@消息ID@新内容@类型@文本格式@行内键盘@目标类型】
+
+消息 ID 省略时使用当前消息。类型默认为 `文本`，Telegram 还支持 `说明`、`键盘`、`媒体` 和商务 `清单`，KOOK 还支持 `卡片`。返回结果对象。
+
+### 转发消息
+
+【转发消息@消息ID或数组@目标ID@目标类型@是否复制@是否静默@话题ID@话题类型】
+
+目标类型可填 `群聊`、`频道` 或 `私聊`。消息或目标省略时使用当前消息或会话。Telegram 使用原生转发或复制，KOOK 读取内容后重新发送。返回结果对象。参见[编辑、转发与批量撤回](/adaptar/native-bot-api.md)。
+
 ### 禁言
 
 
 【禁言@<font color="red">时间(秒)</font>】
 
-禁言当前发消息的人，0表示解除禁言。
+禁言当前发消息的人，0表示解除禁言。Telegram 超级群支持 30 秒至 366 天，0 恢复群默认的发送权限。
 
+
+### 置顶消息
+
+【置顶消息@<font color="red">RedReply 消息 ID</font>@<font color="red">是否置顶</font>@<font color="red">是否静默</font>】
+
+适用于 KOOK 频道和 Telegram。消息 ID 省略时使用当前消息，第二个参数默认 `真`，填 `假` 取消置顶。第三个参数仅 Telegram 使用，填 `真` 时静默置顶。
 
 ### 输出流
 
 
 【输出流@<font color="red">内容</font>】
+
+【输出流@<font color="red">内容</font>@<font color="red">Telegram 键盘对象</font>】
+
+【输出流@<font color="red">内容</font>@<font color="red">Telegram 键盘对象</font>@<font color="red">Telegram 话题 ID</font>@<font color="red">Telegram 话题类型</font>】
+
+Telegram 可选的第二个参数使用【Telegram键盘】，用于设置行内键盘或回复键盘。发送多段消息时，键盘附在最后一段。第三个参数可指定话题 ID，第四个参数默认为 `话题`，频道私信填 `频道私信`。省略话题 ID 时沿用当前消息话题。
+
+商务私聊可用【输出流@内容@键盘@话题ID@话题类型@商务连接ID@商务对方ID】。默认沿用当前商务会话。指定其他对方时同时填写连接和对方 ID，话题参数留空。第五项填 `机器人` 使用机器人身份。[商务消息使用说明](/adaptar/native-bot-api.md#telegram-商务消息与账户)
 
 发送一条消息，然后返回消息ID，注意，输出流不支持【分页】。如果消息发送失败，则返回空文本。
 
@@ -2644,6 +2676,10 @@ CQ码**外部**的字符需要CQ转义，以上三个命令的作用可以参考
 
 【事件内容】
 
+【事件内容@<font color="red">字段</font>】
+
+不填字段时返回原始事件对象。字段可填按钮值、平台消息ID、投票选项、投票人数、查询内容、查询偏移、话题ID、频道私信话题ID、文件ID、文件名、文件链接、贴纸文件ID、贴纸包、转发来源类型、新回应、旧回应、曲目序号、曲目总数或播放状态。商务事件可读取商务连接ID、商务连接、商务会话ID、消息文字、已删除消息ID、已删除平台消息ID、清单标题、清单任务、新增任务、完成任务ID、未完成任务ID或清单平台消息ID。Telegram 的运费、结账、支付成功、退款和付费媒体购买事件可用【事件内容@支付信息】读取。位置、场所、联系人，以及 KOOK 私聊会话码和黑名单变动也可直接作为选择项填入。按钮值支持 Telegram 和 KOOK，Telegram 投票选项从 1 开始。
+
 onebot事件json对应的RedLang对象。
 
 
@@ -2701,14 +2737,30 @@ onebot事件json对应的RedLang对象。
 取出消息事件或<font color="red">CQ文本</font>中的文本数组。
 
 
-### 表情回应(目前仅少量适配器可用)
+### 媒体组
+
+【媒体组@<font color="red">媒体数组</font>】
+
+为 KOOK 或 Telegram 构造 2 至 10 项媒体，用【输出流】或直接输出。每项用【数组@类型@来源@说明@文件名】。类型填图片、视频、音频或文件。来源是链接、文件 ID 或字节集。说明可省略，字节集需填写文件名。Telegram 使用相册，KOOK 使用媒体卡片。
+
+### 贴纸
+
+【贴纸@<font color="red">来源</font>@<font color="red">文件名</font>@<font color="red">关联表情</font>】
+
+为 Telegram 构造贴纸消息。来源可填文件 ID、静态 WebP 的链接或【读文件】返回的字节集。上传字节集时填文件名，后缀为 WebP、TGS 或 WebM，关联表情可省略。
+
+### 表情回应
 
 
-【表情回应@<font color="red">emoji表情</font>@<font color="red">消息ID</font>】
+【表情回应@<font color="red">emoji表情</font>@<font color="red">消息ID</font>@<font color="red">是否添加</font>】
 
 对当前消息进行表情回应，目前仅支持部分emoji。例子：`【表情回应@😘】`
 
 <font color="red">消息ID</font>是可以省略的，默认是当前消息。
+
+KOOK 和 Telegram 支持使用第三个参数 `假` 移除回应。KOOK 支持 Unicode 表情和平台表情 ID。Telegram 可用 `【表情回应@@@假】` 清除当前消息上的机器人回应。
+
+第四项可填 `自定义`，第五项填 `真` 启用 Telegram 放大动画。删除他人的回应时，第三项填 `假`，第六项填用户 ID，Telegram 匿名回应可用第七项的聊天 ID。需要对应的平台管理权限。参见[媒体与表情示例](/adaptar/native-bot-api.md)。
 
 特别说明，在qq平台，支持使用表情ID，如`【表情回应@4】`，支持的表情ID可以在[这里](https://bot.q.qq.com/wiki/develop/api-v2/openapi/emoji/model.html#emoji%E5%88%97%E8%A1%A8)查询。
 
@@ -2748,10 +2800,131 @@ onebot事件json对应的RedLang对象。
 
 【OB调用@<font color="red">onebot要求的json文本</font>】
 
-此命令用于发送原始onebot数据，以调用框架不支持，以及尚未支持的功能。
+【OB调用@<font color="red">OneBot 请求对象</font>】
+
+可直接用【对象】传入 `action`、`params` 等字段。比如 `【OB调用@【对象@action@get_group_info@params@【对象@group_id@【群ID】】】】`。
 
 此命令返回api调用返回的RedLang对象。若调用失败或超时，返回空文本。
 
+
+
+### Telegram调用
+
+【Telegram调用@<font color="red">Bot API 方法</font>@<font color="red">参数对象</font>@<font color="red">上传文件对象</font>】
+
+调用已连接的 Telegram 机器人原生接口。用【对象】构建参数，嵌套列表用【数组】。参数和文件可以省略。返回带有 `retcode`、`data` 和 `message` 的对象。
+
+### Telegram下载文件
+
+【Telegram下载文件@<font color="red">file_id</font>】
+
+使用已连接的 Telegram 机器人下载文件并返回字节集，最大 20 MB。
+
+### KOOK调用
+
+【KOOK调用@<font color="red">HTTP 方法</font>@<font color="red">接口路径</font>@<font color="red">参数对象</font>@<font color="red">上传文件对象</font>】
+
+调用已连接的 KOOK 机器人原生接口，支持 GET 和 POST。上传文件对象按表单字段名填写，每个文件是包含文件名 `filename` 和字节集 `内容` 的对象。返回带有 `retcode`、`data` 和 `message` 的对象。
+
+### 接口值
+
+【接口值@<font color="red">类型</font>@<font color="red">值</font>】
+
+用于原生接口、Telegram 键盘和 KOOK 卡片中的非文本参数。类型为 `整数`、`小数`、`逻辑` 或 `空值`。逻辑值填写 `真` 或 `假`，空值省略第二个参数。文本字段直接填写原文。
+
+### KOOK卡片
+
+【KOOK卡片@<font color="red">正文</font>@<font color="red">按钮行数组</font>@<font color="red">主题</font>@<font color="red">大小</font>】
+
+用于直接输出或交给【输出流】与【编辑消息】。正文或按钮至少填一项。每行最多 4 个按钮，每个写成【数组@文字@值@动作】，动作默认回调，也可填链接。主题和大小默认为蓝色、大。原有卡片数组写法也可使用。
+
+### Telegram命令菜单
+
+【Telegram命令菜单@设置@<font color="red">命令数组</font>@<font color="red">范围</font>@<font color="red">语言</font>@<font color="red">聊天ID</font>@<font color="red">成员ID</font>】
+
+【Telegram命令菜单@查询或删除@<font color="red">范围</font>@<font color="red">语言</font>@<font color="red">聊天ID</font>@<font color="red">成员ID</font>】
+
+每项写成【数组@命令名@说明】。范围、语言可省略。聊天 ID 和成员 ID 按所选范围填写。查询返回相同格式的数组。
+
+### Telegram菜单按钮
+
+【Telegram菜单按钮@<font color="red">类型</font>@<font color="red">私聊ID</font>@<font color="red">按钮文字</font>@<font color="red">小程序链接</font>】
+
+类型填命令、默认、小程序或查询。私聊 ID 可省略。按钮文字和 HTTPS 链接仅在设置小程序时填写。
+
+### Telegram键盘
+
+【Telegram键盘@<font color="red">按钮行数组</font>@<font color="red">模式</font>@<font color="red">自动缩放</font>@<font color="red">用后隐藏</font>】
+
+默认行内模式。每个行内按钮写【数组@文字@值@动作】，动作默认为回调，可填链接、小程序或支付。发票支付按钮写【数组@按钮文字@@支付】，并放在第一个。回复模式每行直接列出按钮文字，自动缩放默认真，用后隐藏默认假。移除回复键盘用【Telegram键盘@@移除】。
+
+### Telegram应答按钮
+
+【Telegram应答按钮@<font color="red">提示</font>@<font color="red">是否弹窗</font>@<font color="red">回调ID</font>】
+
+提示可省略，弹窗默认假。在按钮回调事件内可省略回调 ID。
+
+### Telegram投票
+
+【Telegram投票@题目@选项数组@是否匿名@是否多选@正确选项@话题ID@商务连接ID】
+
+题目和选项数组必填，匿名默认真，多选默认假。正确选项从 1 开始，省略时发普通投票。话题 ID 省略时沿用当前话题。商务连接 ID 省略时沿用同一商务会话的连接。返回 RedReply 消息 ID。
+
+### Telegram结束投票
+
+【Telegram结束投票@<font color="red">投票消息ID</font>】
+
+ID 省略时使用当前消息。成功返回总投票人数。
+
+### 邀请链接
+
+【邀请链接@创建@<font color="red">目标ID</font>@<font color="red">目标类型</font>@<font color="red">有效秒数</font>@<font color="red">上限</font>@<font color="red">Telegram 名称</font>@<font color="red">Telegram 是否审核</font>】
+
+【邀请链接@撤销@<font color="red">链接或邀请码</font>@<font color="red">目标ID</font>@<font color="red">目标类型</font>】
+
+目标省略时使用当前群或频道。创建返回链接。Telegram 还可编辑、生成主链接、创建和编辑付费邀请。KOOK 还可列出链接和查询受邀人数。各操作的参数、默认值与示例见[原生机器人使用说明](/adaptar/native-bot-api.md)。
+
+### 群信息、群成员与群管理
+
+【群信息@群或频道ID】返回会话资料，ID 可省略。【群成员@查询方式@值】查询详情、人数和平台支持的成员列表。用【群管理@操作@值】改名、设置简介或管理成员。各操作位置、默认值与示例见[原生机器人使用说明](/adaptar/native-bot-api.md)。
+
+### Telegram应答查询
+
+【Telegram应答查询@结果数组@缓存秒数@下一页偏移@是否个人@查询ID】
+
+结果数组必填。缓存默认 0 秒，个人缓存默认假。查询 ID 默认当前行内查询事件。结果数组格式见[行内查询](/adaptar/native-bot-api.md#行内查询)。
+
+### Telegram 与 KOOK 管理命令
+
+Telegram 的机器人资料、话题、群权限、群头像、文件、小程序应答、贴纸包与自定义表情，以及 KOOK 的服务器、频道、频道权限、身份组、帖子、上传文件、语音、历史消息与服务器表情都可按位置填写参数。完整语法见[原生机器人使用说明](/adaptar/native-bot-api.md)。
+
+### Telegram 发票和支付
+
+【Telegram发票】和【Telegram付费媒体】生成可交给【输出流】的消息。【Telegram发票链接】返回付款链接。运费询价和结账审核沿用【同意】与【拒绝】。余额、流水、退款、取消或恢复续订用【Telegram星币】。参数与示例见[发票、支付与退款](/adaptar/native-bot-api.md#telegram-发票支付与退款)。
+
+### Telegram 位置与联系人
+
+【Telegram位置】、【Telegram场所】、【Telegram联系人】生成可交给【输出流】的消息。实时位置用【编辑消息】更新和停止。参数、默认值与事件字段见[位置、场所和联系人](/adaptar/native-bot-api.md#telegram-位置场所和联系人)。
+
+### KOOK 模板和管道
+
+【KOOK模板管理】支持列出、创建、更新及删除。用【输出流】发送【KOOK模板消息】，用【编辑消息@消息ID@模板消息@模板】更新。入管道用【KOOK管道消息@入管道令牌@内容@类型@目标频道ID】。类型默认文字，目标默认后台配置。各项用法见[消息模板与入管道](/adaptar/native-bot-api.md#消息模板与入管道)。
+
+### Telegram 商务消息
+
+【Telegram商务已读@消息ID】默认标记当前商务消息已读。【Telegram任务清单@标题@任务数组@允许他人添加@允许他人勾选】生成可交给【输出流】的清单，且可用【编辑消息】更新。【Telegram商务账户】查询连接权限并修改资料。【Telegram商务动态】管理动态，【Telegram商务礼物】管理礼物与星币。语法和示例见[商务消息使用说明](/adaptar/native-bot-api.md#telegram-商务消息与账户)。
+
+### KOOK 黑名单与语音限制
+
+【群管理@黑名单@服务器ID@页码@每页数量】查询封禁成员，默认当前服务器、第 1 页，每页 50 项。【KOOK语音管理@限制列表@服务器ID】查询服务器内的闭麦和静音用户。用【KOOK语音管理】的 `闭麦`、`静音`、`解除闭麦` 和 `解除静音` 操作，目标用户与服务器默认取当前事件。参见[平台使用说明](/adaptar/native-bot-api.md)。
+
+### KOOK共享播放
+
+【KOOK共享播放@<font color="red">语音频道ID</font>@<font color="red">音源</font>@<font color="red">音量百分比</font>@<font color="red">频道密码</font>】
+
+加入语音频道并推送音频。音源可为单条文本或最多 32 条的数组。音量默认 100，密码可以省略。`【KOOK播放状态】` 查询当前状态，`【KOOK停止播放】` 停止并离开频道。
+
+参见[原生接口与按钮、菜单示例](/adaptar/native-bot-api.md)。
 
 
 ### 伪造OB事件
