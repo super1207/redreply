@@ -10,6 +10,8 @@ use crate::exfun::json_value_to_red;
 
 #[path = "bot_management.rs"]
 pub(super) mod management;
+#[path = "bot_telegram_media.rs"]
+pub(super) mod telegram_media;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -591,6 +593,9 @@ pub(super) fn event_field(event: &Value, field: &str) -> RedCommandResult {
         "位置" => management::location::event_location(&business["location"]),
         "场所" => management::location::event_venue(&business["venue"]),
         "联系人" => management::location::event_contact(&business["contact"]),
+        "语音便笺" => telegram_media::event_fields(business, "voice"),
+        "视频便笺" => telegram_media::event_fields(business, "video_note"),
+        "动画" => telegram_media::event_fields(business, "animation"),
         "私聊会话码" => management::kook_chat_code(event).into(),
         "黑名单变动"
             if matches!(
