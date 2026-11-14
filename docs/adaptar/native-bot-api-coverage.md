@@ -1,6 +1,6 @@
 # KOOK 与 Telegram Bot API 逐项对照
 
-快照日期为 2026 年 11 月 14 日（香港时间）。KOOK 按公开 v3 文档及公开 OAuth2 换令牌接口，Telegram 按官方 Bot API 10.4。基线使用 PR #4 的 `343e948`，此表保留变更前状态，便于回看原缺口。脚本参数和示例见[使用说明](native-bot-api.md)。 [KOOK 官方目录](https://developer.kookapp.cn/doc/reference) · [Telegram Bot API 10.4](https://core.telegram.org/bots/api#november-9-2026)
+快照日期为 2026 年 11 月 14 日（香港时间）。KOOK 按公开 v3 文档及公开 OAuth2 换令牌接口，Telegram 按官方 Bot API 10.4。基线使用 PR #4 的 `343e948`，逐项清单在接入后更新。脚本参数和示例见[使用说明](native-bot-api.md)。 [KOOK 官方目录](https://developer.kookapp.cn/doc/reference) · [Telegram Bot API 10.4](https://core.telegram.org/bots/api#november-9-2026)
 
 | 状态 | 判断依据 |
 | --- | --- |
@@ -27,6 +27,14 @@
 | Telegram | 发送付费媒体 | 未接入 | 部分 | 【输出流】接收【Telegram付费媒体】，支持常见图片、视频、说明与订单识别值。 |
 | Telegram | 运费、预结算、支付成功、已退款、购买付费媒体事件 | 部分／未接入 | 已接入 | 【事件内容@支付信息】读取中文支付字段，支付成功与退款另有独立事件。 |
 | Telegram | 位置、场所、联系人及其事件 | 部分／未接入 | 已接入常用功能 | 通过【输出流】发送。位置支持【编辑消息】更新和停止。对应事件提供中文字段。临时发送等高级公共选项仍待接入。 |
+| KOOK | 查询和更新亲密度 | 未接入 | 已接入 | 【KOOK亲密度】支持分数、文字和形象。 |
+| KOOK | 服务器徽章 | 未接入 | 已接入 | 【KOOK服务器@徽章】提供三种样式和图片字节集。 |
+| KOOK | 游戏列表、创建、更新、删除 | 未接入 | 已接入 | 【KOOK游戏】支持列表范围及分页。 |
+| KOOK | 游戏和音乐动态 | 未接入 | 已接入 | 【KOOK动态】可分别开始和停止，官方公开接口提供写入操作。 |
+| Telegram | 发送语音便笺 | 未接入 | 部分 | 【语音】的便笺模式。高级公共发送选项和实体数组仍待接入。 |
+| Telegram | 发送视频便笺 | 未接入 | 部分 | 【视频】的便笺模式。高级公共发送选项仍待接入。 |
+| Telegram | 发送和编辑动画 | 未接入／部分 | 部分 | 【动画】、【编辑消息】。高级公共发送选项和实体数组仍待接入。 |
+| Telegram | 语音便笺、视频便笺、动画的新消息和编辑事件 | 部分 | 已接入 | 独立通知及【事件内容】中文选择项。 |
 
 下文每项标注基线状态。具体实现以本 PR 的位置参数说明为准。
 
@@ -182,8 +190,8 @@
 
 | 官方路径 | 基线 | 入口或缺口 |
 | --- | --- | --- |
-| `intimacy/index` | 未接入 | 缺直接填值的命令 |
-| `intimacy/update` | 未接入 | 缺直接填值的命令 |
+| `intimacy/index` | 已接入 | 【KOOK亲密度@查询】 |
+| `intimacy/update` | 已接入 | 【KOOK亲密度@更新】和【KOOK亲密度@清空社交信息】 |
 
 ### 服务器表情
 
@@ -223,7 +231,7 @@
 
 | 官方路径 | 基线 | 入口或缺口 |
 | --- | --- | --- |
-| `badge/guild` | 未接入 | 缺直接填值的命令 |
+| `badge/guild` | 已接入 | 【KOOK服务器@徽章】返回图片字节集 |
 
 ### 游戏及音乐状态
 
@@ -231,12 +239,12 @@
 
 | 官方路径 | 基线 | 入口或缺口 |
 | --- | --- | --- |
-| `game` | 未接入 | 缺直接填值的命令 |
-| `game/activity` | 未接入 | 缺直接填值的命令 |
-| `game/create` | 未接入 | 缺直接填值的命令 |
-| `game/delete` | 未接入 | 缺直接填值的命令 |
-| `game/delete-activity` | 未接入 | 缺直接填值的命令 |
-| `game/update` | 未接入 | 缺直接填值的命令 |
+| `game` | 已接入 | 【KOOK游戏@列表】 |
+| `game/activity` | 已接入 | 【KOOK动态@游戏】和【KOOK动态@音乐】 |
+| `game/create` | 已接入 | 【KOOK游戏@创建】 |
+| `game/delete` | 已接入 | 【KOOK游戏@删除】 |
+| `game/delete-activity` | 已接入 | 【KOOK动态@停止游戏】和【KOOK动态@停止音乐】 |
+| `game/update` | 已接入 | 【KOOK游戏@更新】 |
 
 ### 帖子
 
@@ -408,9 +416,9 @@
 | [`sendAudio`](https://core.telegram.org/bots/api#sendaudio) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
 | [`sendDocument`](https://core.telegram.org/bots/api#senddocument) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
 | [`sendVideo`](https://core.telegram.org/bots/api#sendvideo) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
-| [`sendAnimation`](https://core.telegram.org/bots/api#sendanimation) | 未接入 | 缺直接填值的命令 |
-| [`sendVoice`](https://core.telegram.org/bots/api#sendvoice) | 未接入 | 缺直接填值的命令 |
-| [`sendVideoNote`](https://core.telegram.org/bots/api#sendvideonote) | 未接入 | 缺直接填值的命令 |
+| [`sendAnimation`](https://core.telegram.org/bots/api#sendanimation) | 部分 | 【动画】配合【输出流】，支持动画、说明、缩略图和防剧透，缺实体数组和高级公共发送选项 |
+| [`sendVoice`](https://core.telegram.org/bots/api#sendvoice) | 部分 | 【语音】便笺模式配合【输出流】，缺实体数组和高级公共发送选项 |
+| [`sendVideoNote`](https://core.telegram.org/bots/api#sendvideonote) | 部分 | 【视频】便笺模式配合【输出流】，缺高级公共发送选项 |
 | [`sendWidget`](https://core.telegram.org/bots/api#sendwidget) | 未接入 | 缺直接填值的命令 |
 | [`sendSharedWidget`](https://core.telegram.org/bots/api#sendsharedwidget) | 未接入 | 缺直接填值的命令 |
 | [`sendPaidMedia`](https://core.telegram.org/bots/api#sendpaidmedia) | 未接入 | 缺直接填值的命令 |
@@ -539,7 +547,7 @@
 | --- | --- | --- |
 | [`editMessageText`](https://core.telegram.org/bots/api#editmessagetext) | 部分 | 【编辑消息】支持常用内容及行内按钮，缺部分高级参数 |
 | [`editMessageCaption`](https://core.telegram.org/bots/api#editmessagecaption) | 部分 | 【编辑消息】支持常用内容及行内按钮，缺部分高级参数 |
-| [`editMessageMedia`](https://core.telegram.org/bots/api#editmessagemedia) | 部分 | 【编辑消息】支持常用内容及行内按钮，缺部分高级参数 |
+| [`editMessageMedia`](https://core.telegram.org/bots/api#editmessagemedia) | 部分 | 【编辑消息】支持常用媒体、动画及行内按钮，缺部分高级参数 |
 | [`editMessageLiveLocation`](https://core.telegram.org/bots/api#editmessagelivelocation) | 未接入 | 缺直接填值的命令 |
 | [`stopMessageLiveLocation`](https://core.telegram.org/bots/api#stopmessagelivelocation) | 未接入 | 缺直接填值的命令 |
 | [`editMessageChecklist`](https://core.telegram.org/bots/api#editmessagechecklist) | 部分 | 【编辑消息】支持常用内容及行内按钮，缺部分高级参数 |
@@ -669,7 +677,7 @@
 | `media_group_id` | 已接入 | 媒体组通知 |
 | `suggested_post_info` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
 | `rich_message` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
-| `animation` | 部分 | 原生事件可读媒体字段 |
+| `animation` | 已接入 | 动画与动画编辑通知，【事件内容@动画】 |
 | `audio` | 部分 | 原生事件可读媒体字段，媒体组时另有媒体通知 |
 | `document` | 已接入 | 【事件内容@文件ID】【事件内容@文件名】 |
 | `live_photo` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
@@ -678,8 +686,8 @@
 | `sticker` | 已接入 | 贴纸通知及【事件内容@贴纸文件ID】 |
 | `story` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
 | `video` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
-| `video_note` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
-| `voice` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
+| `video_note` | 已接入 | 视频便笺与视频便笺编辑通知，【事件内容@视频便笺】 |
+| `voice` | 已接入 | 语音便笺与语音便笺编辑通知，【事件内容@语音便笺】 |
 | `widget` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
 | `checklist` | 已接入 | 【事件内容@清单标题】【事件内容@清单任务】 |
 | `contact` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
@@ -753,6 +761,6 @@
 
 ## 本轮之后的缺口
 
-- KOOK 的亲密度、徽章、游戏和音乐状态仍有缺口。上线、下线接口仅适用于 Webhook，当前适配器使用 WebSocket。
-- Telegram 优先补语音便笺及动画等常用消息和对应事件；其次是建议帖、临时消息、组件、富文本、贴纸集细项、游戏、受管机器人与 Passport。
+- KOOK 上线、下线接口适用于 Webhook，当前适配器使用 WebSocket。继续核对清单里标记为部分接入的频道、服务器与消息参数。
+- Telegram 待补建议帖、临时消息等公共发送选项，以及组件、富文本、贴纸集细项、游戏、受管机器人与 Passport。
 - 两端分别验证新命令与真实机器人权限、事件订阅和实际返回值。

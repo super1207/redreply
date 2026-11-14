@@ -11,6 +11,7 @@ use std::time::Duration;
 use std::time::SystemTime;
 
 use async_trait::async_trait;
+use base64::{engine::general_purpose::STANDARD, Engine};
 use fancy_regex::Regex;
 use flate2::read::ZlibDecoder;
 use futures_util::SinkExt;
@@ -85,6 +86,19 @@ impl KookConnect {
             playback: Arc::default(),
         }
     }
+    fn native_client(&self, timeout: Duration) -> AdapterResult<reqwest::Client> {
+        let mut auth = HeaderValue::from_str(&format!("Bot {}", self.token))?;
+        auth.set_sensitive(true);
+        let mut headers = reqwest::header::HeaderMap::new();
+        headers.insert(reqwest::header::AUTHORIZATION, auth);
+        Ok(reqwest::Client::builder()
+            .no_proxy()
+            .redirect(reqwest::redirect::Policy::none())
+            .timeout(timeout)
+            .default_headers(headers)
+            .build()?)
+    }
+
     async fn native_request(
         &self,
         verb: &str,
@@ -96,21 +110,15 @@ impl KookConnect {
     ) -> AdapterResult<Value> {
         let mut url = native_api::kook_url(endpoint)?;
         let object = native_api::object(payload)?;
-        let client = reqwest::Client::builder()
-            .no_proxy()
-            .redirect(reqwest::redirect::Policy::none())
-            .timeout(timeout)
-            .build()?;
-        let mut auth = HeaderValue::from_str(&format!("Bot {}", self.token))?;
-        auth.set_sensitive(true);
+        let client = self.native_client(timeout)?;
         let request = match verb {
             "GET" if files.is_none() => {
                 url.query_pairs_mut()
                     .extend_pairs(native_api::form_fields(object));
-                client.get(url).header("Authorization", auth)
+                client.get(url)
             }
             "POST" => native_api::post(
-                client.post(url).header("Authorization", auth),
+                client.post(url),
                 payload,
                 files,
             )?,
@@ -118,6 +126,44 @@ impl KookConnect {
         };
         let (status, body) = native_api::response(request, "KOOK").await?;
         Ok(native_api::kook_reply(status, &body, echo))
+    }
+
+    async fn guild_badge(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        const MAX_BYTES: usize = 2 * 1024 * 1024;
+        let guild_id = params["guild_id"].as_str().filter(|id| !id.is_empty())
+            .ok_or("KOOK 徽章需要服务器 ID")?;
+        let style = match params.get("style") {
+            None => 0,
+            Some(style) => style.as_i64().filter(|style| (0..=2).contains(style))
+                .ok_or("KOOK 徽章样式须为 0、1 或 2")?,
+        };
+        let mut url = native_api::kook_url("badge/guild")?;
+        url.query_pairs_mut().append_pair("guild_id", guild_id)
+            .append_pair("style", &style.to_string());
+        let client = self.native_client(Duration::from_secs(20))?;
+        let mut response = client.get(url).send().await
+            .map_err(|err| format!("KOOK 徽章请求失败：{}", err.without_url()))?;
+        let status = response.status();
+        let image = response.headers().get(reqwest::header::CONTENT_TYPE)
+            .and_then(|mime| mime.to_str().ok()).is_some_and(|mime| mime.starts_with("image/"));
+        let mut bytes = Vec::new();
+        while let Some(chunk) = response.chunk().await
+            .map_err(|err| format!("KOOK 徽章读取失败：{}", err.without_url()))?
+        {
+            if chunk.len() > MAX_BYTES - bytes.len() {
+                return Err("KOOK 徽章响应超过 2 MiB".into());
+            }
+            bytes.extend_from_slice(&chunk);
+        }
+        if status.is_success() && image && !bytes.is_empty() {
+            return Ok(native_api::reply(0, &serde_json::json!({"base64":STANDARD.encode(bytes)}), "", echo));
+        }
+        if let Ok(body) = serde_json::from_slice::<Value>(&bytes) {
+            if body["code"].as_i64().is_some_and(|code| code != 0) {
+                return Ok(native_api::kook_reply(status.as_u16(), &body, echo));
+            }
+        }
+        Err(format!("KOOK 未返回徽章图片（HTTP {status}）").into())
     }
 
     fn card_content(cards: &Value) -> AdapterResult<String> {
@@ -3010,6 +3056,7 @@ impl BotConnectTrait for KookConnect {
             "set_msg_pin" => native_api::action_result(self.pin_message(params, echo).await, echo),
             "set_msg_emoji_like" => native_api::action_result(self.react(params, echo).await, echo),
             "kook_api" => native_api::action_result(self.call_native_api(params, echo).await, echo),
+            "kook_guild_badge" => native_api::action_result(self.guild_badge(params, echo).await, echo),
             "kook_pipe_message" => native_api::action_result(Self::send_pipe_message(params, echo).await, echo),
             "kook_voice_play" => {
                 native_api::action_result(voice::play(self, params, echo).await, echo)

@@ -596,12 +596,36 @@ Telegram 机器人可设一项回应，自定义表情须已用于该消息或�
 
 [Telegram 回应](https://core.telegram.org/bots/api#setmessagereaction) · [管理员删除回应](https://core.telegram.org/bots/api#deletemessagereaction) · [KOOK 服务器表情](https://developer.kookapp.cn/doc/http/guild-emoji)
 
+### 发送语音便笺、视频便笺和动画
+
+把以下指令放进【输出流】即可发送到当前 Telegram 会话。沿用【输出流】的话题和键盘参数，以及商务会话的发送方式。来源必填。发送本地文件时用【读文件】得到字节集，并填写含后缀的文件名。使用 Telegram 文件 ID 或链接时，文件名留空。
+
+| 指令 | 参数填法与默认值 |
+| --- | --- |
+| 【语音@来源@便笺@文件名@说明@时长@说明格式】 | 来源填 Telegram 文件 ID、HTTP(S) 直链或字节集。上传格式为 Opus 编码的 OGG、MP3 或 M4A，最大 50 MB。直链语音便笺需为不超过 1 MB 的 OGG。第二项填便笺。说明可省，默认无说明，格式化后最多 1024 字符。时长填非负整数秒，可省，由平台识别。说明格式可填纯文本、Markdown 或 HTML，默认纯文本。 |
+| 【视频@来源@便笺@文件名@时长@直径@缩略图字节集】 | 来源填 Telegram 文件 ID 或字节集。第二项填便笺。视频用最长 60 秒的正方形 MP4，Telegram 会以圆形样式显示。时长填 0 至 60 的整数秒，直径填正整数像素，两项都可省，默认由平台识别。缩略图可省，默认由平台处理。 |
+| 【动画@来源@文件名@说明@时长@宽度@高度@说明格式@说明在上方@防剧透@缩略图字节集】 | 来源填 Telegram 文件 ID、HTTP(S) 直链或字节集。动画为 GIF 或无声 H.264 MP4，最大 50 MB。说明可省，默认无说明，格式化后最多 1024 字符。时长填非负整数秒，宽度、高度填正整数像素，都可省，由平台识别。说明格式可填纯文本、Markdown 或 HTML，默认纯文本。说明在上方和防剧透均可填真或假，默认假。缩略图可省，默认由平台处理。 |
+
+有说明格式时，Markdown 使用 Telegram MarkdownV2。自定义缩略图仅随字节集上传，填【读文件】返回的 JPEG 字节集，小于 200 kB 且宽、高均不超过 320 像素。媒体组里的图片和视频仍使用【媒体组】，动画单独发送。
+
+```text
+【输出流@【语音@【读文件@【应用目录】问候.ogg】@便笺@问候.ogg@欢迎使用红色问答】】
+【输出流@【视频@【读文件@【应用目录】介绍.mp4】@便笺@介绍.mp4@15@360】】
+【输出流@【动画@https://example.org/welcome.gif@@欢迎动画@@@@@真】】
+【编辑消息@动画消息ID@【数组@动画@Telegram动画文件ID@新说明】@媒体】
+```
+
+[Telegram 语音便笺](https://core.telegram.org/bots/api#sendvoice) · [Telegram 视频便笺](https://core.telegram.org/bots/api#sendvideonote) · [Telegram 动画](https://core.telegram.org/bots/api#sendanimation) · [Telegram 编辑媒体](https://core.telegram.org/bots/api#editmessagemedia)
+
 ### 媒体与回应事件
 
 | 事件关键词 | 数据 |
 | --- | --- |
 | `notice:telegram:media_group` | 每项媒体各触发一次。外层 `media_group_id` 可与 `chat_id` 一起分组，业务消息还应区分 `telegram.business_connection_id`。外层 `media` 提供媒体类型及可复用的文件 ID。Telegram 没有整组结束更新。 |
 | `notice:telegram:sticker` | `telegram.sticker` 提供类型、文件 ID、贴纸包等信息。原消息也继续进入普通消息或原生频道、业务事件。 |
+| `notice:telegram:voice`、`notice:telegram:edited_voice` | 【事件内容@语音便笺】可取文件ID、文件唯一ID、文件大小、时长、媒体类型、说明。 |
+| `notice:telegram:video_note`、`notice:telegram:edited_video_note` | 【事件内容@视频便笺】可取文件ID、文件唯一ID、文件大小、时长、直径、缩略图文件ID。 |
+| `notice:telegram:animation`、`notice:telegram:edited_animation` | 【事件内容@动画】可取文件ID、文件唯一ID、文件大小、时长、宽度、高度、文件名、媒体类型、缩略图文件ID、说明、说明在上方、防剧透。 |
 | `notice:telegram:message_reaction` | `telegram.old_reaction`、`telegram.new_reaction`。匿名操作者用外层 `actor_chat_id`。 |
 | `notice:telegram:message_reaction_count` | `telegram.reactions` 是各回应及总数。匿名统计可能延迟。 |
 | `notice:kook:media_group` | 含至少两项可识别媒体的卡片触发一次，外层 `media` 是媒体数组，原卡片仍在 `kook`。 |
@@ -612,6 +636,13 @@ Telegram 的两个回应更新需要机器人具备管理员权限，并在管�
 
 ```text
 【事件内容@新回应】
+```
+
+便笺和动画随聊天、频道和商务消息触发。接收编辑事件时订阅对应的 `edited_message`、`edited_channel_post` 或 `edited_business_message`。通知中的可选字段随平台提供，缺失时读到空值。文件大小用字节，时长用秒，宽度、高度和直径用像素。文件 ID 可交给【Telegram下载文件】或重新发送。
+
+```text
+【定义变量@便笺ID@【取元素@【事件内容@语音便笺】@文件ID】】
+【输出流@【语音@【变量@便笺ID】@便笺】】
 ```
 
 [Telegram 更新类型](https://core.telegram.org/bots/api#update) · [KOOK 频道回应事件](https://developer.kookapp.cn/doc/event/channel) · [KOOK 私聊回应事件](https://developer.kookapp.cn/doc/event/direct-message) · [KOOK 服务器表情事件](https://developer.kookapp.cn/doc/event/guild)
@@ -628,7 +659,7 @@ Telegram 的两个回应更新需要机器人具备管理员权限，并在管�
 
 | 平台 | 类型与参数 |
 | --- | --- |
-| Telegram | `文本` 和 `说明` 接受文本。`键盘` 传【Telegram键盘】，新内容留空时清除按钮。`媒体` 传【数组@媒体类型@来源@说明@文件名】，填法与【媒体组】的单项相同。 |
+| Telegram | `文本` 和 `说明` 接受文本。`键盘` 传【Telegram键盘】，新内容留空时清除按钮。`媒体` 传【数组@媒体类型@来源@说明@文件名】，类型和来源可按【媒体组】填，也可填动画。说明可省，默认无说明。字节集来源要填文件名，文件 ID 或直链的文件名留空。 |
 | KOOK | `文本` 接受 KMarkdown。`卡片` 传【KOOK卡片】。适配器按原消息选择频道或私聊编辑接口。 |
 
 ```text
@@ -986,6 +1017,39 @@ Telegram 聊天 ID 可从【群ID】取得。以用户名指定频道时，用�
 ```
 
 [KOOK 帖子接口](https://developer.kookapp.cn/doc/http/thread)
+
+### 亲密度、服务器徽章与动态
+
+| 指令 | 参数填法与返回值 |
+| --- | --- |
+| 【KOOK亲密度@查询@用户ID】 | 用户 ID 可省，默认当前发送者。返回分数、社交信息、形象链接、形象列表、上次查看时间、上次修改时间。形象列表中的每项可取形象ID、链接。时间沿用平台的时间戳。 |
+| 【KOOK亲密度@更新@用户ID@分数@社交信息@形象ID】 | 用户 ID 默认当前发送者。分数填 0 至 2200 的整数，社交信息最多 500 字，形象 ID 从查询的形象列表取得。这三项至少填一项，留空的项保留原值。成功时返回空文本。 |
+| 【KOOK亲密度@清空社交信息@用户ID】 | 用户 ID 默认当前发送者。将社交信息设置为空文本。成功时返回空文本。 |
+| 【KOOK服务器@徽章@服务器ID@样式】 | 服务器 ID 默认当前服务器，也可由当前频道查得。样式可填名称、在线人数、在线及总人数，也可依次填 0、1、2，省略默认名称。返回徽章图片的字节集，可用【写文件】保存。 |
+| 【KOOK游戏@列表@范围@页码@每页数量】 | 三项均可省略。范围填全部、用户创建或系统创建，默认全部。页码从 1 开始，默认 1。每页数量填 1 至 50，默认平台的 50。返回当页游戏，每项可取游戏ID、名称、类型、图标、进程信息、进程名、产品名和管理员权限启动。 |
+| 【KOOK游戏@创建@名称@图标链接】 | 名称必填，图标链接可省，默认空图标。返回游戏详情。平台每天至多允许创建 5 个游戏。 |
+| 【KOOK游戏@更新@游戏ID@名称@图标链接】 | 游戏 ID 填列表或创建操作返回的正整数。名称和图标链接至少填一项，留空的项保留原值。返回更新后的游戏详情。 |
+| 【KOOK游戏@删除@游戏ID】 | 游戏 ID 必填，填正整数。成功时返回空文本。 |
+| 【KOOK动态@游戏@游戏ID】、【KOOK动态@停止游戏】 | 开始时游戏 ID 必填，填正整数。停止时无额外参数。成功时返回空文本。 |
+| 【KOOK动态@音乐@歌名@歌手@音乐平台】、【KOOK动态@停止音乐】 | 开始时歌名、歌手必填。音乐平台可填网易云音乐、QQ音乐或酷狗音乐，默认网易云音乐。停止时无额外参数。成功时返回空文本。 |
+
+```text
+【取元素@【KOOK亲密度@查询】@分数】
+【KOOK亲密度@更新@@180@欢迎回来】
+【KOOK亲密度@清空社交信息】
+【定义变量@徽章@【KOOK服务器@徽章@@在线及总人数】】
+【写文件@【应用目录】服务器徽章.img@【变量@徽章】】
+【取元素@【KOOK游戏@列表@系统创建@1@20】@0@名称】
+【定义变量@游戏@【KOOK游戏@创建@晚间活动】】
+【KOOK动态@游戏@【取元素@【变量@游戏】@游戏ID】】
+【KOOK游戏@更新@【取元素@【变量@游戏】@游戏ID】@周末活动】
+【KOOK动态@停止游戏】
+【KOOK游戏@删除@【取元素@【变量@游戏】@游戏ID】】
+【KOOK动态@音乐@山水之间@许嵩@酷狗音乐】
+【KOOK动态@停止音乐】
+```
+
+音乐动态显示在机器人资料中。语音频道内的播放见下方共享播放。官方动态接口提供设置和停止操作。 [亲密度](https://developer.kookapp.cn/doc/http/intimacy) · [徽章](https://developer.kookapp.cn/doc/http/badge) · [游戏与音乐动态](https://developer.kookapp.cn/doc/http/game)
 
 ## KOOK 卡片、文件与共享播放
 

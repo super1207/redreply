@@ -200,6 +200,120 @@ fn documented_native_platform_examples_parse() {
 }
 
 #[test]
+fn kook_intimacy_badge_and_activity_use_positional_values() {
+    use crate::cqexfun::TEST_PLATFORM_CALL;
+    use serde_json::json;
+    use std::{cell::RefCell, rc::Rc};
+
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    rl.set_exmap("机器人平台", "kook");
+    rl.set_exmap("发送者ID", "49");
+    rl.set_exmap("群组ID", "77");
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let record = calls.clone();
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| {
+        *handler = Some(Box::new(move |platform, action, args| {
+            assert_eq!(platform, "kook");
+            let data = match (action, args["endpoint"].as_str()) {
+                ("kook_guild_badge", _) => json!({"base64":"YWJj"}),
+                (_, Some("intimacy/index")) => json!({"score":0,"img_list":[{"id":"0001","url":"image"}]}),
+                (_, Some("game")) => json!({"items":[{"id":123,"name":"活动","type":0}]}),
+                (_, Some("game/create" | "game/update")) => json!({"id":123,"name":"活动","type":0}),
+                _ => json!({}),
+            };
+            record.borrow_mut().push((action.to_owned(), args));
+            json!({"retcode":0,"data":data})
+        }));
+    });
+    let run = |rl: &mut crate::core::RedLang, script| rl.parse(script).unwrap();
+    assert_eq!(
+        run(&mut rl, "【取元素@【KOOK亲密度@查询】@形象列表@0@形象ID】").expect_text_value().unwrap(),
+        "0001"
+    );
+    assert!(rl.parse("【KOOK亲密度@更新@@2201】").is_err());
+    run(&mut rl, "【KOOK亲密度@更新@@0@@0001】");
+    run(&mut rl, "【KOOK亲密度@清空社交信息】");
+    assert_eq!(run(&mut rl, "【KOOK服务器@徽章@@在线及总人数】").expect_bin_value().unwrap().as_slice(), b"abc");
+    assert_eq!(
+        run(&mut rl, "【取元素@【KOOK游戏@列表@系统创建@2@20】@0@游戏ID】").expect_text_value().unwrap(),
+        "123"
+    );
+    run(&mut rl, "【KOOK游戏@创建@活动】");
+    run(&mut rl, "【KOOK游戏@更新@123@@https://example.org/icon.png】");
+    run(&mut rl, "【KOOK动态@游戏@123】");
+    run(&mut rl, "【KOOK动态@音乐@歌名@歌手】");
+    run(&mut rl, "【KOOK动态@停止音乐】");
+    run(&mut rl, "【KOOK动态@停止游戏】");
+    run(&mut rl, "【KOOK游戏@删除@123】");
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| *handler = None);
+
+    let calls = calls.borrow();
+    assert_eq!(calls.len(), 12);
+    assert_eq!(calls[0].1["body"], json!({"user_id":"49"}));
+    assert_eq!(calls[1].1["body"], json!({"user_id":"49","score":0,"img_id":"0001"}));
+    assert_eq!(calls[2].1["body"], json!({"user_id":"49","social_info":""}));
+    assert_eq!(calls[3], ("kook_guild_badge".into(), json!({"guild_id":"77","style":2})));
+    assert_eq!(calls[4].1, json!({"http_method":"GET","endpoint":"game","body":{"type":"2","page":2,"page_size":20}}));
+    assert_eq!(calls[6].1["body"], json!({"id":123,"icon":"https://example.org/icon.png"}));
+    assert_eq!(calls[7].1["body"], json!({"data_type":1,"id":123}));
+    assert_eq!(calls[8].1["body"], json!({"data_type":2,"music_name":"歌名","singer":"歌手","software":"cloudmusic"}));
+    assert_eq!(calls[9].1["body"], json!({"data_type":2}));
+    assert_eq!(calls[10].1["body"], json!({"data_type":1}));
+    assert_eq!(calls[11].1["endpoint"], "game/delete");
+}
+
+#[test]
+fn telegram_notes_and_animation_work_through_redlang_messages_and_events() {
+    use crate::cqexfun::TEST_PLATFORM_CALL;
+    use serde_json::{json, Value};
+    use std::{cell::RefCell, rc::Rc};
+
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    rl.set_exmap("机器人平台", "telegram");
+    rl.set_exmap("发送者ID", "49");
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let record = calls.clone();
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| {
+        *handler = Some(Box::new(move |platform, action, args| {
+            assert_eq!(platform, "telegram");
+            record.borrow_mut().push((action.to_owned(), args));
+            json!({"retcode":0,"data":{"message_id":"sent"}})
+        }));
+    });
+    let run = |rl: &mut crate::core::RedLang, script| rl.parse(script).unwrap().expect_text_value().unwrap();
+    assert!(run(&mut rl, "【语音@https://example.org/test.ogg@假】").starts_with("[CQ:record,"));
+    assert!(run(&mut rl, "【视频@【BASE64解码@YWJj】】").starts_with("[CQ:video,"));
+    run(&mut rl, "【输出流@【语音@voice-id@便笺@@问候@2】】");
+    run(&mut rl, "【输出流@【视频@【BASE64解码@YWJj】@便笺@note.mp4@30@360@【BASE64解码@/9j/】】】");
+    run(&mut rl, "【输出流@【动画@https://example.org/welcome.gif@@欢迎动画@@@@@真】】");
+    rl.parse("【编辑消息@old@【数组@动画@animation-id@新说明】@媒体】").unwrap();
+    assert!(rl.parse("【视频@https://example.org/note.mp4@便笺】").is_err());
+    assert!(rl.parse("【视频@video-id@便笺@@61】").is_err());
+    assert!(rl.parse("【媒体组@【数组@【数组@动画@file-one】@【数组@图片@file-two】】】").is_err());
+    rl.set_exmap("原始事件", &json!({"platform":"telegram","notice_type":"telegram","sub_type":"edited_animation",
+        "telegram":{"animation":{"file_id":"anim","width":320,"file_name":"anim.gif"},"caption":"已更新"}}).to_string());
+    assert_eq!(run(&mut rl, "【取元素@【事件内容@动画】@说明】"), "已更新");
+    assert_eq!(run(&mut rl, "【取元素@【事件内容@动画】@文件ID】"), "anim");
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| *handler = None);
+
+    let calls = calls.borrow();
+    assert_eq!(calls.len(), 4);
+    let media = |index: usize| -> Value {
+        assert_eq!(calls[index].0, "send_private_msg");
+        assert_eq!(calls[index].1["message"][0]["type"], "telegram_media");
+        serde_json::from_str(calls[index].1["message"][0]["data"]["content"].as_str().unwrap()).unwrap()
+    };
+    assert_eq!(media(0)["body"], json!({"voice":"voice-id","caption":"问候","duration":2}));
+    assert_eq!(media(1)["body"], json!({"video_note":"attach://media","duration":30,"length":360,"thumbnail":"attach://preview"}));
+    assert_eq!(media(1)["files"]["media"]["filename"], "note.mp4");
+    assert_eq!(media(1)["files"]["preview"]["mime_type"], "image/jpeg");
+    assert_eq!(media(2)["body"]["show_caption_above_media"], true);
+    assert_eq!(calls[3].1["body"]["media"], json!({"type":"animation","media":"animation-id","caption":"新说明"}));
+}
+
+#[test]
 fn positional_payments_and_kook_templates_build_expected_calls() {
     use crate::cqexfun::TEST_PLATFORM_CALL;
     use serde_json::{json, Value};

@@ -385,7 +385,7 @@ pub(super) fn register() {
         let mut media = Vec::with_capacity(items.len());
         let mut files = serde_json::Map::new();
         for (index, item) in items.iter().enumerate() {
-            let (mut row, uploads) = crate::native_args::media_item(item, index)?;
+            let (mut row, uploads) = crate::native_args::media_item(item, index, false)?;
             if !matches!(row["type"].as_str(), Some("photo" | "video" | "live_photo")) {
                 return Err("付费媒体类型请填图片、视频或实况照片".into());
             }

@@ -17,6 +17,7 @@ use crate::core::{
 };
 use crate::exfun::json_value_to_red;
 use crate::bot_commands::management::business;
+use crate::bot_commands::telegram_media;
 use crate::native_args;
 use redlang::cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2};
 use crate::lifecycle::pkg_can_run;
@@ -840,13 +841,21 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["语音"], |self_t, params| {
         let pic_rv = self_t.get_param(params, 0)?;
+        let option = (get_platform(self_t) == "telegram" && params.len() > 1)
+            .then(|| self_t.get_param_text(params, 1)).transpose()?;
+        if option.as_deref() == Some("便笺") {
+            return telegram_media::segment(self_t, params, &pic_rv, "voice");
+        }
         let mut ret: String = String::new();
         if let Ok(bin) = pic_rv.expect_bin_value() {
             let b64_str = BASE64_CUSTOM_ENGINE.encode(&bin);
             ret = format!("[CQ:record,file=base64://{}]", b64_str);
         } else if let Ok(pic) = pic_rv.expect_text_value() {
             if pic.starts_with("http://") || pic.starts_with("https://") {
-                let not_use_cache = self_t.get_param_text(params, 1)?;
+                let not_use_cache = match option {
+                    Some(option) => option,
+                    None => self_t.get_param_text(params, 1)?,
+                };
                 if not_use_cache.as_str() == "假" {
                     ret = format!("[CQ:record,file={},cache=0]", cq_params_encode(&pic));
                 } else {
@@ -923,13 +932,21 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["视频"], |self_t, params| {
         let pic_rv = self_t.get_param(params, 0)?;
+        let option = (get_platform(self_t) == "telegram" && params.len() > 1)
+            .then(|| self_t.get_param_text(params, 1)).transpose()?;
+        if option.as_deref() == Some("便笺") {
+            return telegram_media::segment(self_t, params, &pic_rv, "video_note");
+        }
         let mut ret: String = String::new();
         if let Ok(bin) = pic_rv.expect_bin_value() {
             let b64_str = BASE64_CUSTOM_ENGINE.encode(&bin);
             ret = format!("[CQ:video,file=base64://{}]", b64_str);
         } else if let Ok(pic) = pic_rv.expect_text_value() {
             if pic.starts_with("http://") || pic.starts_with("https://") {
-                let not_use_cache = self_t.get_param_text(params, 1)?;
+                let not_use_cache = match option {
+                    Some(option) => option,
+                    None => self_t.get_param_text(params, 1)?,
+                };
                 if not_use_cache.as_str() == "假" {
                     ret = format!("[CQ:video,file={},cache=0]", cq_params_encode(&pic));
                 } else {
@@ -943,6 +960,10 @@ pub fn init_cq_ex_fun_map() {
             }
         }
         Ok(Some(rv_text(ret)))
+    });
+    add_fun(vec!["动画"], |rl, params| {
+        let source = rl.get_param(params, 0)?;
+        telegram_media::segment(rl, params, &source, "animation")
     });
     add_fun(vec!["撤回"], |self_t, params| {
         let msg_id_rv = self_t.get_param(params, 0)?;
@@ -1039,7 +1060,7 @@ pub fn init_cq_ex_fun_map() {
                 ("keyboard", "reply_markup", crate::bot_commands::edit_keyboard(&content)?)
             }
             ("telegram", "媒体") if content.as_array().is_some() => {
-                let (mut media, files) = native_args::media_item(&content, 0)?;
+                let (mut media, files) = native_args::media_item(&content, 0, true)?;
                 if let Some(mode) = body.as_object_mut().and_then(|obj| obj.remove("parse_mode")) {
                     media["parse_mode"] = mode;
                 }

@@ -163,7 +163,7 @@ pub(super) fn file_part(name: &str, data: &[u8], mime: Option<&str>) -> Value {
     upload
 }
 
-fn media_source(
+pub(super) fn media_source(
     source: &RedValue,
     filename: &str,
     key: &str,
@@ -195,7 +195,7 @@ pub(super) fn media_group(input: &RedValue) -> Result<Value, Box<dyn Error>> {
     let mut media = Vec::with_capacity(items.len());
     let mut files = Map::new();
     for (index, item) in items.iter().enumerate() {
-        let (row, attachments) = media_item(item, index)?;
+        let (row, attachments) = media_item(item, index, false)?;
         media.push(row);
         files.extend(attachments);
     }
@@ -205,6 +205,7 @@ pub(super) fn media_group(input: &RedValue) -> Result<Value, Box<dyn Error>> {
 pub(super) fn media_item(
     item: &RedValue,
     index: usize,
+    allow_animation: bool,
 ) -> Result<(Value, Map<String, Value>), Box<dyn Error>> {
     let mut files = Map::new();
     let RedValue::Array(fields) = item else {
@@ -228,6 +229,8 @@ pub(super) fn media_item(
         "音频" => "audio",
         "文件" => "document",
         "实况照片" => "live_photo",
+        "动画" if allow_animation => "animation",
+        "动画" => return Err(RedLang::make_err("动画需单独发送，不适用于媒体组")),
         _ => {
             return Err(RedLang::make_err(
                 "媒体类型可填图片、视频、音频、文件或实况照片",

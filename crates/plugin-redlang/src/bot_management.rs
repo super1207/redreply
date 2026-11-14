@@ -2,6 +2,8 @@ use super::*;
 
 #[path = "bot_assets.rs"]
 mod assets;
+#[path = "bot_kook_activity.rs"]
+mod activity;
 #[path = "bot_business.rs"]
 pub(crate) mod business;
 #[path = "bot_location.rs"]
@@ -984,6 +986,7 @@ fn register_kook() {
             "所有者ID":row["user_id"],"图标":row["icon"],"默认频道ID":row["default_channel_id"],"欢迎频道ID":row["welcome_channel_id"]})
         };
         match operation.as_str() {
+            "徽章" => activity::badge(rl, params, &target),
             "助力历史" => {
                 let [page, size, from, to] = text_params::<4>(rl, params, 2)?;
                 let mut body = json!({"guild_id":guild(rl,&target)?});
@@ -1029,7 +1032,7 @@ fn register_kook() {
                 let data = kook(rl, "GET", "guild/list", json!({"page":page}))?;
                 mapped_list(&data["data"]["items"], record)
             }
-            _ => Err("服务器查询请填列表、详情或助力历史".into()),
+            _ => Err("服务器查询请填列表、详情、徽章或助力历史".into()),
         }
     });
     add_fun(vec!["KOOK上传文件"], |rl, params| {
@@ -1328,6 +1331,7 @@ fn register_kook() {
 
 pub(super) fn register() {
     assets::register();
+    activity::register();
     templates::register();
     payments::register();
     location::register();
