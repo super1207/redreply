@@ -1037,6 +1037,7 @@ impl TeleTramConnect {
         message_arr: &serde_json::Value,
         group_id: &str,
         is_group: bool,
+        business_id: &str,
     ) -> Result<(Vec<(&str, String, String)>, String), Box<dyn std::error::Error + Send + Sync>>
     {
         // 每个元素为 (类型, 内容, caption)；caption 仅对图片类型有意义
@@ -1063,9 +1064,13 @@ impl TeleTramConnect {
                     to_send_data.push(("text", s, String::new()));
                     last_type = "text";
                 }
-            } else if matches!(tp.as_str(), Some("sticker" | "media_group")) {
+            } else if matches!(tp.as_str(), Some("sticker" | "media_group" | "telegram_checklist")) {
                 let content = it["data"]["content"].as_str().ok_or("Telegram 媒体消息缺少内容")?;
-                let kind = if tp == "sticker" { "sticker" } else { "media_group" };
+                let kind = match tp.as_str() {
+                    Some("sticker") => "sticker",
+                    Some("media_group") => "media_group",
+                    _ => "telegram_checklist",
+                };
                 to_send_data.push((kind, content.to_owned(), String::new()));
                 last_type = kind;
             } else if tp == "image" {
@@ -1102,8 +1107,8 @@ impl TeleTramConnect {
                 );
                 let telegram_id = self.get_msg_id(&cq_id);
                 quote = match telegram_id.first() {
-                    Some(raw) if raw.chat_id == group_id => raw.msg_id.to_owned(),
-                    Some(_) => return Err("Telegram 引用消息不属于目标聊天".into()),
+                    Some(raw) if raw.chat_id == group_id && raw.business_id == business_id => raw.msg_id.to_owned(),
+                    Some(_) => return Err("Telegram 引用消息不属于目标聊天或商务连接".into()),
                     // 查不到内部映射：可能是超出缓存窗口的 telegram 原生 message_id
                     None => cq_id,
                 };
@@ -1263,6 +1268,7 @@ impl TeleTramConnect {
         chat_id: &str,
         topic: &Topic,
         reply_markup: Option<&Value>,
+        business_id: &str,
     ) -> AdapterResult<String> {
         if let Some(markup) = reply_markup {
             native_api::object(markup)?;
@@ -1275,6 +1281,15 @@ impl TeleTramConnect {
         if reply_markup.is_some() && to_send_data.last().is_some_and(|part| part.0 == "media_group") {
             return Err("Telegram 媒体组不支持附加键盘".into());
         }
+        if business_id.is_empty() && to_send_data.iter().any(|part| part.0 == "telegram_checklist") {
+            return Err("Telegram 清单需要商务连接".into());
+        }
+        if !business_id.is_empty() && reply_markup.is_some_and(|markup| !markup["inline_keyboard"].is_array()) {
+            return Err("Telegram 商务消息的键盘需要使用行内模式".into());
+        }
+        if *topic != Topic::default() && to_send_data.iter().any(|part| part.0 == "telegram_checklist") {
+            return Err("Telegram 商务清单没有话题参数".into());
+        }
         for (index, (kind, message, caption)) in to_send_data.into_iter().enumerate() {
             let mut payload = Self::message_payload(
                 chat_id,
@@ -1282,6 +1297,9 @@ impl TeleTramConnect {
                 (index == 0).then_some(quote.as_str()),
                 reply_markup.filter(|_| index == last),
             )?;
+            if !business_id.is_empty() {
+                payload["business_connection_id"] = business_id.into();
+            }
             let mut files = json!({});
             let method = match kind {
                 "text" => {
@@ -1308,6 +1326,10 @@ impl TeleTramConnect {
                         files = uploads.clone();
                     }
                     "sendMediaGroup"
+                }
+                "telegram_checklist" => {
+                    payload["checklist"] = serde_json::from_str(&message)?;
+                    "sendChecklist"
                 }
                 "url_image" | "file_image" | "url_record" | "file_record" | "document" | "video" => {
                     let (method, field, filename) = match kind {
@@ -1405,7 +1427,7 @@ impl TeleTramConnect {
         cq_fix_image_file_in_arr(&mut message_arr);
 
         let (to_send_data, quote) = self
-            .make_telegram_msg(&message_arr, &group_id, true)
+            .make_telegram_msg(&message_arr, &group_id, true, "")
             .await?;
 
         let msg_id = self
@@ -1415,6 +1437,7 @@ impl TeleTramConnect {
                 &group_id,
                 &Topic::from_params(params)?,
                 params.get("reply_markup"),
+                "",
             )
             .await?;
 
@@ -1435,6 +1458,7 @@ impl TeleTramConnect {
         echo: &serde_json::Value,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error + Send + Sync>> {
         let user_id = read_json_str(params, "user_id");
+        let business_id = params["business_connection_id"].as_str().unwrap_or_default();
         let mut message_arr: serde_json::Value;
         let message_rst = params.get("message").ok_or("message not found")?;
 
@@ -1455,7 +1479,7 @@ impl TeleTramConnect {
         cq_fix_image_file_in_arr(&mut message_arr);
 
         let (to_send_data, quote) = self
-            .make_telegram_msg(&message_arr, &user_id, false)
+            .make_telegram_msg(&message_arr, &user_id, false, business_id)
             .await?;
 
         let msg_id = self
@@ -1465,6 +1489,7 @@ impl TeleTramConnect {
                 &user_id,
                 &Topic::from_params(params)?,
                 params.get("reply_markup"),
+                business_id,
             )
             .await?;
 
@@ -1551,6 +1576,8 @@ impl TeleTramConnect {
             Some("caption") => "editMessageCaption",
             Some("keyboard") => "editMessageReplyMarkup",
             Some("media") => "editMessageMedia",
+            Some("checklist") if !raw.business_id.is_empty() => "editMessageChecklist",
+            Some("checklist") => return Err("Telegram 清单编辑需要商务消息".into()),
             _ => return Err("未知的 Telegram 消息编辑类型".into()),
         };
         let mut body = native_api::object(&params["body"])?.clone();
@@ -1606,22 +1633,38 @@ impl TeleTramConnect {
         Ok((method, body))
     }
 
-    async fn pin_message(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
-        let id = read_json_str(params, "message_id");
-        let messages = self.get_msg_id(&id);
-        let message = messages.last().ok_or("Telegram 找不到 RedReply 消息 ID")?;
-        if !message.business_id.is_empty() {
-            return Err("Telegram 业务消息不支持此置顶操作".into());
-        }
-        let method = if params["remove"] == true { "unpinChatMessage" } else { "pinChatMessage" };
+    fn message_target(message: &RawMsgId) -> AdapterResult<Value> {
         let mut body = json!({
             "chat_id":message.chat_id.parse::<i64>()?,
             "message_id":message.msg_id.parse::<i64>()?,
         });
+        if !message.business_id.is_empty() {
+            body["business_connection_id"] = message.business_id.as_str().into();
+        }
+        Ok(body)
+    }
+
+    async fn pin_message(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let id = read_json_str(params, "message_id");
+        let messages = self.get_msg_id(&id);
+        let message = messages.last().ok_or("Telegram 找不到 RedReply 消息 ID")?;
+        let method = if params["remove"] == true { "unpinChatMessage" } else { "pinChatMessage" };
+        let mut body = Self::message_target(message)?;
         if params["remove"] != true && params["silent"] == true {
             body["disable_notification"] = true.into();
         }
         self.native_request(method, &body, None, Duration::from_secs(25), echo).await
+    }
+
+    async fn read_business_message(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
+        let messages = self.get_msg_id(&read_json_str(params, "message_id"));
+        let [message] = messages.as_slice() else {
+            return Err("请指定一条 Telegram 商务消息的 RedReply 消息 ID".into());
+        };
+        if message.business_id.is_empty() {
+            return Err("标记商务消息已读需要商务连接".into());
+        }
+        self.native_request("readBusinessMessage", &Self::message_target(message)?, None, Duration::from_secs(25), echo).await
     }
 
     async fn set_group_ban(&self, params: &Value, echo: &Value) -> AdapterResult<Value> {
@@ -1830,6 +1873,9 @@ impl BotConnectTrait for TeleTramConnect {
                 native_api::action_result(self.download_file(params, echo).await, echo)
             }
             "set_msg_emoji_like" => native_api::action_result(self.react(params, echo).await, echo),
+            "telegram_read_business_message" => {
+                native_api::action_result(self.read_business_message(params, echo).await, echo)
+            }
             "telegram_api" => {
                 native_api::action_result(self.call_native_api(params, echo).await, echo)
             }
@@ -2030,7 +2076,7 @@ mod native_tests {
         assert_eq!(notice[0]["telegram"]["sticker"]["file_id"], "sticker-id");
         let cq = bot.to_cq_msg(&event).await.unwrap();
         let segments = str_msg_to_arr(&json!(cq)).unwrap();
-        let (parts, _) = bot.make_telegram_msg(&segments, "-100", true).await.unwrap();
+        let (parts, _) = bot.make_telegram_msg(&segments, "-100", true, "").await.unwrap();
         assert_eq!(parts[0].0, "sticker");
         assert_eq!(serde_json::from_str::<Value>(&parts[0].1).unwrap()["file_id"], "sticker-id");
     }
@@ -2205,12 +2251,37 @@ mod native_tests {
             {"type":"file","data":{"file":"base64://YWJj","name":"sample.txt"}},
             {"type":"video","data":{"file":"https://example.org/test.mp4"}}
         ]);
-        let (parts, quote) = bot.make_telegram_msg(&message, "-200", true).await.unwrap();
+        let (parts, quote) = bot.make_telegram_msg(&message, "-200", true, "").await.unwrap();
         assert_eq!(quote, "9");
         assert_eq!(parts[0].0, "document");
         assert_eq!(parts[0].2, "sample.txt");
         assert_eq!(parts[1].0, "video");
-        assert!(bot.make_telegram_msg(&message, "-100", true).await.is_err());
+        assert!(bot.make_telegram_msg(&message, "-100", true, "").await.is_err());
+    }
+
+    #[tokio::test]
+    async fn business_checklists_and_quotes_keep_their_connection() {
+        let bot = TeleTramConnect::build("");
+        let raw = RawMsgId {
+            msg_id: "5".into(), chat_id: "22".into(), business_id: "business-a".into(),
+        };
+        let id = bot.message_handle(raw.clone());
+        let list = json!({"title":"订单","tasks":[{"id":1,"text":"发货"}]});
+        let message = json!([
+            {"type":"reply","data":{"id":id}},
+            {"type":"telegram_checklist","data":{"content":list.to_string()}}
+        ]);
+        assert!(bot.make_telegram_msg(&message,"22",false,"business-b").await.is_err());
+        let (parts, quote) = bot.make_telegram_msg(&message,"22",false,"business-a").await.unwrap();
+        assert_eq!(quote,"5");
+        assert_eq!(parts[0].0,"telegram_checklist");
+        assert_eq!(serde_json::from_str::<Value>(&parts[0].1).unwrap(),list);
+        assert_eq!(TeleTramConnect::message_target(&raw).unwrap(),json!({
+            "chat_id":22,"message_id":5,"business_connection_id":"business-a"
+        }));
+        let returned = TeleTramConnect::response_message_ids("sendChecklist",
+            &json!({"business_connection_id":"business-a"}), &json!({"message_id":5,"chat":{"id":22}}));
+        assert_eq!(returned,vec![raw]);
     }
 
     #[test]

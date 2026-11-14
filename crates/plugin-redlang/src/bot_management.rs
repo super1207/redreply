@@ -2,6 +2,8 @@ use super::*;
 
 #[path = "bot_assets.rs"]
 mod assets;
+#[path = "bot_business.rs"]
+pub(crate) mod business;
 
 fn required<'a>(value: &'a str, label: &str) -> Result<&'a str> {
     if value.is_empty() {
@@ -22,6 +24,9 @@ fn context(rl: &RedLang, value: &str, key: &str) -> Result<String> {
 
 fn chat(rl: &RedLang, value: &str) -> Result<Value> {
     let target = if value.is_empty() && rl.get_exmap("群ID").is_empty() {
+        if let Some(peer) = business::default_peer(rl) {
+            return Ok(peer.into());
+        }
         context(rl, value, "发送者ID")?
     } else {
         context(rl, value, "群ID")?
@@ -633,6 +638,26 @@ fn register_admin() {
                 telegram(rl, method, body)?;
             }
             "kook" => {
+                if op == "黑名单" {
+                    let [size] = text_params::<1>(rl, params, 3)?;
+                    let page = if target.is_empty() {
+                        1
+                    } else {
+                        positive_id(&target)?
+                    };
+                    let mut body = json!({"guild_id":guild(rl,&value)?,"page":page});
+                    if !size.is_empty() {
+                        body["page_size"] = bounded(&size, 1, 50, "每页数量")?.into();
+                    }
+                    let data = kook(rl, "GET", "blacklist/list", body)?;
+                    return mapped_list(&data["data"]["items"], |row| {
+                        let mut member = kook_user(&row["user"]);
+                        member["用户ID"] = row["user_id"].clone();
+                        member["封禁时间"] = row["created_time"].clone();
+                        member["原因"] = row["remark"].clone();
+                        member
+                    });
+                }
                 let (path, body) = match op.as_str() {
                     "改名" | "简介" => {
                         let channel = context(rl, &target, "群ID")?;
@@ -650,13 +675,32 @@ fn register_admin() {
                             "解封" => "blacklist/delete",
                             _ => "guild/kickout",
                         };
-                        (
-                            path,
-                            json!({"guild_id":guild(rl,&target)?,"target_id":context(rl,&value,"发送者ID")?}),
-                        )
+                        let mut body = json!({"guild_id":guild(rl,&target)?,"target_id":context(rl,&value,"发送者ID")?});
+                        if op == "封禁" {
+                            let [reason, days] = text_params::<2>(rl, params, 3)?;
+                            insert_text(&mut body, "remark", &reason);
+                            if !days.is_empty() {
+                                body["del_msg_days"] = bounded(&days, 0, 7, "清理天数")?.into();
+                            }
+                        }
+                        (path, body)
+                    }
+                    "昵称" => {
+                        let server = rl.get_param_text(params, 3)?;
+                        if !target.is_empty() && !(2..=64).contains(&target.chars().count()) {
+                            return Err("服务器昵称请填写 2 至 64 字，留空清除".into());
+                        }
+                        let mut body = json!({"guild_id":guild(rl,&server)?,"user_id":context(rl,&value,"发送者ID")?});
+                        insert_text(&mut body, "nickname", &target);
+                        ("guild/nickname", body)
                     }
                     "退出" => ("guild/leave", json!({"guild_id":guild(rl,&value)?})),
-                    _ => return Err("KOOK 群管理支持改名、简介、封禁、解封、踢出或退出".into()),
+                    _ => {
+                        return Err(
+                            "KOOK 群管理支持改名、简介、昵称、封禁、解封、黑名单、踢出或退出"
+                                .into(),
+                        )
+                    }
                 };
                 kook(rl, "POST", path, body)?;
             }
@@ -678,8 +722,12 @@ fn register_admin() {
     });
     add_fun(vec!["Telegram文件"], |rl, params| {
         let file = rl.get_param(params, 0)?;
-        let [name, caption, target, topic, topic_kind] = text_params::<5>(rl, params, 1)?;
+        let [name, caption, target, topic, topic_kind, connection] =
+            text_params::<6>(rl, params, 1)?;
         let mut body = json!({"chat_id":chat(rl,&target)?});
+        if let Some(id) = business::send_context(rl, &body["chat_id"], &connection) {
+            body["business_connection_id"] = id.into();
+        }
         insert_text(&mut body, "caption", &caption);
         if let Some((field, id)) = crate::cqexfun::telegram_output_topic(&topic, &topic_kind)? {
             body[field] = id.into();
@@ -872,6 +920,33 @@ fn register_kook() {
             "所有者ID":row["user_id"],"图标":row["icon"],"默认频道ID":row["default_channel_id"],"欢迎频道ID":row["welcome_channel_id"]})
         };
         match operation.as_str() {
+            "助力历史" => {
+                let [page, size, from, to] = text_params::<4>(rl, params, 2)?;
+                let mut body = json!({"guild_id":guild(rl,&target)?});
+                for (name, value, min, max, label) in [
+                    ("page", page, 1, i64::MAX, "页码"),
+                    ("page_size", size, 1, 50, "每页数量"),
+                    ("start_time", from, 0, i64::MAX, "开始时间"),
+                    ("end_time", to, 0, i64::MAX, "结束时间"),
+                ] {
+                    if !value.is_empty() {
+                        body[name] = bounded(&value, min, max, label)?.into();
+                    }
+                }
+                if let (Some(from), Some(to)) =
+                    (body["start_time"].as_i64(), body["end_time"].as_i64())
+                {
+                    if from > to {
+                        return Err("开始时间不得晚于结束时间".into());
+                    }
+                }
+                let data = kook(rl, "GET", "guild-boost/history", body)?;
+                mapped_list(&data["data"]["items"], |row| {
+                    json!({"用户ID":row["user_id"],
+                    "服务器ID":row["guild_id"],"开始时间":row["start_time"],"结束时间":row["end_time"],
+                    "成员":kook_user(&row["user"])})
+                })
+            }
             "" | "详情" => {
                 let data = kook(
                     rl,
@@ -890,7 +965,7 @@ fn register_kook() {
                 let data = kook(rl, "GET", "guild/list", json!({"page":page}))?;
                 mapped_list(&data["data"]["items"], record)
             }
-            _ => Err("服务器查询请填列表或详情".into()),
+            _ => Err("服务器查询请填列表、详情或助力历史".into()),
         }
     });
     add_fun(vec!["KOOK上传文件"], |rl, params| {
@@ -1089,6 +1164,43 @@ fn register_kook() {
     add_fun(vec!["KOOK语音管理"], |rl, params| {
         let op = rl.get_param_text(params, 0)?;
         match op.as_str() {
+            "限制列表" => {
+                let server = rl.get_param_text(params, 1)?;
+                let data = kook(
+                    rl,
+                    "GET",
+                    "guild-mute/list",
+                    json!({"guild_id":guild(rl,&server)?,"return_type":"detail"}),
+                )?;
+                let data = &data["data"];
+                if !data.is_object() {
+                    return Err("平台未返回服务器语音限制列表".into());
+                }
+                let ids = |key| {
+                    data[key]["user_ids"]
+                        .as_array()
+                        .cloned()
+                        .unwrap_or_default()
+                };
+                output(&json!({"闭麦":ids("mic"),"静音":ids("headset")}))
+            }
+            "闭麦" | "解除闭麦" | "静音" | "解除静音" => {
+                let [user, server] = text_params::<2>(rl, params, 1)?;
+                let kind = if op.ends_with("闭麦") { 1 } else { 2 };
+                let path = if op.starts_with("解除") {
+                    "guild-mute/delete"
+                } else {
+                    "guild-mute/create"
+                };
+                kook(
+                    rl,
+                    "POST",
+                    path,
+                    json!({"guild_id":guild(rl,&server)?,
+                    "user_id":context(rl,&user,"发送者ID")?,"type":kind}),
+                )?;
+                empty()
+            }
             "已加入" => {
                 let data = kook(rl, "GET", "voice/list", json!({}))?;
                 mapped_list(&data["data"]["items"], |row| {
@@ -1130,13 +1242,16 @@ fn register_kook() {
                 )?;
                 empty()
             }
-            _ => Err("语音管理操作请填已加入、移动或移出，用户列表用【群成员@语音】".into()),
+            _ => Err(
+                "语音管理支持已加入、移动、移出、限制列表、闭麦、静音、解除闭麦或解除静音".into(),
+            ),
         }
     });
 }
 
 pub(super) fn register() {
     assets::register();
+    business::register();
     add_fun(vec!["Telegram应答查询"], |rl, params| {
         let rows = rl.get_param(params, 0)?;
         let [cache, offset, personal, mut id] = text_params::<4>(rl, params, 1)?;

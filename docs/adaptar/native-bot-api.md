@@ -171,7 +171,7 @@ KOOK 的平台名为 `kook`。
 
 ### 发起及结束投票
 
-【Telegram投票@题目@选项数组@是否匿名@是否多选@正确选项@话题ID】
+【Telegram投票@题目@选项数组@是否匿名@是否多选@正确选项@话题ID@商务连接ID】
 
 | 参数 | 怎么填 |
 | --- | --- |
@@ -180,6 +180,7 @@ KOOK 的平台名为 `kook`。
 | 是否匿名、是否多选 | 均可省略，分别默认为 `真`、`假`。 |
 | 正确选项 | 可省略，省略时发普通投票。填写从 1 开始的选项序号即可发测验。多个正确答案用【数组】，同时将是否多选填 `真`。 |
 | 话题 ID | 可省略，默认沿用当前论坛话题。此命令向当前聊天发送。 |
+| 商务连接 ID | 可省略，默认沿用同一商务会话的连接。填 `机器人` 以机器人身份发送。 |
 
 【Telegram投票】返回 RedReply 消息 ID。【Telegram结束投票@消息ID】使用这个 ID 结束投票并返回总人数。ID 省略时使用当前消息。RedReply 消息 ID 依赖适配器的消息缓存，重启后应通过平台接口和原始消息 ID 操作旧投票。
 
@@ -198,7 +199,7 @@ KOOK 的平台名为 `kook`。
 
 ### 发送、上传与下载文件
 
-普通发送用【文件】、【视频】和【输出流】。需要传附件说明、使用 Telegram 文件 ID 或取得新文件 ID 时，用【Telegram文件@来源@文件名@说明@群ID@话题ID@话题类型】。
+普通发送用【文件】、【视频】和【输出流】。需要传附件说明、使用 Telegram 文件 ID 或取得新文件 ID 时，用【Telegram文件@来源@文件名@说明@群ID@话题ID@话题类型@商务连接ID】。
 
 | 参数 | 怎么填 |
 | --- | --- |
@@ -207,6 +208,7 @@ KOOK 的平台名为 `kook`。
 | 说明 | 可省略，填写随文件显示的文字。 |
 | 群 ID | 可省略，默认当前会话。 |
 | 话题 ID、话题类型 | 可省略，默认沿用同一会话的论坛或频道私信话题。指定 ID 时类型默认 `话题`，也可填 `频道私信`。 |
+| 商务连接 ID | 可省略，默认沿用同一商务会话的连接。向其他商务会话发送时填写连接 ID 与正整数目标私聊 ID。填 `机器人` 使用机器人身份。 |
 
 发送成功返回可复用的 Telegram 文件 ID。
 
@@ -232,6 +234,126 @@ KOOK 的平台名为 `kook`。
 ```
 
 [行内机器人](https://core.telegram.org/bots/inline) · [查询聊天](https://core.telegram.org/bots/api#getchat) · [入群审核](https://core.telegram.org/bots/api#approvechatjoinrequest) · [文件下载](https://core.telegram.org/bots/api#getfile)
+
+## Telegram 商务消息与账户
+
+在 Telegram 中给机器人开通商务模式并连接商务账户。管理台的「订阅更新」可加入 `business_connection,business_message,edited_business_message,deleted_business_messages`。各操作由商务账户单独授权。发送和编辑需要回复权限，会话通常须在最近 24 小时收到消息。平台对部分商务消息的编辑和删除另有时限。
+
+### 发送、已读、编辑与撤回
+
+| 命令 | 怎么填及返回值 |
+| --- | --- |
+| 【输出流@内容@键盘@话题ID@话题类型@商务连接ID@商务对方ID】 | 内容填文本或原有【图片】【文件】【贴纸】【媒体组】等消息。商务私聊的键盘可省略，填写时使用行内【Telegram键盘】。话题两项留空。连接 ID 和对方 ID 可省略，默认沿用同一机器人触发的当前商务私聊。显式指定对方时，连接 ID 与正整数对方 ID 都必填。在当前对方的机器人普通私聊中发送时，第 5 项填 `机器人`。返回 RedReply 消息 ID。 |
+| 【Telegram商务已读@消息ID】 | 可省略，默认当前 RedReply 消息 ID。只标记收到的商务消息，需要已读权限，且会话在最近 24 小时内活跃。 |
+| 【Telegram商务已读@平台消息ID@商务会话ID@商务连接ID】 | 前两项都填正整数。连接 ID 默认当前商务事件的连接，其他脚本须显式填写。可操作只保存了平台 ID 的消息。 |
+| 【编辑消息@消息ID@新内容@类型@文本格式@行内键盘】 | 用保存的 RedReply 消息 ID，省略时用当前消息。自动沿用原消息的商务连接。类型和选填项沿用编辑消息的说明。 |
+| 【置顶消息@消息ID@是否置顶@是否静默】 | 自动沿用原消息的商务连接。省略参数时置顶当前消息。第 2 项填 `假` 取消置顶。 |
+| 【撤回@消息ID或数组】 | 使用 RedReply 消息 ID，自动沿用原消息的商务连接。可省略为当前消息。 |
+| 【撤回@平台消息ID或数组@商务连接ID】 | 两项必填。平台 ID 填正整数，最多 100 条，须来自同一商务会话。适用于保存了平台 ID 的脚本。需要删除机器人消息或删除会话消息的相应权限。 |
+| 【Telegram聊天动作@动作@聊天ID@话题ID@商务连接ID】 | 动作默认 `正在输入`，也可填 `上传图片`、`录制视频`、`上传视频`、`录制语音`、`上传语音`、`上传文件`、`选择贴纸`、`查找位置`、`录制视频便笺`、`上传视频便笺`。聊天 ID 默认当前会话。话题 ID 默认当前论坛话题，商务私聊留空。连接 ID 默认沿用同一商务会话，填 `机器人` 使用机器人身份。动作状态最多显示 5 秒。 |
+
+在 `notice:telegram:business_message` 中可直接确认已读并回复。
+
+```text
+【Telegram商务已读】
+【隐藏@【输出流@已收到，我们马上处理。】】
+```
+
+```text
+【隐藏@【输出流@订单已发货@@@@商务连接ID@123456789】】
+```
+
+```text
+【撤回@【数组@57@58】@商务连接ID】
+```
+
+[商务连接](https://core.telegram.org/bots/api#getbusinessconnection) · [已读和删除](https://core.telegram.org/bots/api#readbusinessmessage) · [聊天动作](https://core.telegram.org/bots/api#sendchataction)
+
+### 任务清单与事件
+
+【Telegram任务清单@标题@任务数组@允许他人添加@允许他人勾选】生成可交给【输出流】的清单。标题必填，1 至 255 字。任务数组必填，1 至 30 项。每项可直接填 1 至 100 字的任务文字，自动使用从 1 开始的位置作为任务 ID。需要指定 ID 时用【数组@任务ID@文字】，ID 为该清单中唯一的正整数。两个开关可省略，默认 `假`。
+
+```text
+【定义变量@清单消息@【输出流@【Telegram任务清单@订单进度@【数组@确认地址@安排发货】@@真】】】
+【变量@清单消息】
+```
+
+编辑时用【编辑消息@消息ID@清单数组@清单@空位@行内键盘】，消息 ID 默认当前消息。清单数组为【数组@标题@任务数组@允许他人添加@允许他人勾选】，填法同发送。已有任务填原 ID，新增任务填未使用的 ID。行内键盘可省略。
+
+```text
+【编辑消息@已保存的清单消息ID@【数组@订单进度@【数组@【数组@1@确认地址】@【数组@2@填写物流单号】】@@真】@清单】
+```
+
+| 事件关键词 | 用【事件内容@字段】读取 |
+| --- | --- |
+| `notice:telegram:business_connection` | `商务连接ID`、`商务连接`。后者返回账户与权限信息，结构同【Telegram商务账户@查询】。 |
+| `notice:telegram:business_message`、`notice:telegram:edited_business_message` | `商务连接ID`、`商务会话ID`、`消息文字`、`清单标题`、`清单任务`。清单任务每项有任务ID、文字、完成时间、完成人ID。 |
+| `notice:telegram:deleted_business_messages` | `商务连接ID`、`商务会话ID`、`已删除消息ID` 和 `已删除平台消息ID`。两个消息数组分别使用 RedReply ID 和平台 ID。 |
+
+商务消息事件中的清单变动可用 `新增任务`、`完成任务ID`、`未完成任务ID` 读取，并用 `清单平台消息ID` 关联原清单（Telegram 提供时）。完成与未完成的字段是对应任务 ID 数组，未提供时返回空文本。
+
+```text
+【取元素@【事件内容@商务连接】@权限】
+```
+
+[Telegram 清单](https://core.telegram.org/bots/api#sendchecklist) · [编辑清单](https://core.telegram.org/bots/api#editmessagechecklist) · [更新事件](https://core.telegram.org/bots/api#update)
+
+### 商务账户资料
+
+| 命令 | 怎么填及返回值 |
+| --- | --- |
+| 【Telegram商务账户@查询@商务连接ID】 | 返回商务连接ID、账户用户ID、账户私聊ID、姓名、姓氏、用户名、连接时间、已启用、权限。连接时间是 Unix 秒，权限为中文名称数组。 |
+| 【Telegram商务账户@姓名@名字@姓氏@商务连接ID】 | 名字 1 至 64 字，必填。姓氏最多 64 字，留空清除。 |
+| 【Telegram商务账户@用户名@新用户名@商务连接ID】 | 填最多 32 字的用户名，省略前导 `@`。留空移除。 |
+| 【Telegram商务账户@简介@新简介@商务连接ID】 | 简介最多 140 字，留空清除。 |
+| 【Telegram商务账户@头像@字节集@文件名@类型@是否公开@商务连接ID@封面秒数】 | 字节集与文件名必填。默认 `静态`，上传 JPG。填 `动态` 时上传 MPEG4，可填用于封面的非负秒数，默认 0。是否公开默认 `假`，操作主头像。 |
+| 【Telegram商务账户@移除头像@是否公开@商务连接ID】 | 是否公开默认 `假`，移除主头像。填 `真` 移除公开头像。 |
+
+这些命令的商务连接 ID 可在触发脚本的商务事件里省略。CRON 等其他脚本须填写。修改操作成功时无输出。
+
+```text
+【Telegram商务账户@简介@工作日处理订单@商务连接ID】
+```
+
+```text
+【Telegram商务账户@头像@【读文件@【应用目录】头像.jpg】@头像.jpg】
+```
+
+[商务账户姓名和资料](https://core.telegram.org/bots/api#setbusinessaccountname) · [头像](https://core.telegram.org/bots/api#setbusinessaccountprofilephoto)
+
+### 商务动态、礼物与星币
+
+| 命令 | 怎么填及返回值 |
+| --- | --- |
+| 【Telegram商务动态@发布@字节集@文件名@类型@说明@商务连接ID@有效小时@保留在主页@保护内容】 | 前两项必填。类型默认 `图片`，也可填 `视频`。说明可省，最多 2048 字。有效小时可填 6、12、24、48，默认 24。最后两项默认 `假`。返回动态 ID。 |
+| 【Telegram商务动态@编辑@动态ID@字节集@文件名@类型@说明@商务连接ID】 | 动态 ID、字节集、文件名必填。类型默认图片，说明留空可清除。返回动态 ID。 |
+| 【Telegram商务动态@转发@来源私聊ID@来源动态ID@有效小时@商务连接ID@保留在主页@保护内容】 | 来源两项必填，均为正整数。两个账户须由同一个机器人管理，源动态由该机器人发布。有效期和开关默认同发布。返回新动态 ID。 |
+| 【Telegram商务动态@删除@动态ID@商务连接ID】 | 动态 ID 必填。 |
+
+动态图片请用 1080×1920、10 MB 以内的图片，视频请用 720×1280、H.265 编码、30 MB 以内的 MPEG4。
+
+```text
+【Telegram商务动态@发布@【读文件@【应用目录】活动.jpg】@活动.jpg@图片@新品已上架】
+```
+
+| 命令 | 怎么填及返回值 |
+| --- | --- |
+| 【Telegram商务礼物@列表@商务连接ID@偏移@每页数量@排序@排除数组】 | 偏移留空查询首页。每页数量 1 至 100，默认 100。排序默认 `日期`，也可填 `价格`。排除数组可省略，项目可填 `未展示`、`已展示`、`不限量`、`可升级限量`、`不可升级限量`、`独特礼物`、`链上礼物`。返回礼物数组、总数、下一页偏移。 |
+| 【Telegram商务礼物@接收设置@显示礼物按钮@类型数组@商务连接ID】 | 开关和数组必填，开关填 `真` 或 `假`。允许的类型可填 `不限量`、`限量`、`独特礼物`、`会员订阅`、`频道转入礼物`。空数组关闭所有类型。 |
+| 【Telegram商务礼物@余额@商务连接ID】 | 返回星币余额，细分数可读 `十亿分之一星币`，未提供时为 0。 |
+| 【Telegram商务礼物@转星币@星币数@商务连接ID】 | 星币数必填，1 至 10000。转入当前机器人的余额。 |
+| 【Telegram商务礼物@转换@持有礼物ID@商务连接ID】 | 持有礼物 ID 必填，将可转换的普通礼物换为星币。 |
+| 【Telegram商务礼物@升级@持有礼物ID@保留原信息@星币数@商务连接ID】 | 持有礼物 ID 必填。是否保留原文字和发送者、接收者默认 `假`。已预付时星币数填 0，否则填所需升级价。省略星币数时不提交星币参数。 |
+| 【Telegram商务礼物@转送@持有礼物ID@接收私聊ID@星币数@商务连接ID】 | 前两项必填，接收方填最近 24 小时活跃的正整数私聊 ID。免费时可省略星币数，收费时填写所需星币。 |
+| 【Telegram商务礼物@删除@持有礼物ID@商务连接ID】 | 持有礼物 ID 必填。删除符合平台条件的普通礼物，不获得星币。 |
+
+动态和礼物命令的连接 ID 默认取当前商务事件，其他脚本须填写。使用礼物列表返回的 `持有礼物ID` 进行转换、升级、转送或删除。
+
+```text
+【取元素@【Telegram商务礼物@列表@@@20@价格@【数组@未展示】】@总数】
+```
+
+[商务动态](https://core.telegram.org/bots/api#poststory) · [商务礼物](https://core.telegram.org/bots/api#getbusinessaccountgifts) · [礼物接收设置](https://core.telegram.org/bots/api#setbusinessaccountgiftsettings)
 
 ## 媒体组、贴纸和自定义表情
 
@@ -442,9 +564,9 @@ Telegram 按原聊天分组，每次原生请求最多 100 条，使用 `deleteM
 | --- | --- |
 | `notice:kook:updated_message`、`notice:kook:updated_private_message` | `kook.content` 为更新内容，`kook_message_id` 是平台原始 ID，【消息ID】是 RedReply ID。私聊的 `kook.chat_code` 标识会话。 |
 | `notice:kook:deleted_message`、`notice:kook:deleted_private_message` | `kook.msg_id` 为已删除的原始 ID，仍兼容旧有 `notice:group_recall` 和 `notice:friend_recall`。 |
-| `notice:telegram:edited_message`、`notice:telegram:edited_channel_post`、`notice:telegram:edited_business_message` | `telegram.text` 或 `telegram.caption` 为编辑后的内容，【消息ID】可关联已缓存的原消息。 |
+| `notice:telegram:edited_message`、`notice:telegram:edited_channel_post`、`notice:telegram:edited_business_message` | 【事件内容@消息文字】取得编辑后的文字或媒体说明，【消息ID】关联原消息。 |
 | `notice:telegram:forwarded_message` | 收到带 `forward_origin` 的消息时触发。原始来源在 `telegram.forward_origin`，同一消息仍走相应的普通消息或频道、业务消息事件。 |
-| `notice:telegram:deleted_business_messages` | `telegram.message_ids` 是原生 ID 列表，外层 `message_ids` 是 RedReply ID 列表，`telegram.business_connection_id` 标识业务连接。 |
+| `notice:telegram:deleted_business_messages` | 用【事件内容@商务连接ID】、【事件内容@已删除平台消息ID】和【事件内容@已删除消息ID】取得连接 ID 及两种消息 ID 数组。 |
 
 Telegram Bot API 的删除更新仅覆盖已连接的业务账户。普通聊天或频道的删除以调用结果为准。KOOK 重新发送会作为机器人普通消息出现。自定义 Telegram 更新订阅时，填写原始更新名，例如 `message,channel_post,business_message,edited_message,edited_channel_post,edited_business_message,deleted_business_messages`。
 
@@ -599,6 +721,32 @@ Telegram 聊天 ID 可从【群ID】取得。以用户名指定频道时，用�
 
 【群管理@改名@新名称@频道ID】和【群管理@简介@新简介@频道ID】也适用于 KOOK。服务器成员可用【群管理@踢出@用户ID@服务器ID】、【群管理@封禁@用户ID@服务器ID】、【群管理@解封@用户ID@服务器ID】管理；用户默认发送者。服务器 ID 默认当前服务器。机器人退出服务器用【群管理@退出@服务器ID】。
 
+| 命令 | 怎么填及返回值 |
+| --- | --- |
+| 【群管理@黑名单@服务器ID@页码@每页数量】 | 全部可省，默认当前服务器、第 1 页、每页 50 项。页码填正整数，每页 1 至 50 项。返回当页数组，每项有用户ID、昵称、用户名、头像、在线、机器人、身份组、封禁时间、原因。封禁时间为 Unix 毫秒。 |
+| 【群管理@封禁@用户ID@服务器ID@原因@清理天数】 | 用户 ID 默认发送者，服务器 ID 默认当前服务器。原因可省。清理天数默认 0，可填 0 至 7，正数清理该用户最近对应天数的消息。 |
+| 【群管理@解封@用户ID@服务器ID】 | 用户和服务器 ID 的省略规则同封禁。 |
+| 【群管理@昵称@用户ID@新昵称@服务器ID】 | 用户 ID 默认发送者，服务器 ID 默认当前服务器。昵称填 2 至 64 字，留空清除。 |
+| 【KOOK服务器@助力历史@服务器ID@页码@每页数量@开始时间@结束时间】 | 全部可省。默认当前服务器、第 1 页、每页 50 项，不限时间。时间用 Unix 秒，可只填一端。每页 1 至 50 项。由新到旧返回当前页记录，每项有用户ID、服务器ID、开始时间、结束时间和成员。需要管理服务器权限。 |
+
+查询黑名单、封禁及解封都需要封禁用户权限。
+
+```text
+【取长度@【群管理@黑名单】】
+```
+
+```text
+【群管理@封禁@目标用户ID@@重复刷屏@3】
+```
+
+```text
+【群管理@昵称@目标用户ID@活动主持人】
+```
+
+```text
+【KOOK服务器@助力历史@@1@20】
+```
+
 频道增删改的事件为 `notice:kook:added_channel`、`notice:kook:updated_channel`、`notice:kook:deleted_channel`。可用【群ID】和【当前群组】取得频道与服务器。
 
 [KOOK 频道](https://developer.kookapp.cn/doc/http/channel) · [KOOK 服务器](https://developer.kookapp.cn/doc/http/guild) · [黑名单](https://developer.kookapp.cn/doc/http/blacklist)
@@ -747,6 +895,11 @@ Telegram 聊天 ID 可从【群ID】取得。以用户名指定频道时，用�
 | 【群成员@语音@频道ID】 | 默认当前频道，返回语音成员数组。 |
 | 【KOOK语音管理@移动@用户数组@目标频道ID】 | 两项必填，用【数组】填一个或多个在线语音用户 ID，目标必须是语音频道。 |
 | 【KOOK语音管理@移出@用户ID@频道ID】 | 用户 ID 默认发送者，频道 ID 默认当前频道。 |
+| 【KOOK语音管理@限制列表@服务器ID】 | 服务器 ID 默认当前服务器。返回对象，`闭麦` 和 `静音` 分别为两种限制下的用户 ID 数组，无成员时为空数组。 |
+| 【KOOK语音管理@闭麦@用户ID@服务器ID】、【KOOK语音管理@解除闭麦@用户ID@服务器ID】 | 用户 ID 默认发送者，服务器 ID 默认当前服务器。禁止或恢复用户在该服务器的麦克风发言。 |
+| 【KOOK语音管理@静音@用户ID@服务器ID】、【KOOK语音管理@解除静音@用户ID@服务器ID】 | 用户和服务器 ID 的省略规则同闭麦。静音限制的是该用户的耳机收听。 |
+
+服务器语音限制持续到解除，闭麦和静音分别管理。机器人需要对应的服务器闭麦或静音权限。
 
 ```text
 【取长度@【群成员@语音@语音频道ID】】
@@ -756,7 +909,16 @@ Telegram 聊天 ID 可从【群ID】取得。以用户名指定频道时，用�
 【KOOK语音管理@移动@【数组@用户一ID@用户二ID】@目标频道ID】
 ```
 
-[KOOK 语音接口](https://developer.kookapp.cn/doc/http/voice) · [频道管理](https://developer.kookapp.cn/doc/http/channel)
+```text
+【KOOK语音管理@闭麦@目标用户ID】
+【取元素@【KOOK语音管理@限制列表】@闭麦】
+```
+
+```text
+【KOOK语音管理@解除静音@目标用户ID】
+```
+
+[KOOK 语音接口](https://developer.kookapp.cn/doc/http/voice) · [频道管理](https://developer.kookapp.cn/doc/http/channel) · [服务器静音与闭麦](https://developer.kookapp.cn/doc/http/guild)
 
 ### 频道历史与消息详情
 

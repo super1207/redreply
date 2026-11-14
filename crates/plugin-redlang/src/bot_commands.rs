@@ -499,6 +499,7 @@ fn invite_code(input: &str) -> Result<String> {
 
 pub(super) fn event_field(event: &Value, field: &str) -> RedCommandResult {
     let telegram = &event["telegram"];
+    let business = management::business::event_message(event);
     let value = match field {
         "按钮值" => match (event["notice_type"].as_str(), event["sub_type"].as_str()) {
             (Some("telegram"), Some("callback_query")) => telegram["data"].clone(),
@@ -546,6 +547,43 @@ pub(super) fn event_field(event: &Value, field: &str) -> RedCommandResult {
         "文件链接" => event["file"]["url"].clone(),
         "贴纸文件ID" => telegram["sticker"]["file_id"].clone(),
         "贴纸包" => telegram["sticker"]["set_name"].clone(),
+        "商务连接ID" => management::business::connection_id(event).into(),
+        "商务连接" if event["sub_type"] == "business_connection" => {
+            management::business::connection_fields(telegram)
+        }
+        "商务连接" => Value::Null,
+        "商务会话ID" if management::business::connection_id(event).is_some() => {
+            business["chat"]["id"].clone()
+        }
+        "商务会话ID" => Value::Null,
+        "消息文字" => business
+            .get("text")
+            .or_else(|| business.get("caption"))
+            .cloned()
+            .unwrap_or_default(),
+        "已删除消息ID" if event["sub_type"] == "deleted_business_messages" => {
+            event["message_ids"].clone()
+        }
+        "已删除平台消息ID" if event["sub_type"] == "deleted_business_messages" => {
+            telegram["message_ids"].clone()
+        }
+        "已删除消息ID" | "已删除平台消息ID" => Value::Null,
+        "清单标题" => business["checklist"]["title"].clone(),
+        "清单任务" => management::business::checklist_tasks(&business["checklist"]["tasks"]),
+        "新增任务" => {
+            management::business::checklist_tasks(&business["checklist_tasks_added"]["tasks"])
+        }
+        "完成任务ID" => business["checklist_tasks_done"]["marked_as_done_task_ids"].clone(),
+        "未完成任务ID" => {
+            business["checklist_tasks_done"]["marked_as_not_done_task_ids"].clone()
+        }
+        "清单平台消息ID" => business["checklist_tasks_done"]["checklist_message"]
+            ["message_id"]
+            .as_i64()
+            .or_else(|| {
+                business["checklist_tasks_added"]["checklist_message"]["message_id"].as_i64()
+            })
+            .into(),
         "曲目序号" => event["kook"]["track"].clone(),
         "曲目总数" => event["kook"]["total"].clone(),
         "播放状态" => playback_state(&event["kook"]["state"]),
@@ -690,20 +728,25 @@ pub(super) fn register() {
         let options = rl.get_param(params, 1)?;
         let [anonymous, multiple] = text_params::<2>(rl, params, 2)?;
         let correct = rl.get_param(params, 4)?;
-        let [topic] = text_params::<1>(rl, params, 5)?;
+        let [topic, connection] = text_params::<2>(rl, params, 5)?;
         let mut body = poll_body(&question, &options, &anonymous, &multiple, &correct)?;
         let target = rl.get_exmap("群ID");
         let private = rl.get_exmap("发送者ID");
         let target = if target.is_empty() {
-            private.as_str()
+            management::business::default_peer(rl)
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| private.to_string())
         } else {
-            target.as_str()
+            target.to_string()
         };
-        body["chat_id"] = chat_id(target)?;
+        body["chat_id"] = chat_id(&target)?;
+        if let Some(id) = management::business::send_context(rl, &body["chat_id"], &connection) {
+            body["business_connection_id"] = id.into();
+        }
         if !topic.is_empty() {
             body["message_thread_id"] = positive_id(&topic)?.into();
         } else if let Ok(event) = serde_json::from_str(&rl.get_exmap("原始事件")) {
-            apply_telegram_topic(&event, &rl.get_exmap("机器人ID"), target, &mut body);
+            apply_telegram_topic(&event, &rl.get_exmap("机器人ID"), &target, &mut body);
             if body.get("direct_messages_topic_id").is_some() {
                 return Err("Telegram 投票不适用于频道私信".into());
             }

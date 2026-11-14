@@ -289,6 +289,104 @@ fn positional_bot_commands_build_wire_requests_from_real_scripts() {
 }
 
 #[test]
+fn business_messages_and_kook_moderation_use_positional_parameters() {
+    use crate::cqexfun::TEST_PLATFORM_CALL;
+    use serde_json::{json, Value};
+    use std::{cell::RefCell, rc::Rc};
+
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    let requests = Rc::new(RefCell::new(Vec::new()));
+    let record = requests.clone();
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| {
+        *handler = Some(Box::new(move |_, action, args| {
+            let data = match (action,args["method"].as_str(),args["endpoint"].as_str()) {
+                ("send_private_msg",_,_) => json!({"message_id":"sent-handle"}),
+                (_,Some("getBusinessConnection"),_) => json!({"id":"business-a","user":{"id":11},"is_enabled":true,
+                    "rights":{"can_reply":true,"can_read_messages":true}}),
+                (_,Some("getBusinessAccountGifts"),_) => json!({"total_count":1,"gifts":[{"type":"unique","owned_gift_id":"gift-a"}]}),
+                (_,Some("postStory"),_) => json!({"id":36}),
+                (_,_,Some("blacklist/list")) => json!({"items":[{"user_id":"002","created_time":120,"remark":"刷屏","user":{"nickname":"小明"}}]}),
+                (_,_,Some("guild-mute/list")) => json!({"mic":{"user_ids":["002"]},"headset":{"user_ids":["003"]}}),
+                _ => Value::Null,
+            };
+            record.borrow_mut().push((action.to_owned(),args));
+            json!({"retcode":0,"data":data})
+        }));
+    });
+    let text = |rl: &mut crate::core::RedLang, script| rl.parse(script).unwrap().expect_text_value().unwrap();
+    rl.set_exmap("机器人平台","telegram");
+    rl.set_exmap("机器人ID","1");
+    rl.set_exmap("发送者ID","11");
+    rl.set_exmap("消息ID","incoming-handle");
+    rl.set_exmap("原始事件",&json!({"platform":"telegram","self_id":"1","sub_type":"business_message","user_id":"11",
+        "telegram":{"business_connection_id":"business-a","chat":{"id":22,"type":"private"},"message_id":5,"text":"客户消息"}}).to_string());
+    assert_eq!(text(&mut rl,"【事件内容@商务会话ID】"),"22");
+    assert_eq!(text(&mut rl,"【事件内容@消息文字】"),"客户消息");
+    assert_eq!(text(&mut rl,"【取元素@【Telegram商务账户@查询】@已启用】"),"真");
+    assert_eq!(text(&mut rl,"【输出流@【Telegram任务清单@订单@【数组@确认@发货】】】"),"sent-handle");
+    text(&mut rl,"【输出流@普通回复@@@@机器人】");
+    text(&mut rl,"【输出流@指定客户@@@@business-b@77】");
+    text(&mut rl,"【Telegram商务已读】");
+    text(&mut rl,"【Telegram商务已读@5@22】");
+    rl.parse("【编辑消息@sent-handle@【数组@订单@【数组@【数组@2@等待发货】】】@清单】").unwrap();
+    assert!(rl.parse("【Telegram任务清单@订单@【数组@【数组@2@确认】@发货】】").is_err());
+    text(&mut rl,"【撤回@【数组@5@6】@business-a】");
+    text(&mut rl,"【Telegram聊天动作@正在输入】");
+    assert_eq!(text(&mut rl,"【Telegram商务动态@发布@【BASE64解码@YWJj】@图.jpg@图片@活动】"),"36");
+    assert_eq!(text(&mut rl,"【取元素@【Telegram商务礼物@列表@@@5@价格@【数组@未展示】】@礼物@0@持有礼物ID】"),"gift-a");
+    assert!(rl.parse("【Telegram商务礼物@转星币@0】").is_err());
+    rl.set_exmap("机器人ID","2");
+    assert!(rl.parse("【Telegram商务账户@查询】").is_err());
+    rl.set_exmap("原始事件",&json!({"platform":"telegram","self_id":"2","sub_type":"business_connection",
+        "telegram":{"id":"business-c","user":{"id":11},"is_enabled":true,"rights":{"can_read_messages":true}}}).to_string());
+    assert_eq!(text(&mut rl,"【事件内容@商务连接ID】"),"business-c");
+    assert_eq!(text(&mut rl,"【取元素@【事件内容@商务连接】@权限@0】"),"标记消息已读");
+    rl.set_exmap("原始事件",&json!({"platform":"telegram","self_id":"2","sub_type":"deleted_business_messages",
+        "message_ids":["old-handle"],"telegram":{"business_connection_id":"business-c","chat":{"id":22,"type":"private"},
+            "message_ids":[5]}}).to_string());
+    assert_eq!(text(&mut rl,"【取元素@【事件内容@已删除平台消息ID】@0】"),"5");
+    assert_eq!(text(&mut rl,"【取元素@【事件内容@已删除消息ID】@0】"),"old-handle");
+
+    rl.set_exmap("机器人平台","kook");
+    rl.set_exmap("群组ID","guild-a");
+    rl.set_exmap("发送者ID","001");
+    assert_eq!(text(&mut rl,"【取元素@【群管理@黑名单@@2@20】@0@原因】"),"刷屏");
+    assert!(rl.parse("【群管理@黑名单@@1@51】").is_err());
+    text(&mut rl,"【群管理@封禁@002@@刷屏@3】");
+    assert_eq!(text(&mut rl,"【取元素@【取元素@【KOOK语音管理@限制列表】@静音】@0】"),"003");
+    text(&mut rl,"【KOOK语音管理@闭麦】");
+    text(&mut rl,"【KOOK语音管理@解除静音@003】");
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| *handler = None);
+
+    let requests = requests.borrow();
+    assert_eq!(requests.len(),16);
+    assert_eq!(requests[0].1["body"]["business_connection_id"],"business-a");
+    assert_eq!(requests[1].1["user_id"],"22");
+    assert_eq!(requests[1].1["business_connection_id"],"business-a");
+    let segment = &requests[1].1["message"][0];
+    assert_eq!(segment["type"],"telegram_checklist");
+    let checklist: Value = serde_json::from_str(segment["data"]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(checklist["tasks"][1],json!({"id":2,"text":"发货"}));
+    assert_eq!(requests[2].1["business_connection_id"],Value::Null);
+    assert_eq!(requests[3].1["user_id"],"77");
+    assert_eq!(requests[3].1["business_connection_id"],"business-b");
+    assert_eq!(requests[4],("telegram_read_business_message".into(),json!({"message_id":"incoming-handle"})));
+    assert_eq!(requests[5].1["body"],json!({"business_connection_id":"business-a","chat_id":22,"message_id":5}));
+    assert_eq!(requests[6].1["body"]["checklist"]["tasks"][0]["id"],2);
+    assert_eq!(requests[7].1["body"]["message_ids"],json!([5,6]));
+    assert_eq!(requests[8].1["body"]["chat_id"],22);
+    assert_eq!(requests[9].1["body"]["active_period"],86400);
+    assert_eq!(requests[9].1["files"]["story_file"]["filename"],"图.jpg");
+    assert_eq!(requests[10].1["body"]["exclude_unsaved"],true);
+    assert_eq!(requests[11].1["body"],json!({"guild_id":"guild-a","page":2,"page_size":20}));
+    assert_eq!(requests[12].1["body"]["del_msg_days"],3);
+    assert_eq!(requests[13].1["body"]["return_type"],"detail");
+    assert_eq!(requests[14].1["body"],json!({"guild_id":"guild-a","user_id":"001","type":1}));
+    assert_eq!(requests[15].1["body"],json!({"guild_id":"guild-a","user_id":"003","type":2}));
+}
+
+#[test]
 fn telegram_topic_follows_only_the_original_bot_and_chat() {
     use crate::cqexfun::apply_telegram_topic;
     use serde_json::json;

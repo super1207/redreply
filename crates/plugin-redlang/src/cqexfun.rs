@@ -16,6 +16,7 @@ use crate::core::{
     set_const_val, set_temp_const_val, RedCommandResult, RedLang, RedValue, RedValueData, CLEAR_UUID,
 };
 use crate::exfun::json_value_to_red;
+use crate::bot_commands::management::business;
 use crate::native_args;
 use redlang::cqapi::{cq_add_log_w, cq_call_api, cq_get_app_directory1, cq_get_app_directory2};
 use crate::lifecycle::pkg_can_run;
@@ -324,7 +325,7 @@ pub(crate) fn telegram_output_topic(
 }
 
 pub fn send_one_msg(rl: &RedLang, msg: &str) -> Result<String, Box<dyn std::error::Error>> {
-    send_one_msg_with_options(rl, msg, None, None)
+    send_one_msg_with_options(rl, msg, None, None, "", "")
 }
 
 fn send_one_msg_with_options(
@@ -332,13 +333,35 @@ fn send_one_msg_with_options(
     msg: &str,
     reply_markup: Option<serde_json::Value>,
     topic: Option<(&'static str, i64)>,
+    business_id: &str,
+    business_peer: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     if msg.is_empty() {
         return Ok("".to_string());
     }
 
     let arr_msg = redlang::mytool::str_msg_to_arr(&serde_json::json!(msg))?;
-    let msg_type: &'static str = crate::cqevent::get_msg_type(rl);
+    let platform = get_platform(rl);
+    let mut msg_type: &'static str = crate::cqevent::get_msg_type(rl);
+    let mut peer = rl.get_exmap("发送者ID").to_string();
+    if platform == "telegram" {
+        if !business_peer.is_empty() {
+            if business_id.is_empty() || business_id == "机器人" {
+                return Err("指定商务对方ID时请同时填写商务连接ID".into());
+            }
+            peer = business_peer.parse::<i64>().ok().filter(|id| *id > 0)
+                .ok_or("商务对方ID需要正整数")?.to_string();
+            msg_type = "private";
+        } else if matches!(msg_type, "" | "private") {
+            if let Some(chat_id) = business::default_peer(rl) {
+                peer = chat_id.to_string();
+                msg_type = "private";
+            }
+        }
+        if !business_id.is_empty() && business_id != "机器人" && msg_type != "private" {
+            return Err("以商务账户发送时需要目标私聊或商务对方ID".into());
+        }
+    }
     let sub_id = get_sub_id(rl, msg_type);
 
     // 没有设置输出流类型，所以不输出
@@ -358,7 +381,7 @@ fn send_one_msg_with_options(
         send_json = serde_json::json!( {
             "action":"send_private_msg",
             "params":{
-                "user_id":(*rl.get_exmap("发送者ID")),
+                "user_id":peer,
                 "message":arr_msg
             }
         });
@@ -377,13 +400,21 @@ fn send_one_msg_with_options(
         ));
     }
     let self_id = rl.get_exmap("机器人ID");
-    let platform = get_platform(rl);
     if platform == "telegram" {
         if let Some(reply_markup) = reply_markup {
             send_json["params"]["reply_markup"] = reply_markup;
         }
         let source = rl.get_exmap("原始事件");
-        let target = if msg_type == "group" { sub_id.clone() } else { rl.get_exmap("发送者ID").to_string() };
+        let target = if msg_type == "group" { sub_id.clone() } else { peer };
+        if msg_type == "private" {
+            let chat_id = target.parse::<i64>()?;
+            if let Some(id) = business::send_context(rl, &serde_json::json!(chat_id), business_id) {
+                if topic.is_some() {
+                    return Err("商务私聊的输出流请省略话题ID和话题类型".into());
+                }
+                send_json["params"]["business_connection_id"] = id.into();
+            }
+        }
         if let Some((field, id)) = topic {
             send_json["params"][field] = id.into();
         } else if let Ok(event) = serde_json::from_str(&source) {
@@ -392,6 +423,18 @@ fn send_one_msg_with_options(
     }
     let passive_id = rl.get_exmap("消息ID");
     let remote_id = rl.get_exmap("远程MQTT客户端ID");
+
+    #[cfg(test)]
+    if let Some(response) = TEST_PLATFORM_CALL.with_borrow(|handler| {
+        handler.as_ref().map(|handler| {
+            handler(&platform, send_json["action"].as_str().unwrap_or_default(), send_json["params"].clone())
+        })
+    }) {
+        if response["retcode"] != 0 {
+            return Err("模拟输出流调用失败".into());
+        }
+        return Ok(read_json_str(&response["data"],"message_id"));
+    }
 
     // 数据统计
     {
@@ -904,6 +947,23 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["撤回"], |self_t, params| {
         let msg_id_rv = self_t.get_param(params, 0)?;
         let platform = get_platform(self_t);
+        if platform == "telegram" && params.len() > 1 {
+            let business_id = self_t.get_param_text(params,1)?;
+            if !business_id.is_empty() {
+                let ids = message_handle_list(&msg_id_rv)?;
+                if !(1..=100).contains(&ids.len()) {
+                    return Err(RedLang::make_err("按平台ID撤回商务消息需要 1 至 100 条同一会话消息"));
+                }
+                let ids = ids.into_iter().map(|id| {
+                    id.parse::<i64>().ok().filter(|id| *id > 0)
+                        .ok_or_else(|| RedLang::make_err("平台消息ID需要正整数"))
+                }).collect::<Result<Vec<_>,_>>()?;
+                let result = call_platform_api(self_t,"telegram","telegram_api",serde_json::json!({
+                    "method":"deleteBusinessMessages","body":{"business_connection_id":business_id,"message_ids":ids}
+                }))?;
+                return check_native_command(result,"撤回商务消息");
+            }
+        }
         if matches!(platform.as_str(), "kook" | "telegram") && matches!(msg_id_rv.as_ref(), RedValue::Array(_)) {
             let ids = message_handle_list(&msg_id_rv)?;
             return call_platform_api(
@@ -985,6 +1045,7 @@ pub fn init_cq_ex_fun_map() {
                 ("media", "media", media)
             }
             ("telegram", "媒体") => ("media", "media", native_args::object(&content)?),
+            ("telegram", "清单") => ("checklist", "checklist", business::checklist(&content)?),
             ("kook", "" | "文本") => ("text", "content", content.expect_text_value()?.into()),
             ("kook", "卡片") => {
                 ("card", "content", crate::bot_commands::card_for_edit(&content)?)
@@ -1015,6 +1076,9 @@ pub fn init_cq_ex_fun_map() {
                 }
                 if request.get("files").is_some() {
                     return Err(RedLang::make_err("Telegram 行内媒体编辑请使用已有文件ID或直链"));
+                }
+                if kind == "checklist" {
+                    return Err(RedLang::make_err("清单编辑需要商务消息的 RedReply 消息ID"));
                 }
                 let method = match kind {
                     "text" => "editMessageText",
@@ -1211,7 +1275,12 @@ pub fn init_cq_ex_fun_map() {
         } else {
             None
         };
-        match send_one_msg_with_options(self_t, &msg, markup, topic) {
+        let (connection, peer) = if get_platform(self_t) == "telegram" {
+            (self_t.get_param_text(params, 4)?, self_t.get_param_text(params, 5)?)
+        } else {
+            (String::new(), String::new())
+        };
+        match send_one_msg_with_options(self_t, &msg, markup, topic, &connection, &peer) {
             Ok(msg_id) => Ok(Some(rv_text(msg_id))),
             Err(e) => {
                 let _ = cq_add_log_w(&format!("输出流失败，{}", e));
