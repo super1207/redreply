@@ -806,10 +806,15 @@ impl KookConnect {
         msg_type: i64,
         message: &str,
     ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
-        let ret_msg = if msg_type == 2 {
-            // 图片消息
+        let kind = match msg_type {
+            2 => Some("image"),
+            3 => Some("video"),
+            8 => Some("record"),
+            _ => None,
+        };
+        let ret_msg = if let Some(kind) = kind {
             format!(
-                "[CQ:image,file={},url={}]",
+                "[CQ:{kind},file={},url={}]",
                 cq_params_encode(message),
                 cq_params_encode(message)
             )
@@ -1112,11 +1117,7 @@ impl KookConnect {
                         self.send_to_onebot_client(&event_json).await;
                     }
                 } else if tp == "audio" {
-                    let title = read_json_str(md, "title");
-                    let cover = read_json_str(md, "cover");
-                    if title.is_empty() && cover.is_empty() {
-                        // 说明是语音
-                        let url = md["src"].as_str().ok_or(err)?;
+                    if let Some(url) = md["src"].as_str().filter(|url| !url.is_empty()) {
                         let url_t = cq_params_encode(url);
                         msg.push_str(&format!("[CQ:record,file={},url={}]", url_t, url_t));
                     }

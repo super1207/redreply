@@ -48,6 +48,10 @@
 | Telegram | 高级引用 | 部分 | 已接入常用功能 | 发送支持片段、位置、跨会话、清单、投票、富文本引文及引用样式数组。事件提供中文引用字段。 |
 | KOOK | 消息链接预览 | 部分 | 已接入 | 【KOOK频道消息】归一化预览字段，【事件内容@链接预览】随事件提供。 |
 | KOOK | 服务器事件 | 部分 | 已接入 | 【事件内容@服务器事件】读取成员、资料、表情和封禁。 |
+| Telegram | 富文本内容块 | 部分 | 已接入 | 【Telegram富文本】覆盖官方块类型，事件提供中文嵌套内容、表格、按钮和媒体字段。 |
+| Telegram | 行内富文本结果 | 未接入 | 已接入 | 【Telegram应答查询】、【Telegram小程序应答】、【Telegram准备行内消息】，选择事件有中文字段。 |
+| Telegram | 编辑媒体、单条转发和复制、批量复制 | 部分 | 已接入常用功能 | 【编辑消息】和【转发消息】补齐常用位置选项，复制可改说明、附键盘或引用。 |
+| KOOK | 视频和音频 | 部分 | 已接入 | 普通事件和查询提供视频、音频和卡片媒体列表的中文字段。 |
 
 下文每项标注基线状态。具体实现以本 PR 的位置参数说明为准。
 
@@ -314,9 +318,9 @@
 | --- | --- | --- |
 | 1 文字 | 已接入 | 私聊或频道消息 |
 | 2 图片 | 已接入 | 消息内容含图片 |
-| 3 视频 | 部分 | 可经普通消息读取内容，未统一提取视频结构 |
+| 3 视频 | 已接入 | 【事件内容@视频】、查询记录中的视频对象，包含链接、时长和尺寸 |
 | 4 文件 | 已接入 | 普通消息以及可识别的群文件通知 |
-| 8 音频 | 部分 | 可经普通消息读取内容，未统一提取音频结构 |
+| 8 音频 | 已接入 | 【事件内容@音频】、查询记录中的音频对象，卡片可读媒体列表 |
 | 9 KMarkdown | 已接入 | 私聊或频道消息 |
 | 10 卡片 | 已接入 | 私聊或频道消息，媒体组合可触发专用通知 |
 | 12 道具 | 未接入 | 适配器按字符串读取正文，无法完整接收道具对象 |
@@ -420,10 +424,10 @@
 | [`logOut`](https://core.telegram.org/bots/api#logout) | 未接入 | 缺直接填值的命令 |
 | [`close`](https://core.telegram.org/bots/api#close) | 未接入 | 缺直接填值的命令 |
 | [`sendMessage`](https://core.telegram.org/bots/api#sendmessage) | 部分 | 【输出流】支持静默、内容保护、私聊效果、建议帖、临时消息和高级引用。富文本另列，付费广播待接入 |
-| [`forwardMessage`](https://core.telegram.org/bots/api#forwardmessage) | 部分 | 【转发消息】支持常用转发、复制与话题，未覆盖所有附加选项 |
+| [`forwardMessage`](https://core.telegram.org/bots/api#forwardmessage) | 已接入 | 【转发消息】支持视频起点、平台来源、话题和公开发送选项 |
 | [`forwardMessages`](https://core.telegram.org/bots/api#forwardmessages) | 部分 | 【转发消息】支持常用转发、复制与话题，未覆盖所有附加选项 |
-| [`copyMessage`](https://core.telegram.org/bots/api#copymessage) | 部分 | 【转发消息】支持常用转发、复制与话题，未覆盖所有附加选项 |
-| [`copyMessages`](https://core.telegram.org/bots/api#copymessages) | 部分 | 【转发消息】支持常用转发、复制与话题，未覆盖所有附加选项 |
+| [`copyMessage`](https://core.telegram.org/bots/api#copymessage) | 部分 | 【转发消息】支持视频起点、新说明、格式、说明位置、键盘和引用，独立说明实体数组与付费广播待接入 |
+| [`copyMessages`](https://core.telegram.org/bots/api#copymessages) | 已接入 | 【转发消息】支持批量移除说明、平台来源、话题和发送选项 |
 | [`sendPhoto`](https://core.telegram.org/bots/api#sendphoto) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
 | [`sendLivePhoto`](https://core.telegram.org/bots/api#sendlivephoto) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
 | [`sendAudio`](https://core.telegram.org/bots/api#sendaudio) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
@@ -550,8 +554,8 @@
 | [`repostStory`](https://core.telegram.org/bots/api#repoststory) | 已接入 | 【Telegram商务动态】转发、删除 |
 | [`editStory`](https://core.telegram.org/bots/api#editstory) | 部分 | 【Telegram商务动态】支持图片、视频与文字，缺可点区域等选项 |
 | [`deleteStory`](https://core.telegram.org/bots/api#deletestory) | 已接入 | 【Telegram商务动态】转发、删除 |
-| [`answerWebAppQuery`](https://core.telegram.org/bots/api#answerwebappquery) | 部分 | 【Telegram小程序应答】支持文章结果 |
-| [`savePreparedInlineMessage`](https://core.telegram.org/bots/api#savepreparedinlinemessage) | 未接入 | 缺直接填值的命令 |
+| [`answerWebAppQuery`](https://core.telegram.org/bots/api#answerwebappquery) | 部分 | 【Telegram小程序应答】支持文章与富文本结果 |
+| [`savePreparedInlineMessage`](https://core.telegram.org/bots/api#savepreparedinlinemessage) | 部分 | 【Telegram准备行内消息】支持文章、富文本及既有媒体结果类型，支持四类目标范围 |
 | [`savePreparedKeyboardButton`](https://core.telegram.org/bots/api#savepreparedkeyboardbutton) | 未接入 | 缺直接填值的命令 |
 
 ### 编辑与删除消息
@@ -560,7 +564,7 @@
 | --- | --- | --- |
 | [`editMessageText`](https://core.telegram.org/bots/api#editmessagetext) | 部分 | 【编辑消息】支持常用内容及行内按钮，缺部分高级参数 |
 | [`editMessageCaption`](https://core.telegram.org/bots/api#editmessagecaption) | 部分 | 【编辑消息】支持常用内容及行内按钮，缺部分高级参数 |
-| [`editMessageMedia`](https://core.telegram.org/bots/api#editmessagemedia) | 部分 | 【编辑消息】支持常用媒体、动画及行内按钮，缺部分高级参数 |
+| [`editMessageMedia`](https://core.telegram.org/bots/api#editmessagemedia) | 部分 | 【编辑消息】按媒体类型直接填写时长、尺寸、缩略图、防剧透、视频起点及封面等，独立说明实体数组待接入 |
 | [`editMessageLiveLocation`](https://core.telegram.org/bots/api#editmessagelivelocation) | 未接入 | 缺直接填值的命令 |
 | [`stopMessageLiveLocation`](https://core.telegram.org/bots/api#stopmessagelivelocation) | 未接入 | 缺直接填值的命令 |
 | [`editMessageChecklist`](https://core.telegram.org/bots/api#editmessagechecklist) | 部分 | 【编辑消息】支持常用内容及行内按钮，缺部分高级参数 |
@@ -605,14 +609,14 @@
 
 | 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
-| [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) | 部分 | 【Telegram富文本】支持 Markdown、HTML、常用内容块及资源表，付费广播和部分独立内容块入口待接入 |
+| [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) | 部分 | 【Telegram富文本】支持 Markdown、HTML、官方块类型及资源表。付费广播和部分块内附加属性待接入 |
 | [`sendRichMessageDraft`](https://core.telegram.org/bots/api#sendrichmessagedraft) | 已接入 | 【Telegram富文本草稿】支持重用草稿 ID、私聊话题、停止与保留 |
 
 ### 行内模式
 
 | 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
-| [`answerInlineQuery`](https://core.telegram.org/bots/api#answerinlinequery) | 部分 | 【Telegram应答查询】支持文章和部分媒体结果，缺其余结果类型和结果按钮 |
+| [`answerInlineQuery`](https://core.telegram.org/bots/api#answerinlinequery) | 部分 | 【Telegram应答查询】支持富文本、文章、部分媒体行内结果和行内键盘，其他结果种类待接入 |
 
 ### 支付
 
@@ -659,7 +663,7 @@
 | `message_reaction` | 已接入 | 【事件内容@新回应】和【事件内容@旧回应】 |
 | `message_reaction_count` | 部分 | `notice:telegram:message_reaction_count`，通过原生事件访问字段 |
 | `inline_query` | 已接入 | 【事件内容@查询内容】【事件内容@查询偏移】 |
-| `chosen_inline_result` | 部分 | `notice:telegram:chosen_inline_result`，通过原生事件访问字段 |
+| `chosen_inline_result` | 已接入 | `notice:telegram:chosen_inline_result`，【事件内容@行内结果】和【事件内容@行内消息ID】 |
 | `callback_query` | 已接入 | 【事件内容@按钮值】【Telegram应答按钮】 |
 | `widget_query` | 部分 | `notice:telegram:widget_query`，通过原生事件访问字段 |
 | `shared_widget_query` | 部分 | `notice:telegram:shared_widget_query`，通过原生事件访问字段 |
@@ -689,7 +693,7 @@
 | `forward_origin` | 已接入 | 转发通知及【事件内容@转发来源类型】 |
 | `media_group_id` | 已接入 | 媒体组通知 |
 | `suggested_post_info` | 已接入 | 专用通知和【事件内容@建议帖】 |
-| `rich_message` | 部分 | 独立接收及编辑通知，【事件内容@富文本】可读正文和方向 |
+| `rich_message` | 部分 | 独立接收及编辑通知，【事件内容@富文本】可读正文、方向和中文内容块，部分块内附加属性待接入 |
 | `animation` | 已接入 | 动画与动画编辑通知，【事件内容@动画】 |
 | `audio` | 部分 | 原生事件可读媒体字段，媒体组时另有媒体通知 |
 | `document` | 已接入 | 【事件内容@文件ID】【事件内容@文件名】 |
@@ -775,14 +779,14 @@
 ## 本轮之后的缺口
 
 - KOOK 上线、下线接口适用于 Webhook，当前适配器使用 WebSocket。继续核对清单里标记为部分接入的频道、服务器与消息参数。
-- Telegram 待补剩余独立富文本内容块及行内结果、事件的完整富文本结构、付费广播，以及组件、贴纸集细项、游戏、受管机器人与 Passport。
+- Telegram 待补富文本块内剩余附加属性与更多行内结果种类、独立说明实体数组、付费广播，以及组件、贴纸集细项、游戏、受管机器人与 Passport。
 
 ## RedLang 参数检查
 
 | 入口 | 检查结果 |
 | --- | --- |
 | 菜单、键盘、卡片、投票、邀请链接、查询和发送选项 | 常用流程已有位置参数和示例。检查脚本语法的测试会拒绝在用法代码块里使用通用 API 命令或【接口值】。 |
-| 【编辑消息】、【转发消息】 | 常用流程使用位置参数。原有英文键对象或 JSON 兼容分支仍在，包括编辑高级媒体与上传字段。编辑文本的预览与媒体说明位置已有数组写法。 |
+| 【编辑消息】、【转发消息】 | 常用流程直接填值，媒体选项、上传、行内目标、单条复制说明和批量去说明均有位置写法。既有对象兼容分支仍可处理未映射的低层参数。 |
 | 【Telegram调用】、【KOOK调用】、【OB调用】、【接口值】 | 底层接口参考仍包含平台方法名、字段名、类型及上传字段，适用于直接调用平台 API。 |
 | 【Telegram发票】、【Telegram发票链接】 | 服务商自定义资料为可选对象，键名由支付服务商定义。 |
 | 【KOOK模板管理】和【KOOK模板消息】 | 推荐依次填数组值。已有自定义命名变量的模板仍可按模板定义传对象。 |

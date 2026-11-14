@@ -1,7 +1,9 @@
 use super::*;
 use crate::native_args;
+#[path = "bot_rich_blocks.rs"]
+mod block;
 
-fn block(value: &RedValue) -> Result<Value> {
+fn basic_block(value: &RedValue) -> Result<Value> {
     let row = array(value)?;
     let [kind, text, extra] = [row_text(row, 0)?, row_text(row, 1)?, row_text(row, 2)?];
     if row.len() > 3 {
@@ -48,6 +50,34 @@ fn block(value: &RedValue) -> Result<Value> {
     Ok(block)
 }
 
+fn media_kind(kind: &str) -> Result<&'static str> {
+    match kind {
+        "图片" => Ok("photo"),
+        "视频" => Ok("video"),
+        "音频" => Ok("audio"),
+        "文件" => Ok("document"),
+        "动画" => Ok("animation"),
+        "语音便笺" => Ok("voice_note"),
+        _ => Err("未知的富文本内容块或媒体类型".into()),
+    }
+}
+
+fn source(
+    input: &RedValue,
+    filename: &str,
+    files: &mut serde_json::Map<String, Value>,
+) -> Result<Value> {
+    if let RedValue::Text(link) = input {
+        if link.contains("://") {
+            let url = url::Url::parse(link)?;
+            if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+                return Err("富文本资源链接请填 HTTP(S) 地址".into());
+            }
+        }
+    }
+    native_args::media_source(input, filename, &format!("rich_{}", files.len()), files)
+}
+
 fn content(rl: &mut RedLang, params: &[Ast]) -> Result<Value> {
     let input = rl.get_param(params, 0)?;
     let [mode, rtl, skip] = text_params::<3>(rl, params, 1)?;
@@ -62,11 +92,7 @@ fn content(rl: &mut RedLang, params: &[Ast]) -> Result<Value> {
             json!({key:text})
         }
         "内容块" => {
-            let rows = array(&input)?;
-            if rows.is_empty() {
-                return Err("请填写至少一个富文本内容块".into());
-            }
-            json!({"blocks":rows.iter().map(|row| block(row)).collect::<Result<Vec<_>>>()?})
+            json!({"blocks":block::blocks(&input, &mut files, 16)?})
         }
         _ => return Err("富文本格式请填 Markdown、HTML 或内容块".into()),
     };
@@ -82,7 +108,7 @@ fn content(rl: &mut RedLang, params: &[Ast]) -> Result<Value> {
         }
         let mut seen = HashSet::new();
         let mut media = Vec::new();
-        for (index, value) in array(&input)?.iter().enumerate() {
+        for value in array(&input)? {
             let row = array(value)?;
             let [id, kind, ..] = row.as_ref() else {
                 return Err("富文本资源请填【数组@标识@类型@来源@文件名】".into());
@@ -96,33 +122,11 @@ fn content(rl: &mut RedLang, params: &[Ast]) -> Result<Value> {
             {
                 return Err("富文本资源标识须唯一，1 至 64 位字母、数字、下划线或连字符".into());
             }
-            let kind = match kind.expect_text_value()?.as_str() {
-                "图片" => "photo",
-                "视频" => "video",
-                "音频" => "audio",
-                "文件" => "document",
-                "动画" => "animation",
-                "语音便笺" => "voice_note",
-                _ => return Err("富文本资源类型请填图片、视频、音频、文件、动画或语音便笺".into()),
-            };
+            let kind = media_kind(&kind.expect_text_value()?)?;
             if !(3..=4).contains(&row.len()) {
                 return Err("富文本资源请填【数组@标识@类型@来源@文件名】".into());
             }
-            let source = native_args::media_source(
-                &row[2],
-                &row_text(row, 3)?,
-                &format!("rich_{index}"),
-                &mut files,
-            )?;
-            if let Some(link) = source
-                .as_str()
-                .filter(|link| link.contains("://") && !link.starts_with("attach://"))
-            {
-                let url = url::Url::parse(link)?;
-                if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
-                    return Err("富文本资源链接请填 HTTP(S) 地址".into());
-                }
-            }
+            let source = source(&row[2], &row_text(row, 3)?, &mut files)?;
             media.push(json!({"id":id,"media":{"type":kind,"media":source}}));
         }
         if !media.is_empty() {
@@ -150,11 +154,26 @@ pub(crate) fn decode(value: &RedValue) -> Result<Value> {
 }
 
 pub(crate) fn requires_upload(body: &Value) -> bool {
-    body["media"].as_array().into_iter().flatten().any(|item| {
-        item["media"]["media"]
-            .as_str()
-            .is_some_and(|source| source.contains("://"))
-    })
+    match body {
+        Value::Array(items) => items.iter().any(requires_upload),
+        Value::Object(fields) => fields.iter().any(|(key, value)| {
+            key == "media" && value.as_str().is_some_and(|source| source.contains("://"))
+                || requires_upload(value)
+        }),
+        _ => false,
+    }
+}
+
+pub(super) fn inline(value: &RedValue) -> Result<Value> {
+    let data = decode(value)?;
+    if requires_upload(&data["body"])
+        || data["files"]
+            .as_object()
+            .is_some_and(|files| !files.is_empty())
+    {
+        return Err("行内富文本资源请使用已上传的 Telegram 文件ID".into());
+    }
+    Ok(json!({"rich_message":data["body"]}))
 }
 
 pub(super) fn register() {
@@ -237,14 +256,85 @@ pub(super) fn event_fields(message: &Value) -> Value {
                 block_text(child, result, depth - 1);
             }
         }
+        for row in block["cells"].as_array().into_iter().flatten() {
+            for cell in row.as_array().into_iter().flatten() {
+                let part = text(&cell["text"]);
+                if !part.is_empty() {
+                    result.push(part);
+                }
+            }
+        }
+    }
+    fn structure(block: &Value, depth: u8) -> Value {
+        let kind = match block["type"].as_str() {
+            Some("paragraph") => "段落",
+            Some("heading") => "标题",
+            Some("pre") => "代码",
+            Some("footer") => "页脚",
+            Some("divider") => "分隔线",
+            Some("mathematical_expression") => "公式",
+            Some("anchor") => "锚点",
+            Some("pullquote") => "引文",
+            Some("thinking") => "草稿提示",
+            Some("list") => "列表",
+            Some("blockquote") => "引用块",
+            Some("expandable_blockquote") => "折叠引用",
+            Some("collage") => "拼贴",
+            Some("slideshow") => "幻灯片",
+            Some("table") => "表格",
+            Some("details") => "折叠详情",
+            Some("map") => "地图",
+            Some("buttons") => "按钮",
+            Some("photo") => "图片",
+            Some("video") => "视频",
+            Some("animation") => "动画",
+            Some("audio") => "音频",
+            Some("document") => "文件",
+            Some("voice_note") => "语音便笺",
+            _ => "",
+        };
+        let children: Vec<_> = block["blocks"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .filter(|_| depth > 0)
+            .map(|child| structure(child, depth - 1))
+            .collect();
+        let items: Vec<_> = block["items"].as_array().into_iter().flatten().filter(|_| depth > 0).map(|item| {
+            let parts: Vec<_> = item["blocks"].as_array().into_iter().flatten().map(|child| structure(child,depth - 1)).collect();
+            json!({"内容块":parts,"编号":item["label"],"带复选框":item["has_checkbox"],"已勾选":item["is_checked"]})
+        }).collect();
+        let rows: Vec<_> = block["cells"].as_array().into_iter().flatten().map(|row| {
+            row.as_array().into_iter().flatten().map(|cell| json!({
+                "文字":text(&cell["text"]),"表头":cell["is_header"],"跨列":cell["colspan"],"跨行":cell["rowspan"]
+            })).collect::<Vec<_>>()
+        }).collect();
+        let buttons: Vec<_> = block["buttons"].as_array().into_iter().flatten().map(|button| json!({
+            "文字":text(&button["text"]),"链接":button["url"],"回调值":button["callback_data"],"复制文字":button["copy_text"]["text"]
+        })).collect();
+        let file = block["type"]
+            .as_str()
+            .map(|kind| &block[kind])
+            .unwrap_or(&Value::Null);
+        let file = file
+            .as_array()
+            .and_then(|photos| photos.last())
+            .unwrap_or(file);
+        json!({"类型":kind,"文字":text(&block["text"]),"说明":text(&block["caption"]),
+               "出处":text(block.get("credit").unwrap_or(&block["caption"]["credit"])),
+               "摘要":text(&block["summary"]),"公式":block["expression"],"名称":block["name"],"级别":block["size"],
+               "语言":block["language"],"内容块":children,"项目":items,"表格行":rows,"按钮":buttons,"文件ID":file["file_id"],
+               "经度":block["location"]["longitude"],"纬度":block["location"]["latitude"],"已展开":block["is_open"]})
     }
     let rich = &message["rich_message"];
     if !rich.is_object() {
         return Value::Null;
     }
     let mut parts = Vec::new();
-    for block in rich["blocks"].as_array().into_iter().flatten() {
+    let blocks = rich["blocks"].as_array().into_iter().flatten();
+    for block in blocks.clone() {
         block_text(block, &mut parts, 16);
     }
-    json!({"正文":parts.join("\n"),"从右向左":rich["is_rtl"].as_bool().unwrap_or(false)})
+    let structure: Vec<_> = blocks.map(|block| structure(block, 16)).collect();
+    json!({"正文":parts.join("\n"),"从右向左":rich["is_rtl"].as_bool().unwrap_or(false),"内容块":structure})
 }

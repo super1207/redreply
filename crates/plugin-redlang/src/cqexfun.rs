@@ -1053,6 +1053,13 @@ pub fn init_cq_ex_fun_map() {
     add_fun(vec!["编辑消息"], |rl, params| {
         let platform = management_platform(rl)?;
         let mut id = rl.get_param_text(params, 0)?;
+        let target_kind = rl.get_param_text(params, 5)?;
+        if id.is_empty() && platform == "telegram" && target_kind == "行内" {
+            let event: serde_json::Value = serde_json::from_str(&rl.get_exmap("原始事件")).unwrap_or_default();
+            if matches!(event["sub_type"].as_str(),Some("chosen_inline_result" | "callback_query")) {
+                id = read_json_str(&event["telegram"], "inline_message_id");
+            }
+        }
         let explicit_id = !id.is_empty();
         if id.is_empty() {
             id = rl.get_exmap("消息ID").to_string();
@@ -1090,7 +1097,8 @@ pub fn init_cq_ex_fun_map() {
                     };
                     serde_json::json!({"parse_mode":mode})
                 }
-                _ => native_args::object(&options)?,
+                RedValue::Object(_) => native_args::object(&options)?,
+                _ => return Err("编辑选项请填格式或【数组】".into()),
             }
         } else {
             serde_json::json!({})
@@ -1111,13 +1119,13 @@ pub fn init_cq_ex_fun_map() {
                 ("keyboard", "reply_markup", crate::bot_commands::edit_keyboard(&content)?)
             }
             ("telegram", "媒体") if content.as_array().is_some() => {
-                let (mut media, files) = native_args::media_item(&content, 0, true)?;
+                let (mut media, files) = native_args::edit_media(&content)?;
                 if let Some(mode) = body.as_object_mut().and_then(|obj| obj.remove("parse_mode")) {
                     media["parse_mode"] = mode;
                 }
                 if let Some(above) = body.as_object_mut().and_then(|obj| obj.remove("show_caption_above_media")) {
-                    if !matches!(media["type"].as_str(), Some("photo" | "animation" | "video")) {
-                        return Err("说明位置适用于图片、动画和视频".into());
+                    if !matches!(media["type"].as_str(), Some("photo" | "animation" | "video" | "live_photo")) {
+                        return Err("说明位置适用于图片、动画、视频和实况照片".into());
                     }
                     media["show_caption_above_media"] = above;
                 }
@@ -1152,6 +1160,11 @@ pub fn init_cq_ex_fun_map() {
                 RedValue::Object(fields) if fields.contains_key("inline_keyboard") => {
                     request["body"]["reply_markup"] = crate::bot_commands::edit_keyboard(&attachments)?;
                 }
+                RedValue::Array(_) => {
+                    let mut files = upload.take().unwrap_or_else(|| serde_json::json!({}));
+                    native_args::edit_attachments(&attachments, &mut files)?;
+                    upload = Some(files);
+                }
                 _ if upload.is_some() => return Err(RedLang::make_err("媒体数组已经包含上传内容")),
                 _ => upload = native_args::files_value(&attachments)?,
             }
@@ -1159,7 +1172,7 @@ pub fn init_cq_ex_fun_map() {
                 request["files"] = files;
             }
         }
-        match rl.get_param_text(params, 5)?.as_str() {
+        match target_kind.as_str() {
             "" => (),
             "临时" if platform == "telegram" => {
                 let receiver = rl.get_param_text(params, 6)?;
@@ -1226,38 +1239,50 @@ pub fn init_cq_ex_fun_map() {
             target = rl.get_exmap(if is_private { "发送者ID" } else { "群ID" }).to_string();
         }
         let options = rl.get_param(params, 3)?;
-        let options = match options.as_ref() {
+        let [copy, silent, topic, topic_kind] = match options.as_ref() {
             RedValue::Text(copy) => {
                 let silent = rl.get_param_text(params, 4)?;
-                for value in [copy.as_str(), silent.as_str()] {
-                    if !matches!(value, "" | "真" | "假") {
-                        return Err(RedLang::make_err("复制和静默请填真或假"));
-                    }
-                }
-                serde_json::json!({"复制":copy.as_str(),"静默":silent,
-                    "话题ID":rl.get_param_text(params, 5)?,"话题类型":rl.get_param_text(params, 6)?})
+                [copy.to_string(), silent, rl.get_param_text(params, 5)?, rl.get_param_text(params, 6)?]
             }
-            _ => native_args::object(&options)?,
+            RedValue::Array(values) if values.len() <= 4 => {
+                let positional = |index: usize| -> Result<String,Box<dyn std::error::Error>> {
+                    Ok(values.get(index).map(|value| value.expect_text_value()).transpose()?.unwrap_or_default())
+                };
+                [positional(0)?, positional(1)?, positional(2)?, positional(3)?]
+            }
+            RedValue::Object(_) => {
+                let legacy = native_args::object(&options)?;
+                ["复制","静默","话题ID","话题类型"].map(|key| read_json_str(&legacy,key))
+            }
+            _ => return Err("转发基础选项最多四项".into()),
         };
+        if [&copy, &silent].into_iter().any(|value| !matches!(value.as_str(), "" | "真" | "假")) {
+            return Err(RedLang::make_err("复制和静默请填真或假"));
+        }
         if ids.is_empty() || ids.iter().any(|id| id.is_empty()) || target.is_empty() {
             return Err(RedLang::make_err("转发需要消息 ID 和目标聊天"));
         }
         let mut request = serde_json::json!({
             "message_ids":ids,"target_id":target,"private":is_private,
-            "copy":options["复制"] == "真","silent":options["静默"] == "真",
+            "copy":copy == "真","silent":silent == "真",
         });
         if platform == "telegram" {
-            let read_option = |key| options.get(key).and_then(serde_json::Value::as_str).unwrap_or_default();
-            if let Some((field, id)) = telegram_output_topic(read_option("话题ID"), read_option("话题类型"))? {
+            if let Some((field, id)) = telegram_output_topic(&topic, &topic_kind)? {
                 request[field] = id.into();
             } else if let Ok(event) = serde_json::from_str(&rl.get_exmap("原始事件")) {
                 apply_telegram_topic(&event, &rl.get_exmap("机器人ID"), &target, &mut request);
             }
             let extra = send_options::parse(rl, params, 7)?;
-            if extra.get("ephemeral_message_parameters").is_some() || extra.get("reply_parameters").is_some() {
-                return Err("转发和复制的发送选项不支持临时消息或高级引用".into());
+            if extra.get("ephemeral_message_parameters").is_some() {
+                return Err("转发和复制不支持临时消息".into());
             }
             request["send_options"] = extra;
+            let details = rl.get_param(params, 8)?;
+            let details = crate::bot_commands::send_options::forward_fields(&details)?;
+            if details.get("from_chat_id").is_some() && matches!(source.as_ref(), RedValue::Text(value) if value.is_empty()) {
+                return Err("指定原会话时请显式填写平台消息ID".into());
+            }
+            request["forward_options"] = details;
         }
         call_platform_api(rl, &platform, "forward_msgs", request)
     });

@@ -1,5 +1,71 @@
 use super::*;
 
+pub(crate) fn media(data: &Value, only: Option<&str>) -> Value {
+    let extra = &data["extra"];
+    let kind = data["type"].as_i64().or_else(|| extra["type"].as_i64());
+    let kind = match kind {
+        Some(3) => "视频",
+        Some(8) => "音频",
+        _ => match data["attachments"]["type"]
+            .as_str()
+            .or_else(|| extra["attachments"]["type"].as_str())
+        {
+            Some("video") => "视频",
+            Some("audio") => "音频",
+            _ => return Value::Null,
+        },
+    };
+    if only.is_some_and(|value| value != kind) {
+        return Value::Null;
+    }
+    let attachment = [&data["attachments"], &extra["attachments"]]
+        .into_iter()
+        .find_map(|value| {
+            if value.is_object() {
+                return Some(value);
+            }
+            value.as_array()?.iter().find(|item| item.is_object())
+        })
+        .unwrap_or(&Value::Null);
+    let url = attachment["url"]
+        .as_str()
+        .filter(|url| !url.is_empty())
+        .or_else(|| {
+            data["content"]
+                .as_str()
+                .filter(|link| link.starts_with("https://") || link.starts_with("http://"))
+        });
+    json!({"类型":kind,"链接":url,"文件名":attachment["name"],"媒体类型":attachment["file_type"],
+           "字节数":attachment["size"],"时长":attachment["duration"],"宽度":attachment["width"],
+           "高度":attachment["height"]})
+}
+
+pub(crate) fn media_list(data: &Value) -> Value {
+    if data["type"] != 10 {
+        let media = media(data, None);
+        return if media.is_null() {
+            json!([])
+        } else {
+            json!([media])
+        };
+    }
+    let parsed = data["content"]
+        .as_str()
+        .and_then(|value| serde_json::from_str::<Value>(value).ok());
+    let cards = parsed.as_ref().unwrap_or(&data["content"]);
+    let rows: Vec<_> = cards.as_array().into_iter().flatten().flat_map(|card| {
+        card["modules"].as_array().into_iter().flatten()
+    }).filter_map(|module| {
+        let kind = match module["type"].as_str() {
+            Some("video") => "视频",
+            Some("audio") => "音频",
+            _ => return None,
+        };
+        Some(json!({"类型":kind,"链接":module["src"],"标题":module["title"],"封面":module["cover"]}))
+    }).collect();
+    rows.into()
+}
+
 pub(crate) fn previews(data: &Value) -> Value {
     let rows: Vec<_> = data
         .as_array()

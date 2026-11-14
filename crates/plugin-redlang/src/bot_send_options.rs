@@ -341,6 +341,48 @@ pub(crate) fn edit_fields(value: &RedValue, kind: &str) -> Result<Value> {
     Ok(body)
 }
 
+pub(crate) fn forward_fields(input: &RedValue) -> Result<Value> {
+    if absent(input) {
+        return Ok(json!({}));
+    }
+    let row = array(input)?;
+    if row.len() > 7 {
+        return Err("转发附加选项最多七项".into());
+    }
+    let mut body = json!({});
+    let start = row_text(row, 0)?;
+    if !start.is_empty() {
+        body["video_start_timestamp"] = start.parse::<u32>()?.into();
+    }
+    if let Some(value) = row.get(1).filter(|value| !absent(value)) {
+        let value = value.expect_text_value()?;
+        body["caption"] = (if value == "清空" { "" } else { &value }).into();
+    }
+    let format = row_text(row, 2)?;
+    if !format.is_empty() {
+        body["parse_mode"] = match format.as_str() {
+            "Markdown" => "MarkdownV2",
+            "HTML" => "HTML",
+            _ => return Err("说明格式请填 Markdown、HTML 或留空".into()),
+        }
+        .into();
+    }
+    for (index, field) in [(3, "show_caption_above_media"), (4, "remove_caption")] {
+        let value = row_text(row, index)?;
+        if !value.is_empty() {
+            body[field] = boolean(&value, false)?.into();
+        }
+    }
+    if let Some(markup) = row.get(5).filter(|value| !absent(value)) {
+        body["reply_markup"] = super::telegram_keyboard_value(markup)?;
+    }
+    let source = row_text(row, 6)?;
+    if !source.is_empty() {
+        body["from_chat_id"] = chat_id(&source)?;
+    }
+    Ok(body)
+}
+
 fn absent(value: &RedValue) -> bool {
     matches!(value, RedValue::Text(text) if text.is_empty())
 }

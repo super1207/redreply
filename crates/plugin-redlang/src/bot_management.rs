@@ -146,19 +146,28 @@ fn inline_results(items: &RedValue) -> Result<Vec<Value>> {
             let row = array(item)?;
             let id = row_text(row, 0)?;
             let title = row_text(row, 1)?;
-            let content = row_text(row, 2)?;
             let description = row_text(row, 3)?;
             let link = row_text(row, 4)?;
             let kind = row_text(row, 5)?;
-            if row.len() > 6 || id.is_empty() || id.len() > 64 || !ids.insert(id.clone()) {
-                return Err("结果 ID 须为不重复的 1 至 64 字节文本，每行最多 6 项".into());
+            if row.len() > 7 || id.is_empty() || id.len() > 64 || !ids.insert(id.clone()) {
+                return Err("结果 ID 须为不重复的 1 至 64 字节文本，每行最多 7 项".into());
             }
             required(&title, "结果标题")?;
             let mut result = match kind.as_str() {
                 "" | "文章" => {
+                    let content = row_text(row, 2)?;
                     required(&content, "发送文字")?;
                     let mut article =
                         json!({"type":"article","input_message_content":{"message_text":content}});
+                    if !link.is_empty() {
+                        https_url(&link)?;
+                        article["url"] = link.into();
+                    }
+                    article
+                }
+                "富文本" => {
+                    let content = row.get(2).ok_or("请填写【Telegram富文本】")?;
+                    let mut article = json!({"type":"article","input_message_content":super::rich::inline(content)?});
                     if !link.is_empty() {
                         https_url(&link)?;
                         article["url"] = link.into();
@@ -173,14 +182,17 @@ fn inline_results(items: &RedValue) -> Result<Vec<Value>> {
                         _ => ("document", "document_file_id"),
                     };
                     let mut media = json!({"type":kind,field:link});
-                    insert_text(&mut media, "caption", &content);
+                    insert_text(&mut media, "caption", &row_text(row, 2)?);
                     media
                 }
-                _ => return Err("结果类型请填文章、图片、视频或文件".into()),
+                _ => return Err("结果类型请填文章、富文本、图片、视频或文件".into()),
             };
             result["id"] = id.into();
             result["title"] = title.into();
             insert_text(&mut result, "description", &description);
+            if let Some(keyboard) = row.get(6).filter(|value| !matches!(value.as_ref(),RedValue::Text(text) if text.is_empty())) {
+                result["reply_markup"] = super::edit_keyboard(keyboard)?;
+            }
             Ok(result)
         })
         .collect()
@@ -846,15 +858,33 @@ fn register_admin() {
         scalar_text(&data["data"]["document"]["file_id"])
     });
     add_fun(vec!["Telegram小程序应答"], |rl, params| {
-        let [query, id, title, message] = text_params::<4>(rl, params, 0)?;
+        let [query, id, title] = text_params::<3>(rl, params, 0)?;
+        let message = rl.get_param(params,3)?;
+        let kind = rl.get_param_text(params,4)?;
+        let content = match kind.as_str() {
+            "" | "文章" => json!({"message_text":required(&message.expect_text_value()?,"发送文字")?}),
+            "富文本" => super::rich::inline(&message)?,
+            _ => return Err("小程序应答类型请填文章或富文本".into()),
+        };
         let result = json!({"type":"article","id":required(&id,"结果ID")?,"title":required(&title,"标题")?,
-            "input_message_content":{"message_text":required(&message,"发送文字")?}});
+            "input_message_content":content});
         let data = telegram(
             rl,
             "answerWebAppQuery",
             json!({"web_app_query_id":required(&query,"小程序查询ID")?,"result":result}),
         )?;
         output(&data["data"]["inline_message_id"])
+    });
+    add_fun(vec!["Telegram准备行内消息"], |rl, params| {
+        let row = rl.get_param(params,0)?;
+        let result = inline_results(&RedValue::Array(vec![row]))?.into_iter().next().ok_or("请填写行内结果")?;
+        let user = rl.get_param_text(params,1)?;
+        let user = positive_id(&context(rl,&user,"发送者ID")?)?;
+        let [users,bots,groups,channels] = text_params::<4>(rl,params,2)?;
+        let data = telegram(rl,"savePreparedInlineMessage",json!({"user_id":user,"result":result,
+            "allow_user_chats":boolean(&users,false)?,"allow_bot_chats":boolean(&bots,false)?,
+            "allow_group_chats":boolean(&groups,false)?,"allow_channel_chats":boolean(&channels,false)?}))?;
+        output(&json!({"准备ID":data["data"]["id"],"到期时间":data["data"]["expiration_date"]}))
     });
 }
 
@@ -1310,7 +1340,9 @@ fn register_kook() {
                 "提及用户ID列表":data["mention"],"提及身份组ID列表":data["mention_roles"],
                 "提及所有人":data["mention_all"],"提及在线成员":data["mention_here"],"回应":reactions,
                 "引用消息ID":quote["id"],"引用正文":quote["content"],"引用发送者ID":quote["author"]["id"],
-                "消息图标":data["msg_icon"],"链接预览":super::kook_fields::previews(&data["embeds"])})
+                "消息图标":data["msg_icon"],"链接预览":super::kook_fields::previews(&data["embeds"]),
+                "视频":super::kook_fields::media(data,Some("视频")),"音频":super::kook_fields::media(data,Some("音频")),
+                "媒体列表":super::kook_fields::media_list(data)})
         };
         if op == "详情" {
             let mut body = json!({"msg_id":required(&first,"平台消息ID")?});
