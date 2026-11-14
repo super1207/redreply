@@ -1317,10 +1317,12 @@ impl TeleTramConnect {
 
     fn native_media(data: &Value, payload: &mut Value) -> AdapterResult<(&'static str, Value)> {
         let (method, required, fields): (_, _, &[&str]) = match data["kind"].as_str() {
-            Some("voice") => ("sendVoice", "voice", &["duration", "caption", "parse_mode"]),
+            Some("photo") => ("sendPhoto", "photo", &["caption", "parse_mode", "caption_entities"]),
+            Some("video") => ("sendVideo", "video", &["caption", "parse_mode", "caption_entities"]),
+            Some("voice") => ("sendVoice", "voice", &["duration", "caption", "parse_mode", "caption_entities"]),
             Some("video_note") => ("sendVideoNote", "video_note", &["duration", "length", "thumbnail"]),
             Some("animation") => ("sendAnimation", "animation", &[
-                "duration", "width", "height", "thumbnail", "caption", "parse_mode",
+                "duration", "width", "height", "thumbnail", "caption", "parse_mode", "caption_entities",
                 "show_caption_above_media", "has_spoiler",
             ]),
             _ => return Err("Telegram 媒体消息类型无效".into()),
@@ -1457,7 +1459,7 @@ impl TeleTramConnect {
                 }
                 "telegram_paid_media" => {
                     let data: Value = serde_json::from_str(&message)?;
-                    for field in ["star_count","media","payload","caption","show_caption_above_media"] {
+                    for field in ["star_count","media","payload","caption","caption_entities","show_caption_above_media"] {
                         if let Some(value) = data["body"].get(field) {
                             payload[field] = value.clone();
                         }
@@ -1822,7 +1824,7 @@ impl TeleTramConnect {
             return Err("转发的消息效果只适用于单条私聊消息，建议帖只适用于单条频道私信".into());
         }
         send_options::apply(options, &mut body);
-        for key in ["video_start_timestamp","caption","parse_mode","show_caption_above_media","remove_caption","reply_markup"] {
+        for key in ["video_start_timestamp","caption","parse_mode","caption_entities","show_caption_above_media","remove_caption","reply_markup"] {
             let Some(value) = details.get(key) else { continue };
             let allowed = match key {
                 "video_start_timestamp" => ids.len() == 1,

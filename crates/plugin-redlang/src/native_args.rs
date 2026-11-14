@@ -237,7 +237,8 @@ pub(super) fn media_item(
             ))
         }
     };
-    if fields.len() > if kind == "live_photo" { 6 } else { 4 } {
+    let base = if kind == "live_photo" { 6 } else { 4 };
+    if fields.len() > base + 1 {
         return Err(RedLang::make_err("媒体项参数过多"));
     }
     let source = media_source(source, &text(3)?, &format!("media_{index}"), &mut files)?;
@@ -249,6 +250,16 @@ pub(super) fn media_item(
     if kind == "live_photo" {
         let photo = fields.get(4).ok_or("实况照片需要静态图来源")?;
         row["photo"] = media_source(photo, &text(5)?, &format!("photo_{index}"), &mut files)?;
+    }
+    if !allow_animation {
+        if let Some(styles) = fields.get(base) {
+            crate::bot_commands::send_options::apply_styles(
+                &mut row,
+                "caption",
+                "caption_entities",
+                styles,
+            )?;
+        }
     }
     Ok((row, files))
 }
@@ -358,6 +369,58 @@ pub(super) fn edit_media(item: &RedValue) -> Result<(Value, Map<String, Value>),
         };
     }
     Ok((media, files))
+}
+
+pub(super) fn rich_block_media(
+    source: &RedValue,
+    name: &str,
+    label: &str,
+    options: &Rc<RedValue>,
+    files: &mut Map<String, Value>,
+) -> Result<Value, Box<dyn Error>> {
+    let key = files.len();
+    if label == "语音便笺" {
+        let items = options.as_array().ok_or("语音便笺选项需要【数组】")?;
+        if items.len() > 1 {
+            return Err("语音便笺选项只填写时长".into());
+        }
+        let mut body = serde_json::json!({"type":"voice_note","media":media_source(source,name,&format!("rich_{key}"),files)?});
+        if let Some(duration) = items.first() {
+            let value = duration.expect_text_value()?;
+            if !value.is_empty() {
+                body["duration"] = value.parse::<u32>()?.into();
+            }
+        }
+        return Ok(body);
+    }
+    let input = RedValue::Array(vec![
+        crate::core::rv_text(label.to_owned()),
+        Rc::new(source.clone()),
+        crate::core::rv_text(String::new()),
+        crate::core::rv_text(name.to_owned()),
+        options.clone(),
+    ]);
+    let (mut body, new_files) = edit_media(&input)?;
+    let names: Map<String, Value> = new_files
+        .keys()
+        .map(|name| (name.clone(), format!("rich_{key}_{name}").into()))
+        .collect();
+    for field in ["media", "thumbnail", "cover"] {
+        if let Some(alias) = body[field]
+            .as_str()
+            .and_then(|s| s.strip_prefix("attach://"))
+        {
+            if let Some(name) = names.get(alias).and_then(Value::as_str) {
+                body[field] = format!("attach://{name}").into();
+            }
+        }
+    }
+    files.extend(
+        new_files
+            .into_iter()
+            .map(|(name, value)| (names[&name].as_str().unwrap().to_owned(), value)),
+    );
+    Ok(body)
 }
 
 pub(super) fn edit_attachments(input: &RedValue, files: &mut Value) -> Result<(), Box<dyn Error>> {

@@ -799,6 +799,9 @@ pub fn init_cq_ex_fun_map() {
     });
     add_fun(vec!["图片"], |self_t, params| {
         let pic_rv = self_t.get_param(params, 0)?;
+        if get_platform(self_t) == "telegram" && params.len() > 1 && self_t.get_param_text(params, 1)? == "说明" {
+            return telegram_media::segment(self_t, params, &pic_rv, "photo");
+        }
         let mut ret: String = String::new();
         let summary = self_t.get_exmap("图片SUMMARY");
         if let Ok(bin) = pic_rv.expect_bin_value() {
@@ -955,6 +958,9 @@ pub fn init_cq_ex_fun_map() {
         if option.as_deref() == Some("便笺") {
             return telegram_media::segment(self_t, params, &pic_rv, "video_note");
         }
+        if option.as_deref() == Some("说明") {
+            return telegram_media::segment(self_t, params, &pic_rv, "video");
+        }
         let mut ret: String = String::new();
         if let Ok(bin) = pic_rv.expect_bin_value() {
             let b64_str = BASE64_CUSTOM_ENGINE.encode(&bin);
@@ -1088,7 +1094,7 @@ pub fn init_cq_ex_fun_map() {
             let options = rl.get_param(params, 3)?;
             match options.as_ref() {
                 RedValue::Text(text) if text.is_empty() => serde_json::json!({}),
-                RedValue::Array(_) => send_options::edit_fields(&options, &kind)?,
+                RedValue::Array(_) => send_options::edit_fields(&options, &kind, &content)?,
                 RedValue::Text(text) if platform == "telegram" => {
                     let mode = match text.as_str() {
                         "Markdown" => "MarkdownV2",
@@ -1122,6 +1128,9 @@ pub fn init_cq_ex_fun_map() {
                 let (mut media, files) = native_args::edit_media(&content)?;
                 if let Some(mode) = body.as_object_mut().and_then(|obj| obj.remove("parse_mode")) {
                     media["parse_mode"] = mode;
+                }
+                if let Some(styles) = body.as_object_mut().and_then(|obj| obj.remove("caption_entities")) {
+                    media["caption_entities"] = styles;
                 }
                 if let Some(above) = body.as_object_mut().and_then(|obj| obj.remove("show_caption_above_media")) {
                     if !matches!(media["type"].as_str(), Some("photo" | "animation" | "video" | "live_photo")) {

@@ -200,6 +200,50 @@ fn documented_native_platform_examples_parse() {
 }
 
 #[test]
+fn inline_variants_rich_properties_and_caption_styles_build_platform_payloads() {
+    use crate::cqexfun::TEST_PLATFORM_CALL;
+    use serde_json::{json,Value};
+    use std::{cell::RefCell,rc::Rc};
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    rl.set_exmap("机器人平台","telegram");
+    rl.set_exmap("机器人ID","7");
+    rl.set_exmap("发送者ID","42");
+    let records = Rc::new(RefCell::new(Vec::new()));
+    let sink = records.clone();
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| {
+        *handler = Some(Box::new(move |_,_,args| {
+            sink.borrow_mut().push(args);
+            json!({"retcode":0,"data":{"message_id":"sent"}})
+        }));
+    });
+    let run = |rl: &mut crate::core::RedLang, script: &str| rl.parse(script).unwrap_or_else(|error| panic!("{script}: {error}"));
+    run(&mut rl,"【Telegram应答查询@【数组@【数组@loc@码头@【数组@114@22】@@@位置】@【数组@gif@动画@@@https://example.org/a.gif@动图@@【数组@https://example.org/thumb.jpg】】@【数组@game@@@@run@游戏】】@@@@q@【数组@打开@开始@now】】");
+    run(&mut rl,"【输出流@【Telegram富文本@【数组@【数组@标题@【数组@【数组@粗体@活动】@开始】@2】@【数组@音频@audio@@说明@@【数组@45@主持人@回顾】】】@内容块】】");
+    run(&mut rl,"【输出流@【图片@photo@说明@😀好@@【数组@【数组@粗体@0@2】】】】");
+    run(&mut rl,"【编辑消息@old@说明@说明@【数组@@@@【数组@【数组@斜体@0@2】】】】");
+    assert!(rl.parse("【图片@photo@说明@😀好@@【数组@【数组@粗体@1@1】】】").is_err());
+    rl.set_exmap("机器人平台","kook");
+    rl.set_exmap("原始事件",&json!({"platform":"kook","sub_type":"item_message","kook":{"content":{
+        "type":"item","data":{"user_id":"42","target_id":"12","item_id":10001}}}}).to_string());
+    assert_eq!(run(&mut rl,"【取元素@【事件内容@道具】@0@目标用户ID】").expect_text_value().unwrap(),"12");
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| *handler = None);
+    let args = records.borrow();
+    assert_eq!(args[0]["body"]["results"][0]["latitude"],22.0);
+    assert_eq!(args[0]["body"]["results"][1]["gif_url"],"https://example.org/a.gif");
+    assert!(args[0]["body"]["results"][2].get("title").is_none());
+    assert_eq!(args[0]["body"]["button"]["start_parameter"],"now");
+    let payload = |index: usize| -> Value {
+        serde_json::from_str(args[index]["message"][0]["data"]["content"].as_str().unwrap()).unwrap()
+    };
+    let rich = payload(1);
+    assert_eq!(rich["body"]["blocks"][0]["text"][0],json!({"type":"bold","text":"活动"}));
+    assert_eq!(rich["body"]["blocks"][1]["audio"]["performer"],"主持人");
+    assert_eq!(payload(2)["body"]["caption_entities"][0],json!({"type":"bold","offset":0,"length":2}));
+    assert_eq!(args[3]["body"]["caption_entities"][0]["type"],"italic");
+}
+
+#[test]
 fn rich_inline_and_media_edits_build_positional_requests() {
     use crate::cqexfun::TEST_PLATFORM_CALL;
     use serde_json::json;

@@ -5,13 +5,19 @@ mod block;
 
 fn basic_block(value: &RedValue) -> Result<Value> {
     let row = array(value)?;
-    let [kind, text, extra] = [row_text(row, 0)?, row_text(row, 1)?, row_text(row, 2)?];
+    let kind = row_text(row, 0)?;
+    let text = row
+        .get(1)
+        .map(|value| block::inline_text(value, 8))
+        .transpose()?
+        .unwrap_or_else(|| "".into());
     if row.len() > 3 {
         return Err("富文本内容块的参数过多".into());
     }
     let block = match kind.as_str() {
         "段落" => json!({"type":"paragraph","text":text}),
         "标题" => {
+            let extra = row_text(row, 2)?;
             let size = if extra.is_empty() {
                 1
             } else {
@@ -23,6 +29,7 @@ fn basic_block(value: &RedValue) -> Result<Value> {
             json!({"type":"heading","text":text,"size":size})
         }
         "代码" => {
+            let extra = row_text(row, 2)?;
             let mut code = json!({"type":"pre","text":text});
             if !extra.is_empty() {
                 code["language"] = extra.into();
@@ -31,12 +38,15 @@ fn basic_block(value: &RedValue) -> Result<Value> {
         }
         "页脚" => json!({"type":"footer","text":text}),
         "分隔线" => json!({"type":"divider"}),
-        "公式" => json!({"type":"mathematical_expression","expression":text}),
-        "锚点" => json!({"type":"anchor","name":text}),
+        "公式" => json!({"type":"mathematical_expression","expression":row_text(row,1)?}),
+        "锚点" => json!({"type":"anchor","name":row_text(row,1)?}),
         "引文" => {
             let mut quote = json!({"type":"pullquote","text":text});
-            if !extra.is_empty() {
-                quote["credit"] = extra.into();
+            if let Some(credit) = row.get(2) {
+                let credit = block::inline_text(credit, 8)?;
+                if credit != "" {
+                    quote["credit"] = credit;
+                }
             }
             quote
         }
@@ -237,7 +247,12 @@ pub(super) fn event_fields(message: &Value) -> Value {
         match value {
             Value::String(value) => value.clone(),
             Value::Array(values) => values.iter().map(text).collect(),
-            Value::Object(value) => value.get("text").map(text).unwrap_or_default(),
+            Value::Object(value) => value
+                .get("text")
+                .or_else(|| value.get("alternative_text"))
+                .or_else(|| value.get("expression"))
+                .map(text)
+                .unwrap_or_default(),
             _ => String::new(),
         }
     }
@@ -306,11 +321,16 @@ pub(super) fn event_fields(message: &Value) -> Value {
         }).collect();
         let rows: Vec<_> = block["cells"].as_array().into_iter().flatten().map(|row| {
             row.as_array().into_iter().flatten().map(|cell| json!({
-                "文字":text(&cell["text"]),"表头":cell["is_header"],"跨列":cell["colspan"],"跨行":cell["rowspan"]
+                "文字":text(&cell["text"]),"表头":cell["is_header"],"跨列":cell["colspan"],"跨行":cell["rowspan"],
+                "横向":horizontal(&cell["align"]),"纵向":vertical(&cell["valign"])
             })).collect::<Vec<_>>()
         }).collect();
         let buttons: Vec<_> = block["buttons"].as_array().into_iter().flatten().map(|button| json!({
-            "文字":text(&button["text"]),"链接":button["url"],"回调值":button["callback_data"],"复制文字":button["copy_text"]["text"]
+            "文字":text(&button["text"]),"链接":button["url"],"回调值":button["callback_data"],"复制文字":button["copy_text"]["text"],
+            "小程序链接":button["web_app"]["url"],"登录链接":button["login_url"]["url"],
+            "搜索词":button.get("switch_inline_query").or_else(||button.get("switch_inline_query_current_chat")).unwrap_or(&button["switch_inline_query_chosen_chat"]["query"]),
+            "样式":match button["style"].as_str() { Some("primary")=>"强调",Some("danger")=>"危险",Some("success")=>"成功",Some("link")=>"文字",_=>"" },
+            "禁用":button["disabled"].is_object()
         })).collect();
         let file = block["type"]
             .as_str()
@@ -324,7 +344,28 @@ pub(super) fn event_fields(message: &Value) -> Value {
                "出处":text(block.get("credit").unwrap_or(&block["caption"]["credit"])),
                "摘要":text(&block["summary"]),"公式":block["expression"],"名称":block["name"],"级别":block["size"],
                "语言":block["language"],"内容块":children,"项目":items,"表格行":rows,"按钮":buttons,"文件ID":file["file_id"],
-               "经度":block["location"]["longitude"],"纬度":block["location"]["latitude"],"已展开":block["is_open"]})
+               "经度":block["location"]["longitude"],"纬度":block["location"]["latitude"],"已展开":block["is_open"],
+               "缩放":block["zoom"],"宽度":block.get("width").unwrap_or(&file["width"]),"高度":block.get("height").unwrap_or(&file["height"]),
+               "时长":file["duration"],"文件名":file["file_name"],"媒体类型":file["mime_type"],"演出者":file["performer"],"媒体标题":file["title"],
+               "封面ID":file["cover"].as_array().and_then(|items|items.last()).map(|item| &item["file_id"]),
+               "缩略图ID":file["thumbnail"]["file_id"],"边框":block["is_bordered"],"条纹":block["is_striped"],
+               "紧凑":block["is_compact"],"对齐":horizontal(&block["align"])})
+    }
+    fn horizontal(value: &Value) -> &str {
+        match value.as_str() {
+            Some("left") => "左",
+            Some("center") => "居中",
+            Some("right") => "右",
+            _ => "",
+        }
+    }
+    fn vertical(value: &Value) -> &str {
+        match value.as_str() {
+            Some("top") => "上",
+            Some("middle") => "居中",
+            Some("bottom") => "下",
+            _ => "",
+        }
     }
     let rich = &message["rich_message"];
     if !rich.is_object() {

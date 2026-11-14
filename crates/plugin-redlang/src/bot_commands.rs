@@ -642,6 +642,12 @@ pub(super) fn event_field(event: &Value, field: &str) -> RedCommandResult {
         "草稿话题ID" if event["sub_type"] == "stopped_message_generation" => telegram["message_thread_id"].clone(),
         "私聊会话码" => management::kook_chat_code(event).into(),
         "服务器事件" => kook_fields::guild(event),
+        "道具" if event["platform"] == "kook" => kook_fields::items(&event["kook"]["content"]),
+        "消息详情" if event["platform"] == "kook" => kook_fields::message_fields(event),
+        "用户事件" if event["platform"] == "kook" => kook_fields::user_event(event),
+        "频道事件" if event["platform"] == "kook" => kook_fields::channel_event(event),
+        "身份组事件" if event["platform"] == "kook" => kook_fields::role_event(event),
+        "回应" if event["platform"] == "kook" => kook_fields::reaction(event),
         "视频" | "音频" if event["platform"] == "kook" => kook_fields::media(&event["kook"], Some(field)),
         "媒体列表" if event["platform"] == "kook" => kook_fields::media_list(&event["kook"]),
         "链接预览" if event["platform"] == "kook" => {

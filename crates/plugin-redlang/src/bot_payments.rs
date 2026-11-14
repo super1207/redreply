@@ -411,6 +411,8 @@ pub(super) fn register() {
         let mut body = json!({"star_count":amount,"media":media,"show_caption_above_media":boolean(&above,false)?});
         insert_text(&mut body, "payload", &order);
         insert_text(&mut body, "caption", &caption);
+        let styles = rl.get_param(params,5)?;
+        super::super::send_options::apply_styles(&mut body,"caption","caption_entities",&styles)?;
         let data = json!({"body":body,"files":files});
         message_segment("telegram_paid_media", data)
     });

@@ -1489,6 +1489,17 @@ impl KookConnect {
         &self,
         data: serde_json::Value,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if data["type"] == 12 {
+            let mut raw = data;
+            if let Some(fields) = raw.as_object_mut() { fields.remove("verify_token"); }
+            let event = json!({"platform":"kook","post_type":"notice","notice_type":"kook","sub_type":"item_message",
+                "time":raw["msg_timestamp"].as_i64().map(|time| time / 1000),
+                "self_id":self.self_id.read().unwrap_or_else(|e| e.into_inner()).clone(),
+                "user_id":raw["author_id"],"group_id":raw["target_id"],"groups_id":raw["extra"]["guild_id"],
+                "kook_message_id":raw["msg_id"],"kook":raw});
+            self.send_to_onebot_client(&event).await;
+            return Ok(());
+        }
         if let Some(event) = self.native_event(&data) {
             self.send_to_onebot_client(&event).await;
             if event["sub_type"] == "message_btn_click" {
