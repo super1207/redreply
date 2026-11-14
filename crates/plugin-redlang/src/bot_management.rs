@@ -1310,7 +1310,7 @@ fn register_kook() {
                 "提及用户ID列表":data["mention"],"提及身份组ID列表":data["mention_roles"],
                 "提及所有人":data["mention_all"],"提及在线成员":data["mention_here"],"回应":reactions,
                 "引用消息ID":quote["id"],"引用正文":quote["content"],"引用发送者ID":quote["author"]["id"],
-                "消息图标":data["msg_icon"]})
+                "消息图标":data["msg_icon"],"链接预览":super::kook_fields::previews(&data["embeds"])})
         };
         if op == "详情" {
             let mut body = json!({"msg_id":required(&first,"平台消息ID")?});

@@ -6,8 +6,8 @@ pub(crate) fn parse(rl: &mut RedLang, params: &[Ast], index: usize) -> Result<Va
         return Ok(json!({}));
     }
     let values = array(&value)?;
-    if values.len() > 5 {
-        return Err("发送选项最多五项".into());
+    if values.len() > 6 {
+        return Err("发送选项最多六项".into());
     }
     let mut result = json!({});
     for (index, field) in [(0, "disable_notification"), (1, "protect_content")] {
@@ -99,7 +99,246 @@ pub(crate) fn parse(rl: &mut RedLang, params: &[Ast], index: usize) -> Result<Va
         }
         result["ephemeral_message_parameters"] = ephemeral;
     }
+    if let Some(reply) = values.get(5).filter(|value| !absent(value)) {
+        result["reply_parameters"] = reply_fields(array(reply)?, rl)?;
+    }
     Ok(result)
+}
+
+fn reply_fields(row: &[Rc<RedValue>], rl: &RedLang) -> Result<Value> {
+    if row.len() > 10 {
+        return Err("引用选项最多十项".into());
+    }
+    let target = row_text(row, 0)?;
+    let chat = row_text(row, 1)?;
+    let text = row_text(row, 2)?;
+    let position = row_text(row, 3)?;
+    let fallback = row_text(row, 4)?;
+    let task = row_text(row, 5)?;
+    let poll = row_text(row, 6)?;
+    let format = row_text(row, 7)?;
+    if !task.is_empty() && !poll.is_empty() {
+        return Err("清单任务和投票选项只能指定一项".into());
+    }
+    let event: Value = serde_json::from_str(&rl.get_exmap("原始事件")).unwrap_or_default();
+    let current = management::business::event_message(&event);
+    let mut body = if target.is_empty() || target == "当前" {
+        if !chat.is_empty() {
+            return Err("跨会话引用请明确填写平台消息ID".into());
+        }
+        if let Some(id) = current["ephemeral_message_id"]
+            .as_i64()
+            .filter(|id| *id > 0)
+        {
+            json!({"ephemeral_message_id":id})
+        } else {
+            let id = current["message_id"]
+                .as_i64()
+                .filter(|id| *id > 0)
+                .ok_or("请填写要引用的平台消息ID")?;
+            json!({"message_id":id})
+        }
+    } else {
+        json!({"message_id":positive_id(&target)?})
+    };
+    if !chat.is_empty() {
+        body["chat_id"] = chat_id(&chat)?;
+    }
+    if !text.is_empty() {
+        if text.chars().count() > 1024 && format.is_empty() {
+            return Err("引用片段最多 1024 字符".into());
+        }
+        body["quote"] = text.into();
+    }
+    if !position.is_empty() {
+        body["quote_position"] = position.parse::<u32>()?.into();
+    }
+    if !fallback.is_empty() {
+        body["allow_sending_without_reply"] = boolean(&fallback, false)?.into();
+    }
+    if !task.is_empty() {
+        body["checklist_task_id"] = positive_id(&task)?.into();
+    }
+    if !poll.is_empty() {
+        body["poll_option_id"] = poll.into();
+    }
+    if !format.is_empty() {
+        if body.get("quote").is_none() {
+            return Err("引用格式需要填写引用片段".into());
+        }
+        body["quote_parse_mode"] = match format.as_str() {
+            "Markdown" => "MarkdownV2",
+            "HTML" => "HTML",
+            _ => return Err("引用格式请填 Markdown 或 HTML".into()),
+        }
+        .into();
+    }
+    if let Some(parts) = row.get(8).filter(|value| !absent(value)) {
+        if body.get("quote").is_some() {
+            return Err("富文本引文和普通引用片段请二选一".into());
+        }
+        let mut texts = Vec::new();
+        for part in array(parts)? {
+            if let Some(row) = part.as_array() {
+                if !(2..=4).contains(&row.len()) {
+                    return Err("富文本引文可填文本或【数组@样式@文本】".into());
+                }
+                let label = row_text(row, 0)?;
+                let text = row_text(row, 1)?;
+                let detail = row_text(row, 2)?;
+                let kind = match label.as_str() {
+                    "粗体" => "bold",
+                    "斜体" => "italic",
+                    "下划线" => "underline",
+                    "删除线" => "strikethrough",
+                    "剧透" => "spoiler",
+                    "下标" => "subscript",
+                    "上标" => "superscript",
+                    "自定义表情" if !detail.is_empty() => {
+                        texts.push(json!({"type":"custom_emoji","alternative_text":text,"custom_emoji_id":detail}));
+                        continue;
+                    }
+                    "公式" => {
+                        texts.push(json!({"type":"mathematical_expression","expression":text}));
+                        continue;
+                    }
+                    "日期时间" => {
+                        let mut entity = json!({"type":"date_time","text":text,"unix_time":detail.parse::<i64>()?});
+                        let format = row_text(row, 3)?;
+                        if !format.is_empty() {
+                            entity["date_time_format"] = format.into();
+                        }
+                        texts.push(entity);
+                        continue;
+                    }
+                    _ => return Err("未知的富文本引文样式".into()),
+                };
+                texts.push(json!({"type":kind,"text":text}));
+            } else {
+                texts.push(part.expect_text_value()?.into());
+            }
+        }
+        if !texts.is_empty() {
+            body["quote_rich_texts"] = texts.into();
+        }
+    }
+    if let Some(entities) = row.get(9).filter(|value| !absent(value)) {
+        let quote = body["quote"].as_str().ok_or("引用样式需要普通引用片段")?;
+        if body.get("quote_parse_mode").is_some() {
+            return Err("引用格式与引用样式请二选一".into());
+        }
+        let boundaries: HashSet<_> = std::iter::once(0)
+            .chain(quote.chars().scan(0, |offset, ch| {
+                *offset += ch.len_utf16();
+                Some(*offset)
+            }))
+            .collect();
+        let entities = array(entities)?
+            .iter()
+            .map(|entity| {
+                let row = array(entity)?;
+                if !(3..=5).contains(&row.len()) {
+                    return Err("引用样式请填【数组@样式@位置@长度@附加值@日期格式】".into());
+                }
+                let offset = row_text(row, 1)?.parse::<usize>()?;
+                let length = row_text(row, 2)?.parse::<usize>()?;
+                if length == 0
+                    || !boundaries.contains(&offset)
+                    || offset
+                        .checked_add(length)
+                        .is_none_or(|end| !boundaries.contains(&end))
+                {
+                    return Err("引用样式范围超出引用片段的 UTF-16 长度".into());
+                }
+                let kind = match row_text(row, 0)?.as_str() {
+                    "粗体" => "bold",
+                    "斜体" => "italic",
+                    "下划线" => "underline",
+                    "删除线" => "strikethrough",
+                    "剧透" => "spoiler",
+                    "自定义表情" => "custom_emoji",
+                    "日期时间" => "date_time",
+                    _ => return Err("未知的普通引用样式".into()),
+                };
+                let mut item = json!({"type":kind,"offset":offset,"length":length});
+                if kind == "custom_emoji" {
+                    let id = row_text(row, 3)?;
+                    if id.is_empty() {
+                        return Err("请填写自定义表情ID".into());
+                    }
+                    item["custom_emoji_id"] = id.into();
+                } else if kind == "date_time" {
+                    item["unix_time"] = row_text(row, 3)?.parse::<i64>()?.into();
+                    let format = row_text(row, 4)?;
+                    if !format.is_empty() {
+                        item["date_time_format"] = format.into();
+                    }
+                }
+                Ok(item)
+            })
+            .collect::<Result<Vec<_>>>()?;
+        body["quote_entities"] = entities.into();
+    }
+    Ok(body)
+}
+
+pub(crate) fn edit_fields(value: &RedValue, kind: &str) -> Result<Value> {
+    let fields = array(value)?;
+    if fields.len() > 3 {
+        return Err("编辑选项最多三项".into());
+    }
+    let mut body = json!({});
+    let format = row_text(fields, 0)?;
+    if !format.is_empty() {
+        if !matches!(kind, "" | "文本" | "说明" | "媒体") {
+            return Err("格式仅适用于文本、说明或媒体".into());
+        }
+        body["parse_mode"] = match format.as_str() {
+            "Markdown" => "MarkdownV2",
+            "HTML" => "HTML",
+            _ => return Err("格式请填 Markdown、HTML 或留空".into()),
+        }
+        .into();
+    }
+    if let Some(preview) = fields.get(1).filter(|value| !absent(value)) {
+        if !matches!(kind, "" | "文本") {
+            return Err("链接预览仅适用于 Telegram 文本".into());
+        }
+        let preview = array(preview)?;
+        if preview.len() > 4 {
+            return Err("预览请填【数组@关闭@链接@尺寸@放在上方】".into());
+        }
+        let mut data = json!({});
+        for (index, key) in [(0, "is_disabled"), (3, "show_above_text")] {
+            let value = row_text(preview, index)?;
+            if !value.is_empty() {
+                data[key] = boolean(&value, false)?.into();
+            }
+        }
+        let url = row_text(preview, 1)?;
+        if !url.is_empty() {
+            let parsed = url::Url::parse(&url)?;
+            if !matches!(parsed.scheme(), "http" | "https") || parsed.host_str().is_none() {
+                return Err("预览链接请填 HTTP(S) 地址".into());
+            }
+            data["url"] = url.into();
+        }
+        match row_text(preview, 2)?.as_str() {
+            "" => (),
+            "小" => data["prefer_small_media"] = true.into(),
+            "大" => data["prefer_large_media"] = true.into(),
+            _ => return Err("预览尺寸请填大、小或留空".into()),
+        }
+        body["link_preview_options"] = data;
+    }
+    let above = row_text(fields, 2)?;
+    if !above.is_empty() {
+        if !matches!(kind, "说明" | "媒体") {
+            return Err("说明置顶仅适用于说明或媒体".into());
+        }
+        body["show_caption_above_media"] = boolean(&above, false)?.into();
+    }
+    Ok(body)
 }
 
 fn absent(value: &RedValue) -> bool {
@@ -172,6 +411,15 @@ pub(crate) fn simple_options(
     }
     if options.get("message_effect_id").is_some() && !private {
         return Err("消息效果只适用于私聊".into());
+    }
+    let reply = &options["reply_parameters"];
+    if reply.get("ephemeral_message_id").is_some()
+        || reply.get("chat_id").is_some()
+            && (body.get("business_connection_id").is_some()
+                || body.get("direct_messages_topic_id").is_some()
+                || reply["allow_sending_without_reply"] == true)
+    {
+        return Err("当前发送方式不支持此引用目标或失败后的继续发送选项".into());
     }
     for (field, value) in options.as_object().ok_or("Telegram 发送选项格式无效")? {
         body[field] = value.clone();

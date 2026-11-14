@@ -431,8 +431,11 @@ impl KookConnect {
             event["group_id"] = channel_id.clone().into();
         }
         let mut guild_id = read_json_str(body, "guild_id");
+        if matches!(kind, "updated_guild" | "deleted_guild") && guild_id.is_empty() {
+            guild_id = read_json_str(body, "id");
+        }
         if guild_id.is_empty() && (channel_event || role_event || emoji_event || blacklist_event || (is_group && reaction_event)
-            || matches!(kind, "updated_message" | "deleted_message")) {
+            || matches!(kind, "updated_message" | "deleted_message" | "joined_guild" | "exited_guild" | "updated_guild_member")) {
             guild_id = read_json_str(data, "target_id");
         }
         if !guild_id.is_empty() {

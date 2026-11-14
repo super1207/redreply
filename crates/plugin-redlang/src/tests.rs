@@ -200,6 +200,64 @@ fn documented_native_platform_examples_parse() {
 }
 
 #[test]
+fn rich_messages_replies_and_kook_fields_use_positional_scripts() {
+    use crate::cqexfun::TEST_PLATFORM_CALL;
+    use serde_json::{json, Value};
+    use std::{cell::RefCell, rc::Rc};
+
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    rl.set_exmap("机器人平台", "telegram");
+    rl.set_exmap("机器人ID", "7");
+    rl.set_exmap("发送者ID", "42");
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let record = calls.clone();
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| {
+        *handler = Some(Box::new(move |_, action, args| {
+            let data = match args["method"].as_str() {
+                Some("getMyCommands") => json!([{"command":"help","description":"帮助","is_ephemeral":true}]),
+                _ if args["endpoint"] == "message/view" => json!({"id":"88","embeds":[{"type":"bili-video","title":"视频"}]}),
+                _ => json!({"message_id":"sent"}),
+            };
+            record.borrow_mut().push((action.to_owned(), args));
+            json!({"retcode":0,"data":data})
+        }));
+    });
+    let run = |rl: &mut crate::core::RedLang, script: &str| {
+        rl.parse(script).unwrap_or_else(|error| panic!("{script}: {error}"))
+    };
+    run(&mut rl, "【Telegram命令菜单@设置@【数组@【数组@help@帮助@真】】@所有群聊】");
+    assert_eq!(run(&mut rl, "【取元素@【Telegram命令菜单@查询详情@所有群聊】@0@2】").expect_text_value().unwrap(), "真");
+    run(&mut rl, "【输出流@【Telegram富文本@**文字**】@@@@@@【数组@@@@@@【数组@99@@文字@0】】】");
+    assert!(rl.parse("【输出流@回复@@@@@@【数组@@@@@@【数组@99@@😀@@@@@@@【数组@【数组@粗体@1@1】】】】】").is_err());
+    run(&mut rl, "【输出流@回复@@@@@@【数组@@@@@@【数组@99@@😀@@@@@@@【数组@【数组@粗体@0@2】】】】】");
+    run(&mut rl, "【Telegram富文本草稿@【Telegram富文本@【数组@【数组@标题@准备中@2】】@内容块】@101@真】");
+    run(&mut rl, "【编辑消息@sent@【Telegram富文本@<b>新内容</b>@HTML】@富文本】");
+    run(&mut rl, "【编辑消息@sent@新内容@文本@【数组@@【数组@真】】】");
+    rl.set_exmap("原始事件", &json!({"platform":"telegram","sub_type":"rich_message",
+        "telegram":{"rich_message":{"blocks":[{"type":"heading","text":[{"type":"bold","text":"标题"}]},{"type":"paragraph","text":"正文"}]}}}).to_string());
+    assert_eq!(run(&mut rl, "【取元素@【事件内容@富文本】@正文】").expect_text_value().unwrap(), "标题\n正文");
+
+    rl.set_exmap("机器人平台", "kook");
+    rl.set_exmap("原始事件", &json!({"platform":"kook","sub_type":"guild_member_online",
+        "kook":{"user_id":"42","guilds":["77"],"event_time":1234}}).to_string());
+    assert_eq!(run(&mut rl, "【取元素@【事件内容@服务器事件】@共同服务器ID列表@0】").expect_text_value().unwrap(), "77");
+    assert_eq!(run(&mut rl, "【取元素@【KOOK频道消息@详情@88】@链接预览@0@类型】").expect_text_value().unwrap(), "哔哩哔哩视频");
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| *handler = None);
+
+    let calls = calls.borrow();
+    assert_eq!(calls.len(), 8);
+    assert_eq!(calls[0].1["body"]["commands"][0]["is_ephemeral"], true);
+    let rich: Value = serde_json::from_str(calls[2].1["message"][0]["data"]["content"].as_str().unwrap()).unwrap();
+    assert_eq!(rich["body"]["markdown"], "**文字**");
+    assert_eq!(calls[2].1["send_options"]["reply_parameters"], json!({"message_id":99,"quote":"文字","quote_position":0}));
+    assert_eq!(calls[3].1["send_options"]["reply_parameters"]["quote_entities"], json!([{"type":"bold","offset":0,"length":2}]));
+    assert_eq!(calls[4].1["body"]["rich_message"]["blocks"][0], json!({"type":"heading","text":"准备中","size":2}));
+    assert_eq!(calls[5].1["body"]["rich_message"]["html"], "<b>新内容</b>");
+    assert_eq!(calls[6].1["body"]["link_preview_options"]["is_disabled"], true);
+}
+
+#[test]
 fn redlang_send_options_keep_targeting_and_platform_fields() {
     use crate::cqexfun::TEST_PLATFORM_CALL;
     use serde_json::json;

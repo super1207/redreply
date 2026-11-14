@@ -834,14 +834,14 @@ impl TeleTramConnect {
         }
         let message = &event[kind];
         let service = if kind.starts_with("edited_") {
-            [("location", "edited_location"), ("voice", "edited_voice"),
+            [("rich_message", "edited_rich_message"), ("location", "edited_location"), ("voice", "edited_voice"),
              ("video_note", "edited_video_note"), ("animation", "edited_animation")]
                 .into_iter().find_map(|(field, notice)| message[field].is_object().then_some(notice))?
         } else {
             ["suggested_post_approved", "suggested_post_approval_failed", "suggested_post_declined",
              "suggested_post_paid", "suggested_post_refunded", "suggested_post_info",
              "successful_payment", "refunded_payment", "venue", "location", "contact",
-             "voice", "video_note", "animation"].into_iter()
+             "voice", "video_note", "animation", "rich_message"].into_iter()
                 .find(|key| message[*key].is_object())?
         };
         let mut notice = self.notice_for_update(service, message, &event["update_id"]);
@@ -1108,7 +1108,7 @@ impl TeleTramConnect {
                 }
             } else if matches!(tp.as_str(),Some("sticker" | "media_group" | "telegram_checklist" | "telegram_invoice"
                 | "telegram_paid_media" | "telegram_location" | "telegram_venue" | "telegram_contact"
-                | "telegram_media")) {
+                | "telegram_media" | "telegram_rich")) {
                 let content = it["data"]["content"].as_str().ok_or("Telegram 媒体消息缺少内容")?;
                 let kind = match tp.as_str() {
                     Some("sticker") => "sticker",
@@ -1119,6 +1119,7 @@ impl TeleTramConnect {
                     Some("telegram_venue") => "telegram_venue",
                     Some("telegram_contact") => "telegram_contact",
                     Some("telegram_media") => "telegram_media",
+                    Some("telegram_rich") => "telegram_rich",
                     _ => "telegram_checklist",
                 };
                 to_send_data.push((kind, content.to_owned(), String::new()));
@@ -1470,6 +1471,13 @@ impl TeleTramConnect {
                     files = uploads;
                     method
                 }
+                "telegram_rich" => {
+                    let data: Value = serde_json::from_str(&message)?;
+                    native_api::object(&data["body"])?;
+                    payload["rich_message"] = data["body"].clone();
+                    files = data["files"].clone();
+                    "sendRichMessage"
+                }
                 "telegram_location" | "telegram_venue" | "telegram_contact" => {
                     let details: Value = serde_json::from_str(&message)?;
                     let (method,fields): (&str,&[&str]) = match kind {
@@ -1532,6 +1540,11 @@ impl TeleTramConnect {
                 _ => return Err(format!("Telegram 不支持的消息类型：{kind}").into()),
             };
             send_options::apply(options, &mut payload);
+            if index == 0 {
+                if let Some(reply) = options.get("reply_parameters") {
+                    payload["reply_parameters"] = reply.clone();
+                }
+            }
             let reply = self
                 .native_request(method, &payload, Some(&files), Duration::from_secs(60), &Value::Null)
                 .await?;

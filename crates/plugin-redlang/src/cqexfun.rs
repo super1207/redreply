@@ -1081,6 +1081,7 @@ pub fn init_cq_ex_fun_map() {
             let options = rl.get_param(params, 3)?;
             match options.as_ref() {
                 RedValue::Text(text) if text.is_empty() => serde_json::json!({}),
+                RedValue::Array(_) => send_options::edit_fields(&options, &kind)?,
                 RedValue::Text(text) if platform == "telegram" => {
                     let mode = match text.as_str() {
                         "Markdown" => "MarkdownV2",
@@ -1096,6 +1097,14 @@ pub fn init_cq_ex_fun_map() {
         };
         let mut upload = None;
         let (kind, field, value) = match (platform.as_str(), kind.as_str()) {
+            ("telegram", "富文本") => {
+                let data = crate::bot_commands::rich::decode(&content)?;
+                body = serde_json::json!({});
+                if data["files"].as_object().is_some_and(|files| !files.is_empty()) {
+                    upload = Some(data["files"].clone());
+                }
+                ("text", "rich_message", data["body"].clone())
+            }
             ("telegram", "" | "文本") => ("text", "text", content.expect_text_value()?.into()),
             ("telegram", "说明") => ("caption", "caption", content.expect_text_value()?.into()),
             ("telegram", "键盘") => {
@@ -1105,6 +1114,12 @@ pub fn init_cq_ex_fun_map() {
                 let (mut media, files) = native_args::media_item(&content, 0, true)?;
                 if let Some(mode) = body.as_object_mut().and_then(|obj| obj.remove("parse_mode")) {
                     media["parse_mode"] = mode;
+                }
+                if let Some(above) = body.as_object_mut().and_then(|obj| obj.remove("show_caption_above_media")) {
+                    if !matches!(media["type"].as_str(), Some("photo" | "animation" | "video")) {
+                        return Err("说明位置适用于图片、动画和视频".into());
+                    }
+                    media["show_caption_above_media"] = above;
                 }
                 if !files.is_empty() {
                     upload = Some(serde_json::Value::Object(files));
@@ -1168,7 +1183,9 @@ pub fn init_cq_ex_fun_map() {
                 if !explicit_id {
                     return Err(RedLang::make_err("编辑行内消息需填写平台行内消息ID"));
                 }
-                if request.get("files").is_some() {
+                if request.get("files").is_some() ||
+                    crate::bot_commands::rich::requires_upload(&request["body"]["rich_message"])
+                {
                     return Err(RedLang::make_err("Telegram 行内媒体编辑请使用已有文件ID或直链"));
                 }
                 if kind == "checklist" {
@@ -1237,8 +1254,8 @@ pub fn init_cq_ex_fun_map() {
                 apply_telegram_topic(&event, &rl.get_exmap("机器人ID"), &target, &mut request);
             }
             let extra = send_options::parse(rl, params, 7)?;
-            if extra.get("ephemeral_message_parameters").is_some() {
-                return Err("转发和复制不支持临时消息选项".into());
+            if extra.get("ephemeral_message_parameters").is_some() || extra.get("reply_parameters").is_some() {
+                return Err("转发和复制的发送选项不支持临时消息或高级引用".into());
             }
             request["send_options"] = extra;
         }

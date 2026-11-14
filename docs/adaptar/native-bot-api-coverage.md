@@ -43,6 +43,11 @@
 | KOOK | 服务器分页、成员认证和时间排序 | 部分 | 已接入 | 【KOOK服务器@列表】和【群成员@列表】。 |
 | KOOK | 频道临时发送与更新、消息标记与配额回复 | 部分 | 已接入 | 【输出流】、【发送私聊】和【编辑消息】接受位置参数。 |
 | KOOK | 私聊会话码、历史页码及消息结构 | 部分 | 已接入常用功能 | 【发送私聊】和【KOOK频道消息】支持会话码及相关查询位置。 |
+| Telegram | 富文本、富文本草稿及事件 | 未接入 | 已接入常用功能 | 【Telegram富文本】配合【输出流】和【编辑消息】，【Telegram富文本草稿】支持中止按钮。 |
+| Telegram | 临时命令 | 部分 | 已接入 | 【Telegram命令菜单】支持设置临时开关及查询详情。 |
+| Telegram | 高级引用 | 部分 | 已接入常用功能 | 发送支持片段、位置、跨会话、清单、投票、富文本引文及引用样式数组。事件提供中文引用字段。 |
+| KOOK | 消息链接预览 | 部分 | 已接入 | 【KOOK频道消息】归一化预览字段，【事件内容@链接预览】随事件提供。 |
+| KOOK | 服务器事件 | 部分 | 已接入 | 【事件内容@服务器事件】读取成员、资料、表情和封禁。 |
 
 下文每项标注基线状态。具体实现以本 PR 的位置参数说明为准。
 
@@ -98,13 +103,13 @@
 | `message/create` | 已接入 | 【输出流】支持普通消息、媒体、模板、临时目标、标记及配额回复 |
 | `message/delete` | 已接入 | 【撤回】 |
 | `message/delete-reaction` | 已接入 | 【表情回应】 |
-| `message/list` | 部分 | 【KOOK频道消息】支持公开接口的消息查询与常用字段，记录未规范化所有消息属性 |
+| `message/list` | 部分 | 【KOOK频道消息】支持公开接口的消息查询与常用字段，返回中文链接预览及常用消息属性 |
 | `message/pin` | 已接入 | 【置顶消息】 |
 | `message/reaction-list` | 已接入 | 【KOOK回应列表】 |
 | `message/send-pipemsg` | 未接入 | 缺直接填值的命令，本轮优先补齐 |
 | `message/unpin` | 已接入 | 【置顶消息】 |
 | `message/update` | 已接入 | 【编辑消息】支持文本、卡片、模板、临时目标、引用修改和配额回复 |
-| `message/view` | 部分 | 【KOOK频道消息】支持公开接口的消息查询与常用字段，记录未规范化所有消息属性 |
+| `message/view` | 部分 | 【KOOK频道消息】支持公开接口的消息查询与常用字段，返回中文链接预览及常用消息属性 |
 
 ### 频道用户
 
@@ -135,10 +140,10 @@
 | `direct-message/create` | 已接入 | 【输出流】和【发送私聊】支持普通消息、媒体、模板、私聊会话码、标记和配额回复 |
 | `direct-message/delete` | 已接入 | 【撤回】 |
 | `direct-message/delete-reaction` | 已接入 | 【表情回应】 |
-| `direct-message/list` | 部分 | 【KOOK频道消息】支持私聊会话码、页码、引用和常用媒体属性，链接预览待统一 |
+| `direct-message/list` | 部分 | 【KOOK频道消息】支持私聊会话码、页码、引用和常用媒体属性，链接预览已映射为中文字段 |
 | `direct-message/reaction-list` | 已接入 | 【KOOK回应列表】 |
 | `direct-message/update` | 已接入 | 【编辑消息】支持文本、卡片、模板、引用修改和配额回复 |
-| `direct-message/view` | 部分 | 【KOOK频道消息】支持公开接口的消息查询与常用字段，记录未规范化所有消息属性 |
+| `direct-message/view` | 部分 | 【KOOK频道消息】支持公开接口的消息查询与常用字段，返回中文链接预览及常用消息属性 |
 
 ### 网关
 
@@ -351,11 +356,11 @@
 
 | 官方事件 | 当前状态 | 脚本触发 |
 | --- | --- | --- |
-| `joined_guild` | 已接入 | `notice:kook:joined_guild` |
-| `exited_guild` | 已接入 | `notice:kook:exited_guild` |
-| `updated_guild_member` | 部分 | `notice:kook:updated_guild_member`，通过原生事件读取字段 |
-| `guild_member_online` | 部分 | `notice:kook:guild_member_online`，通过原生事件读取字段 |
-| `guild_member_offline` | 部分 | `notice:kook:guild_member_offline`，通过原生事件读取字段 |
+| `joined_guild` | 已接入 | `notice:kook:joined_guild`，【事件内容@服务器事件】 |
+| `exited_guild` | 已接入 | `notice:kook:exited_guild`，【事件内容@服务器事件】 |
+| `updated_guild_member` | 已接入 | `notice:kook:updated_guild_member`，【事件内容@服务器事件】 |
+| `guild_member_online` | 已接入 | `notice:kook:guild_member_online`，【事件内容@服务器事件】 |
+| `guild_member_offline` | 已接入 | `notice:kook:guild_member_offline`，【事件内容@服务器事件】 |
 
 ### 身份组
 
@@ -373,13 +378,13 @@
 
 | 官方事件 | 当前状态 | 脚本触发 |
 | --- | --- | --- |
-| `updated_guild` | 部分 | `notice:kook:updated_guild`，通过原生事件读取字段 |
-| `deleted_guild` | 部分 | `notice:kook:deleted_guild`，通过原生事件读取字段 |
-| `added_block_list` | 部分 | `notice:kook:added_block_list`，通过原生事件读取字段 |
-| `deleted_block_list` | 部分 | `notice:kook:deleted_block_list`，通过原生事件读取字段 |
-| `added_emoji` | 已接入 | `notice:kook:added_emoji` |
-| `removed_emoji` | 已接入 | `notice:kook:removed_emoji` |
-| `updated_emoji` | 已接入 | `notice:kook:updated_emoji` |
+| `updated_guild` | 已接入 | `notice:kook:updated_guild`，【事件内容@服务器事件】 |
+| `deleted_guild` | 已接入 | `notice:kook:deleted_guild`，【事件内容@服务器事件】 |
+| `added_block_list` | 已接入 | `notice:kook:added_block_list`，【事件内容@服务器事件】 |
+| `deleted_block_list` | 已接入 | `notice:kook:deleted_block_list`，【事件内容@服务器事件】 |
+| `added_emoji` | 已接入 | `notice:kook:added_emoji`，【事件内容@服务器事件】 |
+| `removed_emoji` | 已接入 | `notice:kook:removed_emoji`，【事件内容@服务器事件】 |
+| `updated_emoji` | 已接入 | `notice:kook:updated_emoji`，【事件内容@服务器事件】 |
 
 ### 用户
 
@@ -390,8 +395,8 @@
 | `joined_channel` | 已接入 | `notice:kook:joined_channel` |
 | `exited_channel` | 已接入 | `notice:kook:exited_channel` |
 | `user_updated` | 部分 | `notice:kook:user_updated`，通过原生事件读取字段 |
-| `self_joined_guild` | 部分 | `notice:kook:self_joined_guild`，通过原生事件读取字段 |
-| `self_exited_guild` | 部分 | `notice:kook:self_exited_guild`，通过原生事件读取字段 |
+| `self_joined_guild` | 已接入 | `notice:kook:self_joined_guild`，【事件内容@服务器事件】 |
+| `self_exited_guild` | 已接入 | `notice:kook:self_exited_guild`，【事件内容@服务器事件】 |
 | `message_btn_click` | 已接入 | `notice:kook:message_btn_click` |
 
 ## Telegram HTTP 方法
@@ -414,7 +419,7 @@
 | [`getMe`](https://core.telegram.org/bots/api#getme) | 配置／运行时 | 适配器登录时调用 |
 | [`logOut`](https://core.telegram.org/bots/api#logout) | 未接入 | 缺直接填值的命令 |
 | [`close`](https://core.telegram.org/bots/api#close) | 未接入 | 缺直接填值的命令 |
-| [`sendMessage`](https://core.telegram.org/bots/api#sendmessage) | 部分 | 【输出流】支持静默、内容保护、私聊效果、建议帖和临时消息。富文本、付费广播及高级引用等另列 |
+| [`sendMessage`](https://core.telegram.org/bots/api#sendmessage) | 部分 | 【输出流】支持静默、内容保护、私聊效果、建议帖、临时消息和高级引用。富文本另列，付费广播待接入 |
 | [`forwardMessage`](https://core.telegram.org/bots/api#forwardmessage) | 部分 | 【转发消息】支持常用转发、复制与话题，未覆盖所有附加选项 |
 | [`forwardMessages`](https://core.telegram.org/bots/api#forwardmessages) | 部分 | 【转发消息】支持常用转发、复制与话题，未覆盖所有附加选项 |
 | [`copyMessage`](https://core.telegram.org/bots/api#copymessage) | 部分 | 【转发消息】支持常用转发、复制与话题，未覆盖所有附加选项 |
@@ -430,7 +435,7 @@
 | [`sendWidget`](https://core.telegram.org/bots/api#sendwidget) | 未接入 | 缺直接填值的命令 |
 | [`sendSharedWidget`](https://core.telegram.org/bots/api#sendsharedwidget) | 未接入 | 缺直接填值的命令 |
 | [`sendPaidMedia`](https://core.telegram.org/bots/api#sendpaidmedia) | 未接入 | 缺直接填值的命令 |
-| [`sendMediaGroup`](https://core.telegram.org/bots/api#sendmediagroup) | 部分 | 【媒体组】配合【输出流】支持静默、内容保护和私聊效果，付费广播及高级引用待接入 |
+| [`sendMediaGroup`](https://core.telegram.org/bots/api#sendmediagroup) | 部分 | 【媒体组】配合【输出流】支持静默、内容保护、私聊效果和高级引用，付费广播待接入 |
 | [`sendLocation`](https://core.telegram.org/bots/api#sendlocation) | 未接入 | 缺直接填值的命令 |
 | [`sendVenue`](https://core.telegram.org/bots/api#sendvenue) | 未接入 | 缺直接填值的命令 |
 | [`sendContact`](https://core.telegram.org/bots/api#sendcontact) | 未接入 | 缺直接填值的命令 |
@@ -501,9 +506,9 @@
 | [`replaceManagedBotToken`](https://core.telegram.org/bots/api#replacemanagedbottoken) | 未接入 | 缺直接填值的命令 |
 | [`getManagedBotAccessSettings`](https://core.telegram.org/bots/api#getmanagedbotaccesssettings) | 未接入 | 缺直接填值的命令 |
 | [`setManagedBotAccessSettings`](https://core.telegram.org/bots/api#setmanagedbotaccesssettings) | 未接入 | 缺直接填值的命令 |
-| [`setMyCommands`](https://core.telegram.org/bots/api#setmycommands) | 已接入 | 【Telegram命令菜单】 |
+| [`setMyCommands`](https://core.telegram.org/bots/api#setmycommands) | 已接入 | 【Telegram命令菜单】支持临时开关 |
 | [`deleteMyCommands`](https://core.telegram.org/bots/api#deletemycommands) | 已接入 | 【Telegram命令菜单】 |
-| [`getMyCommands`](https://core.telegram.org/bots/api#getmycommands) | 已接入 | 【Telegram命令菜单】 |
+| [`getMyCommands`](https://core.telegram.org/bots/api#getmycommands) | 已接入 | 【Telegram命令菜单@查询详情】返回临时开关 |
 | [`setMyName`](https://core.telegram.org/bots/api#setmyname) | 已接入 | 【Telegram机器人资料】 |
 | [`getMyName`](https://core.telegram.org/bots/api#getmyname) | 已接入 | 【Telegram机器人资料】 |
 | [`setMyDescription`](https://core.telegram.org/bots/api#setmydescription) | 已接入 | 【Telegram机器人资料】 |
@@ -563,7 +568,7 @@
 | [`editSharedWidgetData`](https://core.telegram.org/bots/api#editsharedwidgetdata) | 未接入 | 缺直接填值的命令 |
 | [`editMessageReplyMarkup`](https://core.telegram.org/bots/api#editmessagereplymarkup) | 部分 | 【编辑消息】支持常用内容及行内按钮，缺部分高级参数 |
 | [`stopPoll`](https://core.telegram.org/bots/api#stoppoll) | 部分 | 【Telegram结束投票】关闭投票，未提供替换键盘选项 |
-| [`editEphemeralMessageText`](https://core.telegram.org/bots/api#editephemeralmessagetext) | 部分 | 【编辑消息】支持临时文本，富文本、实体和预览选项待接入 |
+| [`editEphemeralMessageText`](https://core.telegram.org/bots/api#editephemeralmessagetext) | 部分 | 【编辑消息】支持临时文本、富文本及预览选项，实体数组待接入 |
 | [`editEphemeralMessageMedia`](https://core.telegram.org/bots/api#editephemeralmessagemedia) | 已接入 | 【编辑消息】的临时媒体模式 |
 | [`editEphemeralMessageCaption`](https://core.telegram.org/bots/api#editephemeralmessagecaption) | 部分 | 【编辑消息】的临时说明模式，实体与说明位置待接入 |
 | [`editEphemeralMessageReplyMarkup`](https://core.telegram.org/bots/api#editephemeralmessagereplymarkup) | 已接入 | 【编辑消息】的临时键盘模式 |
@@ -600,8 +605,8 @@
 
 | 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
-| [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) | 未接入 | 缺直接填值的命令 |
-| [`sendRichMessageDraft`](https://core.telegram.org/bots/api#sendrichmessagedraft) | 未接入 | 缺直接填值的命令 |
+| [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) | 部分 | 【Telegram富文本】支持 Markdown、HTML、常用内容块及资源表，付费广播和部分独立内容块入口待接入 |
+| [`sendRichMessageDraft`](https://core.telegram.org/bots/api#sendrichmessagedraft) | 已接入 | 【Telegram富文本草稿】支持重用草稿 ID、私聊话题、停止与保留 |
 
 ### 行内模式
 
@@ -670,7 +675,7 @@
 | `removed_chat_boost` | 部分 | `notice:telegram:removed_chat_boost`，通过原生事件访问字段 |
 | `managed_bot` | 部分 | `notice:telegram:managed_bot`，通过原生事件访问字段 |
 | `subscription` | 部分 | `notice:telegram:subscription`，通过原生事件访问字段 |
-| `stopped_message_generation` | 部分 | `notice:telegram:stopped_message_generation`，通过原生事件访问字段 |
+| `stopped_message_generation` | 已接入 | `notice:telegram:stopped_message_generation` 与草稿中文选择项 |
 
 [官方 Update 对象](https://core.telegram.org/bots/api#update)
 
@@ -684,7 +689,7 @@
 | `forward_origin` | 已接入 | 转发通知及【事件内容@转发来源类型】 |
 | `media_group_id` | 已接入 | 媒体组通知 |
 | `suggested_post_info` | 已接入 | 专用通知和【事件内容@建议帖】 |
-| `rich_message` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
+| `rich_message` | 部分 | 独立接收及编辑通知，【事件内容@富文本】可读正文和方向 |
 | `animation` | 已接入 | 动画与动画编辑通知，【事件内容@动画】 |
 | `audio` | 部分 | 原生事件可读媒体字段，媒体组时另有媒体通知 |
 | `document` | 已接入 | 【事件内容@文件ID】【事件内容@文件名】 |
@@ -770,5 +775,15 @@
 ## 本轮之后的缺口
 
 - KOOK 上线、下线接口适用于 Webhook，当前适配器使用 WebSocket。继续核对清单里标记为部分接入的频道、服务器与消息参数。
-- Telegram 待补临时命令开关、富文本临时编辑、复杂引用与实体、付费广播，以及组件、贴纸集细项、游戏、受管机器人与 Passport。
+- Telegram 待补剩余独立富文本内容块及行内结果、事件的完整富文本结构、付费广播，以及组件、贴纸集细项、游戏、受管机器人与 Passport。
+
+## RedLang 参数检查
+
+| 入口 | 检查结果 |
+| --- | --- |
+| 菜单、键盘、卡片、投票、邀请链接、查询和发送选项 | 常用流程已有位置参数和示例。检查脚本语法的测试会拒绝在用法代码块里使用通用 API 命令或【接口值】。 |
+| 【编辑消息】、【转发消息】 | 常用流程使用位置参数。原有英文键对象或 JSON 兼容分支仍在，包括编辑高级媒体与上传字段。编辑文本的预览与媒体说明位置已有数组写法。 |
+| 【Telegram调用】、【KOOK调用】、【OB调用】、【接口值】 | 底层接口参考仍包含平台方法名、字段名、类型及上传字段，适用于直接调用平台 API。 |
+| 【Telegram发票】、【Telegram发票链接】 | 服务商自定义资料为可选对象，键名由支付服务商定义。 |
+| 【KOOK模板管理】和【KOOK模板消息】 | 推荐依次填数组值。已有自定义命名变量的模板仍可按模板定义传对象。 |
 - 两端分别验证新命令与真实机器人权限、事件订阅和实际返回值。

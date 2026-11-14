@@ -16,6 +16,24 @@ pub(super) fn validate(
         };
     };
     let effect = options.contains_key("message_effect_id");
+    if let Some(reply) = options.get("reply_parameters") {
+        let ephemeral = options.get("ephemeral_message_parameters");
+        let cross_chat = reply.get("chat_id").is_some();
+        let fallback = reply["allow_sending_without_reply"] == true;
+        if !reply.is_object()
+            || reply.get("ephemeral_message_id").is_some() && ephemeral.is_none()
+            || cross_chat
+                && (topic.direct.is_some()
+                    || !business_id.is_empty()
+                    || ephemeral.is_some()
+                    || fallback)
+            || fallback && ephemeral.is_some()
+            || ephemeral.is_some_and(|value| value.get("receiver_user_id").is_none())
+            || !business_id.is_empty() && reply["allow_sending_without_reply"] == false
+        {
+            return Err("此会话或临时发送方式不支持所选的引用目标或继续发送选项".into());
+        }
+    }
     if effect && (!private || parts.iter().any(|part| part.0 == "telegram_paid_media")) {
         return Err("消息效果只适用于支持该选项的私聊消息".into());
     }
@@ -131,6 +149,19 @@ mod tests {
         assert!(validate(&options, &parts, &direct, false, "", None).is_ok());
         assert!(validate(&options, &parts, &Topic::default(), false, "", None).is_err());
         assert!(validate(&options, &album, &direct, false, "", None).is_err());
+    }
+
+    #[test]
+    fn reply_options_follow_chat_and_ephemeral_restrictions() {
+        let parts = [("text", "reply".to_owned(), String::new())];
+        let topic = Topic::default();
+        let cross_chat = json!({"reply_parameters":{"chat_id":-200,"message_id":8}});
+        assert!(validate(&cross_chat, &parts, &topic, false, "", None).is_ok());
+        assert!(validate(&cross_chat, &parts, &topic, true, "business", None).is_err());
+        let ephemeral = json!({"reply_parameters":{"ephemeral_message_id":42}});
+        assert!(validate(&ephemeral, &parts, &topic, false, "", None).is_err());
+        let directed = json!({"reply_parameters":{"ephemeral_message_id":42},"ephemeral_message_parameters":{"receiver_user_id":21}});
+        assert!(validate(&directed, &parts, &topic, false, "", None).is_ok());
     }
 }
 
