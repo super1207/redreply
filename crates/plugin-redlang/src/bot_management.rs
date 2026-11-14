@@ -71,6 +71,46 @@ fn insert_text(body: &mut Value, field: &str, value: &str) {
     }
 }
 
+pub(crate) fn kook_message_options(rl: &RedLang, input: &RedValue, edit: bool) -> Result<Value> {
+    if matches!(input, RedValue::Text(text) if text.is_empty()) {
+        return Ok(json!({}));
+    }
+    let options = array(input)?;
+    let fields = if edit {
+        ["temp_target_id", "quote", "reply_msg_id", ""]
+    } else {
+        ["temp_target_id", "nonce", "reply_msg_id", "chat_code"]
+    };
+    if options.len() > if edit { 3 } else { 4 } {
+        return Err("KOOK 消息选项参数过多".into());
+    }
+    let mut body = json!({});
+    for (index, field) in fields.into_iter().enumerate().take(options.len()) {
+        let value = row_text(options, index)?;
+        match (field, value.as_str()) {
+            ("quote", "清空") => body[field] = "".into(),
+            ("temp_target_id", "当前") => body[field] = context(rl, "", "发送者ID")?.into(),
+            ("quote" | "reply_msg_id", "当前") => {
+                let event: Value = serde_json::from_str(&rl.get_exmap("原始事件")).unwrap_or_default();
+                let id = event["kook_message_id"].as_str().or_else(|| event["kook"]["msg_id"].as_str())
+                    .filter(|id| !id.is_empty()).ok_or("当前事件缺少 KOOK 平台消息ID")?;
+                body[field] = id.into();
+            }
+            _ => insert_text(&mut body, field, &value),
+        }
+    }
+    Ok(body)
+}
+
+fn voice_quality(value: &str) -> Result<&'static str> {
+    match value {
+        "流畅" | "1" => Ok("1"),
+        "正常" | "2" => Ok("2"),
+        "高质量" | "3" => Ok("3"),
+        _ => Err("语音音质请填流畅、正常或高质量".into()),
+    }
+}
+
 fn bounded(value: &str, min: i64, max: i64, label: &str) -> Result<i64> {
     value
         .parse::<i64>()
@@ -203,8 +243,17 @@ fn kook_channel(data: &Value) -> Value {
             _ => "其他",
         }
     };
+    let quality = match data["voice_quality"].as_str() {
+        Some("1") => "流畅",
+        Some("2") => "正常",
+        Some("3") => "高质量",
+        _ => "",
+    };
     json!({"群ID":data["id"],"群名":data["name"],"简介":data["topic"],"类型":kind,
-        "服务器ID":data["guild_id"],"分组ID":data["parent_id"],"慢速秒数":data["slow_mode"]})
+        "服务器ID":data["guild_id"],"分组ID":data["parent_id"],"慢速秒数":data["slow_mode"],
+        "创建者ID":data["user_id"],"排序":data["level"],"人数上限":data["limit_amount"],
+        "已设密码":data["has_password"],"权限同步":data["permission_sync"],
+        "语音音质":quality,"语音服务器":data["server_url"],"子频道ID列表":data["children"]})
 }
 
 fn members(rl: &mut RedLang, params: &[Ast]) -> RedCommandResult {
@@ -253,6 +302,7 @@ fn members(rl: &mut RedLang, params: &[Ast]) -> RedCommandResult {
                 body["filter_user_id"] = context(rl, &first, "发送者ID")?.into();
             } else if operation == "列表" {
                 let [search, role, size] = text_params::<3>(rl, params, 3)?;
+                let [verified, activity, joined, channel] = text_params::<4>(rl, params, 6)?;
                 body["page"] = if second.is_empty() {
                     1
                 } else {
@@ -266,6 +316,23 @@ fn members(rl: &mut RedLang, params: &[Ast]) -> RedCommandResult {
                 if !size.is_empty() {
                     body["page_size"] = bounded(&size, 1, 50, "每页数量")?.into();
                 }
+                if !verified.is_empty() {
+                    body["mobile_verified"] = match verified.as_str() {
+                        "已认证" | "真" => 1,
+                        "未认证" | "假" => 0,
+                        _ => return Err("手机认证请填已认证或未认证".into()),
+                    }.into();
+                }
+                for (field, value) in [("active_time", activity), ("joined_at", joined)] {
+                    if !value.is_empty() {
+                        body[field] = match value.as_str() {
+                            "升序" => 0,
+                            "降序" => 1,
+                            _ => return Err("时间排序请填升序或降序".into()),
+                        }.into();
+                    }
+                }
+                insert_text(&mut body, "channel_id", &channel);
             } else {
                 body["page_size"] = 1.into();
             }
@@ -757,6 +824,9 @@ fn register_admin() {
                 .unwrap_or_else(|| target.clone());
             apply_telegram_topic(&event, &rl.get_exmap("机器人ID"), &target_id, &mut body);
         }
+        let options = super::send_options::parse(rl, params, 7)?;
+        let private = body["chat_id"].as_i64().is_some_and(|id| id > 0);
+        super::send_options::simple_options(&options, &mut body, private, true)?;
         let data = if matches!(file.as_ref(), RedValue::Bin(_)) {
             upload_api(
                 rl,
@@ -983,7 +1053,9 @@ fn register_kook() {
         let [operation, target] = text_params::<2>(rl, params, 0)?;
         let record = |row: &Value| {
             json!({"服务器ID":row["id"],"名称":row["name"],"简介":row["topic"],
-            "所有者ID":row["user_id"],"图标":row["icon"],"默认频道ID":row["default_channel_id"],"欢迎频道ID":row["welcome_channel_id"]})
+            "所有者ID":row["user_id"],"图标":row["icon"],"默认频道ID":row["default_channel_id"],"欢迎频道ID":row["welcome_channel_id"],
+            "通知类型":row["notify_type"],"地区":row["region"],"公开":row["enable_open"],"公开ID":row["open_id"],
+            "助力数":row["boost_num"],"等级":row["level"]})
         };
         match operation.as_str() {
             "徽章" => activity::badge(rl, params, &target),
@@ -1021,7 +1093,17 @@ fn register_kook() {
                     "guild/view",
                     json!({"guild_id":guild(rl,&target)?}),
                 )?;
-                output(&record(&data["data"]))
+                let row = &data["data"];
+                let mut result = record(row);
+                let roles: Vec<_> = row["roles"].as_array().into_iter().flatten().map(|role| {
+                    json!({"身份组ID":role["role_id"],"名称":role["name"],"颜色":role["color"],
+                           "排序":role["position"],"独立显示":role["hoist"],"可提及":role["mentionable"],
+                           "权限":kook_right_names(&role["permissions"])})
+                }).collect();
+                let channels: Vec<_> = row["channels"].as_array().into_iter().flatten().map(kook_channel).collect();
+                result["身份组列表"] = roles.into();
+                result["频道列表"] = channels.into();
+                output(&result)
             }
             "列表" => {
                 let page = if target.is_empty() {
@@ -1029,7 +1111,12 @@ fn register_kook() {
                 } else {
                     positive_id(&target)?
                 };
-                let data = kook(rl, "GET", "guild/list", json!({"page":page}))?;
+                let size = rl.get_param_text(params, 2)?;
+                let mut body = json!({"page":page});
+                if !size.is_empty() {
+                    body["page_size"] = bounded(&size, 1, 50, "每页数量")?.into();
+                }
+                let data = kook(rl, "GET", "guild/list", body)?;
                 mapped_list(&data["data"]["items"], record)
             }
             _ => Err("服务器查询请填列表、详情、徽章或助力历史".into()),
@@ -1051,10 +1138,11 @@ fn register_kook() {
         let [op, first, second, third, fourth, fifth] = text_params::<6>(rl, params, 0)?;
         match op.as_str() {
             "创建" => {
+                let quality = rl.get_param_text(params, 6)?;
                 let mut body =
                     json!({"guild_id":guild(rl,&third)?,"name":required(&first,"频道名")?});
                 match second.as_str() {
-                    "分组" if fourth.is_empty() && fifth.is_empty() => {
+                    "分组" if fourth.is_empty() && fifth.is_empty() && quality.is_empty() => {
                         body["is_category"] = 1.into()
                     }
                     "" | "文字" | "语音" => {
@@ -1066,6 +1154,12 @@ fn register_kook() {
                             }
                             body["limit_amount"] = bounded(&fifth, 0, 99, "人数上限")?.into();
                         }
+                        if !quality.is_empty() {
+                            if second != "语音" {
+                                return Err("音质只适用于语音频道".into());
+                            }
+                            body["voice_quality"] = voice_quality(&quality)?.into();
+                        }
                     }
                     _ => return Err("频道类型请填文字、语音或分组，分组不填上级分组和人数".into()),
                 }
@@ -1073,6 +1167,7 @@ fn register_kook() {
                 scalar_text(&data["data"]["id"])
             }
             "编辑" => {
+                let [level, capacity, quality, password] = text_params::<4>(rl, params, 6)?;
                 let channel = context(rl, &first, "群ID")?;
                 let mut body = json!({"channel_id":channel});
                 insert_text(&mut body, "name", &second);
@@ -1093,7 +1188,21 @@ fn register_kook() {
                     body["slow_mode"] = (seconds * 1000).into();
                 }
                 insert_text(&mut body, "parent_id", &fifth);
-                if second.is_empty() && third.is_empty() && fourth.is_empty() && fifth.is_empty() {
+                if !level.is_empty() {
+                    body["level"] = level.parse::<i64>()?.into();
+                }
+                if !capacity.is_empty() {
+                    body["limit_amount"] = bounded(&capacity, 0, 99, "人数上限")?.into();
+                }
+                if !quality.is_empty() {
+                    body["voice_quality"] = voice_quality(&quality)?.into();
+                }
+                if password == "清空" {
+                    body["password"] = "".into();
+                } else {
+                    insert_text(&mut body, "password", &password);
+                }
+                if body.as_object().is_some_and(|body| body.len() == 1) {
                     return Err("请填写要修改的频道资料".into());
                 }
                 kook(rl, "POST", "channel/update", body)?;
@@ -1122,6 +1231,9 @@ fn register_kook() {
                 }
                 .into();
                 insert_text(&mut body, "parent_id", &fourth);
+                if !fifth.is_empty() {
+                    body["page_size"] = bounded(&fifth, 1, 50, "每页数量")?.into();
+                }
                 let data = kook(rl, "GET", "channel/list", body)?;
                 mapped_list(&data["data"]["items"], kook_channel)
             }
@@ -1172,6 +1284,7 @@ fn register_kook() {
     });
     add_fun(vec!["KOOK频道消息"], |rl, params| {
         let [op, first, second, third, scope] = text_params::<5>(rl, params, 0)?;
+        let [code_override, page] = text_params::<2>(rl, params, 5)?;
         let private = match scope.as_str() {
             "" | "频道" => false,
             "私聊" => true,
@@ -1180,8 +1293,24 @@ fn register_kook() {
         let record = |data: &Value| {
             let author = data.get("author_id").unwrap_or(&data["author"]["id"]);
             let timestamp = data.get("create_at").unwrap_or(&data["msg_timestamp"]);
+            let kind = match data["type"].as_i64() {
+                Some(1) => "文本", Some(2) => "图片", Some(3) => "视频", Some(4) => "文件",
+                Some(8) => "音频", Some(9) => "富文本", Some(10) => "卡片", _ => "",
+            };
+            let quote = &data["quote"];
+            let reactions: Vec<_> = data["reactions"].as_array().into_iter().flatten().map(|reaction|
+                json!({"表情ID":reaction["emoji"]["id"],"表情名":reaction["emoji"]["name"],
+                    "数量":reaction["count"],"自己已回应":reaction["me"]})).collect();
             json!({"消息ID":data["id"],"正文":data["content"],"发送者ID":author,
-                "发送时间":timestamp,"附件链接":data["attachments"]["url"],"文件名":data["attachments"]["name"]})
+                "发送时间":timestamp,"附件链接":data["attachments"]["url"],"文件名":data["attachments"]["name"],
+                "消息类型":kind,"修改时间":data["updated_at"],"附件大小":data["attachments"]["size"],
+                "附件类型":data["attachments"]["type"],"附件时长":data["attachments"]["duration"],
+                "附件宽度":data["attachments"]["width"],"附件高度":data["attachments"]["height"],
+                "已读":data["read_status"],"已置顶":data["is_pinned"],"图片文件名":data["image_name"],
+                "提及用户ID列表":data["mention"],"提及身份组ID列表":data["mention_roles"],
+                "提及所有人":data["mention_all"],"提及在线成员":data["mention_here"],"回应":reactions,
+                "引用消息ID":quote["id"],"引用正文":quote["content"],"引用发送者ID":quote["author"]["id"],
+                "消息图标":data["msg_icon"]})
         };
         if op == "详情" {
             let mut body = json!({"msg_id":required(&first,"平台消息ID")?});
@@ -1201,10 +1330,22 @@ fn register_kook() {
             let data = kook(rl, "GET", path, body)?;
             return output(&record(&data["data"]));
         }
-        let mut body =
-            json!({"target_id":context(rl,&second,if private { "发送者ID" } else { "群ID" })?});
+        let mut body = if !code_override.is_empty() {
+            if !private || !second.is_empty() {
+                return Err("会话码只用于私聊消息列表，使用时留空目标用户ID".into());
+            }
+            json!({"chat_code":code_override})
+        } else {
+            json!({"target_id":context(rl,&second,if private { "发送者ID" } else { "群ID" })?})
+        };
         if !first.is_empty() {
             body["page_size"] = bounded(&first, 1, 50, "消息条数")?.into();
+        }
+        if !page.is_empty() {
+            if !private {
+                return Err("页码仅适用于 KOOK 私聊历史，频道历史使用参考消息ID".into());
+            }
+            body["page"] = positive_id(&page)?.into();
         }
         match op.as_str() {
             "" | "最新" => (),
@@ -1375,7 +1516,12 @@ pub(super) fn register() {
             }
             "kook" => {
                 let target = context(rl, &target, "群ID")?;
-                let data = kook(rl, "GET", "channel/view", json!({"target_id":target}))?;
+                let include_children = rl.get_param_text(params, 1)?;
+                let mut body = json!({"target_id":target});
+                if !include_children.is_empty() {
+                    body["need_children"] = boolean(&include_children, false)?.into();
+                }
+                let data = kook(rl, "GET", "channel/view", body)?;
                 output(&kook_channel(&data["data"]))
             }
             _ => Err("群信息需要 KOOK 或 Telegram 机器人来源".into()),

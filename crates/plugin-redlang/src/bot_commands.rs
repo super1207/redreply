@@ -12,6 +12,8 @@ use crate::exfun::json_value_to_red;
 pub(super) mod management;
 #[path = "bot_telegram_media.rs"]
 pub(super) mod telegram_media;
+#[path = "bot_send_options.rs"]
+pub(super) mod send_options;
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -596,6 +598,9 @@ pub(super) fn event_field(event: &Value, field: &str) -> RedCommandResult {
         "语音便笺" => telegram_media::event_fields(business, "voice"),
         "视频便笺" => telegram_media::event_fields(business, "video_note"),
         "动画" => telegram_media::event_fields(business, "animation"),
+        "建议帖" => send_options::suggestion_event(business, event["sub_type"].as_str().unwrap_or_default()),
+        "临时消息ID" => business["ephemeral_message_id"].clone(),
+        "临时接收者ID" => business["receiver_user"]["id"].clone(),
         "私聊会话码" => management::kook_chat_code(event).into(),
         "黑名单变动"
             if matches!(
@@ -802,6 +807,8 @@ pub(super) fn register() {
                 return Err("Telegram 投票不适用于频道私信".into());
             }
         }
+        let options = send_options::parse(rl, params, 7)?;
+        send_options::simple_options(&options, &mut body, rl.get_exmap("群ID").is_empty(), false)?;
         let response = telegram(rl, "sendPoll", body)?;
         Ok(Some(rv_text(
             response["redreply_message_id"]

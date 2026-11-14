@@ -200,6 +200,85 @@ fn documented_native_platform_examples_parse() {
 }
 
 #[test]
+fn redlang_send_options_keep_targeting_and_platform_fields() {
+    use crate::cqexfun::TEST_PLATFORM_CALL;
+    use serde_json::json;
+    use std::{cell::RefCell, rc::Rc};
+
+    init_redlang_test_funs();
+    let mut rl = crate::core::RedLang::new();
+    rl.set_exmap("群ID", "-100123");
+    rl.set_exmap("发送者ID", "49");
+    rl.set_exmap("机器人ID", "7");
+    let calls = Rc::new(RefCell::new(Vec::new()));
+    let record = calls.clone();
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| {
+        *handler = Some(Box::new(move |platform, action, args| {
+            let data = match args["endpoint"].as_str() {
+                Some("channel/create") => json!({"id":"123"}),
+                Some("guild/user-list" | "direct-message/list") => json!({"items":[]}),
+                _ => json!({"message_id":"sent"}),
+            };
+            record.borrow_mut().push((platform.to_owned(), action.to_owned(), args));
+            json!({"retcode":0,"data":data})
+        }));
+    });
+    let run = |rl: &mut crate::core::RedLang, script: &str| {
+        rl.parse(script).unwrap_or_else(|error| panic!("{script}: {error}"))
+    };
+    rl.set_exmap("机器人平台", "telegram");
+    run(&mut rl, "【输出流@更新@@@@@@【数组@真@真】】");
+    run(&mut rl, "【输出流@建议@@456@频道私信@@@【数组@@@@【数组@星币@25】】】");
+    run(&mut rl, "【输出流@限当前用户@@@@@@【数组@@@@@【数组@49】】】");
+    assert!(rl.parse("【输出流@建议@@456@频道私信@@@【数组@@@@【数组@星币@1】】】").is_err());
+    rl.set_exmap("原始事件", &json!({"self_id":"7","chat_id":"-100123","sub_type":"callback_query",
+        "telegram":{"id":"token","from":{"id":49}}}).to_string());
+    run(&mut rl, "【输出流@回调@@@@@@【数组@@@@@【数组@@当前@真】】】");
+    rl.set_exmap("原始事件", &json!({"self_id":"7","chat_id":"-100123","sub_type":"ephemeral_message",
+        "telegram":{"chat":{"id":-100123},"ephemeral_message_id":91,"receiver_user":{"id":49},"from":{"id":49}}}).to_string());
+    run(&mut rl, "【输出流@普通回复不会公开发送】");
+    run(&mut rl, "【输出流@临时回复@@@@@@【数组@@@@@【数组】】】");
+    run(&mut rl, "【编辑消息@@新消息@@@@临时】");
+    run(&mut rl, "【撤回@@临时】");
+    rl.set_exmap("原始事件", &json!({"sub_type":"suggested_post_info",
+        "telegram":{"chat":{"id":-100123},"message_id":21,"suggested_post_info":{"state":"pending"}}}).to_string());
+    assert_eq!(run(&mut rl, "【取元素@【事件内容@建议帖】@状态】").expect_text_value().unwrap(), "待审核");
+    run(&mut rl, "【同意】");
+    run(&mut rl, "【拒绝@请重试】");
+
+    rl.set_exmap("机器人平台", "kook");
+    rl.set_exmap("群组ID", "77");
+    rl.set_exmap("原始事件", &json!({"kook_message_id":"native-123"}).to_string());
+    run(&mut rl, "【输出流@限当前用户@【数组@当前@任务标记@当前】】");
+    run(&mut rl, "【发送私聊@回执@@【数组@@回执@@会话码】】");
+    run(&mut rl, "【编辑消息@old@新内容@文本@【数组@当前@清空@当前】】");
+    run(&mut rl, "【KOOK频道@创建@活动语音@语音@@@30@高质量】");
+    run(&mut rl, "【KOOK频道@编辑@频道ID@@@@@20@40@流畅@清空】");
+    run(&mut rl, "【群成员@列表@@1@@@30@已认证@降序@升序@123】");
+    run(&mut rl, "【KOOK频道消息@最新@10@@@私聊@会话码@2】");
+    TEST_PLATFORM_CALL.with_borrow_mut(|handler| *handler = None);
+    let calls = calls.borrow();
+    assert_eq!(calls.len(), 16);
+    assert_eq!(calls[0].2["send_options"], json!({"disable_notification":true,"protect_content":true}));
+    assert_eq!(calls[1].2["direct_messages_topic_id"], 456);
+    assert_eq!(calls[1].2["send_options"]["suggested_post_parameters"]["price"], json!({"currency":"XTR","amount":25}));
+    assert_eq!(calls[2].2["send_options"]["ephemeral_message_parameters"], json!({"receiver_user_id":49}));
+    assert_eq!(calls[3].2["send_options"]["ephemeral_message_parameters"], json!({"callback_query_id":"token","replace_callback_query_message":true}));
+    assert_eq!(calls[4].2["send_options"]["ephemeral_reply_id"], 91);
+    assert_eq!(calls[5].2["method"], "editEphemeralMessageText");
+    assert_eq!(calls[6].2["method"], "deleteEphemeralMessage");
+    assert_eq!(calls[7].2["method"], "approveSuggestedPost");
+    assert_eq!(calls[8].2["body"]["comment"], "请重试");
+    assert_eq!(calls[9].2["send_options"], json!({"temp_target_id":"49","nonce":"任务标记","reply_msg_id":"native-123"}));
+    assert_eq!(calls[10].2["send_options"]["chat_code"], "会话码");
+    assert_eq!(calls[11].2["body"], json!({"content":"新内容","temp_target_id":"49","quote":"","reply_msg_id":"native-123"}));
+    assert_eq!(calls[12].2["body"], json!({"guild_id":"77","name":"活动语音","type":2,"limit_amount":30,"voice_quality":"3"}));
+    assert_eq!(calls[13].2["body"], json!({"channel_id":"频道ID","level":20,"limit_amount":40,"voice_quality":"1","password":""}));
+    assert_eq!(calls[14].2["body"], json!({"guild_id":"77","page":1,"page_size":30,"mobile_verified":1,"active_time":1,"joined_at":0,"channel_id":"123"}));
+    assert_eq!(calls[15].2["body"], json!({"chat_code":"会话码","page_size":10,"page":2}));
+}
+
+#[test]
 fn kook_intimacy_badge_and_activity_use_positional_values() {
     use crate::cqexfun::TEST_PLATFORM_CALL;
     use serde_json::json;

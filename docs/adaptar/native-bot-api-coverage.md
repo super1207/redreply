@@ -26,15 +26,23 @@
 | Telegram | 星币余额、流水、退款、取消或恢复续订 | 未接入 | 已接入 | 【Telegram星币】支持四项方法。 |
 | Telegram | 发送付费媒体 | 未接入 | 部分 | 【输出流】接收【Telegram付费媒体】，支持常见图片、视频、说明与订单识别值。 |
 | Telegram | 运费、预结算、支付成功、已退款、购买付费媒体事件 | 部分／未接入 | 已接入 | 【事件内容@支付信息】读取中文支付字段，支付成功与退款另有独立事件。 |
-| Telegram | 位置、场所、联系人及其事件 | 部分／未接入 | 已接入常用功能 | 通过【输出流】发送。位置支持【编辑消息】更新和停止。对应事件提供中文字段。临时发送等高级公共选项仍待接入。 |
+| Telegram | 位置、场所、联系人及其事件 | 部分／未接入 | 已接入常用功能 | 通过【输出流】发送。位置支持【编辑消息】更新和停止。对应事件提供中文字段。临时发送支持静态位置、场所和联系人。 |
 | KOOK | 查询和更新亲密度 | 未接入 | 已接入 | 【KOOK亲密度】支持分数、文字和形象。 |
 | KOOK | 服务器徽章 | 未接入 | 已接入 | 【KOOK服务器@徽章】提供三种样式和图片字节集。 |
 | KOOK | 游戏列表、创建、更新、删除 | 未接入 | 已接入 | 【KOOK游戏】支持列表范围及分页。 |
 | KOOK | 游戏和音乐动态 | 未接入 | 已接入 | 【KOOK动态】可分别开始和停止，官方公开接口提供写入操作。 |
-| Telegram | 发送语音便笺 | 未接入 | 部分 | 【语音】的便笺模式。高级公共发送选项和实体数组仍待接入。 |
-| Telegram | 发送视频便笺 | 未接入 | 部分 | 【视频】的便笺模式。高级公共发送选项仍待接入。 |
-| Telegram | 发送和编辑动画 | 未接入／部分 | 部分 | 【动画】、【编辑消息】。高级公共发送选项和实体数组仍待接入。 |
+| Telegram | 发送语音便笺 | 未接入 | 部分 | 【语音】的便笺模式支持本轮公共发送选项。实体数组和付费广播待接入。 |
+| Telegram | 发送视频便笺 | 未接入 | 部分 | 【视频】的便笺模式支持本轮公共发送选项，付费广播待接入。 |
+| Telegram | 发送和编辑动画 | 未接入／部分 | 部分 | 【动画】、【编辑消息】。发送支持本轮公共选项，实体数组和付费广播待接入。 |
 | Telegram | 语音便笺、视频便笺、动画的新消息和编辑事件 | 部分 | 已接入 | 独立通知及【事件内容】中文选择项。 |
+| Telegram | 静默发送和内容保护 | 部分 | 已接入 | 【输出流】、【发送私聊】、【Telegram文件】、【Telegram投票】、【转发消息】的发送选项。 |
+| Telegram | 消息效果 | 未接入 | 已接入 | 发送选项的第三项填写效果 ID，按公开方法限制为私聊。 |
+| Telegram | 发送、审核建议帖和对应事件 | 未接入 | 已接入 | 发送选项的第四项用于频道私信。【同意】、【拒绝】和【事件内容@建议帖】沿用同类命令。 |
+| Telegram | 临时消息的发送、编辑、撤回和事件 | 未接入 | 已接入常用功能 | 【输出流】定向发送，【编辑消息】和【撤回】复用临时模式，提供独立事件。富文本和临时命令开关另列。 |
+| KOOK | 频道音质、密码、容量、排序、分页及子频道 | 部分 | 已接入 | 【KOOK频道】和【群信息】接受位置参数。 |
+| KOOK | 服务器分页、成员认证和时间排序 | 部分 | 已接入 | 【KOOK服务器@列表】和【群成员@列表】。 |
+| KOOK | 频道临时发送与更新、消息标记与配额回复 | 部分 | 已接入 | 【输出流】、【发送私聊】和【编辑消息】接受位置参数。 |
+| KOOK | 私聊会话码、历史页码及消息结构 | 部分 | 已接入常用功能 | 【发送私聊】和【KOOK频道消息】支持会话码及相关查询位置。 |
 
 下文每项标注基线状态。具体实现以本 PR 的位置参数说明为准。
 
@@ -46,7 +54,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/guild)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `guild-boost/history` | 已接入 | 【KOOK服务器@助力历史】 |
 | `guild-mute/create` | 已接入 | 【KOOK语音管理】闭麦、静音、解除与限制列表 |
@@ -54,40 +62,40 @@
 | `guild-mute/list` | 已接入 | 【KOOK语音管理】闭麦、静音、解除与限制列表 |
 | `guild/kickout` | 已接入 | 【群管理】踢出、退出、昵称 |
 | `guild/leave` | 已接入 | 【群管理】踢出、退出、昵称 |
-| `guild/list` | 已接入 | 【KOOK服务器】列表、详情 |
+| `guild/list` | 部分 | 【KOOK服务器@列表】支持页码和每页数量。官方列出通用排序语法，未列出此接口支持的排序字段 |
 | `guild/nickname` | 已接入 | 【群管理】踢出、退出、昵称 |
-| `guild/user-list` | 部分 | 【群成员】支持成员、搜索、身份组及分页，缺手机号认证和时间排序 |
-| `guild/view` | 已接入 | 【KOOK服务器】列表、详情 |
+| `guild/user-list` | 已接入 | 【群成员】支持成员、搜索、身份组、分页、手机认证、时间排序和频道筛选 |
+| `guild/view` | 已接入 | 【KOOK服务器@详情】提供服务器资料、身份组列表和频道列表 |
 
 ### 频道与频道权限
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/channel)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `channel-role/create` | 已接入 | 【KOOK频道权限】查询、创建、设置、删除、同步 |
 | `channel-role/delete` | 已接入 | 【KOOK频道权限】查询、创建、设置、删除、同步 |
 | `channel-role/index` | 已接入 | 【KOOK频道权限】查询、创建、设置、删除、同步 |
 | `channel-role/sync` | 已接入 | 【KOOK频道权限】查询、创建、设置、删除、同步 |
 | `channel-role/update` | 已接入 | 【KOOK频道权限】查询、创建、设置、删除、同步 |
-| `channel/create` | 部分 | 【KOOK频道@创建】支持文字、语音与分组，缺音质 |
+| `channel/create` | 已接入 | 【KOOK频道@创建】支持文字、语音、分组及语音音质 |
 | `channel/delete` | 已接入 | 【KOOK频道@删除】 |
 | `channel/kickout` | 已接入 | 【KOOK语音管理】移出、移动 |
-| `channel/list` | 部分 | 【取群列表】【KOOK频道@列表】覆盖常见分页查询 |
+| `channel/list` | 已接入 | 【KOOK频道@列表】支持页码、每页数量、类型和分组 |
 | `channel/message` | 平台限制 | 已弃用，使用频道消息创建 |
 | `channel/move-user` | 已接入 | 【KOOK语音管理】移出、移动 |
-| `channel/update` | 部分 | 【KOOK频道@编辑】【群管理】支持名称、简介、慢速与分组，缺音质、密码、容量和排序编辑 |
+| `channel/update` | 已接入 | 【KOOK频道@编辑】支持名称、简介、慢速、分组、排序、容量、音质及密码 |
 | `channel/user-list` | 已接入 | 【群成员@语音】 |
-| `channel/view` | 已接入 | 【群信息】 |
+| `channel/view` | 已接入 | 【群信息】支持读取子频道 |
 
 ### 频道消息
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/message)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `message/add-reaction` | 已接入 | 【表情回应】 |
-| `message/create` | 部分 | 【输出流】支持普通消息与媒体，缺模板参数，本轮优先补齐 |
+| `message/create` | 已接入 | 【输出流】支持普通消息、媒体、模板、临时目标、标记及配额回复 |
 | `message/delete` | 已接入 | 【撤回】 |
 | `message/delete-reaction` | 已接入 | 【表情回应】 |
 | `message/list` | 部分 | 【KOOK频道消息】支持公开接口的消息查询与常用字段，记录未规范化所有消息属性 |
@@ -95,14 +103,14 @@
 | `message/reaction-list` | 已接入 | 【KOOK回应列表】 |
 | `message/send-pipemsg` | 未接入 | 缺直接填值的命令，本轮优先补齐 |
 | `message/unpin` | 已接入 | 【置顶消息】 |
-| `message/update` | 部分 | 【编辑消息】支持文本与卡片，缺模板参数，本轮优先补齐 |
+| `message/update` | 已接入 | 【编辑消息】支持文本、卡片、模板、临时目标、引用修改和配额回复 |
 | `message/view` | 部分 | 【KOOK频道消息】支持公开接口的消息查询与常用字段，记录未规范化所有消息属性 |
 
 ### 频道用户
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/channel-user)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `channel-user/get-joined-channel` | 未接入 | 缺直接填值的命令 |
 
@@ -110,7 +118,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/user-chat)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `user-chat/create` | 未接入 | 缺直接填值的命令 |
 | `user-chat/delete` | 未接入 | 缺直接填值的命令 |
@@ -121,22 +129,22 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/direct-message)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `direct-message/add-reaction` | 已接入 | 【表情回应】 |
-| `direct-message/create` | 部分 | 【输出流】支持普通消息与媒体，缺模板参数，本轮优先补齐 |
+| `direct-message/create` | 已接入 | 【输出流】和【发送私聊】支持普通消息、媒体、模板、私聊会话码、标记和配额回复 |
 | `direct-message/delete` | 已接入 | 【撤回】 |
 | `direct-message/delete-reaction` | 已接入 | 【表情回应】 |
-| `direct-message/list` | 部分 | 【KOOK频道消息】支持公开接口的消息查询与常用字段，记录未规范化所有消息属性 |
+| `direct-message/list` | 部分 | 【KOOK频道消息】支持私聊会话码、页码、引用和常用媒体属性，链接预览待统一 |
 | `direct-message/reaction-list` | 已接入 | 【KOOK回应列表】 |
-| `direct-message/update` | 部分 | 【编辑消息】支持文本与卡片，缺模板参数，本轮优先补齐 |
+| `direct-message/update` | 已接入 | 【编辑消息】支持文本、卡片、模板、引用修改和配额回复 |
 | `direct-message/view` | 部分 | 【KOOK频道消息】支持公开接口的消息查询与常用字段，记录未规范化所有消息属性 |
 
 ### 网关
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/gateway)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `gateway/index` | 配置／运行时 | 适配器建立 WebSocket 连接时调用 |
 
@@ -144,7 +152,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/user)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `user/get-online-status` | 未接入 | 缺直接填值的命令 |
 | `user/me` | 配置／运行时 | 适配器登录和获取机器人身份时调用 |
@@ -156,7 +164,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/voice)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `voice/join` | 配置／运行时 | 【KOOK共享播放】【KOOK停止播放】管理播放连接，尚无手动连接生命周期命令 |
 | `voice/keep-alive` | 配置／运行时 | 【KOOK共享播放】【KOOK停止播放】管理播放连接，尚无手动连接生命周期命令 |
@@ -167,7 +175,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/asset)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `asset/create` | 已接入 | 【KOOK上传文件】 |
 
@@ -175,7 +183,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/guild-role)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `guild-role/create` | 已接入 | 【KOOK身份组】 |
 | `guild-role/delete` | 已接入 | 【KOOK身份组】 |
@@ -188,7 +196,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/intimacy)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `intimacy/index` | 已接入 | 【KOOK亲密度@查询】 |
 | `intimacy/update` | 已接入 | 【KOOK亲密度@更新】和【KOOK亲密度@清空社交信息】 |
@@ -197,7 +205,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/guild-emoji)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `guild-emoji/create` | 已接入 | 【KOOK服务器表情】 |
 | `guild-emoji/delete` | 已接入 | 【KOOK服务器表情】 |
@@ -208,7 +216,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/invite)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `invite/create` | 已接入 | 【邀请链接】 |
 | `invite/delete` | 已接入 | 【邀请链接】 |
@@ -219,7 +227,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/blacklist)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `blacklist/create` | 已接入 | 【群管理】封禁、解封、黑名单 |
 | `blacklist/delete` | 已接入 | 【群管理】封禁、解封、黑名单 |
@@ -229,7 +237,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/badge)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `badge/guild` | 已接入 | 【KOOK服务器@徽章】返回图片字节集 |
 
@@ -237,7 +245,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/game)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `game` | 已接入 | 【KOOK游戏@列表】 |
 | `game/activity` | 已接入 | 【KOOK动态@游戏】和【KOOK动态@音乐】 |
@@ -250,7 +258,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/thread)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `category/list` | 已接入 | 【KOOK帖子】 |
 | `thread/create` | 已接入 | 【KOOK帖子】 |
@@ -264,7 +272,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/oauth)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `/api/oauth2/token` | 平台限制 | OAuth2 用户授权换令牌 |
 
@@ -272,7 +280,7 @@
 
 [KOOK 官方接口](https://developer.kookapp.cn/doc/http/template)
 
-| 官方路径 | 基线 | 入口或缺口 |
+| 官方路径 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | `template/create` | 未接入 | 缺直接填值的命令，本轮优先补齐 |
 | `template/delete` | 未接入 | 缺直接填值的命令，本轮优先补齐 |
@@ -281,7 +289,7 @@
 
 ### 管道、授权与事件传输边界
 
-| 项目 | 基线 | 说明 |
+| 项目 | 当前状态 | 说明 |
 | --- | --- | --- |
 | 入管道的创建与配置 | 配置／运行时 | 目前在开发者后台创建并取得入管道令牌。 |
 | 出管道 | 平台限制 | KOOK 当前未开放。 |
@@ -297,7 +305,7 @@
 
 共 34 项命名系统事件和 8 种具有官方结构说明的普通消息。系统事件通过类型 255 的消息接收。
 
-| 普通消息类型 | 基线 | RedLang 入口 |
+| 普通消息类型 | 当前状态 | RedLang 入口 |
 | --- | --- | --- |
 | 1 文字 | 已接入 | 私聊或频道消息 |
 | 2 图片 | 已接入 | 消息内容含图片 |
@@ -314,7 +322,7 @@
 
 [KOOK 官方事件](https://developer.kookapp.cn/doc/event/channel)
 
-| 官方事件 | 基线 | 脚本触发 |
+| 官方事件 | 当前状态 | 脚本触发 |
 | --- | --- | --- |
 | `added_reaction` | 已接入 | `notice:kook:added_reaction` |
 | `deleted_reaction` | 已接入 | `notice:kook:deleted_reaction` |
@@ -330,7 +338,7 @@
 
 [KOOK 官方事件](https://developer.kookapp.cn/doc/event/direct-message)
 
-| 官方事件 | 基线 | 脚本触发 |
+| 官方事件 | 当前状态 | 脚本触发 |
 | --- | --- | --- |
 | `updated_private_message` | 已接入 | `notice:kook:updated_private_message` |
 | `deleted_private_message` | 已接入 | `notice:kook:deleted_private_message` |
@@ -341,7 +349,7 @@
 
 [KOOK 官方事件](https://developer.kookapp.cn/doc/event/guild-member)
 
-| 官方事件 | 基线 | 脚本触发 |
+| 官方事件 | 当前状态 | 脚本触发 |
 | --- | --- | --- |
 | `joined_guild` | 已接入 | `notice:kook:joined_guild` |
 | `exited_guild` | 已接入 | `notice:kook:exited_guild` |
@@ -353,7 +361,7 @@
 
 [KOOK 官方事件](https://developer.kookapp.cn/doc/event/guild-role)
 
-| 官方事件 | 基线 | 脚本触发 |
+| 官方事件 | 当前状态 | 脚本触发 |
 | --- | --- | --- |
 | `added_role` | 已接入 | `notice:kook:added_role` |
 | `deleted_role` | 已接入 | `notice:kook:deleted_role` |
@@ -363,7 +371,7 @@
 
 [KOOK 官方事件](https://developer.kookapp.cn/doc/event/guild)
 
-| 官方事件 | 基线 | 脚本触发 |
+| 官方事件 | 当前状态 | 脚本触发 |
 | --- | --- | --- |
 | `updated_guild` | 部分 | `notice:kook:updated_guild`，通过原生事件读取字段 |
 | `deleted_guild` | 部分 | `notice:kook:deleted_guild`，通过原生事件读取字段 |
@@ -377,7 +385,7 @@
 
 [KOOK 官方事件](https://developer.kookapp.cn/doc/event/user)
 
-| 官方事件 | 基线 | 脚本触发 |
+| 官方事件 | 当前状态 | 脚本触发 |
 | --- | --- | --- |
 | `joined_channel` | 已接入 | `notice:kook:joined_channel` |
 | `exited_channel` | 已接入 | `notice:kook:exited_channel` |
@@ -392,7 +400,7 @@
 
 ### 收取更新及 webhook
 
-| 官方方法 | 基线 | 入口或缺口 |
+| 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | [`getUpdates`](https://core.telegram.org/bots/api#getupdates) | 配置／运行时 | 适配器长轮询，订阅类型由管理台配置 |
 | [`setWebhook`](https://core.telegram.org/bots/api#setwebhook) | 未接入 | 当前为轮询适配器，缺 webhook 管理和收件入口 |
@@ -401,12 +409,12 @@
 
 ### 通用方法
 
-| 官方方法 | 基线 | 入口或缺口 |
+| 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | [`getMe`](https://core.telegram.org/bots/api#getme) | 配置／运行时 | 适配器登录时调用 |
 | [`logOut`](https://core.telegram.org/bots/api#logout) | 未接入 | 缺直接填值的命令 |
 | [`close`](https://core.telegram.org/bots/api#close) | 未接入 | 缺直接填值的命令 |
-| [`sendMessage`](https://core.telegram.org/bots/api#sendmessage) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
+| [`sendMessage`](https://core.telegram.org/bots/api#sendmessage) | 部分 | 【输出流】支持静默、内容保护、私聊效果、建议帖和临时消息。富文本、付费广播及高级引用等另列 |
 | [`forwardMessage`](https://core.telegram.org/bots/api#forwardmessage) | 部分 | 【转发消息】支持常用转发、复制与话题，未覆盖所有附加选项 |
 | [`forwardMessages`](https://core.telegram.org/bots/api#forwardmessages) | 部分 | 【转发消息】支持常用转发、复制与话题，未覆盖所有附加选项 |
 | [`copyMessage`](https://core.telegram.org/bots/api#copymessage) | 部分 | 【转发消息】支持常用转发、复制与话题，未覆盖所有附加选项 |
@@ -416,18 +424,18 @@
 | [`sendAudio`](https://core.telegram.org/bots/api#sendaudio) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
 | [`sendDocument`](https://core.telegram.org/bots/api#senddocument) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
 | [`sendVideo`](https://core.telegram.org/bots/api#sendvideo) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
-| [`sendAnimation`](https://core.telegram.org/bots/api#sendanimation) | 部分 | 【动画】配合【输出流】，支持动画、说明、缩略图和防剧透，缺实体数组和高级公共发送选项 |
-| [`sendVoice`](https://core.telegram.org/bots/api#sendvoice) | 部分 | 【语音】便笺模式配合【输出流】，缺实体数组和高级公共发送选项 |
-| [`sendVideoNote`](https://core.telegram.org/bots/api#sendvideonote) | 部分 | 【视频】便笺模式配合【输出流】，缺高级公共发送选项 |
+| [`sendAnimation`](https://core.telegram.org/bots/api#sendanimation) | 部分 | 【动画】配合【输出流】，支持动画、说明、缩略图和防剧透，缺实体数组、付费广播等选项 |
+| [`sendVoice`](https://core.telegram.org/bots/api#sendvoice) | 部分 | 【语音】便笺模式配合【输出流】，缺实体数组、付费广播等选项 |
+| [`sendVideoNote`](https://core.telegram.org/bots/api#sendvideonote) | 部分 | 【视频】便笺模式配合【输出流】，缺付费广播等选项 |
 | [`sendWidget`](https://core.telegram.org/bots/api#sendwidget) | 未接入 | 缺直接填值的命令 |
 | [`sendSharedWidget`](https://core.telegram.org/bots/api#sendsharedwidget) | 未接入 | 缺直接填值的命令 |
 | [`sendPaidMedia`](https://core.telegram.org/bots/api#sendpaidmedia) | 未接入 | 缺直接填值的命令 |
-| [`sendMediaGroup`](https://core.telegram.org/bots/api#sendmediagroup) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
+| [`sendMediaGroup`](https://core.telegram.org/bots/api#sendmediagroup) | 部分 | 【媒体组】配合【输出流】支持静默、内容保护和私聊效果，付费广播及高级引用待接入 |
 | [`sendLocation`](https://core.telegram.org/bots/api#sendlocation) | 未接入 | 缺直接填值的命令 |
 | [`sendVenue`](https://core.telegram.org/bots/api#sendvenue) | 未接入 | 缺直接填值的命令 |
 | [`sendContact`](https://core.telegram.org/bots/api#sendcontact) | 未接入 | 缺直接填值的命令 |
 | [`sendPoll`](https://core.telegram.org/bots/api#sendpoll) | 部分 | 【Telegram投票】支持普通与测验投票，缺媒体和多项高级设置 |
-| [`sendChecklist`](https://core.telegram.org/bots/api#sendchecklist) | 部分 | 【Telegram任务清单】【输出流】支持任务与授权开关，缺静默等选项 |
+| [`sendChecklist`](https://core.telegram.org/bots/api#sendchecklist) | 部分 | 【Telegram任务清单】【输出流】支持任务、授权开关、静默、保护和消息效果 |
 | [`sendDice`](https://core.telegram.org/bots/api#senddice) | 未接入 | 缺直接填值的命令 |
 | [`sendMessageDraft`](https://core.telegram.org/bots/api#sendmessagedraft) | 未接入 | 缺直接填值的命令 |
 | [`sendChatAction`](https://core.telegram.org/bots/api#sendchataction) | 已接入 | 【Telegram聊天动作】 |
@@ -543,7 +551,7 @@
 
 ### 编辑与删除消息
 
-| 官方方法 | 基线 | 入口或缺口 |
+| 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | [`editMessageText`](https://core.telegram.org/bots/api#editmessagetext) | 部分 | 【编辑消息】支持常用内容及行内按钮，缺部分高级参数 |
 | [`editMessageCaption`](https://core.telegram.org/bots/api#editmessagecaption) | 部分 | 【编辑消息】支持常用内容及行内按钮，缺部分高级参数 |
@@ -555,21 +563,21 @@
 | [`editSharedWidgetData`](https://core.telegram.org/bots/api#editsharedwidgetdata) | 未接入 | 缺直接填值的命令 |
 | [`editMessageReplyMarkup`](https://core.telegram.org/bots/api#editmessagereplymarkup) | 部分 | 【编辑消息】支持常用内容及行内按钮，缺部分高级参数 |
 | [`stopPoll`](https://core.telegram.org/bots/api#stoppoll) | 部分 | 【Telegram结束投票】关闭投票，未提供替换键盘选项 |
-| [`editEphemeralMessageText`](https://core.telegram.org/bots/api#editephemeralmessagetext) | 未接入 | 缺直接填值的命令 |
-| [`editEphemeralMessageMedia`](https://core.telegram.org/bots/api#editephemeralmessagemedia) | 未接入 | 缺直接填值的命令 |
-| [`editEphemeralMessageCaption`](https://core.telegram.org/bots/api#editephemeralmessagecaption) | 未接入 | 缺直接填值的命令 |
-| [`editEphemeralMessageReplyMarkup`](https://core.telegram.org/bots/api#editephemeralmessagereplymarkup) | 未接入 | 缺直接填值的命令 |
-| [`approveSuggestedPost`](https://core.telegram.org/bots/api#approvesuggestedpost) | 未接入 | 缺直接填值的命令 |
-| [`declineSuggestedPost`](https://core.telegram.org/bots/api#declinesuggestedpost) | 未接入 | 缺直接填值的命令 |
+| [`editEphemeralMessageText`](https://core.telegram.org/bots/api#editephemeralmessagetext) | 部分 | 【编辑消息】支持临时文本，富文本、实体和预览选项待接入 |
+| [`editEphemeralMessageMedia`](https://core.telegram.org/bots/api#editephemeralmessagemedia) | 已接入 | 【编辑消息】的临时媒体模式 |
+| [`editEphemeralMessageCaption`](https://core.telegram.org/bots/api#editephemeralmessagecaption) | 部分 | 【编辑消息】的临时说明模式，实体与说明位置待接入 |
+| [`editEphemeralMessageReplyMarkup`](https://core.telegram.org/bots/api#editephemeralmessagereplymarkup) | 已接入 | 【编辑消息】的临时键盘模式 |
+| [`approveSuggestedPost`](https://core.telegram.org/bots/api#approvesuggestedpost) | 已接入 | 【同意】的建议帖模式 |
+| [`declineSuggestedPost`](https://core.telegram.org/bots/api#declinesuggestedpost) | 已接入 | 【拒绝】的建议帖模式 |
 | [`deleteMessage`](https://core.telegram.org/bots/api#deletemessage) | 已接入 | 【撤回】 |
 | [`deleteMessages`](https://core.telegram.org/bots/api#deletemessages) | 已接入 | 【撤回】 |
-| [`deleteEphemeralMessage`](https://core.telegram.org/bots/api#deleteephemeralmessage) | 未接入 | 缺直接填值的命令 |
+| [`deleteEphemeralMessage`](https://core.telegram.org/bots/api#deleteephemeralmessage) | 已接入 | 【撤回】的临时模式 |
 | [`deleteMessageReaction`](https://core.telegram.org/bots/api#deletemessagereaction) | 已接入 | 【表情回应】 |
 | [`deleteAllMessageReactions`](https://core.telegram.org/bots/api#deleteallmessagereactions) | 未接入 | 缺直接填值的命令 |
 
 ### 贴纸
 
-| 官方方法 | 基线 | 入口或缺口 |
+| 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | [`sendSticker`](https://core.telegram.org/bots/api#sendsticker) | 部分 | 【输出流】【媒体组】【贴纸】或【Telegram文件】覆盖常见发送，缺该方法的部分选填参数 |
 | [`getStickerSet`](https://core.telegram.org/bots/api#getstickerset) | 已接入 | 【Telegram贴纸包】【Telegram上传贴纸】 |
@@ -590,20 +598,20 @@
 
 ### 富文本消息
 
-| 官方方法 | 基线 | 入口或缺口 |
+| 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | [`sendRichMessage`](https://core.telegram.org/bots/api#sendrichmessage) | 未接入 | 缺直接填值的命令 |
 | [`sendRichMessageDraft`](https://core.telegram.org/bots/api#sendrichmessagedraft) | 未接入 | 缺直接填值的命令 |
 
 ### 行内模式
 
-| 官方方法 | 基线 | 入口或缺口 |
+| 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | [`answerInlineQuery`](https://core.telegram.org/bots/api#answerinlinequery) | 部分 | 【Telegram应答查询】支持文章和部分媒体结果，缺其余结果类型和结果按钮 |
 
 ### 支付
 
-| 官方方法 | 基线 | 入口或缺口 |
+| 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | [`sendInvoice`](https://core.telegram.org/bots/api#sendinvoice) | 未接入 | 缺直接填值的命令，本轮优先补齐 |
 | [`createInvoiceLink`](https://core.telegram.org/bots/api#createinvoicelink) | 未接入 | 缺直接填值的命令，本轮优先补齐 |
@@ -616,13 +624,13 @@
 
 ### Telegram Passport
 
-| 官方方法 | 基线 | 入口或缺口 |
+| 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | [`setPassportDataErrors`](https://core.telegram.org/bots/api#setpassportdataerrors) | 未接入 | 缺直接填值的命令 |
 
 ### 游戏
 
-| 官方方法 | 基线 | 入口或缺口 |
+| 官方方法 | 当前状态 | 入口或缺口 |
 | --- | --- | --- |
 | [`sendGame`](https://core.telegram.org/bots/api#sendgame) | 未接入 | 缺直接填值的命令 |
 | [`setGameScore`](https://core.telegram.org/bots/api#setgamescore) | 未接入 | 缺直接填值的命令 |
@@ -632,7 +640,7 @@
 
 共 29 项官方 Update 变体。识别和去重用的 `update_id` 不作为事件计数。
 
-| 官方更新 | 基线 | 脚本触发或缺口 |
+| 官方更新 | 当前状态 | 脚本触发或缺口 |
 | --- | --- | --- |
 | `message` | 已接入 | 普通私聊或群消息，还可读【事件内容】 |
 | `edited_message` | 已接入 | 编辑事件与消息 ID |
@@ -670,12 +678,12 @@
 
 这些字段由消息类 Update 承载。本表逐项列出消息内容、服务事件及具有独立脚本语义的分组和转发标记。
 
-| 官方消息字段 | 基线 | 脚本触发或缺口 |
+| 官方消息字段 | 当前状态 | 脚本触发或缺口 |
 | --- | --- | --- |
 | `text` | 已接入 | 普通文字消息，可用【事件内容@消息文字】 |
 | `forward_origin` | 已接入 | 转发通知及【事件内容@转发来源类型】 |
 | `media_group_id` | 已接入 | 媒体组通知 |
-| `suggested_post_info` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
+| `suggested_post_info` | 已接入 | 专用通知和【事件内容@建议帖】 |
 | `rich_message` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
 | `animation` | 已接入 | 动画与动画编辑通知，【事件内容@动画】 |
 | `audio` | 部分 | 原生事件可读媒体字段，媒体组时另有媒体通知 |
@@ -745,11 +753,11 @@
 | `paid_messages_waived` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
 | `poll_option_added` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
 | `poll_option_deleted` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
-| `suggested_post_approved` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
-| `suggested_post_approval_failed` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
-| `suggested_post_declined` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
-| `suggested_post_paid` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
-| `suggested_post_refunded` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
+| `suggested_post_approved` | 已接入 | 专用通知和【事件内容@建议帖】 |
+| `suggested_post_approval_failed` | 已接入 | 专用通知和【事件内容@建议帖】 |
+| `suggested_post_declined` | 已接入 | 专用通知和【事件内容@建议帖】 |
+| `suggested_post_paid` | 已接入 | 专用通知和【事件内容@建议帖】 |
+| `suggested_post_refunded` | 已接入 | 专用通知和【事件内容@建议帖】 |
 | `ton_wallet_transfer` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
 | `video_chat_scheduled` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
 | `video_chat_started` | 部分 | 随原生消息提供，缺专用事件或中文位置入口 |
@@ -762,5 +770,5 @@
 ## 本轮之后的缺口
 
 - KOOK 上线、下线接口适用于 Webhook，当前适配器使用 WebSocket。继续核对清单里标记为部分接入的频道、服务器与消息参数。
-- Telegram 待补建议帖、临时消息等公共发送选项，以及组件、富文本、贴纸集细项、游戏、受管机器人与 Passport。
+- Telegram 待补临时命令开关、富文本临时编辑、复杂引用与实体、付费广播，以及组件、贴纸集细项、游戏、受管机器人与 Passport。
 - 两端分别验证新命令与真实机器人权限、事件订阅和实际返回值。
