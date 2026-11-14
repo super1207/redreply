@@ -225,10 +225,8 @@ pub(super) fn variant(
                 }
             }
             result["type"] = wire.into();
-            if wire != "audio" || result.get("audio_file_id").is_none() {
-                if !title.is_empty() {
-                    result["title"] = title.into();
-                }
+            if (wire != "audio" || result.get("audio_file_id").is_none()) && !title.is_empty() {
+                result["title"] = title.into();
             }
             if matches!(wire, "photo" | "video" | "document") && !description.is_empty() {
                 result["description"] = description.into();
